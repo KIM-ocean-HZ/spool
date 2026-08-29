@@ -1,11 +1,25 @@
 # 交接 —— 2026-08-26（下一件：**渠道**）
 
+> ⛔ **SUPERSEDED / 已归档，禁止作为开工入口。** 2026-08-29 起当前入口是
+> **`docs/HANDOFF-2026-08-29.md`**（下一件：E-core）。这一份留着只为查两样东西：
+> `Q`/`W`/`X` 三批和 08-27 那三件 + 十件当初为什么那么做；以及 §3-bis 里
+> 08-29 审计窗那七条 captured 的**全文**（新那份 §5 只留索引）。
+> 里面「下一件就是渠道」「§5 下一窗开工提示词」已经**全部失效** —— 渠道 R1 已于 08-29 发布。
+
+> **本文件同时取代 docs/HANDOFF-2026-08-22.md 的开工入口地位。** 08-22 只作历史现场记录。
+>
 > **这一份取代 `archive/HANDOFF-NEXT-2026-08-24.md`。** 那一份 975 行、十六节，装的是
 > `S` / `V` / `Q` / `W` / `X` 五批的施工记录 —— **全部做完、全部验过**，所以它整份归档，
 > ⛔ 别再照着它开工。要翻某一批当时为什么那么做，去 `docs/archive/` 里找它。
 >
 > 换一份的理由是 Ocean 自己定的规矩（`WORKPLAN` §0）：
 > 「不允许任务无限堆积在一个文件夹，这会导致上下文过长，执行不准确」。
+
+> **2026-08-27 新增长期入口：先读 docs/EXECUTION_POLICY.md。** 用户已将产品完善设为
+> 永久主线、AI 记忆研究设为第二中心；营销在研究成果形成前只收集自然产生的真实素材。
+> 当前下一件仍是 R1，但 R2 Show HN 属营销，继续封存，**不再挡住 E 批**：R1 完成或
+> 被证伪后进入协议冻结与 E1/E2。开发中发现的新任务、小功能和非阻断问题只写进本
+> HANDOFF，不得插队；除非用户明确同意，禁止修改总执行方针。
 
 ---
 
@@ -21,7 +35,6 @@
 `git fetch <HTTPS URL> main && git log --oneline FETCH_HEAD..HEAD` 数一次 ——
 `origin/main` 这个本地 ref 是**过期的**（SSH 推不动，一直走 HTTPS URL 推，
 它不会自己跟上），照它算出来的数字必然偏小。
-
 
 **装机**：`/Applications/Spool.app` 是 `5894dbc` 那一版（2026-08-26 11:47 换的）。
 签名 `Developer ID Application: Hanze JIN`，`spctl` 报 `Unnotarized Developer ID`
@@ -207,6 +220,129 @@ printf '%s\n' \
 ⛔ **不是我这一窗留下的**，也⛔ 没删 —— 换装规程说「挪开别直接删」，但没人回头清过。
 ⇒ 问一句就能全清掉。⚠️ 清之前 `lsof +D` 看一眼有没有进程还执行着里面的 inode
 （记忆 §34：换装不打断跑着的 `--mcp` 子进程）。
+
+---
+
+## 3-bis. 2026-08-29 审计窗新增（Ocean 同意写入，状态一律 captured，⛔ 都不挡 R1）
+
+> 这一节是 2026-08-29 那一窗自己加的，⛔ 没有改动上面任何一段。
+> 那一窗的任务是「先审计决策、再决定要不要施工」，全稿留在临时目录，没进仓库。
+
+### DISCOVERED-20260829-1 · R1 的形态核完了：registry 收「嵌在桌面应用里」这种条目
+
+- 路线：P
+- 类型：**当前验收必要项**（§2.2 要求「开工前必须先核」的那一件）
+- 来源：官方 `server.schema.json`（2025-12-11）与 `generic-server-json.md`，原文抓下来 grep 过，2026-08-29
+- 证据：
+  - `packages[].registryType` 实收 `npm` / `pypi` / `nuget` / `oci` / `mcpb`（另有 `cargo`）——
+    **没有「本地二进制 / 自托管」这一类**，§2.2 写的「甲」字面上不存在；
+  - **但 `ServerDetail.required` 只有 `name` / `description` / `version`，
+    `packages` 和 `remotes` 都是可选的**；
+  - 官方文档里有一个例子标题就叫 **Server with Custom Installation Path**，
+    说明是「嵌在应用里、没有独立包的 MCP server，用 `websiteUrl` 指向安装说明」，
+    例子的 description 逐字是 **“MCP server embedded in a Desktop app”**。
+- 影响：**R1 不作废，也不需要新工程。** §2.2 的三选一变成两条：
+  metadata-only 条目（选了这条），或额外发一个 `.mcpb`（否掉了，理由见下一条）。
+- 与当前任务关系：这就是 R1 的开工前置，已完成。
+- 建议：立即最小处理（写 `server.json`，四个字段）
+- 验收标准：`mcp-publisher validate` 通过；条目里不出现任何被禁的数字。
+- 严重度：P1
+- 状态：**completed**（核查这一步）
+
+### DISCOVERED-20260829-2 · `.mcpb` 那条路否掉的理由（存档，免得下次重想一遍）
+
+- 路线：P
+- 类型：战略候选（已否）
+- 来源：`src-tauri/src/mcp.rs:1277`、`mcp.rs:3717`；官方 mcpb README
+- 证据：读写两条路都硬检查 `PRAGMA user_version`，不等就拒答 / 拒写；
+  **拒答那条的错误原文是「请把客户端配置指向新版 Spool.app 里的执行文件」**——
+  mcpb 装出来的二进制不在 `Spool.app` 里，**产品自己的报错文案和这条安装路径打架**。
+  另外官方今天明写会装 `.mcpb` 的客户端只有 Claude Desktop。
+- 影响：⚠️ 只是支持成本，**不是数据风险**——MCP 那侧只读连接是 `SQLITE_OPEN_READ_ONLY`，
+  写连接从不创建也从不迁移库（迁移只在 GUI）。2026-05-29 那次抹库是 GUI 的 `migrateSchema`，不是这条路。
+- 建议：候选等待（真要一键装的时候再翻出来）
+- 严重度：P3
+- 状态：captured
+
+### DISCOVERED-20260829-3 · `get_blocks` 不返回 `ref_note`
+
+- 路线：P
+- 类型：小功能
+- 来源：`src-tauri/src/mcp.rs` `get_blocks_json` 的 SELECT
+- 证据：SELECT 里有 `source_url` / `retrieved_at` / `recheck_after` / `corrected_quote` /
+  `ref_kind` / `stale_at`，**没有 `ref_note`**（也没有 `gist` / `gist_by` / `annotation_by`）。
+  而 `ref_note` 是 v28（Q 批）刚加的「为什么引这一块」，**Pack 会渲染它，读块的工具却不给**。
+- 影响：AI 读块时只看得到「引了哪一块」，看不到「当初为什么引」——正是那个字段加进来要解决的事。
+- 依赖：无。SELECT 加一列 + 一个 json 字段 + 测试。
+- 建议：候选等待
+- 验收标准：`get_blocks` 返回的每一块带 `ref_note`；补一个测试钉死。
+- 严重度：P2
+- 状态：captured
+
+### DISCOVERED-20260829-4 · 批准 supersede 之后，理由没了
+
+- 路线：P
+- 类型：小功能
+- 来源：`src/stores/compressStore.ts:975-994`、`src/lib/db/supersedeProposals.ts:100`
+- 证据：提案里存着 `why` / `quote_stale` / `quote_new`；批准时只写关系 + `stale_at`
+  （走「只连线」那档还会写 `corrected_quote`），然后 `deleteSupersedeProposal` 把那一行删掉。
+  ⇒ 最后能知道「新块取代了旧块」，**但拿不回「当初凭什么批的」**。
+- 影响：不影响正确性，影响的是几个月后回头看时讲不清理由。
+- 与既有设计的关系：⛔ **不是要推翻「不留拒绝日志」那条**（那条是对的）。
+  要留的只是**已经生效、已经改变项目真值的那个决定**，不是被拒绝的提案。
+- 建议：候选等待
+- 严重度：P2
+- 状态：captured
+
+### DISCOVERED-20260829-5 · Spool 现在是 MCP 新规范定义的 legacy 服务端
+
+- 路线：P
+- 类型：非阻断 bug / 长期隐患
+- 来源：modelcontextprotocol.io 版本页与 2026-07-28 兼容性页（2026-08-29 查）；本机实测
+- 证据：MCP 规范当前版本是 **2026-07-28**，它取消了 `initialize` 握手，改成每个请求自带版本，
+  并规定**服务端 MUST 实现 `server/discover`**。拿装机那一版探——`server/discover` 返回
+  `-32601 method not found`。
+- 影响：**今天没坏。** 同一次实测里，带新式 `_meta` 的 `tools/list` 照样返回 22 个工具
+  （Spool 忽略 `_meta`），而且规范写明 dual-era 客户端会先探 `server/discover`、失败就回落到
+  `initialize`——现在跑的就是这条路。⚠️ 长期是，等客户端开始只讲新协议，Spool 会连不上。
+- 与当前任务关系：和 R1 有关——挂上目录 = 更多客户端会指过来。
+- 建议：候选等待（这一窗不做）
+- 严重度：P2
+- 状态：captured
+
+### DISCOVERED-20260829-6 · 「跨项目更正在旧项目里看不见」不是 bug，是刻意的
+
+- 路线：P
+- 类型：需要 Ocean 决定
+- 来源：`src-tauri/src/mcp.rs` `corrections_by_source` 的注释
+- 证据：注释逐字写着「Derived from the pack's own list: a correction written in another
+  project is not claimed here」。
+- 影响：`RESEARCH_ANSWER_PROVENANCE-2026-08-29.md` §3.7 把它归进「先修现有逻辑完整性」，
+  读起来像 bug。**它不是**。改它 = 一个项目的 Pack 里会出现另一个项目的内容，撞隐私边界。
+- 建议：需要用户决定；⛔ 在他拍板前不能当「修复」顺手做。
+- 严重度：P3
+- 状态：captured
+
+### DISCOVERED-20260829-7 · 还没量过：库里有几块是 `corrects` / `supersedes` 用错的
+
+- 路线：P
+- 类型：研究/取证前置
+- 来源：`mcp.rs` 与 `blocks.ts` 里记着的真实案例注释（三代都用 `corrects`，所以三代都 live）
+- 证据：护栏已经有了（`staleGuards`、`wouldOverwriteRelation`、写入时逐字闸），
+  **但没人数过真库里现存多少块是这种。**
+- 建议：需要用户决定——量真库要他点头（⛔ 审计那一窗没碰真库）
+- 严重度：P3
+- 状态：captured
+
+### 顺带核过的几个数（2026-08-29 实测，不是照抄）
+
+| 事 | 实测 |
+|---|---|
+| TS 测试 | 61 文件 / **747 全绿** |
+| Rust 测试 | **139 全绿**（4 ignored） |
+| 工具 / prompt | **22 / 7**，22 个工具全部带 `annotations` |
+| schema 版本 | `client.ts` 与 `mcp.rs` 都是 **28**，没偏斜 |
+| 装机 | ⚠️ 是 **08-27 21:54** 那一版（十件第三轮），**不是 §1 写的 `5894dbc`**。§1 那一行被 §1-bis / §1-ter 更新过；按当窗规矩没有顺手改它，在这里记一笔 |
 
 ---
 
