@@ -45,6 +45,23 @@ export const REF_MARKER = '→ Referenced project: ';
 // from needing another lookup; a deleted citee renders the MISSING text instead.
 export const REF_BLOCK_MARKER = '↩ cites: ';
 export const REF_BLOCK_MISSING = '(cited block no longer exists)';
+/** ⛔⛔ 2026-08-30（Ocean 拍板「乙」）：被引的那一块**用户已经标记为不再有效**。
+ *
+ *  在此之前这一行和引用一块 live 的块**渲染得一模一样** —— 时间戳 + 那一块开头 40 个字。
+ *  两个后果：① 下一个模型看不出被引的东西已经作废；② ⛔ **退役内容顺着这一行漏回 pack**，
+ *  正是退役本来要拿掉的那些字。而同一份 pack 里还写着「有 N 块已标记为不再有效、未显示」——
+ *  两句话互相打脸。真库「申请规划」里当时有 5 条这样的边。
+ *
+ *  ⭐ 收掉预览是他选的（甲是「标出来但预览留着」）：**退役内容一个字都不进 pack**。
+ *  ⚠️ `— why:`（引用方自己写的理由）照旧跟在后面 —— v28 那条规矩没变：
+ *  那句话属于**这一块**，不属于被引的那一块。
+ *  ⚠️ 和「块被删了」分成两句：删掉和作废是两件事，⛔ 塌成一句就等于告诉用户东西没了。
+ *
+ *  ⛔⛔ **F2（2026-08-30）之后这一句仍然照写，一个字不改。** 用户在界面上点过
+ *  「保留为历史引用」之后，pack 里**还是**这一句 —— 那个动作确认的是「我知道了」，
+ *  ⛔ **不是**「它又有效了」（施工单 §3.3 两个小决定的第一条，Ocean 08-30 定的）。
+ *  ⇒ `ref_reviewed_stale_at` 是**纯界面状态**，⛔ pack 渲染器一个字都不许读它。 */
+export const REF_BLOCK_RETIRED = '(cited block is no longer valid)';
 // R6 debt 3: appended to a ↩ cites: line ONLY when the cited block lives in another
 // project — otherwise the citation read as if the evidence were in this pack.
 export const REF_BLOCK_FROM = ' — in project: ';

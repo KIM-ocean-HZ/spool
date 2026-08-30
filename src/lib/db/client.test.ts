@@ -47,7 +47,7 @@ const blocksSansV13 = (handle: Sqlite): Record<string, unknown>[] =>
     void stale_at;
     void ref_kind;
     void annotation_by;
-    return stripV28(stripGist(stripCompression(stripProvenance(stripCorrectedQuote(rest)))));
+    return stripV29(stripV28(stripGist(stripCompression(stripProvenance(stripCorrectedQuote(rest))))));
   });
 
 // v20's three columns, off a `blocks` row. Same job as stripBriefSuggestion below: a test
@@ -93,6 +93,14 @@ const stripV28 = (r: Record<string, unknown>): Record<string, unknown> => {
   return rest;
 };
 
+// v29's one column, off a `blocks` row — same job again. ⚠️ `proposals` 没有这一列：
+// 待审的提案从来没有被审过（`schema.sql` v29 那一段写了理由）。
+const stripV29 = (r: Record<string, unknown>): Record<string, unknown> => {
+  const { ref_reviewed_stale_at, ...rest } = r;
+  void ref_reviewed_stale_at;
+  return rest;
+};
+
 // v19's three columns, off a `threads` row — the same job blocksSansV13 does for blocks:
 // a test that rewinds below v19 compares rows across a migration that legitimately added
 // them, and only these three may differ.
@@ -133,10 +141,29 @@ const downgradeToV13 = (handle: Sqlite): void => {
   `);
 };
 
+// Rewind past v29: nothing remembered that a citation had been reviewed, and 「谁引用了我」
+// 是一次全表扫描。
+// ⚠️ 这两句就是 v29 的「能回滚」——`add-ref-reviewed-and-ref-block-index` 只加了一个可空列
+// 和一个索引，⛔ 一个字的既有数据都没动；退回来丢的只是「审过没有」，
+// 也就是那几条边重新进一次待审队列。
+//
+// ⚠️⚠️ **索引必须先于列被丢掉。** 更老的降级路径（`downgradeToV2` 和两个测试里的内联
+// DROP）要丢 `ref_block_id`，而 SQLite 不许丢一个还有索引指着的列 ——
+// 报的是 `error in index idx_blocks_ref_block after drop column`。
+// ⭐ `downgradeToV8` 里 `DROP INDEX idx_blocks_thread_seq` 先于 `DROP COLUMN seq` 是同一条。
+const downgradeToV28 = (handle: Sqlite): void => {
+  handle.exec(`
+    DROP INDEX IF EXISTS idx_blocks_ref_block;
+    ALTER TABLE blocks DROP COLUMN ref_reviewed_stale_at;
+    PRAGMA user_version = 28;
+  `);
+};
+
 // Rewind past v28: a citation could not say WHY, and nothing recorded who wrote a gist.
 // ⚠️ 这三句 DROP 就是 v28 的「能回滚」——`add-ref-note-and-gist-by` 只加了三个可空列，
 // ⛔ 一个字的既有数据都没动。
 const downgradeToV27 = (handle: Sqlite): void => {
+  downgradeToV28(handle);
   handle.exec(`
     ALTER TABLE blocks DROP COLUMN ref_note;
     ALTER TABLE blocks DROP COLUMN gist_by;
@@ -728,7 +755,7 @@ describe('migrateSchema registry (§19.3)', () => {
       (handle.prepare('SELECT * FROM blocks').all() as Record<string, unknown>[]).map((r) => {
         const { annotation_by, ...rest } = r;
         void annotation_by;
-        return stripV28(stripGist(stripCompression(stripProvenance(stripCorrectedQuote(rest)))));
+        return stripV29(stripV28(stripGist(stripCompression(stripProvenance(stripCorrectedQuote(rest))))));
       }),
     ).toEqual(blocksBefore);
   });
@@ -814,7 +841,7 @@ describe('migrateSchema registry (§19.3)', () => {
     expect(
       (handle.prepare('SELECT * FROM blocks').all() as Record<string, unknown>[]).map(
         (r: Record<string, unknown>) =>
-          stripV28(stripGist(stripCompression(stripProvenance(stripCorrectedQuote(r))))),
+          stripV29(stripV28(stripGist(stripCompression(stripProvenance(stripCorrectedQuote(r)))))),
       ),
     ).toEqual(blocksBefore);
   });
@@ -849,7 +876,7 @@ describe('migrateSchema registry (§19.3)', () => {
     // first open after an upgrade, with nothing having been read.
     expect(handle.prepare('SELECT COUNT(*) AS c FROM read_positions').get()).toEqual({ c: 0 });
     expect(
-      (handle.prepare('SELECT * FROM blocks').all() as Record<string, unknown>[]).map(stripV28),
+      (handle.prepare('SELECT * FROM blocks').all() as Record<string, unknown>[]).map((r) => stripV29(stripV28(r))),
     ).toEqual(blocksBefore);
     expect(handle.prepare('SELECT * FROM threads').all()).toEqual(threadsBefore);
   });
@@ -878,13 +905,46 @@ describe('migrateSchema registry (§19.3)', () => {
     expect(columnNames(handle, 'proposals')).not.toContain('gist_by');
     // 三列全 NULL，其余一个字节都没动。
     expect(
-      (handle.prepare('SELECT * FROM blocks').all() as Record<string, unknown>[]).map(stripV28),
+      (handle.prepare('SELECT * FROM blocks').all() as Record<string, unknown>[]).map((r) => stripV29(stripV28(r))),
     ).toEqual(blocksBefore);
     expect(
       handle.prepare('SELECT COUNT(*) AS c FROM blocks WHERE ref_note IS NOT NULL').get(),
     ).toEqual({ c: 0 });
     expect(
       handle.prepare('SELECT COUNT(*) AS c FROM blocks WHERE gist_by IS NOT NULL').get(),
+    ).toEqual({ c: 0 });
+  });
+
+  // F2 §3.2 ④ / §3.3 一 (Ocean 2026-08-30). ⚠️ 这个仓库 2026-05-29 抹过一次库，
+  // 所以每一步迁移都要有一条测试盯着「加了什么、**没动**什么」。
+  // v29 只加一个可空列和一个索引，⛔ 不回填、⛔ 不重建表。
+  it('v28 → v29 adds ref_reviewed_stale_at + the ref_block index, and backfills neither', async () => {
+    applySchema(handle);
+    downgradeToV28(handle);
+    seedUserData(handle);
+    const blocksBefore = handle.prepare('SELECT * FROM blocks').all();
+
+    await __migrateSchemaForTest(db);
+
+    expect(userVersion(handle)).toBe(CURRENT_SCHEMA_VERSION);
+    expect(columnNames(handle, 'blocks')).toContain('ref_reviewed_stale_at');
+    // ⛔ proposals 不要这一列：待审的提案从来没有被审过。
+    expect(columnNames(handle, 'proposals')).not.toContain('ref_reviewed_stale_at');
+    // §3.3 三：「谁引用了我」是全库反查，没有索引就是全表扫描。
+    expect(
+      handle
+        .prepare("SELECT COUNT(*) AS c FROM sqlite_master WHERE type='index' AND name='idx_blocks_ref_block'")
+        .get(),
+    ).toEqual({ c: 1 });
+    // 那一列全 NULL，其余一个字节都没动 —— ⛔ 老库的每一条引用都按「没审过」读，
+    // 也就是 §3.2 ② 那几条待审边照旧全部出现（v28 的行为）。
+    expect(
+      (handle.prepare('SELECT * FROM blocks').all() as Record<string, unknown>[]).map(stripV29),
+    ).toEqual(blocksBefore);
+    expect(
+      handle
+        .prepare('SELECT COUNT(*) AS c FROM blocks WHERE ref_reviewed_stale_at IS NOT NULL')
+        .get(),
     ).toEqual({ c: 0 });
   });
 
@@ -972,7 +1032,7 @@ describe('migrateSchema registry (§19.3)', () => {
     expect(handle.prepare('SELECT * FROM threads').all()).toEqual(threadsBefore);
     expect(
       (handle.prepare('SELECT * FROM blocks').all() as Record<string, unknown>[]).map(
-        (r: Record<string, unknown>) => stripV28(stripGist(stripCompression(r))),
+        (r: Record<string, unknown>) => stripV29(stripV28(stripGist(stripCompression(r)))),
       ),
     ).toEqual(blocksBefore);
   });

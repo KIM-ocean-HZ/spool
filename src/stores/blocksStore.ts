@@ -8,7 +8,8 @@ import type {
   CreateAttachmentArgs,
 } from '@/lib/db/attachments';
 import * as db from '@/lib/db/blocks';
-import type { Block, CreateBlockArgs } from '@/lib/db/blocks';
+import type { Block, CreateBlockArgs, IncomingRef, RefKind } from '@/lib/db/blocks';
+import { quoteIsInBlock } from '@/lib/blocks/quoteFold';
 import { computeMergedFields } from '@/lib/db/blocks';
 import {
   buildCreateUndo,
@@ -30,7 +31,32 @@ interface BlocksState {
   // v2.8 §20.1: multi-select state for the merge action. Global (single set), cleared
   // on thread switch so a stale selection from a previous thread can't survive.
   selectedBlockIds: Set<string>;
+  /** F2 §3.2 ① —— 「**谁引用了我**」，按被引块的 id 存。
+   *
+   *  ⚠️ 和 `byThread` 不一样，它**不是按项目分区的**：入向边可以来自任何项目
+   *  （真库 58 条边 30 条跨项目），⛔ 所以别按 threadId 收拾这个 map。
+   *  一次 `load` 把当前项目每一块的入向边一起取回来（一次查询，见
+   *  `listIncomingRefsForTargets` 上面那段为什么不能一块一问）。
+   *  取不到 = 没人引用它。 */
+  incomingByBlock: Record<string, IncomingRef[]>;
   load: (threadId: string) => Promise<void>;
+  /** 重新取一个项目的入向边。三个动作改完关系后调它 —— ⛔ 改的是**别的项目**里那一行时，
+   *  `byThread` 那一份也可能过期，所以动作自己还要 `load` 引用方所在的项目。 */
+  reloadIncoming: (threadId: string) => Promise<void>;
+  /** F2 §3.2 ③ 动作一「保留为历史引用」—— 关系不变，永久记住用户已经审过。
+   *  ⛔ 它**不让被引块重新有效**，pack 里那一行照旧写「已不作数」（§3.3 小决定一）。 */
+  keepAsHistoricalRef: (citingId: string, citedStaleAt: number) => Promise<void>;
+  /** F2 §3.2 ③ 动作二「改引当前块」—— 把引用指到用户挑的那一块上。
+   *
+   *  ⛔⛔ `corrects` 改引时**必须重验 `corrected_quote`**：原来那句逐字未必存在于新目标里。
+   *  验不过就**不写**，返回 `'quote-missing'`，由界面决定降成普通引用还是放弃这次改引。
+   *  ⚠️ 用的是库里已有的那把尺子（`quoteIsInBlock`），⛔ 别在这儿新写第二把 ——
+   *  尤其⛔ 别顺手 `.trim()`，首尾空白也算，放宽之后测试照样绿。 */
+  repointRef: (
+    citingId: string,
+    target: Block,
+    opts?: { degradeToCite?: boolean },
+  ) => Promise<'ok' | 'quote-missing'>;
   append: (args: CreateBlockArgs) => Promise<Block>;
   togglePin: (id: string) => Promise<void>;
   remove: (id: string) => Promise<void>;
@@ -145,6 +171,29 @@ const patchBlock = (
   set({ byThread: next });
 };
 
+/** 一块**现在**在哪个项目里 —— 只在已经加载过的项目里找。
+ *  null / 找不到都返回 undefined，调用方按「那个项目没打开过，不用刷」处理。 */
+const threadIdOf = (get: () => BlocksState, blockId: string | null | undefined): string | undefined =>
+  blockId == null
+    ? undefined
+    : Object.values(get().byThread)
+        .flat()
+        .find((b) => b.id === blockId)?.threadId;
+
+/** 把这几个项目的入向边重刷一遍。去重、跳过 undefined。
+ *
+ *  ⚠️ 存在的理由是 F2 的三个动作**每一个都同时影响两三个项目**：引用方所在的、
+ *  原来被引方所在的、新被引方所在的。⛔ 只刷一个的话，跨项目那一半改完界面不动
+ *  （真库 58 条边里 30 条跨项目，所以这是常态不是边角）。 */
+const refreshIncomingFor = async (
+  get: () => BlocksState,
+  threadIds: (string | undefined)[],
+): Promise<void> => {
+  for (const id of new Set(threadIds.filter((x): x is string => !!x))) {
+    await get().reloadIncoming(id);
+  }
+};
+
 export const useBlocksStore = create<BlocksState>((set, get) => {
   // v2.7: extract text for one file attachment, persist the result, and patch it into
   // the by-block index so an open thread / a later Pack reflects the text. Never throws —
@@ -178,6 +227,7 @@ export const useBlocksStore = create<BlocksState>((set, get) => {
   return {
     byThread: {},
     attachmentsByThread: {},
+    incomingByBlock: {},
     selectedBlockIds: new Set<string>(),
 
     load: async (threadId) => {
@@ -185,13 +235,80 @@ export const useBlocksStore = create<BlocksState>((set, get) => {
         db.listBlocksByThread(threadId),
         adb.listAttachmentsByThread(threadId),
       ]);
+      // F2 §3.2 ①：这个项目每一块的入向边，**一次查询**取回来。
+      // ⚠️ 必须在 `list` 之后 —— 要拿它的 id 当参数，所以进不了上面那个 Promise.all。
+      const incoming = await db.listIncomingRefsForTargets(list.map((b) => b.id));
       // v15: one project's files replace that project's entry wholesale. There is no
       // per-block bookkeeping left to reconcile — the query already returned exactly the
       // set that belongs here.
       set((s) => ({
         byThread: { ...s.byThread, [threadId]: list },
         attachmentsByThread: { ...s.attachmentsByThread, [threadId]: attachments },
+        // ⚠️ 合并进去，⛔ 不整份替换：这个 map 是按**块**存的，里面还有别的项目那些块的边。
+        incomingByBlock: { ...s.incomingByBlock, ...incoming },
       }));
+    },
+
+    /** 改完一条关系之后，把**受影响的那几块**所在的项目重刷一遍入向边。
+     *
+     *  ⛔⛔ 受影响的是**被引方**（它头上的「谁引用了我」变了），⛔ 不是引用方 ——
+     *  而被引方**可以在别的项目里**（真库 58 条边 30 条跨项目）。只刷引用方那个项目，
+     *  跨项目的那一半改完界面不动，看上去像没生效。
+     *  ⚠️ 项目没打开过（`byThread` 里没有）就跳过 —— 它下次 `load` 时自然是新的。 */
+    reloadIncoming: async (threadId) => {
+      const ids = (get().byThread[threadId] ?? []).map((b) => b.id);
+      if (ids.length === 0) return;
+      const incoming = await db.listIncomingRefsForTargets(ids);
+      set((s) => {
+        // ⚠️ 先把这几块的旧条目清掉再合并 —— 一条边被**移除**之后，
+        // 查询不会再返回它，光合并的话它会永远留在 map 里（界面上删不掉）。
+        const next = { ...s.incomingByBlock };
+        for (const id of ids) delete next[id];
+        return { incomingByBlock: { ...next, ...incoming } };
+      });
+    },
+
+    keepAsHistoricalRef: async (citingId, citedStaleAt) => {
+      const citing = Object.values(get().byThread)
+        .flat()
+        .find((b) => b.id === citingId);
+      await db.setRefReviewed(citingId, citedStaleAt);
+      patchBlock(set, get, citingId, { refReviewedStaleAt: citedStaleAt });
+      // ⚠️ 刷的是**被引方**那个项目：变的是它头上那条边的「等着你看一眼」记号。
+      await refreshIncomingFor(get, [citing?.threadId, threadIdOf(get, citing?.refBlockId)]);
+    },
+
+    repointRef: async (citingId, target, opts) => {
+      const citing = Object.values(get().byThread)
+        .flat()
+        .find((b) => b.id === citingId);
+      if (!citing) return 'ok';
+      let kind: RefKind | null = citing.refKind;
+      let quote = citing.correctedQuote;
+      if (citing.refKind === 'corrects' && quote) {
+        // ⛔⛔ §3.3 五：逐字重验，用库里那把尺子。验不过**不写库** ——
+        // 一条指得对、瞄准处却不存在的更正，比没有关系更难发现。
+        if (!quoteIsInBlock(quote, target.content)) {
+          if (!opts?.degradeToCite) return 'quote-missing';
+          // 用户选了降级：关系降成普通引用，那一句跟着走（它只属于 `corrects`）。
+          kind = null;
+          quote = null;
+        }
+      }
+      await db.repointCitation(citingId, target.id, kind, quote);
+      patchBlock(set, get, citingId, {
+        refBlockId: target.id,
+        refKind: kind,
+        correctedQuote: quote,
+        refReviewedStaleAt: null,
+      });
+      // 三个项目都可能受影响：引用方的、**原来**被引的、**新**被引的。
+      await refreshIncomingFor(get, [
+        citing.threadId,
+        threadIdOf(get, citing.refBlockId),
+        target.threadId,
+      ]);
+      return 'ok';
     },
 
     append: async (args) => {
@@ -317,8 +434,20 @@ export const useBlocksStore = create<BlocksState>((set, get) => {
     // retired for three other reasons would be this feature guessing on their behalf —
     // exactly what §3.1 keeps AI out of. 「这条不作数了」 on the target is the way back.
     clearSupersession: async (id) => {
+      // ⚠️ 先记下它**原来**指着谁 —— 清完就问不出来了，而要刷的正是那一块所在的项目。
+      const before = Object.values(get().byThread)
+        .flat()
+        .find((b) => b.id === id);
       await db.setBlockSupersession(id, null, null, Date.now());
-      patchBlock(set, get, id, { refBlockId: null, refKind: null, correctedQuote: null });
+      // ⚠️ v29：`setBlockSupersession` 顺手把 `ref_reviewed_stale_at` 也清了（那条确认
+      // 说的是「我看过那一块退役了」，关系都没了就无从确认起），本地这一份要跟上。
+      patchBlock(set, get, id, {
+        refBlockId: null,
+        refKind: null,
+        correctedQuote: null,
+        refReviewedStaleAt: null,
+      });
+      await refreshIncomingFor(get, [before?.threadId, threadIdOf(get, before?.refBlockId)]);
     },
 
     // 2026-08-19 (Ocean): the manual half of 「入口两种」. The AI's half already existed
@@ -612,6 +741,12 @@ export const useBlocksStore = create<BlocksState>((set, get) => {
           // v28：摘要跟着来了，「谁写的」就必须跟着来。丢了 = null = 按 'ai' 待，
           // 于是用户在源项目里亲手写的那句摘要，一到目标项目就能被 `set_block_gist` 盖掉。
           gistBy: src.gistBy,
+          // ⚠️ v29（F2 §3.2 ④）：**「已经审过」不跟着复制走** —— 和 `originalContent`
+          // 同一类，⛔ 不是 `refNote` / `correctedQuote` 那一类。那两个是**关系的内容**，
+          // 而这一个是**用户在某一行上做过的动作**。抄过来等于替他在一个他还没看过的项目里
+          // 按下了「我知道了」，正是 §3.2 ④ 要挡的「错误继承」。
+          // 代价是他在目标项目里多点一次「我知道了」；反过来那一条边**永远不出现**。
+          refReviewedStaleAt: null,
           // ⚠️ v24：**原文备份不跟着复制走。** 复制出来的是一块新块，它自己从来没被压过；
           // 把源块的压缩前原文抄过来，会让「回 Spool 拿原始信息」指向一块并不是它的原文。
           originalContent: null,

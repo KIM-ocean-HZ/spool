@@ -113,6 +113,8 @@ export default function WorkspacePackHost() {
               annotation: b.annotation,
               annotationIsAi: annotationIsAi(b.annotationBy, b.source),
               createdAt: b.createdAt,
+              // ⛔ 2026-08-30：和 `forThread.ts` 同一条 —— 退役的被引块不打预览。
+              stale: b.staleAt !== null,
             },
           ]),
         ),

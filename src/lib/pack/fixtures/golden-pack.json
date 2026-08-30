@@ -215,6 +215,21 @@
       "createdAt": 1749999900000,
       "seq": 13,
       "correctedQuote": null
+    },
+    {
+      "id": "b14",
+      "threadId": "t1",
+      "kind": "text",
+      "content": "选校那份名单里的申请路径核验:外校申请走 MASc,SM 只对本校本科生开放",
+      "annotation": null,
+      "annotationBy": null,
+      "refThreadId": null,
+      "refBlockId": "b-retired",
+      "source": "Codex · MCP",
+      "pinned": false,
+      "createdAt": 1749999960000,
+      "seq": 14,
+      "correctedQuote": null
     }
   ],
   "attachments": [
@@ -270,12 +285,19 @@
     },
     "b9": {
       "content": "招生页面写着截止 4 月 30 日,按这个排进度",
-      "createdAt": 1749999100000
+      "createdAt": 1749999100000,
+      "stale": true
     },
     "b-other": {
       "content": "实验设计里的原始记录:baseline 复现用的是 seed=42",
       "createdAt": 1746540000000,
       "foreignTitle": "实验设计"
+    },
+    "b-retired": {
+      "content": "旧的那份 15 所选校名单:冲刺层 8 所,目标层 7 所",
+      "annotation": "这一版是 5 月定的",
+      "createdAt": 1746550000000,
+      "stale": true
     }
   }
 }

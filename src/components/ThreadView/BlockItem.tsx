@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { createPortal } from 'react-dom';
 import { flushSync } from 'react-dom';
 import { annotationEdited, annotationIsAi } from '@/lib/blocks/annotationAuthor';
-import { ContentRuns } from '@/lib/blocks/contentRuns';
+import { ContentRuns, plainText } from '@/lib/blocks/contentRuns';
 import { applyBlockFormat, formatAt, type BlockFormat } from '@/lib/blocks/format';
 import { MarkdownContent } from '@/lib/blocks/MarkdownContent';
 import { isHighlightable, rangeIsHighlighted, toggleHighlightRange } from '@/lib/blocks/highlight';
@@ -10,7 +10,7 @@ import { locateQuote } from '@/lib/blocks/quoteFold';
 import { hasSegmentAnnotations } from '@/lib/blocks/segments';
 import { rawRangeFromSelection } from '@/lib/blocks/selectionRange';
 import { SegmentedContent } from '@/lib/blocks/SegmentedContent';
-import type { Block } from '@/lib/db/blocks';
+import type { Block, IncomingRef } from '@/lib/db/blocks';
 import { correctionsBySource, type Correction } from '@/lib/pack/assemble';
 import type { HitOffset } from '@/lib/search/query';
 import { isImeComposing } from '@/lib/utils/ime';
@@ -28,9 +28,15 @@ import BlockActions from './BlockActions';
 import CitationLine from './CitationLine';
 import CorrectedByLine from './CorrectedByLine';
 import CorrectionNote from './CorrectionNote';
+import ProvenanceLine from './ProvenanceLine';
 import RefBlockItem from './RefBlockItem';
 import SeqBadge from './SeqBadge';
 import SourceBadge from './SourceBadge';
+
+/** ⚠️ 稳定的空数组：`incomingByBlock[id]` 取不到时返回它，⛔ 不是 `[]` 字面量 ——
+ *  每次 render 新建一个数组会让 zustand 的选择器每次都判定「变了」，
+ *  于是每一块每一帧都重渲染。这是 2026-08-05 那次 React #185 打死主窗的同一类问题。 */
+const EMPTY_INCOMING: IncomingRef[] = [];
 
 interface Props {
   block: Block;
@@ -330,6 +336,36 @@ function TextBlockItem({
   // practice. Truncation still EXISTS (`needsTruncation`, the 收起 button) — it is now
   // opt-in per block instead of the default for every block.
   const [collapsed, setCollapsed] = useState(false);
+  // ⭐⭐ 2026-08-30（Ocean：「不作数的 block 需要自动折叠最小化」）—— 退役块**默认折到一行**。
+  //
+  // ⛔⛔ **不能沿用上面那个 `collapsed`**，这是他拍板「折到一行」而不是「默认走 6 行 clamp」
+  // 的原因：那一套有 `needsTruncation` 一道闸，而那道闸问的是「正文比**整个视口**还高吗」
+  // （`measure()` 拿的是滚动容器的 clientHeight）。真库四个退役块是 14 / 11 / 1 / 1 行，
+  // **一个都过不了那道闸** ⇒ 沿用的话这个功能等于没做，而且看不出来没做。
+  //
+  // ⚠️ 折起来的时候留着的是「不作数」那一行**加上头部那一行**（编号 / 时间 / 来源 / 动作条），
+  // ⛔ 动作条不许一起折走 —— 「取回」就在那儿（`onToggleStale`），
+  // 一个折叠状态如果把「撤销这次折叠的起因」也藏了，用户就只能先展开再取回。
+  const [staleOpen, setStaleOpen] = useState(false);
+
+  // 退役块此刻是不是折着的。
+  // ⚠️ `isNavTarget` / `highlight` 一票否决，和 `showCollapsed` 逐字同一条理由：
+  // 查找命中和「点引用跳过来」都是**有人正指着这一块**，而折着的块什么都看不见 ——
+  // 用户会以为跳错了地方。⛔ 这一条别删。
+  const staleFolded = block.staleAt != null && !staleOpen && !isNavTarget && !highlight;
+
+  // F2 §3.2 ①：指进这一块的边。⚠️ 一次 `load` 已经把整个项目的都取回来了
+  // （`listIncomingRefsForTargets`），⛔ 这里不再自己查库 —— 一块一查等于每开一个项目
+  // 就是 N 次往返，而其中绝大多数返回空（全库 543 块，只有 58 条边）。
+  const incoming = useBlocksStore((s) => s.incomingByBlock[block.id]) ?? EMPTY_INCOMING;
+
+  // 折起来那一行右边挂的一句话。⛔ 梯子只有两级（`gist` → 批注），**没有「退回正文前 N 字」**
+  // 那一级 —— `CitationLine` 2026-08-25 刚把它去掉，理由一字不差地适用：
+  // Ocean 说「这个文字没有用，显示不全」。两级都空就什么都不显示，只剩编号和时间。
+  const staleFoldSummary = useMemo(
+    () => plainText((block.gist?.trim() || block.annotation?.trim()) ?? ''),
+    [block.gist, block.annotation],
+  );
   // Whether the block's current expanded state came from the user pressing 展开全部,
   // as opposed to just being the default. Only the former re-folds on outside-click —
   // see the auto-collapse effect below for why that distinction is load-bearing.
@@ -407,7 +443,10 @@ function TextBlockItem({
     // The cap moves with the window, so the answer has to be recomputed when it does.
     window.addEventListener('resize', measure);
     return () => window.removeEventListener('resize', measure);
-  }, [block.content, editingContent]);
+    // ⚠️ `staleFolded` 在这里，是因为被量的那个节点**就在折起来的那一段里** ——
+    // 折着的时候 `measureRef.current` 是 null，`measure()` 直接返回，`needsTruncation`
+    // 停在旧值上。展开的那一下必须重量一次，否则一块很长的退役块展开后没有「收起」。
+  }, [block.content, editingContent, staleFolded]);
 
   // v2.9 §9.10 / §19.17: while this block owns the active search navigation,
   // override the collapsed truncation so every hit is visible (auto-expand).
@@ -415,7 +454,6 @@ function TextBlockItem({
   // override is read-only on `collapsed`, not a write, so the prior value is
   // preserved. Also gated on needsTruncation so short blocks never get clamped/faded.
   const showCollapsed = collapsed && needsTruncation && !isNavTarget;
-
   // Search-navigation also triggers the active-block tint per §13.3, so the
   // destination block reads orientation just like any other deliberate action.
   useEffect(() => {
@@ -1002,11 +1040,39 @@ function TextBlockItem({
           The row says which, because the block looking normal is the failure mode: the
           user would keep reading a conclusion they had already retired. */}
       {block.staleAt != null && (
-        <div className="mb-1 font-ui text-[11px] text-muted">
-          {t('已标记「不作数了」· {when} 起不再进上下文（还在库里，搜得到）', {
-            when: formatBlockTime(block.staleAt),
-          })}
-        </div>
+        // ⭐⭐ 2026-08-30（Ocean）：这一行同时成了**折叠的把手**。
+        // ⚠️ 折起来的时候它是这一块**唯一说得出内容的一行**，所以要带上一句摘要 ——
+        // 只剩「已标记不作数了」的话，一屏退役块长得一模一样，用户认不出哪块是哪块。
+        // ⛔ 那一句取 `gist` / 批注，**不退回正文前 N 字** —— `CitationLine` 08-25 刚
+        // 因为同一件事把正文那一级去掉了（Ocean：「这个文字没有用，显示不全」）。
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            setActive(block.id);
+            setStaleOpen((v) => !v);
+          }}
+          aria-expanded={!staleFolded}
+          title={staleFolded ? t('点一下展开') : t('点一下折起来')}
+          className="mb-1 flex w-full items-baseline gap-1.5 text-left font-ui text-[11px] text-muted transition-colors hover:text-ink-2"
+        >
+          <span aria-hidden="true" className="shrink-0 opacity-60">
+            {staleFolded ? '›' : '⌄'}
+          </span>
+          <span className="shrink-0">
+            {t('已标记「不作数了」· {when} 起不再进上下文（还在库里，搜得到）', {
+              when: formatBlockTime(block.staleAt),
+            })}
+          </span>
+          {staleFolded && staleFoldSummary && (
+            <>
+              <span aria-hidden="true" className="shrink-0 opacity-40">
+                ·
+              </span>
+              <span className="min-w-0 truncate text-ink-2">{staleFoldSummary}</span>
+            </>
+          )}
+        </button>
       )}
 
       <div className="mb-1 flex items-center gap-2 text-[10px] text-muted">
@@ -1106,6 +1172,13 @@ function TextBlockItem({
           have none and would have carried a blank headline over demoted prose.
           ⚠️ 2026-08-25 起「someone」包括 AI（Ocean 拍的，见 annotationView 上面那段）——
           谁写的由标签说，不再由位置说。 */}
+      {/* ⭐⭐ 2026-08-30（Ocean：「不作数的 block 需要自动折叠最小化」）——
+          折起来的时候，**这一块正文以下的一切都不画**：批注标题、正文、引用行、更正卡、
+          压缩前原文。留在屏幕上的只有上面那条「不作数」把手和头部那一行（编号 / 时间 /
+          来源 / 动作条）。
+          ⛔ 编辑面板不在这里面（它在下面那个 portal 里）—— 折叠不该关掉一个开着的编辑器。 */}
+      {!staleFolded && (
+        <>
       {annotationAsTitle && annotationView}
       {annotationAsTitle && noteCorrectionCards}
 
@@ -1280,8 +1353,14 @@ function TextBlockItem({
           refBlockId={block.refBlockId}
           refKind={block.refKind}
           fromThreadId={block.threadId}
+          citing={block}
         />
       )}
+
+      {/* F2 §3.2 ① 的后半句 —— 「**谁引用了我**」。⛔ 这一半在这之前完全看不见，
+          而真库 58 条边里 30 条跨项目，也就是过半的关系在被引的那一头是隐形的。
+          ⚠️ 挨着上面那条出向引用行放：一出一进是同一件事的两个方向，分开两处会读不出来。 */}
+      <ProvenanceLine block={block} incoming={incoming} />
 
       {/* 2026-08-19 — the corrections attached to this block, under the sentence they are about,
           joined to it by the dashed rule in CorrectionNote.
@@ -1389,6 +1468,8 @@ function TextBlockItem({
             <MarkdownContent content={block.originalContent!} />
           </div>
         </div>
+      )}
+        </>
       )}
 
 

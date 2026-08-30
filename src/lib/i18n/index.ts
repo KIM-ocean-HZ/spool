@@ -199,7 +199,45 @@ const EN: Record<string, string> = {
   '引用了': 'cites',
   '在〈{title}〉': 'in “{title}”',
   '在别的项目里': 'in another project',
+  // ⛔ 2026-08-30：被引的那一块已经退役 —— 这一行在此之前说不出这件事。
+  // ⭐ 用词跟着退役块自己头上那一行走（「已标记『不作数了』」），⛔ 不另起名字。
+  '已不作数': 'no longer valid',
   '引用的块已删除': 'Cited block no longer exists',
+
+  // ⭐⭐ F2（Ocean 2026-08-30）—— 块级「来龙去脉」：**谁引用了我**，以及待审的三个动作。
+  // ⚠️ 入向的三个动词是**方向相反的同一组事**，⛔ 不是上面那三个的重复：
+  // 上面站在引用方说「我引用了 / 我整条取代了」，这里站在被引方说「谁引用了我」。
+  '{n} 处引用了这一块': '{n} blocks cite this one',
+  '引用了这一块': 'cites this',
+  '更正了这里的一处': 'corrects a point here',
+  '整条取代了这一块': 'replaces this whole block',
+  // ⛔ 施工单原话：「没有就明确写『未记录为什么引用』」—— 留白读不出「是没人写」
+  // 还是「界面没显示」，而真库 58 条边 `ref_note` 一条都没有。
+  '未记录为什么引用': 'no reason recorded',
+  '其中 {n} 处引的是已经不作数的内容，等你看一眼': '{n} of them cite something that no longer holds — worth a look',
+  // 待审的三个动作。⛔ 「移除引用」只清关系，一个块都不删。
+  '关系待审': 'Citations to review',
+  '引的这一块已经不作数了 —— ': 'What this cites no longer holds — ',
+  '保留为历史引用': 'Keep as a historical citation',
+  '改引当前块': 'Point it somewhere else',
+  '移除引用': 'Remove the citation',
+  '点进去，在那一块下面选：保留、改引，或者移除': 'Open one — the choices sit under that block: keep, re-point, or remove',
+  '更正了': 'corrects',
+  '已改引': 'Citation re-pointed',
+  '已改引，并降成普通引用': 'Re-pointed, and downgraded to a plain citation',
+  // ⛔⛔ §3.3 五：`corrects` 改引之后原来那句逐字未必存在于新目标里，验不过就停下来问。
+  // ⚠️ 停下来问用的是界面上的一格，⛔ 不是原生对话框。
+  '这条更正瞄准的那一句，在新的那一块里找不到。': 'The sentence this correction aims at is not in the new block.',
+  '对得上才算 —— 一个字、一个空格都不能差。': 'It has to match exactly — every character, spaces included.',
+  '照样改，降成普通引用': 'Re-point anyway, as a plain citation',
+  '（那一句不再跟着走）': '(the quoted sentence is dropped)',
+  '算了，另挑一块': 'Never mind — pick a different block',
+  // 目标选择器。⛔ 不预选任何一行 —— 不自动猜新目标，也不沿 supersede 链跳。
+  '搜一块，或者从下面挑一块': 'Search for a block, or pick one below',
+  '没有可选的块': 'Nothing to pick',
+  // ⭐⭐ 2026-08-30（Ocean）：不作数的块默认折到一行。
+  '点一下展开': 'Click to open',
+  '点一下折起来': 'Click to fold',
 
   // DESIGN_CONTEXT_HYGIENE §3.1 — supersession. The wording carries the whole promise:
   // a retired block leaves the CONTEXT, not the library, and every string here has to say
@@ -1320,8 +1358,16 @@ const EN: Record<string, string> = {
   // 引用行的动词统一成同一个词），「什么都不动」→「不动」（他的话：字太多）。
   // ⚠️ 这两个中文串是**键**，改键等于改调用点 —— `Compress/StaleReview.tsx` 必须同一次改完。
   // ⭐ S2（2026-08-24）：AI 提的「整条取代」并进这张卡，卡上要说清是谁提的。
+  // ⭐⭐ 2026-08-30（Ocean 拍板）：**「合并」→「更正一处」**。
+  // ⛔ 不是措辞洁癖：`合并` 这两个字当时在**两个地方指两件完全不同的事** ——
+  // 这里点一下只写一条 `corrects` 关系（**两块都留着、正文一个字不动**），
+  // 而内容页多选那个「合并」走 `mergeBlocks`：正文拼进最早那块、**其余块删掉**。
+  // ⇒ 撞的正是 Ocean 自己定的 S1 规矩「屏幕上这件事只许有一个名字」。
+  // ⚠️ `'合并': 'Merge'`（本文件上面那条）**留着不动** —— 那条现在只归内容页
+  // `MergeToolbar.tsx` 用，它才是真的把块合成一块。
   '{who} 提的': 'proposed by {who}',
   '聊天里提的': 'proposed in a chat',
+  '更正一处': 'Correct one point',
   '整条取代': 'Replace in full',
   '不动': 'Leave alone',
   '两块都留着，只在 #{n} 上记一句「它更正了 #{m}」。打包的时候两块还是都在，不会因此变短。':
@@ -1332,8 +1378,8 @@ const EN: Record<string, string> = {
     'From now on packs carry #{n} only; #{m} is left out (it is not deleted \u2014 it stays in the project and is still searchable). \u26a0\ufe0f #{m} is short: leaving it out actually makes the pack a little longer, because the \u201creplaced\u201d line that stands in for it is longer than the block itself.',
   '这两块保持原样，库里一个字都不改，这一条从单子上划掉。':
     'Both blocks stay as they are, nothing in your library changes, and this line is struck off.',
-  '已合并：两块都留着，#{n} 上记了一句「它更正了 #{m}」。':
-    'Merged: both blocks stay, and #{n} now carries a note saying it corrects #{m}.',
+  '已更正一处：两块都留着，#{n} 上记了一句「它更正了 #{m}」。':
+    'Corrected one point: both blocks stay, and #{n} now carries a note saying it corrects #{m}.',
   '已换：以后打包只带 #{n}，#{m} 不再放进去。':
     'Replaced: packs now carry #{n} only; #{m} is left out.',
   // ⭐⭐ 2026-08-23（Ocean 第 8 条「不允许」Spool 知道而不告诉他）：没过闸的那几条也要摆出来。

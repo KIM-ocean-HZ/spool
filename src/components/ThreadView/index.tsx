@@ -61,7 +61,7 @@ export default function ThreadView() {
   const loadProposedStale = useCompressStore((s) => s.loadProposedStale);
   /** 这个项目那张卡上一共有几条（**含已经决定过的**）。
    *  ⚠️ 用它而不是 `staleLeft` 决定页签条出不出：决定完最后一条的那一刻 `staleLeft` 归零，
-   *  ⛔ 页签会在用户眼皮底下消失，而他刚刚才点了那一下、还想看到「已换 / 已合并」那句回执。
+   *  ⛔ 页签会在用户眼皮底下消失，而他刚刚才点了那一下、还想看到「已换 / 已更正一处」那句回执。
    *  已决定的那几条留在单子上（划掉，不删）——那是 E3 定的，这里跟着它。 */
   const staleAny = useCompressStore((s) =>
     activeId ? (s.stale[activeId]?.proposals.length ?? 0) : 0,

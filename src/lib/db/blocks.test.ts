@@ -11,8 +11,11 @@ import {
   countUserWrittenChars,
   createBlock,
   deleteBlock,
+  getBlockById,
   listBlocksByThread,
   listCapturesSince,
+  listIncomingRefsForTargets,
+  listPendingRefReviews,
   mergeBlocks,
   restoreBlock,
   applyCompression,
@@ -20,6 +23,8 @@ import {
   setBlockStale,
   setBlockSupersession,
   setCorrectedQuote,
+  setRefReviewed,
+  repointCitation,
   togglePin,
   updateBlockGist,
 } from './blocks';
@@ -449,6 +454,26 @@ describe('blockStatsByThread', () => {
     expect(stats[b.id]).toEqual({ blocks: 1, chars: 1 });
   });
 
+  // ⭐⭐ 2026-08-30（Ocean：「在项目总字数里面，把不计数的字数给去掉」）。
+  // 这一行写着「打包出来有多大」，而退役块**根本不进 pack**
+  // （`assemble.ts`：`allBlocks.filter(b => b.staleAt == null)`）——
+  // 在这之前它报的是一份打不出来的 pack。
+  it('⛔ 已经不作数的块一个字都不算进字数', async () => {
+    const ws = await createWorkspace('W');
+    const a = await createThread(ws.id, 'A');
+    await createBlock({ threadId: a.id, content: '12345', annotation: '123' }); // 8
+    const retired = await createBlock({ threadId: a.id, content: '9999999999' }); // 10
+    await setBlockStale(retired.id, 111);
+
+    const stats = await blockStatsByThread();
+    // ⚠️ **块数照旧算全部** —— 他要去掉的是字数。那一块还在项目里、还搜得到、还占着一行。
+    expect(stats[a.id]).toEqual({ blocks: 2, chars: 8 });
+
+    // 取回来 ⇒ 字数跟着回来。
+    await setBlockStale(retired.id, null);
+    expect((await blockStatsByThread())[a.id]).toEqual({ blocks: 2, chars: 18 });
+  });
+
   it('leaves an empty project out of the map rather than reporting a zero row', async () => {
     // The board reads `stats[id] ?? EMPTY_STATS`, so absence and zero render the same —
     // but a GROUP BY cannot invent a row for a thread with no blocks, and pretending it
@@ -817,5 +842,152 @@ describe('Q4 · 用户自己写块摘要', () => {
     await updateBlockGist(id, '先写一句');
     await updateBlockGist(id, '   ');
     expect(readGist(id)).toEqual({ gist: null, gist_by: 'user' });
+  });
+});
+
+// ⭐⭐ F2 §3.2（Ocean 2026-08-30）—— 块级「来龙去脉」的库那一层。
+describe('provenance graph (v29)', () => {
+  let sqlite: Sqlite;
+
+  beforeEach(() => {
+    sqlite = new DatabaseSync(':memory:');
+    sqlite.exec(schemaSql);
+    __setTestDb(makeAdapter(sqlite));
+  });
+
+  afterEach(() => {
+    __setTestDb(null);
+    sqlite.close();
+  });
+
+  /** 两个项目，四块 —— ⚠️ 故意做成**跨项目**：真库 58 条边里 30 条跨项目，
+   *  只在一个项目里测，测不到这个功能实际跑的那一半。 */
+  const seed = async () => {
+    const ws = await createWorkspace('W');
+    const a = await createThread(ws.id, '申请规划');
+    const b = await createThread(ws.id, '申请帮助');
+    const target = await createBlock({ threadId: a.id, content: '旧结论' });
+    const sameProject = await createBlock({ threadId: a.id, content: '本项目引用它' });
+    const crossProject = await createBlock({ threadId: b.id, content: '别的项目引用它' });
+    return { a, b, target, sameProject, crossProject };
+  };
+
+  it('⛔ 「谁引用了我」是全库反查，跨项目那一条也回来', async () => {
+    const { a, b, target, sameProject, crossProject } = await seed();
+    // ⚠️ 直接写库，⛔ 不走 `setBlockSupersession` —— 那一个传 `kind: null` 的语义是
+    // 「**清掉**这条关系」（`ref_block_id` 一起置空），而 `cites` 恰恰是
+    // `ref_kind` 为 null **但 `ref_block_id` 有值** 的那一种。
+    for (const id of [sameProject.id, crossProject.id]) {
+      sqlite.prepare('UPDATE blocks SET ref_block_id = ? WHERE id = ?').run(target.id, id);
+    }
+
+    const map = await listIncomingRefsForTargets([target.id]);
+    const ids = (map[target.id] ?? []).map((e) => e.id).sort();
+    expect(ids).toEqual([crossProject.id, sameProject.id].sort());
+    // 项目名跟着回来 —— 界面要说出「在〈申请帮助〉」。
+    const cross = map[target.id]!.find((e) => e.id === crossProject.id)!;
+    expect(cross.threadId).toBe(b.id);
+    expect(cross.threadTitle).toBe('申请帮助');
+    void a;
+  });
+
+  it('没人引用的块不在结果里（调用方按「没有入向边」读）', async () => {
+    const { target, sameProject } = await seed();
+    expect(await listIncomingRefsForTargets([target.id, sameProject.id])).toEqual({});
+    expect(await listIncomingRefsForTargets([])).toEqual({});
+  });
+
+  it('待审队列：引用方 live + 被引已退役 + 非 supersedes + 没审过', async () => {
+    const { a, target, sameProject } = await seed();
+    await sqlite
+      .prepare('UPDATE blocks SET ref_block_id = ? WHERE id = ?')
+      .run(target.id, sameProject.id);
+
+    // 被引块还有效 ⇒ 队列是空的。
+    expect(await listPendingRefReviews()).toEqual([]);
+
+    await setBlockStale(target.id, 111);
+    const pending = await listPendingRefReviews();
+    expect(pending).toHaveLength(1);
+    expect(pending[0]!.citing.id).toBe(sameProject.id);
+    expect(pending[0]!.cited.id).toBe(target.id);
+    // ⚠️ 按项目筛的是**引用方**的项目 —— 要动手的是引用方那一行。
+    expect(await listPendingRefReviews(a.id)).toHaveLength(1);
+  });
+
+  it('⛔ supersedes 指着一块已退役的块不进队列 —— 那是正常状态', async () => {
+    const { target, sameProject } = await seed();
+    await setBlockSupersession(sameProject.id, target.id, 'supersedes', 111);
+    // `setBlockSupersession` 自己就把目标退役了。
+    expect(await listPendingRefReviews()).toEqual([]);
+  });
+
+  it('§3.2 ④ ①：审过之后不再重复询问', async () => {
+    const { target, sameProject } = await seed();
+    await sqlite
+      .prepare('UPDATE blocks SET ref_block_id = ? WHERE id = ?')
+      .run(target.id, sameProject.id);
+    await setBlockStale(target.id, 111);
+
+    await setRefReviewed(sameProject.id, 111);
+    expect(await listPendingRefReviews()).toEqual([]);
+  });
+
+  // ⛔⛔ 布尔在这一条上会答错，而这条**走的是日常路径**：退役按钮是个纯开关。
+  it('§3.2 ④ ③：目标恢复有效、以后又重新退役 ⇒ 重新进待审', async () => {
+    const { target, sameProject } = await seed();
+    await sqlite
+      .prepare('UPDATE blocks SET ref_block_id = ? WHERE id = ?')
+      .run(target.id, sameProject.id);
+    await setBlockStale(target.id, 111);
+    await setRefReviewed(sameProject.id, 111);
+
+    await setBlockStale(target.id, null); // 取回来
+    expect(await listPendingRefReviews()).toEqual([]);
+    await setBlockStale(target.id, 333); // 又退了一次 —— 是新的一次
+    expect(await listPendingRefReviews()).toHaveLength(1);
+  });
+
+  // ⛔⛔ §3.2 ④ ②：改到别处**不继承**确认。
+  it('§3.2 ④ ②：改引之后，确认作废', async () => {
+    const { a, target, sameProject } = await seed();
+    const other = await createBlock({ threadId: a.id, content: '另一块' });
+    await sqlite
+      .prepare('UPDATE blocks SET ref_block_id = ? WHERE id = ?')
+      .run(target.id, sameProject.id);
+    await setBlockStale(target.id, 111);
+    await setRefReviewed(sameProject.id, 111);
+    expect(await listPendingRefReviews()).toEqual([]);
+
+    await repointCitation(sameProject.id, other.id, null, null);
+    const row = await getBlockById(sameProject.id);
+    expect(row!.refBlockId).toBe(other.id);
+    expect(row!.refReviewedStaleAt).toBeNull();
+  });
+
+  it('重新声明关系（含清掉关系）也会作废确认', async () => {
+    const { target, sameProject } = await seed();
+    await sqlite
+      .prepare('UPDATE blocks SET ref_block_id = ?, ref_reviewed_stale_at = 111 WHERE id = ?')
+      .run(target.id, sameProject.id);
+
+    await setBlockSupersession(sameProject.id, null, null, Date.now());
+    const row = await getBlockById(sameProject.id);
+    expect(row!.refBlockId).toBeNull();
+    expect(row!.refReviewedStaleAt).toBeNull();
+  });
+
+  // ⛔ 「移除引用」不删任何块，也不取消目标的退役状态。
+  it('清掉关系之后，两块都还在，目标照旧是退役的', async () => {
+    const { target, sameProject } = await seed();
+    await sqlite
+      .prepare('UPDATE blocks SET ref_block_id = ? WHERE id = ?')
+      .run(target.id, sameProject.id);
+    await setBlockStale(target.id, 111);
+
+    await setBlockSupersession(sameProject.id, null, null, Date.now());
+    expect(await getBlockById(target.id)).not.toBeNull();
+    expect((await getBlockById(target.id))!.staleAt).toBe(111);
+    expect(await getBlockById(sameProject.id)).not.toBeNull();
   });
 });

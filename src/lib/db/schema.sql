@@ -290,7 +290,26 @@ CREATE TABLE IF NOT EXISTS blocks (
   -- NULL = 不知道,也就是 v28 之前写的每一行。⚠️ 那些**全是 AI 写的**(v26–v27 期间
   -- `gist` 只有 `add_block` 一条写入路径),所以读的时候按 'ai' 待,⛔ 但不回填 ——
   -- 迁移不写用户数据(2026-05-29 抹库那一类),用户第一次自己改摘要时这一行自愈成 'user'。
-  gist_by TEXT
+  gist_by TEXT,
+  -- v29 (F2 施工单 §3.2 ④, Ocean 2026-08-30)：**这条引用的「已经审过」记号。**
+  --
+  -- 存的是「用户按下『我知道了』的那一刻,**被引的那一块** `stale_at` 是多少」——
+  -- ⛔ 不是一个布尔。三件事必须同时成立,而只有「对方当时退役在哪一刻」这一个值同时给得出:
+  --   ① 下次打开不再重复问 → 记住的值 == 对方现在的 `stale_at`;
+  --   ② 引用改到别处**不继承**确认 → `setBlockSupersession` 改写 `ref_block_id` 时
+  --      顺手把这一列清空(那条确认说的是「我看过**那一块**退役了」,换了目标就作废);
+  --   ③ 对方恢复有效、以后又重新退役 → 新的 `stale_at` 和记住的值不等 → **重新进待审**。
+  --   ⚠️ 布尔在 ② 和 ③ 上都会给错答案,而 ③ 走的是日常路径 ——
+  --   退役按钮是个纯开关(`BlockItem.tsx`,「the action is its own inverse」)。
+  --
+  -- ⚠️ 挂在**声明这条关系的那一行**上,和 `corrected_quote` / `ref_note` 同一个形状:
+  -- 一块只有一条出向关系(`ref_block_id` 是单列),所以不需要第二张表。
+  -- ⛔ 这**不是**「往 blocks 加列」那条规矩的通行证 —— 见上面 `ref_note` 那一段,下次仍要重新问。
+  --
+  -- ⛔ `proposals` **不加这一列**:待审的提案从来没有被审过,那一列在那边恒为 NULL。
+  --
+  -- NULL = 这条引用没被审过(v29 之前的每一行,以及每一条新写的引用)。
+  ref_reviewed_stale_at INTEGER
 );
 
 -- v9 (DESIGN_SCHEMA_V9 H-1): `seq` is the number a human sees and says out loud — "#12"
@@ -306,6 +325,13 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_blocks_thread_seq
 
 CREATE INDEX IF NOT EXISTS idx_blocks_thread
   ON blocks(thread_id, created_at ASC);
+
+-- v29 (F2 §3.3 三)：「**谁引用了我**」是一次**全库反查** —— 引用可以跨项目指
+-- (真库 58 条边里 30 条跨项目,涉及 17 个项目),所以入向边**不能**只在本项目里找,
+-- 也就用不上 `idx_blocks_thread`。在这之前每展开一个块的「来龙去脉」都是一次全表扫描。
+-- ⚠️ 部分索引:`ref_block_id` 全库只有 58 行非空,索引 485 个 NULL 没有意义。
+CREATE INDEX IF NOT EXISTS idx_blocks_ref_block
+  ON blocks(ref_block_id) WHERE ref_block_id IS NOT NULL;
 
 -- Attachment: a file or folder belonging to a PROJECT.
 -- v2.7: `extracted_text` added — for `file` kinds with extractable text (PDF, docx, txt,

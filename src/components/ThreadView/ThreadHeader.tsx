@@ -148,9 +148,21 @@ export default function ThreadHeader({
   // Total character count of what a pack of this thread would carry (see
   // CONTENT_WARN_THRESHOLD). Summing a few hundred strings is nanosecond-scale;
   // memoized only so it doesn't re-run on unrelated header re-renders.
+  //
+  // ⭐⭐ 2026-08-30（Ocean：「在项目总字数里面，把不计数的字数给去掉」）——
+  // **已经标记「不作数了」的块一个字都不算。** 这一行上面那句话本来就写着
+  // 「打包出来会带上多少字」，而退役块**根本不进 pack**
+  // （`assemble.ts`：`allBlocks.filter(b => b.staleAt == null)`）⇒ 在这之前它报的是
+  // 一份**打不出来的** pack。真库〈申请规划〉：35,855 → 32,830。
+  //
+  // ⚠️ 连带影响是对的：`CONTENT_WARN_THRESHOLD`（「内容较多」那句）从此按**真实**
+  // pack 大小报警 —— 退掉几块本来就该让这句话消失，之前不会。
   const charCount = useMemo(() => {
     let n = 0;
-    for (const b of blocks) n += b.content.length + (b.annotation?.length ?? 0);
+    for (const b of blocks) {
+      if (b.staleAt != null) continue;
+      n += b.content.length + (b.annotation?.length ?? 0);
+    }
     // v15: the files are the project's, so they are counted once for the project rather
     // than walked per block.
     for (const a of attachments) {

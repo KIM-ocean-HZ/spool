@@ -18,7 +18,11 @@ import {
 } from '@/lib/ai/compress';
 import { auditCompression, numbersGateOpen } from '@/lib/ai/compress';
 import { addBackNumbers, compareByEntry, worthRetrying } from '@/lib/ai/compressBlocks';
-import { relationAlreadySettled, wouldOverwriteRelation } from '@/lib/blocks/staleGuards';
+import {
+  relationAlreadySettled,
+  supersedeProposalSettled,
+  wouldOverwriteRelation,
+} from '@/lib/blocks/staleGuards';
 import {
   contentFromEntryBody,
   isEmptyHeld,
@@ -221,7 +225,10 @@ interface CompressState {
  *
  *  所以问的是三件事，不是一件：
  *
- *  - `merge`  = **合并**（2026-08-23 Ocean 在两种读法里选的 A）：新块标成「更正了旧块」，
+ *  - `merge`  = 屏幕上叫 **「更正一处」**（2026-08-30 Ocean 拍板改的名；2026-08-23 他在两种
+ *    读法里选的 A，当时叫「合并」—— ⛔ 那个词内容页多选那个**真的删块**的动作也在用，
+ *    同一个词指两件相反的事）。⚠️ 这里的 action 仍然叫 `merge`：**库和 store 的词没跟着改**。
+ *    做的事是：新块标成「更正了旧块」，
  *    ⛔ **旧块不退、正文一个字不改**。用的是库里已经有的那套关系（v13 的 `corrects`），
  *    ⚠️ 代价说清楚：pack 不会因此变短。
  *  - `retire` = **只退旧的**：旧块写 `stale_at` + 新块写 `ref_kind='supersedes'`。
@@ -899,7 +906,7 @@ export const useCompressStore = create<CompressState>((set, get) => ({
       //
       // 实测撞到的是最难看的一种：5 次里最稳的那条提议（4/5）指的关系**库里本来就有**
       // —— `#23` 早就带着 `corrects → #21`。于是用户被要求批准一件他已经批准过的事，
-      // 点「合并」是空操作（pack 一个字符都没变）。
+      // 点「更正一处」是空操作（pack 一个字符都没变）。
       //
       // ⛔ 而另一半更糟：他要是点「只退旧的」，`setBlockSupersession` 会把那条
       // `corrects` **降级成 `supersedes`、把 `#21` 整条退掉** —— 而 `corrects`
@@ -910,6 +917,9 @@ export const useCompressStore = create<CompressState>((set, get) => ({
       for (const b of blocks) if (b.seq !== null) bySeq.set(b.seq, b);
       const settled = (p: (typeof scan.proposals)[number]): boolean =>
         relationAlreadySettled(bySeq.get(p.staleSeq), bySeq.get(p.bySeq));
+      // ⭐ AI 提的那几条走另一把尺子 —— 理由写在 `staleGuards.ts` 上。
+      const proposalSettled = (p: StaleProposal): boolean =>
+        supersedeProposalSettled(bySeq.get(p.staleSeq), bySeq.get(p.bySeq));
       // ⛔ 和压缩那一条同一个道理：按了停下就当没跑过，⛔ 不在这一页立一张红牌。
       if (scan.outcome.kind === 'cancelled') {
         toast.notice(t('已经停下了。已经跑出去的那一段，模型厂商那边可能照样算钱。'));
@@ -920,10 +930,13 @@ export const useCompressStore = create<CompressState>((set, get) => ({
         .map((p) => ({ ...p, origin: 'scan' as const }));
       // ⭐ S2：AI 提的那几条**留在同一张卡上** —— 花钱扫一遍不该把它们冲掉。
       // ⚠️ 排在扫描结果前面：它们等的时间更久（7 天就过期）。
-      // ⚠️ 库里已经有这条关系的照样摘走（`settled`），⛔ 两个来路同一把尺子。
+      // ⛔⛔ 2026-08-29：这里用的是 `supersedeProposalSettled`，**不是**扫描那把尺子 ——
+      // AI 提的这一条要的是「整条退掉」，库里记着 `corrects`（旧块留着）不等于问过它。
+      // ⚠️ 两个来路的尺子从这一天起**确实不同**：扫描提的是「这块是不是过期了」，
+      // 三个按钮都还没选；MCP 提的是一个**指名的**决定。⛔ 但卡片上一处都不许分叉。
       const proposed = (await listSupersedeProposals(threadId, Date.now()))
         .map(toStaleEntry)
-        .filter((p) => !settled(p));
+        .filter((p) => !proposalSettled(p));
       set((st) => ({
         stale: {
           ...st.stale,
@@ -963,7 +976,10 @@ export const useCompressStore = create<CompressState>((set, get) => ({
     }
     // ⛔⛔ T2（2026-08-23）：`setBlockSupersession` 是**覆盖式**写入 —— 一块只存得下
     // 一条关系。新块要是已经指着**别的**块，写下去等于把那条悄悄删了。
-    // ⚠️ 指着同一块的那种在扫描时就摘走了（`settled`），走到这里的只剩「指着别处」。
+    // ⚠️ 扫描提的那几条里，指着同一块的在扫描时就摘走了（`settled`）。
+    // ⚠️ 2026-08-29 起 AI 提的**可以**指着同一块走到这里（库里是 `corrects`、
+    // 提案要的是整条退掉）—— 那一种这道闸放行，`setBlockSupersession` 把关系升级成
+    // `supersedes` 并清掉只属于 `corrects` 的 `corrected_quote`。**这就是提案要的事。**
     if (action !== 'keep' && wouldOverwriteRelation(oldBlock, newBlock)) {
       toast.error(
         t('第 {n} 块已经指着另一块了，一块只记得住一条这样的关系。要改的话先在那一块上撤掉原来那条。', {
@@ -1023,7 +1039,11 @@ export const useCompressStore = create<CompressState>((set, get) => ({
       const blocks = useBlocksStore.getState().byThread[threadId] ?? [];
       const bySeq = new Map<number, Block>();
       for (const b of blocks) if (b.seq !== null) bySeq.set(b.seq, b);
-      // ⛔⛔ T2 那条尺子照用：库里**已经有这条关系**的不再问一遍。
+      // ⛔⛔ 2026-08-29：这里原来用 `relationAlreadySettled`，于是真库里那两条
+      // （`#21 ← #23`、`#23 ← #26`，两对都已经带着 `corrects`）**被静默吞掉，
+      // 页签根本不出现** —— 而 AI 已经跟用户说过「有两条在 Spool 等你」。
+      // ⭐ 换成 `supersedeProposalSettled`：只有库里**已经整条退掉**（`supersedes`）
+      // 才算问过；`corrects` 是另一个决定。理由写在 `staleGuards.ts` 上。
       // ⚠️ 块还没读进来的时候（`blocks` 空）一条都摘不掉 —— 那是对的：
       // 宁可多问一条，也不许因为读慢了就把一条真提议悄悄吞掉。
       const fresh = rows
@@ -1031,7 +1051,7 @@ export const useCompressStore = create<CompressState>((set, get) => ({
         .filter(
           (p) =>
             blocks.length === 0 ||
-            !relationAlreadySettled(bySeq.get(p.staleSeq), bySeq.get(p.bySeq)),
+            !supersedeProposalSettled(bySeq.get(p.staleSeq), bySeq.get(p.bySeq)),
         );
       set((st) => {
         const cur = st.stale[threadId];

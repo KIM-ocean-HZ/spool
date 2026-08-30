@@ -58,6 +58,10 @@ export const buildThreadPack = async (
         annotation: b.annotation,
         annotationIsAi: annotationIsAi(b.annotationBy, b.source),
         createdAt: b.createdAt,
+        // ⛔ 2026-08-30：被引的块退役了，引用行不能照常打它的开头 40 字（见 `REF_BLOCK_RETIRED`）。
+        // ⚠️ `listBlocksByIds` **不按 stale 过滤**，退役的块照样查得到 —— 这是对的，
+        // 判断该由渲染那一层做；这里只是把事实运上去。
+        stale: b.staleAt !== null,
       });
     }
   }

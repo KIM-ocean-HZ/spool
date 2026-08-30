@@ -30,6 +30,7 @@ import {
   REF_BLOCK_MARKER,
   REF_BLOCK_FROM,
   REF_BLOCK_MISSING,
+  REF_BLOCK_RETIRED,
   REF_BLOCK_SUPERSEDES,
   REF_NOTE_PREFIX,
   REF_MARKER,
@@ -53,6 +54,10 @@ export interface CitedBlock {
   annotationIsAi?: boolean;
   createdAt: number;
   foreignTitle?: string;
+  /** ⛔ 2026-08-30：被引的那一块**用户已标记为不再有效**（`blocks.stale_at` 非空）。
+   *  省略读作「还有效」—— ⚠️ 这个默认是**故意**选的：宁可多显示一次预览，也不许因为
+   *  某个调用方忘了填就把一条 live 的引用说成作废的。⛔ 反过来那种错更贵。 */
+  stale?: boolean;
 }
 
 export interface AssembleArgs {
@@ -311,13 +316,26 @@ const renderBlock = (
     // tells the reader what this block was building on; dropping it there would lose the
     // only surviving account of the relation. Byte-for-byte with mcp.rs render_block.
     const why = b.refNote?.trim() ? `${REF_NOTE_PREFIX}${oneLine(b.refNote)}` : '';
-    lines.push(
-      cited
-        ? `${NOTE_INDENT}${marker}[${formatPackTime(cited.createdAt)}] ${blockLabel(cited.content, cited.annotation, cited.annotationIsAi)}${
+    // ⛔⛔ 2026-08-30：三岔，不是两岔。**「作废了」和「删掉了」是两件事**，
+    // 而在这一天之前「作废了」根本没有自己的分支 —— 它走的是 live 那一支，
+    // 于是把退役块开头 40 个字原样打回 pack。⭐ 收掉预览是 Ocean 选的（见 `REF_BLOCK_RETIRED`）。
+    // ⛔⛔ 2026-08-30 第二版（拿真库探出来的）：`supersedes` **不走退役那一支**。
+    // 第一版一视同仁，于是真库 `#26` 渲染成
+    // 「↩ replaces (that block no longer holds): (cited block is no longer valid)」——
+    // 同一件事说了两遍，⛔ 而且**丢掉了「它取代的是哪一块」**，那正是这一行存在的理由。
+    // ⭐ supersedes 指着一块已退役的块**本来就是正常状态**：退役正是这条关系自己造成的
+    //（`setBlockSupersession` 在 supersedes 这一档同时写 `stale_at`），marker 那句
+    // 「that block no longer holds」已经把退役说出来了。Ocean 的规则 1 写的就是这个：
+    // 「supersedes → retired：正常，不告警」。
+    const retiredCite = cited?.stale && b.refKind !== 'supersedes';
+    const cite = !cited
+      ? REF_BLOCK_MISSING
+      : retiredCite
+        ? REF_BLOCK_RETIRED
+        : `[${formatPackTime(cited.createdAt)}] ${blockLabel(cited.content, cited.annotation, cited.annotationIsAi)}${
             cited.foreignTitle ? `${REF_BLOCK_FROM}${cited.foreignTitle}` : ''
-          }${why}`
-        : `${NOTE_INDENT}${marker}${REF_BLOCK_MISSING}${why}`,
-    );
+          }`;
+    lines.push(`${NOTE_INDENT}${marker}${cite}${why}`);
   }
   const corrections = correctedBy?.get(b.id);
   if (corrections && corrections.length > 0) {
@@ -371,9 +389,32 @@ export const correctionsBySource = (blocks: Block[]): Map<string, Correction[]> 
     // 压缩把这一句的标点改写过之后，这里会退回只报块号 —— 而闸门当初是放行的。
     // ⭐ 2026-08-25：正文找不到就再问一次批注。**正文优先** —— 同一句话两格都有的时候，
     // 更正说的多半是正文那一份（批注是关于正文的话）。
-    const inContent = !!q && !!target && quoteIsInBlock(target.content, q);
+    // ⛔⛔ 2026-08-30（Ocean 报的 bug：「block 25 无法显示，点关系待审能看到一秒钟，然后消失」）——
+    // **被更正的那一块已经退役 ⇒ 这条更正挂不到它身上。**
+    //
+    // 为什么：一条更正只有在**能锚进目标正文的某一句**时，`foldedCorrectionIds` 才把它
+    // 从时间线上折走 —— 折走的前提是「读者仍然点得到那一句」（见那个函数上面那段，
+    // 它自己把这条叫 a safety condition）。08-30 的「退役块自动折到一行」把那个前提打掉了：
+    // 目标的正文整段不画 ⇒ 那一句没了 ⇒ 折走的更正**在屏幕上哪儿都不存在**，
+    // 正是那段注释写明不许出现的状态（"a block that exists, sits in the pack, and cannot be
+    // seen anywhere on screen"）。真库 `#25 corrects #21` 就是这一条，而 `#21` 已退役。
+    // ⚠️ 「看到一秒钟」是 `BlockFeed` 那个例外（`b.id === highlightBlockId` 时临时给张卡片），
+    // 闪一下就没 —— 而这条边正是「关系待审」要用户去处理的，动作还长在那张卡片上。
+    //
+    // ⇒ 目标退役时，这条更正退回「只能指着整块说话」那一档（`quote: null`），于是自动地：
+    // 时间线上留着自己的卡片（点得到、引用行在、三个动作在）、目标那边画 `CorrectedByLine`
+    // 指过去、目标正文里不再画一个点了没反应的记号。⛔ 三处各自判断会立刻走散，所以只在这里判。
+    //
+    // ⚠️ **pack 一个字都不会变**：pack 传进来的 `blocks` 已经滤掉退役块（见 buildPack），
+    // 退役的目标本来就 `target === undefined` ⇒ 本来就是 `quote: null`。这一条只对界面生效。
+    const targetRetired = !!target && target.staleAt != null;
+    const inContent = !!q && !!target && !targetRetired && quoteIsInBlock(target.content, q);
     const inNote =
-      !inContent && !!q && !!target?.annotation && quoteIsInBlock(target.annotation, q);
+      !inContent &&
+      !!q &&
+      !targetRetired &&
+      !!target?.annotation &&
+      quoteIsInBlock(target.annotation, q);
     const entry: Correction = {
       id: b.id,
       seq: b.seq,
@@ -524,6 +565,15 @@ export function assemble({
   // said about a conclusion that still held. The pack has to SAY so, though — see
   // staleOmittedLine. This is also the plan's one honest compression: length goes, nothing
   // is lost, and the user can still read what they used to think.
+  // ⛔⛔⛔ **F2（2026-08-30）红线：入向边一个字都不许进 pack。**
+  //
+  // F2 让界面显示「谁引用了我」，⚠️ 而那些引用**可以来自别的项目**（真库 58 条边
+  // 30 条跨项目）。想把它们也写进 pack 是很自然的下一步 —— ⛔ 不许。
+  // `archive/HANDOFF-2026-08-29.md` §5.1 已经结案过一次，理由逐字是：
+  // 「让 A 项目的 Pack 去认领 B 项目里写的更正，等于把 B 的内容搬进 A 的 Pack，撞项目隔离」。
+  // ⇒ **来龙去脉是界面上的事**；pack 只说这一份 pack 自己装着的东西。
+  // （界面上显示跨项目**出向**引用的项目名是 Ocean 08-24 亲自要的 S4②，有先例；
+  //   入向同理 —— ⛔ 但只到界面为止，pack 那条线不能越。）
   const blocks = allBlocks.filter((b) => b.staleAt == null);
   const staleCount = allBlocks.length - blocks.length;
   const correctedBy = correctionsBySource(blocks);

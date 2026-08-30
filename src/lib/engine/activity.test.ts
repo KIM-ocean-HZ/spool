@@ -24,6 +24,7 @@ const block = (id: string, createdAt: number, source: string | null): Block => (
   gist: null,
   refNote: null,
   gistBy: null,
+  refReviewedStaleAt: null,
   originalContent: null,
   compressedAt: null,
 });

@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react';
 import { plainText } from '@/lib/blocks/contentRuns';
-import { getBlockById, type RefKind } from '@/lib/db/blocks';
+import { refNeedsReview } from '@/lib/blocks/provenance';
+import { getBlockById, type Block, type RefKind } from '@/lib/db/blocks';
 import { useT } from '@/lib/i18n';
 import { formatBlockTime } from '@/lib/utils/time';
 import { useSearchStore } from '@/stores/searchStore';
 import { selectThreadById, useThreadsStore } from '@/stores/threadsStore';
+import RefReviewActions from './RefReviewActions';
 import SeqBadge from './SeqBadge';
 
 interface Props {
@@ -13,6 +15,10 @@ interface Props {
   refKind?: RefKind | null;
   /** S4②：**引用方**所在的项目。被引的块不在这个项目里，就要把项目名显出来。 */
   fromThreadId: string;
+  /** F2 §3.2 ②③：引用方那一块本身。
+   *  ⚠️ 传整块而不是再查一次 —— 待审判据要它的 `staleAt` / `refReviewedStaleAt`，
+   *  而三个动作要作用在它身上。 */
+  citing?: Block;
 }
 
 // §20.13 v2.4 P2-3 (2026-07-12): the feed counterpart of the pack's "↩ cites:" line.
@@ -32,7 +38,7 @@ interface Props {
 // Three things Ocean read as one blob (`#1 8/7 16:50 # 申请人定位… **目标。**`) are now three:
 // a ring (SeqBadge), a clock, and the body — separated by · and by colour, with the body's
 // markdown markers dropped (plainText).
-export default function CitationLine({ refBlockId, refKind, fromThreadId }: Props) {
+export default function CitationLine({ refBlockId, refKind, fromThreadId, citing }: Props) {
   const t = useT();
   const select = useThreadsStore((s) => s.select);
   const highlight = useSearchStore((s) => s.highlight);
@@ -48,6 +54,13 @@ export default function CitationLine({ refBlockId, refKind, fromThreadId }: Prop
         createdAt: number;
         seq: number | null;
         threadId: string;
+        /** ⛔ 2026-08-30：被引的那一块用户已经标记为不再有效。
+         *  在这之前这一行**说不出这件事** —— 和引用一块 live 的块长得一模一样。 */
+        stale: boolean;
+        /** F2 §3.2 ③：被引的那一整块。
+         *  ⚠️ 留在这里是为了**不再查一次库** —— 三个动作要它的 `staleAt`，
+         *  而这一行刚刚已经把它整行读出来了。 */
+        block: Block;
       }
   >({ state: 'loading' });
 
@@ -88,6 +101,8 @@ export default function CitationLine({ refBlockId, refKind, fromThreadId }: Prop
               createdAt: b.createdAt,
               seq: b.seq,
               threadId: b.threadId,
+              stale: b.staleAt !== null,
+              block: b,
             }
           : { state: 'missing' },
       );
@@ -155,7 +170,13 @@ export default function CitationLine({ refBlockId, refKind, fromThreadId }: Prop
     highlight(refBlockId);
   };
 
+  // F2 §3.2 ②：这条引用**等着人看一眼**吗 —— 引用方仍有效、被引块已退役、
+  // 关系不是 `supersedes`、用户还没确认过这一次退役。
+  // ⚠️ 判据走 `refNeedsReview`，⛔ 别在这儿把四个条件再拼一遍（那就是第三种写法）。
+  const needsReview = refNeedsReview(citing, cited.block);
+
   return (
+    <>
     <div className="mt-1.5 flex items-baseline gap-1.5 font-ui text-[11px] text-muted">
       <span aria-hidden="true">↩</span>
       {verb && <span className="shrink-0">{verb}</span>}
@@ -176,6 +197,17 @@ export default function CitationLine({ refBlockId, refKind, fromThreadId }: Prop
         <time className="shrink-0 font-mono tabular-nums opacity-70">
           {formatBlockTime(cited.createdAt)}
         </time>
+        {/* ⛔⛔ 2026-08-30（Ocean：「2 和 3 已经不作数了，但是比如 13、15 就引用了他们」）——
+            **这一行本来说不出被引的那一块已经作废。** 和引用一块 live 的块渲染得一模一样，
+            于是一个已经退役的结论继续以正常样子撑着上面那一块。
+            ⭐ 用的是**他自己的那个词**：退役块自己头上那一行写的就是「已标记『不作数了』」
+            （`BlockItem.tsx`）。⛔ 别在这儿发明第二个说法 —— S1 那条「屏幕上这件事只许
+            有一个名字」管到这里。 */}
+        {cited.stale && (
+          <span className="shrink-0 rounded border border-line px-1 opacity-80">
+            {t('已不作数')}
+          </span>
+        )}
         {cited.anchor && (
           <>
             <span aria-hidden="true" className="shrink-0 opacity-40">
@@ -210,5 +242,10 @@ export default function CitationLine({ refBlockId, refKind, fromThreadId }: Prop
         )}
       </button>
     </div>
+    {/* ⛔⛔ 动作长在**这儿**，不是只在待审面上。Ocean 否掉纯「异常队列」那一案的理由
+        逐字是：用户审待审边时**没有上下文**可判断。引用方的正文就在这一行上面，
+        被引的那一块点一下就到 —— 这就是上下文。 */}
+    {needsReview && citing && <RefReviewActions citing={citing} cited={cited.block} />}
+    </>
   );
 }

@@ -27,12 +27,20 @@ import type { StaleSession } from '@/stores/compressStore';
 // 60 次里 39 条提议，**35 条是「同一件事、旧块还剩很多」** —— 问「要不要作废」，
 // 用户点头就会让一个**内容仍然有效**的块退出以后每一份 pack，而他不会发现。
 //
-// ⭐ 三个动作：**合并 / 整条取代 / 不动**。
+// ⭐ 三个动作：**更正一处 / 整条取代 / 不动**。
 // ⛔ 别改回「只退旧的」——「退」在这个界面上从来没有被解释过（U9，2026-08-23）。
 // ⭐ S1（2026-08-24，Ocean 拍板）：「新的取代旧的」→「整条取代」，「什么都不动」→「不动」
 // （他的话：字太多）。**屏幕上这件事只许有一个名字** —— 更正关系那个解绑按钮、
 // 引用行上 `supersedes` 的动词，这次一起对齐到「整条取代」。
 // ⚠️ 检测那句说明**本来**就写着「已经被后面的块整条取代了」—— 是按钮来对齐它，不是反过来。
+//
+// ⭐⭐ 2026-08-30（Ocean 拍板）：第一个按钮 **「合并」→「更正一处」**，就是上面那条
+// 「只许有一个名字」的规矩自己没守住的那一处 —— `合并` 当时同时是**内容页多选**那个动作的名字，
+// 而那一个走 `mergeBlocks`：**正文拼进最早那块、其余块删掉**（真的合成一块）。
+// 这里点一下**两块都留着、正文一个字不动**，只写一条 `corrects` 关系。
+// ⇒ 同一个词指两件相反的事，改掉。⛔ 内容页那个仍然叫「合并」，那才是名副其实的合并。
+// ⚠️ 内部的 action 仍然叫 `'merge'`（`StaleAction`）—— ⛔ 没跟着改：那是库和 store 的词，
+// 改它要动 store、决定表和一批测试，而 Ocean 拍的是**屏幕上的名字**。
 //
 // ⛔ **不做 confidence 过滤**（§2.E3 写死的）：实测最离谱那条自标 `high`。
 export default function StaleReview({ threadId }: { threadId: string }) {
@@ -185,7 +193,7 @@ export default function StaleReview({ threadId }: { threadId: string }) {
                     {done ? (
                       <div className="mt-1.5 text-muted">
                         {done === 'merge'
-                          ? t('已合并：两块都留着，#{n} 上记了一句「它更正了 #{m}」。', {
+                          ? t('已更正一处：两块都留着，#{n} 上记了一句「它更正了 #{m}」。', {
                               n: p.bySeq,
                               m: p.staleSeq,
                             })
@@ -199,7 +207,7 @@ export default function StaleReview({ threadId }: { threadId: string }) {
                     ) : (
                       <div className="mt-2 flex flex-wrap items-center gap-1.5">
                         <Choice
-                          label={t('合并')}
+                          label={t('更正一处')}
                           hint={t('两块都留着，只在 #{n} 上记一句「它更正了 #{m}」。打包的时候两块还是都在，不会因此变短。', {
                             n: p.bySeq,
                             m: p.staleSeq,

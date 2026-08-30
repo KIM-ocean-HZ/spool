@@ -175,6 +175,13 @@ const REF_MARKER: &str = "→ Referenced project: ";
 // v2.4 (§20.13 D2) — mirrors templates.ts REF_BLOCK_MARKER / REF_BLOCK_MISSING.
 const REF_BLOCK_MARKER: &str = "↩ cites: ";
 const REF_BLOCK_MISSING: &str = "(cited block no longer exists)";
+// ⛔⛔ 2026-08-30（Ocean 拍板「乙」）—— mirrors templates.ts REF_BLOCK_RETIRED.
+// The cited block is one the USER marked as no longer valid. Until this line existed, such a
+// citation rendered exactly like a live one — timestamp plus the cited block's first 40
+// characters — which both hid the retirement AND leaked the retired wording back into a pack
+// that simultaneously says "N blocks the user has marked as no longer valid are not shown".
+// ⚠️ Kept separate from REF_BLOCK_MISSING: retired and deleted are different facts.
+const REF_BLOCK_RETIRED: &str = "(cited block is no longer valid)";
 // R6 debt 3 — mirrors templates.ts REF_BLOCK_FROM. Only rendered for a cross-project
 // citation; the wording has to say the evidence is NOT in this pack.
 const REF_BLOCK_FROM: &str = " — in project: ";
@@ -450,6 +457,9 @@ pub struct RefBlock {
     pub annotation_is_ai: bool,
     pub created_at: i64,
     pub foreign_title: Option<String>,
+    /// ⛔ 2026-08-30: the cited block carries `stale_at` — the user marked it as no longer
+    /// valid. Resolved by the query that builds the map, exactly like `annotation_is_ai`.
+    pub stale: bool,
 }
 pub type RefBlocks = std::collections::HashMap<String, RefBlock>;
 
@@ -803,7 +813,18 @@ fn render_block(
             Some(n) => format!("{REF_NOTE_PREFIX}{}", one_line(n)),
             None => String::new(),
         };
+        // ⛔⛔ 2026-08-30: three branches, not two — retired is not the same fact as deleted,
+        // and before this it had no branch of its own (it fell through to the live one).
+        // Byte-for-byte with assemble.ts renderBlock.
+        // ⛔ 2026-08-30 second pass: `supersedes` is exempt. A supersedes edge pointing at a
+        // retired block is the NORMAL state — this relation is what retired it — and the
+        // marker already says "that block no longer holds", so blanking the target said the
+        // same thing twice and dropped WHICH block was replaced. Byte-for-byte with assemble.ts.
+        let retired_cite = b.ref_kind.as_deref() != Some("supersedes");
         lines.push(match ref_blocks.get(cited_id) {
+            Some(r) if r.stale && retired_cite => {
+                format!("{NOTE_INDENT}{marker}{REF_BLOCK_RETIRED}{why}")
+            }
             Some(r) => format!(
                 "{NOTE_INDENT}{marker}[{}] {}{}{why}",
                 format_pack_time(r.created_at),
@@ -3484,14 +3505,17 @@ fn build_pack(conn: &Connection, thread_id: &str, range: &str) -> Result<PackBui
         // as a missing row) — the JOIN drops it and the renderer says so.
         let mut stmt = conn
             .prepare(
+                // ⛔ 2026-08-30: `stale_at` joined the SELECT list. It was never here, so the
+                // renderer had no way to know a cited block had been retired — see
+                // REF_BLOCK_RETIRED.
                 "SELECT b.content, b.annotation, b.created_at, b.thread_id, t.title,
-                        b.annotation_by, b.source
+                        b.annotation_by, b.source, b.stale_at
                    FROM blocks b JOIN threads t ON t.id = b.thread_id
                   WHERE b.id = ?1 AND t.deleted_at IS NULL",
             )
             .map_err(|e| e.to_string())?;
         for id in cited {
-            if let Ok((content, annotation, created_at, cited_thread, cited_title, by, src)) =
+            if let Ok((content, annotation, created_at, cited_thread, cited_title, by, src, stale_at)) =
                 stmt.query_row([id], |r| {
                     Ok((
                         r.get::<_, String>(0)?,
@@ -3501,6 +3525,7 @@ fn build_pack(conn: &Connection, thread_id: &str, range: &str) -> Result<PackBui
                         r.get::<_, String>(4)?,
                         r.get::<_, Option<String>>(5)?,
                         r.get::<_, Option<String>>(6)?,
+                        r.get::<_, Option<i64>>(7)?,
                     ))
                 })
             {
@@ -3513,6 +3538,7 @@ fn build_pack(conn: &Connection, thread_id: &str, range: &str) -> Result<PackBui
                         annotation_is_ai: annotation_is_ai(by.as_deref(), src.as_deref()),
                         created_at,
                         foreign_title: (cited_thread != thread_id).then_some(cited_title),
+                        stale: stale_at.is_some(),
                     },
                 );
             }
@@ -3662,7 +3688,9 @@ fn thread_resources(conn: &Connection) -> Result<Vec<Value>, String> {
 // Must stay in lockstep with the GUI's migration registry (src/lib/db/client.ts).
 // Writing into a schema this binary doesn't know is how the 2026-05-29 wipe class of
 // bugs happens — refuse instead.
-const EXPECTED_SCHEMA_VERSION: i64 = 28;
+// ⚠️ v29 (F2, 2026-08-30)：GUI 的注册表走到 29 了，这里必须跟上 ——
+// 差一个数字的症状是 MCP 一连上就报「库比服务新」，而 app 本身完全正常。
+const EXPECTED_SCHEMA_VERSION: i64 = 29;
 
 // Name reported by the client at initialize (clientInfo.name); feeds the source label.
 static CLIENT_NAME: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
@@ -9755,6 +9783,9 @@ mod tests {
                         annotation_is_ai: val["annotationIsAi"].as_bool().unwrap_or(false),
                         created_at: val["createdAt"].as_i64().unwrap(),
                         foreign_title: val["foreignTitle"].as_str().map(String::from),
+                        // Absent reads as live — same default as the TS twin's optional
+                        // `stale?: boolean`, so every pre-existing fixture entry is unchanged.
+                        stale: val["stale"].as_bool().unwrap_or(false),
                     },
                 )
             })

@@ -38,7 +38,7 @@ export const setSeedLanguage = (lang: SeedLanguage): void => {
 // carries a database from the previous version to the new one. On startup the
 // database's PRAGMA user_version is compared against this and every applicable step
 // runs in sequence, each stamping user_version as its own checkpoint (§19.3).
-const SCHEMA_VERSION = 28;
+const SCHEMA_VERSION = 29;
 
 // Things a migration did to the user's data that the user is entitled to hear about.
 // v15 is the first migration that removes anything (the retired `url` attachments), and
@@ -903,6 +903,40 @@ const MIGRATIONS: Migration[] = [
           console.info(`[db] ${table}.${col}: not added (likely exists)`, e);
         }
       }
+    },
+  },
+  {
+    // v29 (F2 施工单 §3.2 ④ + §3.3 三, Ocean 2026-08-30 单独批准过这一次动库)：
+    // 引用的「已经审过」记号 + 「谁引用了我」那条反查的索引。
+    //
+    // ⚠️⚠️ **ADD COLUMN + CREATE INDEX，没有回填、⛔ 没有 rebuild 分支** —— 和
+    // v21 / v24 / v26 / v28 逐字同一条路（2026-05-29 抹库是**重建表**那条分支干的）。
+    //   * `blocks.ref_reviewed_stale_at` —— 按下「保留为历史引用」那一刻，**被引块的
+    //     `stale_at`**。⛔ 不是布尔，理由在 `schema.sql` 那一列的注释里（改引不继承、
+    //     目标重新退役要再问一次，布尔两条都答错）。
+    //   * `idx_blocks_ref_block` —— 入向边是**全库**反查（真库 58 条边 30 条跨项目），
+    //     用不上 `idx_blocks_thread`。部分索引：全库只有 58 行非空。
+    //   * ⛔ `proposals` 不加这一列：待审的提案从来没有被审过。
+    //   * 往前：老库每一行都是 NULL —— 读出来是「这条引用没被审过」，也就是 v28 的行为
+    //     （§3.2 ② 那 5 条待审边照旧全部出现）。⛔ 不回填。
+    //   * 往回：`ALTER TABLE blocks DROP COLUMN ref_reviewed_stale_at` +
+    //     `DROP INDEX idx_blocks_ref_block` 退回 v28，⛔ 不丢任何 v28 就有的数据 ——
+    //     丢的只是「审过没有」，最多是那几条边重新进一次待审队列。
+    //
+    // ⚠️ 半跑一次和跑完一次分不出来，而这正是安全的那一类：`ADD COLUMN` 撞上已存在的列
+    // 会抛、catch 掉；`CREATE INDEX IF NOT EXISTS` 再跑一遍什么都不会发生。
+    from: 28,
+    to: 29,
+    name: 'add-ref-reviewed-and-ref-block-index',
+    run: async (db) => {
+      try {
+        await db.execute('ALTER TABLE blocks ADD COLUMN ref_reviewed_stale_at INTEGER');
+      } catch (e) {
+        console.info('[db] blocks.ref_reviewed_stale_at: not added (likely exists)', e);
+      }
+      await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_blocks_ref_block ON blocks(ref_block_id) WHERE ref_block_id IS NOT NULL',
+      );
     },
   },
 ];

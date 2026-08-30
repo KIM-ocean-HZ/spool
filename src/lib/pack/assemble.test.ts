@@ -721,6 +721,43 @@ describe('assemble', () => {
       expect(foldedCorrectionIds(blocks).size).toBe(0);
     });
 
+    // ⛔⛔ 2026-08-30 Ocean 报的 bug 的回归测试：「block 25 无法显示，点关系待审能看到
+    // 一秒钟，然后仍然会消失」。真库就是 `#25 corrects #21`，而 `#21` 已经退役。
+    //
+    // 成因：08-30 的「退役块自动折到一行」把目标的正文整段藏了 ⇒ 被折走的更正**唯一的门**
+    // （正文里那个可点的记号）没了 ⇒ 它在屏幕上哪儿都不存在。「一秒钟」是 `BlockFeed` 那个
+    // `b.id === highlightBlockId` 的例外临时给的卡片。
+    it('⛔ 目标已经退役时，更正不许被折走 —— 折进去就再也点不到了', () => {
+      const blocks = [
+        textBlock('b1', '占总分 40%', { seq: 1, staleAt: 111 }),
+        textBlock('b2', '占分是 30%', {
+          seq: 2,
+          refBlockId: 'b1',
+          refKind: 'corrects',
+          correctedQuote: '占总分 40%',
+        }),
+      ];
+      expect(foldedCorrectionIds(blocks).size).toBe(0);
+      // 退回「只能指着整块说话」那一档 ⇒ 目标那边画 CorrectedByLine 指过去，
+      // 正文里不再画一个点了没反应的记号，而 b2 在时间线上留着自己的卡片
+      //（引用行和三个动作都长在那张卡片上）。
+      const [c] = correctionsBySource(blocks).get('b1') ?? [];
+      expect(c?.quote).toBeNull();
+      expect(c?.field).toBeNull();
+
+      // ⚠️ 对照：目标没退役时照旧折走 —— ⛔ 这一条别被上面那条顺手改宽。
+      const live = [
+        textBlock('b1', '占总分 40%', { seq: 1 }),
+        textBlock('b2', '占分是 30%', {
+          seq: 2,
+          refBlockId: 'b1',
+          refKind: 'corrects',
+          correctedQuote: '占总分 40%',
+        }),
+      ];
+      expect([...foldedCorrectionIds(live)]).toEqual(['b2']);
+    });
+
     it('does not fold a correction whose target is not in the list', () => {
       // Cross-project corrections resolve to nothing here; folding one would hide a block
       // whose target is not even on screen.
@@ -850,6 +887,94 @@ describe('assemble', () => {
         now: NOW,
       });
       expect(out).toContain('↩ cites: [2026-05-15 09:00] 我当时的判断');
+    });
+
+    // ⛔⛔ 2026-08-30（Ocean：「2 和 3 已经不作数了，但是比如 13、15 就引用了他们」）——
+    // **被引的那一块已经退役，这一行原来说不出这件事。**
+    //
+    // 退役的块自己是离开 pack 的（`staleAt` 那道过滤），可这一行照常打它的时间戳 +
+    // 开头 40 个字，和引用一块 live 的块**一模一样**。两个后果：
+    //   ① 下一个模型读不出被引的东西已经作废；
+    //   ② ⛔ 退役内容顺着这一行**漏回 pack** —— 正是退役要拿掉的那些字。
+    // 而同一份 pack 里还写着「有 N 块已标记为不再有效、未显示」，两句话互相打脸。
+    // 真库「申请规划」当时有 5 条这样的边（`#13→#2`、`#15→#3`、`#17→#3`、`#19→#2`、`#25→#21`）。
+    describe('被引的那一块已经退役', () => {
+      const citing = () => [
+        textBlock('b2', '建立在那条上', { seq: 2, refBlockId: 'b1' }),
+      ];
+      const retired = (stale: boolean) =>
+        new Map([['b1', { content: '最终 15 所选校:冲刺／高冲', createdAt: T(0), stale }]]);
+
+      it('⛔ 不打预览，只说它已经不作数了', () => {
+        const out = assemble({ thread, blocks: citing(), refBlocks: retired(true), now: NOW });
+        expect(out).toContain('↩ cites: (cited block is no longer valid)');
+        // ⛔⛔ 这一条才是重点：退役那一块的字**一个都不许**出现在 pack 里。
+        expect(out).not.toContain('最终 15 所选校');
+      });
+
+      it('还有效的照旧带预览（⛔ 别把没退役的也说成作废）', () => {
+        const out = assemble({ thread, blocks: citing(), refBlocks: retired(false), now: NOW });
+        expect(out).toContain('↩ cites: [2026-05-15 09:00] 最终 15 所选校:冲刺／高冲');
+        expect(out).not.toContain('no longer valid');
+      });
+
+      // ⚠️ `stale` 是可选字段：省略必须读作「还有效」。反过来默认会把一屋子 live 的引用
+      // 全说成作废 —— 那个错比漏标贵得多。
+      it('调用方没填 stale —— 读作还有效', () => {
+        const out = assemble({
+          thread,
+          blocks: citing(),
+          refBlocks: new Map([['b1', { content: '最终 15 所选校:冲刺／高冲', createdAt: T(0) }]]),
+          now: NOW,
+        });
+        expect(out).toContain('↩ cites: [2026-05-15 09:00] 最终 15 所选校:冲刺／高冲');
+      });
+
+      // ⚠️ 「作废了」和「删掉了」是两句不同的话 —— ⛔ 塌成一句等于告诉用户东西没了。
+      it('和「块已删除」分得开', () => {
+        const gone = assemble({ thread, blocks: citing(), refBlocks: new Map(), now: NOW });
+        expect(gone).toContain('↩ cites: (cited block no longer exists)');
+        expect(gone).not.toContain('no longer valid');
+      });
+
+      // ⛔⛔ 2026-08-30 第二版（拿真库探出来的，不是想出来的）：**supersedes 是例外。**
+      // 第一版一视同仁，真库 `#26` 于是渲染成
+      // 「↩ replaces (that block no longer holds): (cited block is no longer valid)」——
+      // 同一件事说两遍，⛔ 还把「取代的是哪一块」丢了。
+      // ⭐ supersedes 指着退役块**本来就是正常状态**：退役正是这条关系自己写的。
+      it('⛔ supersedes 例外：照旧说出取代的是哪一块', () => {
+        const out = assemble({
+          thread,
+          blocks: [textBlock('b2', '新的那一份', { seq: 2, refBlockId: 'b1', refKind: 'supersedes' })],
+          refBlocks: retired(true),
+          now: NOW,
+        });
+        expect(out).toContain('[2026-05-15 09:00] 最终 15 所选校:冲刺／高冲');
+        expect(out).not.toContain('no longer valid');
+      });
+
+      // ⚠️ corrects 不是例外：它说的是「那一块里有一处错」，⛔ 而那一块整个已经不作数了。
+      it('corrects 不是例外', () => {
+        const out = assemble({
+          thread,
+          blocks: [textBlock('b2', '更正那一句', { seq: 2, refBlockId: 'b1', refKind: 'corrects' })],
+          refBlocks: retired(true),
+          now: NOW,
+        });
+        expect(out).toContain('(cited block is no longer valid)');
+        expect(out).not.toContain('最终 15 所选校');
+      });
+
+      // v28：为什么引它，是**引用方**写的话 —— 被引的那一块作废了，这句话照样成立。
+      it('⭐ 引用方自己写的理由照旧跟在后面', () => {
+        const out = assemble({
+          thread,
+          blocks: [textBlock('b2', '建立在那条上', { seq: 2, refBlockId: 'b1', refNote: '拿它当基线' })],
+          refBlocks: retired(true),
+          now: NOW,
+        });
+        expect(out).toContain('↩ cites: (cited block is no longer valid) — why: 拿它当基线');
+      });
     });
   });
 

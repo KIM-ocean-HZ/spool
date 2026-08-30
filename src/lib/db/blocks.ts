@@ -66,6 +66,11 @@ export interface Block {
    *  所以读的那一头把 null 当 'ai' 待（`gistIsAi()`）。
    *  规矩和 `threads.summary_source` 一样：**MCP 不许盖掉非 'ai' 的那一行**。 */
   gistBy: AnnotationAuthor | null;
+  /** v29（F2 §3.2 ④，Ocean 2026-08-30）：按下「保留为历史引用」那一刻，**被引的那一块**
+   *  `staleAt` 是多少。null = 这条引用还没被审过。
+   *  ⛔ 不是布尔 —— 它同时要答三件事，见 `schema.sql` 那一列的注释和 `refNeedsReview()`。
+   *  ⚠️ 只在 `refBlockId` 非空时才有意义；`setBlockSupersession` 改写目标时会清掉它。 */
+  refReviewedStaleAt: number | null;
   /** v24（R2 §1a）：这一块**压缩之前**的正文。null 有两种意思，⚠️ 两种都不是「有原文」：
    *  从来没压过，或者压过但用户把「备份原文」关了（那一次不可逆）。
    *  分辨看 `compressedAt` —— 它非空而这个是 null，就是第二种。 */
@@ -124,6 +129,7 @@ interface Row {
   gist: string | null;
   ref_note: string | null;
   gist_by: AnnotationAuthor | null;
+  ref_reviewed_stale_at: number | null;
   original_content: string | null;
   compressed_at: number | null;
 }
@@ -150,12 +156,13 @@ const fromRow = (r: Row): Block => ({
   gist: r.gist ?? null,
   refNote: r.ref_note ?? null,
   gistBy: r.gist_by ?? null,
+  refReviewedStaleAt: r.ref_reviewed_stale_at ?? null,
   originalContent: r.original_content ?? null,
   compressedAt: r.compressed_at ?? null,
 });
 
 const SELECT_COLS =
-  'id, thread_id, kind, content, annotation, annotation_by, ref_thread_id, ref_block_id, source, pinned, seq, created_at, stale_at, ref_kind, source_url, retrieved_at, recheck_after, corrected_quote, original_content, compressed_at, gist, ref_note, gist_by';
+  'id, thread_id, kind, content, annotation, annotation_by, ref_thread_id, ref_block_id, source, pinned, seq, created_at, stale_at, ref_kind, source_url, retrieved_at, recheck_after, corrected_quote, original_content, compressed_at, gist, ref_note, gist_by, ref_reviewed_stale_at';
 
 export const getBlockById = async (id: string): Promise<Block | null> => {
   const db = await getDb();
@@ -192,7 +199,16 @@ export interface ThreadBlockStats {
   blocks: number;
   /** Characters of block content + annotations — what a pack of this project would weigh.
    *  Attachment text is NOT counted: whether it lands in a pack is a per-attachment switch
-   *  (§20.2), so including it here would report a size the pack may not produce. */
+   *  (§20.2), so including it here would report a size the pack may not produce.
+   *
+   *  ⭐⭐ 2026-08-30（Ocean：「在项目总字数里面，把不计数的字数给去掉」）——
+   *  **已经标记「不作数了」的块一个字都不算。** 这一行本来就写着「打包出来有多大」，
+   *  而退役块**根本不进 pack**（`assemble.ts`：`allBlocks.filter(b => b.staleAt == null)`），
+   *  所以在这之前这个数说的是一份**打不出来的** pack —— 真库〈申请规划〉18,910 里
+   *  有 3,025（16%）是四块已经退役的内容。
+   *
+   *  ⚠️ **块数照旧算全部** —— 他要去掉的是「字数」。那些块还在项目里、还搜得到、
+   *  还占着一行，⛔ 从计数里抹掉它们等于说它们不存在。 */
   chars: number;
 }
 
@@ -211,7 +227,9 @@ export const blockStatsByThread = async (): Promise<Record<string, ThreadBlockSt
   const rows = await db.select<{ thread_id: string; c: number; chars: number | null }[]>(
     `SELECT thread_id,
             COUNT(*) AS c,
-            SUM(LENGTH(content) + COALESCE(LENGTH(annotation), 0)) AS chars
+            SUM(CASE WHEN stale_at IS NULL
+                     THEN LENGTH(content) + COALESCE(LENGTH(annotation), 0)
+                     ELSE 0 END) AS chars
        FROM blocks GROUP BY thread_id`,
   );
   const out: Record<string, ThreadBlockStats> = {};
@@ -429,6 +447,9 @@ export const createBlock = async (args: CreateBlockArgs): Promise<Block> => {
     // v28：GUI 这条路写不出 `gist`，所以「谁写的」也没有可记的 —— 用户自己写摘要走的是
     // `updateBlockGist`，那一头才盖 'user'。
     gistBy: null,
+    // v29（F2 §3.2 ④）：新块的引用从来没被审过。⛔ 就算它一出生就指着一块已经退役的块，
+    // 也要走一遍待审 —— 「审过」记的是**用户看过**，不是「系统知道」。
+    refReviewedStaleAt: null,
     // v24：新块从来没被压过。⛔ 这两列只有压缩写回和一键还原碰得到。
     originalContent: null,
     compressedAt: null,
@@ -493,7 +514,7 @@ export const insertBlocks = async (blocks: Block[]): Promise<void> => {
     );
     base.set(threadId, rows[0]?.next ?? 0);
   }
-  const COLS = 21;
+  const COLS = 22;
   const tuples = blocks
     .map((_, i) => {
       const o = i * COLS;
@@ -525,10 +546,13 @@ export const insertBlocks = async (blocks: Block[]): Promise<void> => {
       b.gist,
       b.refNote,
       b.gistBy,
+      // v29（F2 §3.2 ④）：原样带过来。⚠️ **复制那条路自己传 null**（见 blocksStore），
+      // 这里照抄传进来的值 —— 导入别人的库时，那条边审没审过是那个库的事实。
+      b.refReviewedStaleAt,
     ];
   });
   await db.execute(
-    `INSERT INTO blocks (id, thread_id, kind, content, annotation, annotation_by, ref_thread_id, ref_block_id, source, pinned, seq, created_at, stale_at, ref_kind, source_url, retrieved_at, recheck_after, corrected_quote, gist, ref_note, gist_by) VALUES ${tuples}`,
+    `INSERT INTO blocks (id, thread_id, kind, content, annotation, annotation_by, ref_thread_id, ref_block_id, source, pinned, seq, created_at, stale_at, ref_kind, source_url, retrieved_at, recheck_after, corrected_quote, gist, ref_note, gist_by, ref_reviewed_stale_at) VALUES ${tuples}`,
     params,
   );
 };
@@ -638,8 +662,8 @@ export const deleteBlock = async (id: string): Promise<void> => {
 export const restoreBlock = async (block: Block): Promise<void> => {
   const db = await getDb();
   await db.execute(
-    `INSERT INTO blocks (id, thread_id, kind, content, annotation, annotation_by, ref_thread_id, ref_block_id, source, pinned, seq, created_at, stale_at, ref_kind, source_url, retrieved_at, recheck_after, corrected_quote, gist, ref_note, gist_by)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)`,
+    `INSERT INTO blocks (id, thread_id, kind, content, annotation, annotation_by, ref_thread_id, ref_block_id, source, pinned, seq, created_at, stale_at, ref_kind, source_url, retrieved_at, recheck_after, corrected_quote, gist, ref_note, gist_by, ref_reviewed_stale_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)`,
     [
       block.id,
       block.threadId,
@@ -671,6 +695,9 @@ export const restoreBlock = async (block: Block): Promise<void> => {
       // 洗成「不知道」，而「不知道」按 'ai' 待，下一句 `set_block_gist` 就能盖掉它。
       block.refNote,
       block.gistBy,
+      // v29（F2 §3.2 ④）：⌘Z 还回来的必须是**当时那一行** —— 丢了「审过」，撤销一次删除
+      // 就会让一条已经审过的引用重新排队问一遍，同 `staleAt` / `gistBy` 那两条理由。
+      block.refReviewedStaleAt,
     ],
   );
 };
@@ -864,8 +891,14 @@ export const setBlockSupersession = async (
   // harder to spot: the relation is still there, so nothing looks broken.
   // Measured in the fifth round: 2 of 3 real proposals would have gone down this path.
   const keepQuote = kind === 'corrects';
+  // ⛔⛔ v29 (F2 §3.2 ④ 第二条)：**重新声明这条关系 ⇒ 「已经审过」当场作废。**
+  // 那条确认说的是「我看过**那一块**退役了」。目标一换（或者关系被清掉），它就是在替用户
+  // 确认一件他没看过的事 —— §3.2 ④ 把这一条和「下次不再问」并列写死，正是因为
+  // 一个布尔在这里会答错：它记不住「审的是哪一块的哪一次退役」。
+  // ⚠️ 无条件清 —— 连「改成同一个目标」也清。代价是最多多问一次（安全的那一边），
+  // 而漏清一次就是一条边永远不再出现。
   await db.execute(
-    `UPDATE blocks SET ref_block_id = $1, ref_kind = $2${keepQuote ? '' : ', corrected_quote = NULL'} WHERE id = $3`,
+    `UPDATE blocks SET ref_block_id = $1, ref_kind = $2, ref_reviewed_stale_at = NULL${keepQuote ? '' : ', corrected_quote = NULL'} WHERE id = $3`,
     [kind === null ? null : targetBlockId, kind, id],
   );
   if (kind === 'supersedes' && targetBlockId) {
@@ -883,6 +916,249 @@ export const setBlockSupersession = async (
 export const setCorrectedQuote = async (id: string, quote: string | null): Promise<void> => {
   const db = await getDb();
   await db.execute('UPDATE blocks SET corrected_quote = $1 WHERE id = $2', [quote, id]);
+};
+
+/** F2 §3.2 —— 一条**指进来**的关系，连同说清它需要的那几件事。
+ *
+ *  ⚠️ 「谁引用了我」和「我引用了谁」不是同一个形状：出向只有一条（`ref_block_id` 是单列），
+ *  入向有几条不知道，而且**可以来自任何项目** —— 所以这里带着引用方的项目名一起回来。 */
+export interface IncomingRef {
+  /** 引用方那一块。 */
+  id: string;
+  seq: number | null;
+  threadId: string;
+  /** 引用方所在项目的标题。⚠️ 项目被软删也照样回来（那一块还在库里，边也还在）。 */
+  threadTitle: string;
+  createdAt: number;
+  /** null 读作 'cites'，和别处一样。 */
+  refKind: RefKind | null;
+  /** 引用方自己写的「我为什么指过去」。null = 没人写过理由。 */
+  refNote: string | null;
+  /** 一句关于引用方那一块的话，给没有 `refNote` 时垫底用。 */
+  gist: string | null;
+  annotation: string | null;
+  /** ⚠️ **引用方**自己作废了没有 —— §3.2 ① 明写「入向边也要标，不只出向」。 */
+  staleAt: number | null;
+  /** v29：这条引用上次审的时候，**被引块**的 `stale_at` 是多少。null = 没审过。 */
+  refReviewedStaleAt: number | null;
+}
+
+/** 「**谁引用了我**」 —— F2 §3.2 ① 那一半，在这之前界面上完全看不见。
+ *
+ *  ⛔ **全库反查，不按项目筛**：真库 58 条边里 30 条跨项目（涉及 17 个项目），
+ *  只在本项目里找会漏掉一半以上。§3.3 三 的 `idx_blocks_ref_block` 就是给这一句加的。
+ *
+ *  ⚠️ 左连 `threads`：块一定有项目，但这里写成 LEFT JOIN 是为了「项目行不知怎么没了」
+ *  的时候仍然把边显示出来 —— ⛔ 一条边不该因为查不到名字就整个消失（`CitationLine`
+ *  里「在别的项目里」那一句是同一条理由）。 */
+export const listIncomingRefs = async (blockId: string): Promise<IncomingRef[]> => {
+  const db = await getDb();
+  const rows = await db.select<
+    {
+      id: string;
+      seq: number | null;
+      thread_id: string;
+      thread_title: string | null;
+      created_at: number;
+      ref_kind: RefKind | null;
+      ref_note: string | null;
+      gist: string | null;
+      annotation: string | null;
+      stale_at: number | null;
+      ref_reviewed_stale_at: number | null;
+    }[]
+  >(
+    `SELECT b.id, b.seq, b.thread_id, t.title AS thread_title, b.created_at, b.ref_kind,
+            b.ref_note, b.gist, b.annotation, b.stale_at, b.ref_reviewed_stale_at
+       FROM blocks b LEFT JOIN threads t ON t.id = b.thread_id
+      WHERE b.ref_block_id = $1
+      ORDER BY b.created_at ASC`,
+    [blockId],
+  );
+  return rows.map((r) => ({
+    id: r.id,
+    seq: r.seq ?? null,
+    threadId: r.thread_id,
+    threadTitle: r.thread_title ?? '',
+    createdAt: r.created_at,
+    refKind: r.ref_kind ?? null,
+    refNote: r.ref_note ?? null,
+    gist: r.gist ?? null,
+    annotation: r.annotation ?? null,
+    staleAt: r.stale_at ?? null,
+    refReviewedStaleAt: r.ref_reviewed_stale_at ?? null,
+  }));
+};
+
+/** 同一件事，一次问**一整个项目** —— 画一屏 feed 用的就是这一句。
+ *
+ *  ⛔⛔ **别在每个块上各调一次 `listIncomingRefs`。** 「有没有人引用我」这件事，
+ *  不问库就答不出来（出向边看自己那一行就知道，入向边不看不知道），所以一块一问的写法
+ *  会让**每打开一个项目就是 N 次往返**，而真库最大的项目有 35 块、全库 543 块。
+ *  ⚠️ 而且这 N 次里**绝大多数返回空** —— 全库只有 58 条边。
+ *
+ *  返回的是 `targetIds` 里**有人指着**的那些 id → 指着它的边；⛔ 没人指的 id 不在结果里
+ *  （调用方按「取不到 = 没有入向边」读）。 */
+export const listIncomingRefsForTargets = async (
+  targetIds: string[],
+): Promise<Record<string, IncomingRef[]>> => {
+  if (targetIds.length === 0) return {};
+  const db = await getDb();
+  const holes = targetIds.map((_, i) => `$${i + 1}`).join(', ');
+  const rows = await db.select<
+    {
+      target_id: string;
+      id: string;
+      seq: number | null;
+      thread_id: string;
+      thread_title: string | null;
+      created_at: number;
+      ref_kind: RefKind | null;
+      ref_note: string | null;
+      gist: string | null;
+      annotation: string | null;
+      stale_at: number | null;
+      ref_reviewed_stale_at: number | null;
+    }[]
+  >(
+    `SELECT b.ref_block_id AS target_id, b.id, b.seq, b.thread_id, t.title AS thread_title,
+            b.created_at, b.ref_kind, b.ref_note, b.gist, b.annotation, b.stale_at,
+            b.ref_reviewed_stale_at
+       FROM blocks b LEFT JOIN threads t ON t.id = b.thread_id
+      WHERE b.ref_block_id IN (${holes})
+      ORDER BY b.created_at ASC`,
+    targetIds,
+  );
+  const out: Record<string, IncomingRef[]> = {};
+  for (const r of rows) {
+    (out[r.target_id] ??= []).push({
+      id: r.id,
+      seq: r.seq ?? null,
+      threadId: r.thread_id,
+      threadTitle: r.thread_title ?? '',
+      createdAt: r.created_at,
+      refKind: r.ref_kind ?? null,
+      refNote: r.ref_note ?? null,
+      gist: r.gist ?? null,
+      annotation: r.annotation ?? null,
+      staleAt: r.stale_at ?? null,
+      refReviewedStaleAt: r.ref_reviewed_stale_at ?? null,
+    });
+  }
+  return out;
+};
+
+/** F2 §3.2 ② —— 一条**待审**的边，两头都带齐（审的人要有上下文才判断得了）。 */
+export interface PendingRefReview {
+  /** 引用方（关系的声明方 —— 三个动作都作用在它身上）。 */
+  citing: Block;
+  /** 被引方，⚠️ 已经退役的那一块。 */
+  cited: Block;
+  /** 被引方所在项目的标题，跨项目时界面要说出来。 */
+  citedThreadTitle: string;
+  /** 引用方所在项目的标题。 */
+  citingThreadTitle: string;
+}
+
+/** F2 §3.2 ② 的待审判据，⚠️ 只有**这一处**写了 SQL 版本（`listPendingRefReviews`），
+ *  纯函数版本在 `lib/blocks/provenance.ts` 的 `refNeedsReview()` ——
+ *  两处是同一条规则的两种写法，⛔ 改一处必须改另一处；
+ *  `provenance.test.ts` 用真库那 5 条边把它们钉在一起。
+ *
+ *  引用方仍有效 AND 被引块已退役 AND 关系不是 supersedes AND 用户尚未确认。
+ *  ⛔ `supersedes → retired` 不进队列 —— 那正是**正常**状态，不是异常。
+ *
+ *  `threadId` 给了就只看那个项目**引出去**的边（⚠️ 筛的是**引用方**的项目 ——
+ *  要动手的是引用方那一行）；不给就是全库。 */
+export const listPendingRefReviews = async (
+  threadId?: string,
+): Promise<PendingRefReview[]> => {
+  const db = await getDb();
+  // ⚠️ 两步：先用那条判据取出**成对的 id**，再用 `listBlocksByIds` 把两头读回来。
+  // ⛔ 不在一句 SQL 里把 23 个列名各起两遍别名 —— 那样每加一列都要改三处，
+  // 而 `SELECT_COLS` / `fromRow` 已经是这个文件里唯一一条「一行怎么变成 Block」的路。
+  const pairs = await db.select<
+    { citing_id: string; cited_id: string; citing_title: string | null; cited_title: string | null }[]
+  >(
+    `SELECT c.id AS citing_id, d.id AS cited_id,
+            tc.title AS citing_title, td.title AS cited_title
+       FROM blocks c
+       JOIN blocks d ON d.id = c.ref_block_id
+       LEFT JOIN threads tc ON tc.id = c.thread_id
+       LEFT JOIN threads td ON td.id = d.thread_id
+      WHERE c.stale_at IS NULL
+        AND d.stale_at IS NOT NULL
+        AND COALESCE(c.ref_kind, 'cites') <> 'supersedes'
+        AND (c.ref_reviewed_stale_at IS NULL OR c.ref_reviewed_stale_at <> d.stale_at)
+        ${threadId ? 'AND c.thread_id = $1' : ''}
+      ORDER BY c.created_at ASC`,
+    threadId ? [threadId] : [],
+  );
+  if (pairs.length === 0) return [];
+  const byId = new Map(
+    (await listBlocksByIds([...new Set(pairs.flatMap((p) => [p.citing_id, p.cited_id]))])).map(
+      (b) => [b.id, b],
+    ),
+  );
+  const out: PendingRefReview[] = [];
+  for (const p of pairs) {
+    const citing = byId.get(p.citing_id);
+    const cited = byId.get(p.cited_id);
+    if (!citing || !cited) continue;
+    out.push({
+      citing,
+      cited,
+      citingThreadTitle: p.citing_title ?? '',
+      citedThreadTitle: p.cited_title ?? '',
+    });
+  }
+  return out;
+};
+
+/** F2 §3.2 ③ 动作一「保留为历史引用」 —— **永久记住用户已经审过**。
+ *
+ *  存的是**被引块此刻的 `stale_at`**，⛔ 不是一个布尔或者「现在几点」：
+ *  目标恢复有效、以后又重新退役的时候，新的 `stale_at` 和这里记住的值不等，
+ *  这条边**会再次进入待审**（§3.2 ④ 第三条）。而「现在几点」比不出这件事。
+ *
+ *  ⚠️ 确认的是「我知道了」，⛔ **不是「它又有效了」** —— pack 里那一行仍然写
+ *  `(cited block is no longer valid)`（§3.3 两个小决定的第一条，Ocean 08-30 定的）。 */
+export const setRefReviewed = async (
+  citingId: string,
+  citedStaleAt: number,
+): Promise<void> => {
+  const db = await getDb();
+  await db.execute('UPDATE blocks SET ref_reviewed_stale_at = $1 WHERE id = $2', [
+    citedStaleAt,
+    citingId,
+  ]);
+};
+
+/** F2 §3.2 ③ 动作二「改引当前块」 —— 把这条引用指到另一块上。
+ *
+ *  ⛔ **不自动猜新目标、⛔ 不自动沿 supersede 链跳**（§3.2 ③）—— 目标由用户在选择器里点。
+ *
+ *  ⚠️ 和 `setBlockSupersession` 分开是因为那一个把 `kind === null` 当成「清掉关系」
+ *  （`ref_block_id` 也置空），而 `cites` 正是 `refKind` 为 null 的那一种 ——
+ *  拿它改引一条普通引用，等于把引用删了。
+ *
+ *  ⛔⛔ `corrected_quote` 由调用方先验过再进来（`quoteIsInBlock`，§3.3 五）：
+ *  原来那句逐字未必存在于新目标里，验不过就只能降成普通引用或者拒绝这次改引。
+ *  这里只落库，⛔ 不在这一层放宽闸。 */
+export const repointCitation = async (
+  citingId: string,
+  targetBlockId: string,
+  kind: RefKind | null,
+  correctedQuote: string | null,
+): Promise<void> => {
+  const db = await getDb();
+  // v29：换了目标 ⇒ 「已经审过」作废，同 `setBlockSupersession` 那一条。
+  await db.execute(
+    `UPDATE blocks SET ref_block_id = $1, ref_kind = $2, corrected_quote = $3,
+            ref_reviewed_stale_at = NULL
+      WHERE id = $4`,
+    [targetBlockId, kind === 'cites' ? null : kind, correctedQuote, citingId],
+  );
 };
 
 // §9.13 Undo (merge): revert the merge survivor's mutable fields to their pre-merge
