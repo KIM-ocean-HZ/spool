@@ -62,31 +62,37 @@ const MCP_SERVER_NAME: &str = "spool";
 // ⚠️ Enumerated one by one, NOT `mcp__spool__*`. Verified against claude 2.0.50 on
 // 2026-08-05: a wildcard in `--allowedTools` is not expanded, so every single call comes
 // back in `permission_denials` and the run ends with the model politely asking the user to
-// turn on a permission that is already on. Explicit names work. If a tool is added to
-// mcp.rs it must be added here too, or the AI simply cannot reach it.
-pub(crate) const ALLOWED_TOOL_NAMES: [&str; 15] = [
+// turn on a permission that is already on. Explicit names work.
+//
+// The list is EVERY tool mcp.rs serves — "only Spool's tools", not "only the tools this
+// action needs". A run is pointed at tools by more than its own prompt: the server's
+// instructions, and replies like a search hit on a locked file ("ask with
+// request_file_access"). A denied call does not fail quietly; it ends the run asking the user
+// for a permission. Tools added to mcp.rs later were left off this list more than once
+// (HANDOFF DISCOVERED-20260923-1), so mcp.rs's `the_engine_whitelist_is_every_spool_tool`
+// fails the moment the two differ. Consent still lives in each tool: the write switch, the
+// review screen, and the refusal to touch what the user wrote.
+pub(crate) const ALLOWED_TOOL_NAMES: [&str; 22] = [
     "add_block",
     "check_library",
-    // The follow-up run is told to retire every open question it answers
-    // (mcp.rs `follow_up_targets_of`). Left off this list, the answer was found and the
-    // line stayed open, so the next run and the next conversation asked it again
-    // (HANDOFF DISCOVERED-20260923-1). mcp.rs's
-    // `every_tool_an_engine_prompt_names_is_on_the_engine_whitelist` now catches the next one.
     "close_follow_up_item",
     "create_thread",
     "distill",
     "find_similar_blocks",
+    "get_block_original",
     "get_blocks",
     "get_digest",
+    "get_follow_up_brief",
     "get_pack",
+    "get_project_overview",
     "list_threads",
-    // Nothing here calls for it, and it is still listed: the list's job is "only Spool's
-    // tools", not "only the tools this action needs". A denied call does not fail quietly —
-    // it ends the run with the model asking for a permission that is already on (see the
-    // wildcard note above) — and propose_blocks is the one write tool that writes nothing.
     "propose_blocks",
+    "propose_supersede",
+    "request_file_access",
     "search_blocks",
+    "set_block_gist",
     "set_thread_summary",
+    "suggest_follow_up_item",
     "thread_health",
     "weekly_review",
 ];

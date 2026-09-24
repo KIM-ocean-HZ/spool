@@ -13255,107 +13255,23 @@ mod tests {
         assert!(targets.contains("截止日期有没有改"), "{targets}");
     }
 
-    // DISCOVERED-20260923-1. A prompt telling an engine run to call a tool that
-    // engine.rs's ALLOWED_TOOL_NAMES leaves out fails nowhere in a test: claude denies the
-    // call at runtime, and the paid run ends with the model asking the user for a
-    // permission. That is how a follow-up found its answer and could not retire the line.
-    // So read the tool names out of what the engine sends and check each one is reachable.
-    //
-    // What the engine sends = guidance_text_headless for the five actions lib.rs
-    // `ai_engine_run` accepts. prompt_body needs the real data dir, so the builders its match
-    // arms call are called directly here, with the same arguments — keep the two in step.
-    // Only the instructions are read, not the fenced material: tool names inside the
-    // material are the user's stored data, and the material rule tells the model so.
+    // DISCOVERED-20260923-1. A tool the engine's whitelist leaves out fails nowhere in a
+    // test: claude denies the call at runtime, and the paid run ends with the model asking the
+    // user for a permission. That is how a follow-up found its answer and could not retire
+    // the line. A run is pointed at tools by more than its own prompt (the server's
+    // instructions, other tools' replies), so the whitelist is every tool this server serves,
+    // and this fails the moment a tool is added here and not there.
     #[test]
-    fn every_tool_an_engine_prompt_names_is_on_the_engine_whitelist() {
-        let now = 1_750_000_000_000_i64;
-        let tmp = std::env::temp_dir().join(format!("spool-engine-tools-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&tmp);
-        let (on_dir, off_dir) = (tmp.join("writes-on"), tmp.join("writes-off"));
-        for (dir, on) in [(&on_dir, true), (&off_dir, false)] {
-            std::fs::create_dir_all(dir).unwrap();
-            std::fs::write(dir.join("settings.json"), format!("{{\"mcpWriteEnabled\":{on}}}"))
-                .unwrap();
+    fn the_engine_whitelist_is_every_spool_tool() {
+        let mut served: Vec<&str> = Vec::new();
+        let tools = tools_descriptor();
+        for t in tools.as_array().unwrap() {
+            served.push(t["name"].as_str().unwrap());
         }
-        let conn = Connection::open_in_memory().unwrap();
-        conn.execute_batch(include_str!("../../src/lib/db/schema.sql")).unwrap();
-        conn.execute_batch(&format!(
-            "INSERT INTO workspaces (id, title, sort_order, created_at, updated_at)
-               VALUES ('ws1', 'Work', 0, 1, 1);
-             INSERT INTO threads (id, workspace_id, title, status, is_capture_target,
-                                  created_at, updated_at)
-               VALUES ('th1', 'ws1', 'Offsite', 'active', 0, 1, {now});
-             INSERT INTO blocks (id, thread_id, content, created_at, seq)
-               VALUES ('bk1', 'th1', 'Venue shortlist: Lisbon or Porto', {now} - 2000, 1),
-                      ('bk2', 'th1', 'Lisbon chosen, Porto dropped', {now} - 1000, 2);
-             INSERT INTO follow_up_items (id, thread_id, text, why, standing, fingerprint,
-                                          status, sort_order, created_at)
-               VALUES ('s1', 'th1', 'Has the venue changed its cancellation terms', NULL, 1,
-                       's1', 'open', 0, 1),
-                      ('q1', 'th1', 'Is the 14 May tram strike confirmed', 'day two', 0,
-                       'q1', 'open', 1, 1);
-             UPDATE threads SET follow_up_state =
-               '{{\"v\":1,\"seen\":[{{\"u\":\"https://example.com/a\",\"f\":\"a\",\"at\":{now}}}]}}'
-               WHERE id = 'th1';"
-        ))
-        .unwrap();
-        let tools: Vec<String> = tools_descriptor()
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|t| t["name"].as_str().unwrap().to_string())
-            .collect();
-        // A whole identifier, so `get_blocks` is not read as a mention of `get_block`.
-        let names = |text: &str, tool: &str| {
-            let ident = |c: Option<char>| c.is_some_and(|c| c.is_ascii_alphanumeric() || c == '_');
-            text.match_indices(tool)
-                .any(|(i, _)| !ident(text[..i].chars().next_back()) && !ident(text[i + tool.len()..].chars().next()))
-        };
-
-        for lang in [Lang::Zh, Lang::En] {
-            store_lang(lang);
-            let (gate_on, gate_off) = (write_gate_line(&on_dir), write_gate_line(&off_dir));
-            let digest = get_digest_json(&conn, None, None, None, now).unwrap();
-            let report = thread_health_report(&conn, "th1", "Offsite", now).unwrap();
-            let built = build_pack(&conn, "th1", "all").unwrap();
-            let ids = pack_id_table(&built.blocks, 0);
-            let targets = follow_up_targets_of(&conn, "th1", "Offsite").unwrap();
-            let seen = follow_up_seen_block(&conn, "th1", now);
-            let mut sent = vec![
-                // Headless weekly_review passes no gate at all.
-                ("weekly_review", weekly_review_prompt_text(&digest, review_filing_line(true), "")),
-                ("follow_up_brief", follow_up_brief_prompt_text("Offsite", &built.text)),
-            ];
-            for gate in [gate_on, gate_off] {
-                sent.push(("thread_health", thread_health_prompt_text(&report, gate)));
-                sent.push(("distill", distill_prompt_text("Offsite", &built.text, &ids, gate)));
-                sent.push((
-                    "follow_up",
-                    follow_up_prompt_text("Offsite", &targets, &built.text, &seen, gate),
-                ));
-            }
-            for (action, text) in &sent {
-                let open = text.find(MATERIAL_OPEN).expect("material must be fenced");
-                let close = text.find(MATERIAL_CLOSE).expect("material must be fenced");
-                // The writes-off gate names the whole write surface in order to say every one
-                // of those calls will be refused. That is a prohibition, not an instruction.
-                let instructions = format!("{}{}", &text[..open], &text[close..]).replace(gate_off, "");
-                for tool in &tools {
-                    assert!(
-                        !names(&instructions, tool)
-                            || crate::engine::ALLOWED_TOOL_NAMES.contains(&tool.as_str()),
-                        "the {action} prompt ({lang:?}) names {tool}, which engine.rs's \
-                         ALLOWED_TOOL_NAMES leaves out — the run would be denied that call"
-                    );
-                }
-                // The case that shipped broken, so this test cannot pass by reading nothing.
-                if *action == "follow_up" {
-                    assert!(names(&instructions, "close_follow_up_item"), "{instructions}");
-                    assert!(names(&instructions, "propose_blocks"), "{instructions}");
-                }
-            }
-        }
-        let _ = std::fs::remove_dir_all(&tmp);
+        let mut allowed = crate::engine::ALLOWED_TOOL_NAMES.to_vec();
+        served.sort_unstable();
+        allowed.sort_unstable();
+        assert_eq!(allowed, served, "engine.rs ALLOWED_TOOL_NAMES must list every tool mcp.rs serves");
     }
 
     // ⚠️⚠️ TWIN of followUpFingerprint in src/lib/engine/followUp.ts. Both sides write this
