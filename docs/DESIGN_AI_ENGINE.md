@@ -1,3 +1,4 @@
+<!-- PURGE-BEFORE-APPLICATION: 本文件含来自真实库的申请相关内容（校名 / 项目名 / 截止日期 / 分数 / 选校名单 / 个人材料），发送申请前统一清除或脱敏。总清单：docs/PORTFOLIO_FACTS.md §11.4。标记于 2026-09-23。 -->
 # 设计稿 — Claude Code 引擎位(DESIGN_NEXT_STAGE §4.1 细化)
 
 > 状态:**M1 / M2 / M3 全部落地(2026-08-05)**,实机探针见 `archive/EVAL_M1_M2_M3.md`。

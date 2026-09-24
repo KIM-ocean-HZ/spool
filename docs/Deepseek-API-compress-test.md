@@ -1,3 +1,4 @@
+<!-- PURGE-BEFORE-APPLICATION: 本文件含来自真实库的申请相关内容（校名 / 项目名 / 截止日期 / 分数 / 选校名单 / 个人材料），发送申请前统一清除或脱敏。总清单：docs/PORTFOLIO_FACTS.md §11.4。标记于 2026-09-23。 -->
 # DeepSeek API 压缩实测记录
 
 > **这份是压缩功能的实测台账。** 结论进 `archive/WORKPLAN-2026-08-20.md` §9.3–§9.5 和
