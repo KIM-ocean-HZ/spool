@@ -8097,7 +8097,20 @@ const STALE_SYSTEM: &str = r#"你是一个上下文审阅工具。用户下一�
 5. ⭐ 作答之前,**把每一个条目从头到尾过一遍**,一条都不要跳过。对每一条问一句:后面有没有哪一条把它整个替换掉了?简报里靠后的条目往往会同时取代前面**好几条**,所以找到一条之后不要就此收手,继续把剩下的条目扫完。
 6. 编号写简报里 `#12` 那种编号,只写数字。
 7. 一条都没找到就输出 `[]`。不要前言,不要解释,不要代码块标记,只输出那个 JSON 数组。
-8. {rule}"#;
+8. {rule}
+9. {why_lang}"#;
+
+/// `STALE_SYSTEM` 第 9 条（DISCOVERED-20260923-2）：英文界面下结果卡上的 why 曾是中文。
+///
+/// ⚠️ 整段里只有这一行跟界面语言走 —— why 是原样显示给用户读的那一句；
+/// ⛔ 两句引文不跟：它们要回简报里逐字比对（第 2 条），原文是什么语言就得是什么语言。
+/// 其余字面量不动，理由见 `STALE_SYSTEM` 上面那段注释。
+fn stale_why_rule() -> &'static str {
+    ts!(
+        "why 用中文写。quote_stale 和 quote_new 仍然从简报里逐字照抄 —— 原文是什么语言就照抄什么语言,不要翻译。",
+        "Write why in English. quote_stale and quote_new are still copied verbatim from the briefing, in whatever language the briefing uses there — never translate them."
+    )
+}
 
 /// pack 里一条的编号：`📌 💭 #12 […` → `Some(12)`，不是条目头行 → `None`。
 ///
@@ -8132,7 +8145,9 @@ pub fn entry_seq(line: &str) -> Option<i64> {
 
 /// system（每次都一样，是缓存前缀）和 user（这次的简报）。⚠️ 和压缩那条路同一个形状。
 pub fn stale_messages_for_api(pack_text: &str) -> (String, String) {
-    let system = STALE_SYSTEM.replace("{rule}", material_rule());
+    let system = STALE_SYSTEM
+        .replace("{rule}", material_rule())
+        .replace("{why_lang}", stale_why_rule());
     (system, fenced_material(pack_text))
 }
 
@@ -8361,6 +8376,36 @@ mod compress_prompt_tests {
     fn an_unknown_level_name_does_not_parse() {
         assert_eq!(CompressLevel::parse("conservative"), Some(CompressLevel::Conservative));
         assert_eq!(CompressLevel::parse("压到最短"), None);
+    }
+
+    // DISCOVERED-20260923-2. Only the why line follows the UI language. Everything else in
+    // the out-of-date prompt is the measured literal, and the quote rule is enforced by exact
+    // string matching, so any other byte moving is a change nobody measured.
+    #[test]
+    fn the_stale_prompt_asks_for_why_in_the_ui_language_and_nothing_else_moves() {
+        let render = |l| {
+            store_lang(l);
+            let (system, user) = stale_messages_for_api("SOME-PACK-BODY");
+            (system, user, stale_why_rule(), material_rule())
+        };
+        let (zh, zh_user, zh_why, zh_rule) = render(Lang::Zh);
+        let (en, en_user, en_why, en_rule) = render(Lang::En);
+
+        assert!(zh.contains("9. why 用中文写。"), "{zh}");
+        assert!(en.contains("9. Write why in English."), "{en}");
+        // The quotes are still copied, never translated — in both languages.
+        assert!(zh_why.contains("逐字照抄") && zh_why.contains("不要翻译"), "{zh_why}");
+        assert!(en_why.contains("verbatim") && en_why.contains("never translate"), "{en_why}");
+        assert!(!en.contains(zh_why) && !zh.contains(en_why));
+
+        // Put the two switched lines back as placeholders: what is left is the literal,
+        // byte for byte, in both languages.
+        let unswitched = |s: &str, why: &str, rule: &str| s.replace(why, "{why_lang}").replace(rule, "{rule}");
+        assert_eq!(unswitched(&zh, zh_why, zh_rule), STALE_SYSTEM);
+        assert_eq!(unswitched(&en, en_why, en_rule), STALE_SYSTEM);
+        // The briefing half does not change with the language at all.
+        assert_eq!(zh_user, en_user);
+        assert!(!zh.contains("SOME-PACK-BODY") && !en.contains("SOME-PACK-BODY"));
     }
 }
 
@@ -13208,6 +13253,109 @@ mod tests {
         conn.execute("UPDATE follow_up_items SET standing = 0 WHERE id = 'a'", []).unwrap();
         let targets = follow_up_targets_of(&conn, "th1", "申请规划").unwrap();
         assert!(targets.contains("截止日期有没有改"), "{targets}");
+    }
+
+    // DISCOVERED-20260923-1. A prompt telling an engine run to call a tool that
+    // engine.rs's ALLOWED_TOOL_NAMES leaves out fails nowhere in a test: claude denies the
+    // call at runtime, and the paid run ends with the model asking the user for a
+    // permission. That is how a follow-up found its answer and could not retire the line.
+    // So read the tool names out of what the engine sends and check each one is reachable.
+    //
+    // What the engine sends = guidance_text_headless for the five actions lib.rs
+    // `ai_engine_run` accepts. prompt_body needs the real data dir, so the builders its match
+    // arms call are called directly here, with the same arguments — keep the two in step.
+    // Only the instructions are read, not the fenced material: tool names inside the
+    // material are the user's stored data, and the material rule tells the model so.
+    #[test]
+    fn every_tool_an_engine_prompt_names_is_on_the_engine_whitelist() {
+        let now = 1_750_000_000_000_i64;
+        let tmp = std::env::temp_dir().join(format!("spool-engine-tools-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        let (on_dir, off_dir) = (tmp.join("writes-on"), tmp.join("writes-off"));
+        for (dir, on) in [(&on_dir, true), (&off_dir, false)] {
+            std::fs::create_dir_all(dir).unwrap();
+            std::fs::write(dir.join("settings.json"), format!("{{\"mcpWriteEnabled\":{on}}}"))
+                .unwrap();
+        }
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(include_str!("../../src/lib/db/schema.sql")).unwrap();
+        conn.execute_batch(&format!(
+            "INSERT INTO workspaces (id, title, sort_order, created_at, updated_at)
+               VALUES ('ws1', 'Work', 0, 1, 1);
+             INSERT INTO threads (id, workspace_id, title, status, is_capture_target,
+                                  created_at, updated_at)
+               VALUES ('th1', 'ws1', 'Offsite', 'active', 0, 1, {now});
+             INSERT INTO blocks (id, thread_id, content, created_at, seq)
+               VALUES ('bk1', 'th1', 'Venue shortlist: Lisbon or Porto', {now} - 2000, 1),
+                      ('bk2', 'th1', 'Lisbon chosen, Porto dropped', {now} - 1000, 2);
+             INSERT INTO follow_up_items (id, thread_id, text, why, standing, fingerprint,
+                                          status, sort_order, created_at)
+               VALUES ('s1', 'th1', 'Has the venue changed its cancellation terms', NULL, 1,
+                       's1', 'open', 0, 1),
+                      ('q1', 'th1', 'Is the 14 May tram strike confirmed', 'day two', 0,
+                       'q1', 'open', 1, 1);
+             UPDATE threads SET follow_up_state =
+               '{{\"v\":1,\"seen\":[{{\"u\":\"https://example.com/a\",\"f\":\"a\",\"at\":{now}}}]}}'
+               WHERE id = 'th1';"
+        ))
+        .unwrap();
+        let tools: Vec<String> = tools_descriptor()
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|t| t["name"].as_str().unwrap().to_string())
+            .collect();
+        // A whole identifier, so `get_blocks` is not read as a mention of `get_block`.
+        let names = |text: &str, tool: &str| {
+            let ident = |c: Option<char>| c.is_some_and(|c| c.is_ascii_alphanumeric() || c == '_');
+            text.match_indices(tool)
+                .any(|(i, _)| !ident(text[..i].chars().next_back()) && !ident(text[i + tool.len()..].chars().next()))
+        };
+
+        for lang in [Lang::Zh, Lang::En] {
+            store_lang(lang);
+            let (gate_on, gate_off) = (write_gate_line(&on_dir), write_gate_line(&off_dir));
+            let digest = get_digest_json(&conn, None, None, None, now).unwrap();
+            let report = thread_health_report(&conn, "th1", "Offsite", now).unwrap();
+            let built = build_pack(&conn, "th1", "all").unwrap();
+            let ids = pack_id_table(&built.blocks, 0);
+            let targets = follow_up_targets_of(&conn, "th1", "Offsite").unwrap();
+            let seen = follow_up_seen_block(&conn, "th1", now);
+            let mut sent = vec![
+                // Headless weekly_review passes no gate at all.
+                ("weekly_review", weekly_review_prompt_text(&digest, review_filing_line(true), "")),
+                ("follow_up_brief", follow_up_brief_prompt_text("Offsite", &built.text)),
+            ];
+            for gate in [gate_on, gate_off] {
+                sent.push(("thread_health", thread_health_prompt_text(&report, gate)));
+                sent.push(("distill", distill_prompt_text("Offsite", &built.text, &ids, gate)));
+                sent.push((
+                    "follow_up",
+                    follow_up_prompt_text("Offsite", &targets, &built.text, &seen, gate),
+                ));
+            }
+            for (action, text) in &sent {
+                let open = text.find(MATERIAL_OPEN).expect("material must be fenced");
+                let close = text.find(MATERIAL_CLOSE).expect("material must be fenced");
+                // The writes-off gate names the whole write surface in order to say every one
+                // of those calls will be refused. That is a prohibition, not an instruction.
+                let instructions = format!("{}{}", &text[..open], &text[close..]).replace(gate_off, "");
+                for tool in &tools {
+                    assert!(
+                        !names(&instructions, tool)
+                            || crate::engine::ALLOWED_TOOL_NAMES.contains(&tool.as_str()),
+                        "the {action} prompt ({lang:?}) names {tool}, which engine.rs's \
+                         ALLOWED_TOOL_NAMES leaves out — the run would be denied that call"
+                    );
+                }
+                // The case that shipped broken, so this test cannot pass by reading nothing.
+                if *action == "follow_up" {
+                    assert!(names(&instructions, "close_follow_up_item"), "{instructions}");
+                    assert!(names(&instructions, "propose_blocks"), "{instructions}");
+                }
+            }
+        }
+        let _ = std::fs::remove_dir_all(&tmp);
     }
 
     // ⚠️⚠️ TWIN of followUpFingerprint in src/lib/engine/followUp.ts. Both sides write this

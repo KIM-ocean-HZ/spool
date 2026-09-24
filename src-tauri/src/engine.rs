@@ -64,9 +64,15 @@ const MCP_SERVER_NAME: &str = "spool";
 // back in `permission_denials` and the run ends with the model politely asking the user to
 // turn on a permission that is already on. Explicit names work. If a tool is added to
 // mcp.rs it must be added here too, or the AI simply cannot reach it.
-const ALLOWED_TOOL_NAMES: [&str; 14] = [
+pub(crate) const ALLOWED_TOOL_NAMES: [&str; 15] = [
     "add_block",
     "check_library",
+    // The follow-up run is told to retire every open question it answers
+    // (mcp.rs `follow_up_targets_of`). Left off this list, the answer was found and the
+    // line stayed open, so the next run and the next conversation asked it again
+    // (HANDOFF DISCOVERED-20260923-1). mcp.rs's
+    // `every_tool_an_engine_prompt_names_is_on_the_engine_whitelist` now catches the next one.
+    "close_follow_up_item",
     "create_thread",
     "distill",
     "find_similar_blocks",
