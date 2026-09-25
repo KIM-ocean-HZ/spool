@@ -1,73 +1,106 @@
 # docs/ 里都有什么
 
-**开工只看 `HANDOFF-2026-08-22.md`。** 要知道某一批具体做什么,再翻 `WORKPLAN-2026-08-22.md`。
-本文件是目录,只回答「这份文件是干什么的、还活着吗」。
+本文件只是目录，回答两件事：**这份文件干什么用、它还活着吗**。
+它不决定做什么。
 
-⛔ **`archive/` 里的东西一律不用来开工**,包括那七份旧交接和 `archive/WORKPLAN-2026-08-20.md`。
-2026-08-22 按 Ocean 的要求清过一遍:**任务只许待在一个地方**,其余全部转档。
+**开工顺序（硬规矩，和 `CLAUDE.md` §0 一致）：**
+先读 `EXECUTION_POLICY.md`，再读首屏明确写着 active、且没标 SUPERSEDED 的那份 handoff。
+不要按 IDE 里碰巧开着的文件开工。
 
-## 开工面(三份,只有这三份)
+---
 
-| 文件 | 干什么用 |
-|---|---|
-| ⭐ `HANDOFF-2026-08-22.md` | **每次开工先读它。** 现在什么状态、这一窗做哪几件、等 Ocean 回答什么、动手前的护栏 |
-| ⭐ `WORKPLAN-2026-08-22.md` | **全部未完成任务** + 施工细节 + 红线速查 + 事实基准 + 「做完的事去哪查」 |
-| `COMPRESS-UX-2026-08-22.md` | 压缩功能的十一条交互问题(2026-08-22 Ocean 实际使用后提的),排期在工作计划 D 批 |
+## 一、入口（只有这几份，2026-09-24 现状）
 
-## 活着的(会被改、会被照着开工)
+| 文件 | 干什么用 | 谁在改 |
+|---|---|---|
+| `EXECUTION_POLICY.md` | **长期顺序的唯一权威**，LOCKED。产品 / 记忆研究 / 营销的主次、交替节奏、任务准入 | 只有 Ocean 明确同意才能改，其他一律禁止 |
+| `HANDOFF-2026-09-04.md` | **Knote 这边仍然生效的约束 + 还没做完的事**（2026-09-05 已精简到 190 行）。⛔ 不含执行光标 | 每窗结束时补未完成项 |
+| `CODEX-HANDOFF-STAGE0A-D2-REVIEW-2026-09-03.md` | **实验线（Stage 0-a）的唯一滚动入口**；GR15R3 已 `Redo`，当前光标为 ACTIVE GR15R4。文件名里的日期和 D2 只是历史，内容是最新的 | Codex |
+| `TASKBOOK-STAGE0A-GR15R4-DEVELOPMENT-TRACE-CALLS-MADE-PRE-PRODUCT-READ-CLOSURE-CORRECTION-2026-09-24.md` | **当前唯一 ACTIVE 实验任务书**；只纠正实际 product read / rebuild 顺序自保护，保留既有语义绑定与科学结果，完成即归档 | Codex 下发；Claude Code 执行 |
+| `WORKPLAN-2026-08-22.md` | 产品线的**任务库**：未完成任务、施工细节、红线速查、事实基准 | 做完就删，只减不增 |
+
+两份 handoff 的分工，别搞混：**执行光标只在 Codex 那一份**（它的 §8 列了所有不许恢复的旧光标）；
+`HANDOFF-2026-09-04.md` 只管「仍然生效的约束」和「还没做完的事」，里面不许再出现「下一步 = …」。
+
+**文档管理规则写在 Codex handoff 的 §10**：三条硬规矩（一件事只待一个地方、首屏自报状态、
+做完就搬走）、每轮任务的固定文档动作、以及每份现存文件的作用表。docs 由 Codex 统一管理，
+本 README 是它的目录视图，改动文件时两边一起更新。
+
+---
+
+## 二、记忆研究线
 
 | 文件 | 干什么用 | 状态 |
 |---|---|---|
-| `SPOOL_OVERVIEW.md` | ⭐ **总览(英文)** —— 一份读完就懂 Spool 的全貌:产品、架构、数据、MCP、红线、已量到的数、还没定的商业化四件。**给第一次来的人或 AI 看的入口**;它只做汇总,每一条都指回真正的出处 | 随发布更新 |
-| `DESIGN_AI_ENGINE.md` | Claude Code / Codex / Gemini 引擎位 | M1/M2/M3 + 第三个档(Gemini CLI)全落地 |
-| `DESIGN_WORKBENCH.md` | 工作台(右侧栏、自动维护、流式进度) | 全落地 |
-| `DESIGN_CONTEXT_HYGIENE.md` | 上下文卫生(长度 + 过时) | 已落地;**剩 §9.5 分流** |
-| `DESIGN_FOLLOW_UP.md` | 跟进 —— §8 是会话内跟进(清单化 + MCP 提条目/收尾) | M5/M6 已落地(schema v22);**§8.5 第 4 条 `get_pack` 挂不挂待答条目没定** |
-| `DESIGN_MCP_WRITE_ROLE.md` | MCP 写入权限该干什么(角色定位 + 待审队列) | 已落地 |
-| `DESIGN_MCP_INTENT_ROUTING.md` | 意图路由 —— 让模型找得到那几扇门 | 已落地 |
-| `DESIGN_PROJECT_FILES.md` | 附件从块级搬到项目级 + MCP 申请访问文件 | 已落地(schema v15/v19) |
-| `DESIGN_CAPTURE_FOCUS.md` | 捕捉直达打字 / 焦点 —— **要动捕捉或焦点必读** | 已落地 |
-| `DESIGN_LIBRARY_TRANSFER.md` | 换机器:整库导出 / 导入(导入是合并) | 已落地 |
-| `DESIGN_WORKSPACE_PACK.md` | 工作区嵌套 + 打包整个工作区成文件夹 | 已落地(schema v23) |
-| `DESIGN_WINDOWS_PORT.md` | Windows 版落地稿 | ✅ v0.5.0 已发布;**未签名**是已知欠账 |
-| `DESIGN_FIRST_DAY_VALUE.md` | 首日价值面板 | 已落地 |
-| `DESIGN_CASE_STUDY.md` | 公开 case-study 的计划与理由 | 第一、三期已落地;四五六期在等 |
-| `CASE_STUDY_LEDGER.md` | ⭐ **台账:每个可披露的数字 + 怎么复算 + 失败与修复**(英文) | **只增不改**;规矩在 `DESIGN_CASE_STUDY` §6.3 |
-| `CASE_STUDY_PAGE.md` | **给人读的那一版**:八栏正文,将来上官网(英文) | 会重写,**但不许出现台账查不到的数字** |
-| `WINDOWS-CHECK.md` | 装机后的人工验收清单(两个平台都在用) | 持续维护 |
-| `REVIEW_MEMTRAPBENCH-2026-08-21.md` | MemTrapBench 论文审核 —— 四类陷阱的定义、对 Spool 的真正作用、⛔ 对外口径 | 结论件,排期在工作计划 E 批 |
-| `Deepseek-API-compress-test.md` | ⭐ **压缩/作废检测的实测台账** —— 四轮 130 次的原始数据与真实账单 | **只增不改** |
-| `PROMO-VERDICT-2026-08-20.md` | 宣发第一批为什么整批被否 + 三条硬约束 | 宣发重开工前必读 |
-| `FEEDBACK-FORM-2026-08-22.md` | 官网表单换问卷星 / SurveyMars 的全过程 | 已落地 |
-| `CHECK-DISPLAY-2026-08-21.md` | 主窗装不进屏幕的实测与修复 | 剩验收② |
-| `METRICS.md` | 下载量看板 + `~/Desktop` 的 TCC 陷阱 | 持续维护 |
+| `AI_MEMORY_EXPERIMENT_PROTOCOL-2026-08-26.md` | 实验协议 v0.1（预注册候选）。正式跑的冻结版在实验仓 `~/Desktop/spool-research`，不在这里 | 设计件，被 `EXECUTION_POLICY` 点名引用 |
+| `DESIGN_PROJECT_MEMORY.md` | 「项目工作记忆」的设计稿 + 三线发展框架 | 研究前设计，未进入施工 |
+| `RESEARCH_ANSWER_PROVENANCE-2026-08-29.md` | AI 回答可溯源的调查报告 | 只读调查，未批准施工 |
+| `RESEARCH_RAG_CONTEXT-2026-08-24.md` | 用 RAG / 知识库技术增强上下文管理的调研 | 只读调研，未批准施工 |
 
-⚠️ **数字只有一处权威:`CASE_STUDY_LEDGER.md`。** 别在设计稿里再记一份 ——
-`DESIGN_CASE_STUDY` §2.1 那张表已经因此过期过一次(现在标注了以台账为准)。
+---
 
-## 手册(需要时查,不常改)
+## 三、产品设计稿（还有没做完的格，所以留在这里）
+
+| 文件 | 还欠什么 |
+|---|---|
+| `DESIGN_AI_ENGINE.md` | §7.6「模型真的写进一块」没验到；§7.7 免费档要不要再补一个，待拍板 |
+| `DESIGN_CONTEXT_HYGIENE.md` | 第 5 件（AI 一句话标签）当初压后，§8 说「现在该看了」 |
+| `DESIGN_FOLLOW_UP.md` | §8 会话内跟进这条新形状；M4 定时已明确不做 |
+| `DESIGN_MCP_INTENT_ROUTING.md` | A–E 已落地，**F 未开工**，要单独一窗 |
+| `DESIGN_MCP_WRITE_ROLE.md` | M1 已落地，M2 等真实使用后再定 |
+| `DESIGN_PROJECT_FILES.md` | 评估 + 计划，未开工 |
+| `DESIGN_WORKBENCH.md` | §9 那轮重构（「界面被无用按钮堆满」）是主线，§9.5 有两处冲突要先解 |
+| `DESIGN_WORKSPACE_PACK.md` | 嵌套已提交；**打包那半（§7）还没提交** |
+| `DESIGN_WINDOWS_PORT.md` | 首版已发，**未签名**是已知欠账 |
+| `WINDOWS-CHECK.md` | 给 Ocean 在 Windows 上照着做的验收单，第三、四轮还没装机验 |
+| `COMPRESS-UX-R2-2026-08-22.md` | 八条里 **1、5、7 三条没做**（第 1 条最大：压缩稿直接替换原库正文） |
+| `FEEDBACK-FORM-2026-08-22.md` | 问卷题目已写好，等 Ocean 在问卷星建好两份并把链接发回 |
+| `DESIGN_CASE_STUDY.md` | 申请用 case-study 的计划与维护规矩；后面几期还在等 |
+
+---
+
+## 四、事实与对外口径
 
 | 文件 | 干什么用 |
 |---|---|
-| `RELEASE.md` | 发版流程(公证直发 `.dmg`)+ **§0.0 当前版本状态** |
-| `RELEASE_NOTES_v0.5.0.md` | v0.5.0 的发布说明原文(`gh release create --notes-file` 用的就是它) |
-| `DB_BACKUP_AND_RECOVERY.md` | 真库备份与恢复 —— **动库之前必读** |
-| `PRIVACY.md` | 隐私声明。⚠️ **一共三处要一起改**:本文件、`site/privacy.html`、`scripts/site-zh-privacy.html`(改完跑 `node scripts/build-site-zh.mjs`) |
-| `MCP_SCREENSHOT_GUIDE.md` | 官网截图怎么拍 |
-| `DEMO_SCRIPT.md` | 演示视频分镜 |
-| `QA_SITE_2026-08-13.md` | 官网静态页 QA + **视觉基线怎么跑**(台账 §7 引它) |
-| `MCP_LAB_PROMPT.md` | 隔离实验室的评审提示词 |
+| `CASE_STUDY_LEDGER.md` | **可披露数字的唯一权威台账**（英文），只增不改。别在设计稿里再记一份 |
+| `CASE_STUDY_PAGE.md` | 给人读的那一版八栏正文（英文），不许出现台账查不到的数字 |
+| `Deepseek-API-compress-test.md` | 压缩 / 作废检测的实测台账，六轮原始数据与真实账单，只增不改 |
+| `METRICS.md` | 下载量看板。注意那 32 次全是自测，真实外部用户 = 0 |
+| `SPOOL_OVERVIEW.md` | 给第一次来的人或外部 AI 看的英文总览。⚠️ 里面那张 Pack 表头的表**已经过期**，判审四带 / Reference 规则以 `src-tauri/src/mcp.rs` + `src/lib/pack/templates.ts` 为准 |
 
-## `archive/` — 已经做完的、已经定了的
+---
 
-做完的设计稿、以及问题已经有答案的调查,全在 `archive/`,**别照它们开工**。
-里面有几份的开头还写着「待 Ocean 批复」,那是过期的标题,不是今天的状态 ——
-详见 `archive/README.md`。
+## 五、手册（需要时查，不常改）
 
-- `archive/mcp-reviews/` — 三轮 MCP 评审的原始记录 + 下次开评审前必看的三条
-- `archive/site/` — 官网改版评审意见(2026-08-02)
+| 文件 | 干什么用 |
+|---|---|
+| `RELEASE.md` | 发版流程（Developer ID 签名 + 公证 + `.dmg` 直发） |
+| `RELEASE_NOTES_v0.6.2.md` 等四份 | 各版本发布说明原文，`gh release create --notes-file` 用的就是它们 |
+| `DB_BACKUP_AND_RECOVERY.md` | 真库备份与恢复，动库之前必读 |
+| `PRIVACY.md` | 隐私声明。改它必须同时改 `site/privacy.html` 和 `scripts/site-zh-privacy.html`，再跑 `node scripts/build-site-zh.mjs` |
 
-## 不在 git 里的
+---
 
-- `ID.txt` —— 签名/公证用的 Apple 凭据,`.gitignore` 里挡着,**别提交、别贴进任何文档**。
-- `screenshots/S2-1.png`、`S2-2.png`、`mcp-filed-full-2026-08-13.png` —— 拍了但没采用的图。
+## 六、`archive/` —— 做完的、作废的、只用来查历史
+
+规矩不变：**archive 里的东西一律不用来开工**，只用来查「当初为什么这么定」。
+
+2026-09-05 这次清理移进去的：
+
+- 已 SUPERSEDED 的开工面：`HANDOFF-2026-08-22.md`、`HANDOFF-2026-08-30.md`、`NEXT-WINDOW-PROMPT-2026-08-27.md`
+- 跑完就作废的一次性清单：`OVERNIGHT-TEST-PLAN-2026-08-23.md`、`OVERNIGHT-TEST-PLAN-2026-08-24.md`、`QA_SITE_2026-08-13.md`
+- 已经全做完的那几摊：`TEN-ITEMS-2026-08-27.md`、`FIND-UX-2026-08-27.md`、`COMPRESS-UX-2026-08-22.md`、`CHECK-DISPLAY-2026-08-21.md`、`FIX_TAILWIND_ALPHA-2026-08-19.md`
+- 已落地的设计稿：`DESIGN_CAPTURE_FOCUS.md`、`DESIGN_FIRST_DAY_VALUE.md`、`DESIGN_LIBRARY_TRANSFER.md`、`DESIGN_VALENTINE_EDITION.md`
+- 留档不开工的：`PROMO-VERDICT-2026-08-20.md`、`DEMO_SCRIPT.md`、`REVIEW_MEMTRAPBENCH-2026-08-21.md`、`MCP_LAB_PROMPT.md`、`MCP_SCREENSHOT_GUIDE.md`
+- `archive/stage0a-taskbooks/` —— Stage 0-a 已验收 / 已被纠正的 36 份任务书（D2 到 GR15R3）；根目录当前另有 1 份 ACTIVE GR15R4 任务书
+- `archive/HANDOFF-2026-09-04-FULL-PROCESS-LOG.md` —— 精简前的 2455 行完整过程流水（逐窗记录、已消耗的预算与提示词），一个字没删
+
+原有的子目录：`archive/mcp-reviews/`（三轮 MCP 评审原始记录）、`archive/site/`（官网改版评审）、`archive/promo-2026-08-20-discarded/`（被否掉的第一批物料）。
+
+---
+
+## 七、不在 git 里的
+
+- `ID.txt` —— 签名 / 公证用的 Apple 凭据，`.gitignore` 挡着，别提交、别贴进任何文档
+- `screenshots/S2-1.png`、`S2-2.png`、`mcp-filed-full-2026-08-13.png` —— 拍了但没采用的图
