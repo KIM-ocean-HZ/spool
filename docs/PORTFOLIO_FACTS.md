@@ -1,3 +1,4 @@
+<!-- PURGE-BEFORE-APPLICATION: 本文件是给申请作品集用的事实表，§11.4 列着哪些文件含申请相关内容；发送申请前一并清除或移出公开仓库。总清单：本文件 §11.4。标记于 2026-09-25。 -->
 # Spool — 作品集事实表（PORTFOLIO_FACTS）
 
 > **生成日期**：2026-09-23（本机时区 UTC+1；实测命令的 UTC 时间写在各条里）
@@ -413,7 +414,7 @@ cargo test --manifest-path src-tauri/Cargo.toml
 
 | 测试 | 它钉死了什么 | 位置 | 链接安全 |
 |---|---|---|---|
-| **跨语言 golden** | TS 和 Rust 两个 pack 渲染器对**同一份夹具**必须逐字节相同（时间戳先归一） | `src/lib/pack/assemble.test.ts:822-826`；`src-tauri/src/mcp.rs:9097` `golden_pack_matches_fixture`；夹具 `src/lib/pack/fixtures/golden-pack.expected.txt` | assemble.test.ts 安全；夹具与 mcp.rs 不安全（夹具里有一行选校相关的文字） |
+| **跨语言 golden** | TS 和 Rust 两个 pack 渲染器对**同一份夹具**必须逐字节相同（时间戳先归一） | `src/lib/pack/assemble.test.ts:822-826`；`src-tauri/src/mcp.rs:9097` `golden_pack_matches_fixture`；夹具 `src/lib/pack/fixtures/golden-pack.expected.txt` | assemble.test.ts 安全；夹具与 mcp.rs 不安全（夹具里有一行和申请相关的文字） |
 | ⚠️ 上面那条的限定 | 两个渲染器**喂进去的数据故意不同**（TS 侧没有跨项目的项目名），golden 对的是渲染函数 | WORKPLAN §4.1「两个 pack 渲染器故意不一致」；ledger §3.45（真实 pack 上只差 3 行） | — |
 | **迁移全程走一遍** | 用 `downgradeToV2…V23` 把库降回 v2，再一步步迁到 v24，用户数据还在 | `src/lib/db/client.test.ts:341`「walks a v2 database through every step to the current version」 | 不安全 |
 | **防清库** | 一个有数据的库遇到不认识的版本时**抛错，不重建** | `client.test.ts:935`「refuses to rebuild a populated database at an unknown version」；来由 ledger §3.1 | 不安全 |
@@ -839,7 +840,7 @@ grep -rl 'PURGE-BEFORE-APPLICATION' --include='*.md' . | grep -v node_modules
 ```
 
 **判定标准**
-- **标记**：文中有来自真实库的申请内容，比如校名、项目名、截止日期、分数、选校名单、个人材料，或者真实库里的申请类项目标题（如〈申请规划〉〈申请帮助〉）。
+- **标记**：文中有来自真实库的申请内容，比如校名、项目名、截止日期、分数、选校名单、个人材料，或者真实库里申请类项目的标题。
 - **不标**：偶然撞词（MIT 许可证、Windows 的 MSI 安装包、引用 Stanford 的论文），只提到「给作品集做素材」这类计划，或者只写了计数、没有内容。
 
 **已标记的 28 份文档**
@@ -850,24 +851,30 @@ grep -rl 'PURGE-BEFORE-APPLICATION' --include='*.md' . | grep -v node_modules
 | **已公开，但公开 main 上是挪动前的旧路径**（工作区里被挪进了 `archive/`，还没提交，4 份） | `docs/archive/DESIGN_LIBRARY_TRANSFER.md` · `docs/archive/OVERNIGHT-TEST-PLAN-2026-08-23.md` · `docs/archive/OVERNIGHT-TEST-PLAN-2026-08-24.md` · `docs/archive/PROMO-VERDICT-2026-08-20.md` |
 | **只在本地提交里**（没推送，2 份） | `docs/archive/HANDOFF-2026-08-29.md` · `docs/archive/HANDOFF-2026-08-30.md` |
 
+**2026-09-25 推送前补查后又标了 2 份**（查的范围是推送后会公开的全部 174 个文件：未推送提交改过的，加上当时所有未提交的；没有发现任何密钥或 token）：
+- `docs/CODEX-HANDOFF-STAGE0A-D2-REVIEW-2026-09-03.md`：出现私有实验仓库的名字（作品集列为绝不出现）。
+- `docs/PORTFOLIO_FACTS.md`（本文件）：给申请作品集用的事实表，而且本节列着哪些文件含申请内容。09-25 之前本节的两条命令里还直接写着校名，已改成读仓库外的清单文件。
+
 **看过、没有标记的**（原因）：`docs/archive/INVESTIGATION_WINDOWS_PORT_2026-08-13.md` 与 `docs/DESIGN_WINDOWS_PORT.md`（MSI 是安装包格式）· `docs/archive/RELEASE-0.5.0-HANDOFF.md` 与 `docs/EXECUTION_POLICY.md`（MIT 许可证；后者还是 owner 锁定文件）· `docs/DESIGN_PROJECT_MEMORY.md`（引用 Stanford 的研究）· `docs/archive/DESIGN_NEXT_STAGE.md`、`docs/archive/Spool-strategy-2026-08-19.md`（只写了「给作品集做素材」「owner 本人是申请者」这类计划和身份，没有申请内容）· `docs/archive/SITE_REVISION_LIST.md`（只有块数）· `docs/archive/essayprove-gpt-analysis.md`、`docs/archive/HANDOFF-CODEX.md`（泛泛的示例句和规则）· 各种求职、租房示例（演示数据）。
 
 **源码与测试夹具：没有在文件里加标记**（它们不是「文档」；而 golden 夹具多一个字节，跨语言对照测试就会失败）。工作区（main）里共 **45 个**文件的注释、测试数据或夹具出现校名、考试名、分数或申请类项目名，其中一部分是照真实内容写的测试夹具：
 
 `scripts/gen_mock.py`、`src-tauri/src/api_engine.rs`、`src-tauri/src/compress_sweep.rs`、`src-tauri/src/mcp.rs`、`src-tauri/src/pack.rs`、`src/components/Compress/StaleReview.tsx`、`src/components/Review/ReviewPanel.tsx`、`src/components/RightRail/RefReviewSection.tsx`、`src/components/ThreadView/CitationLine.tsx`、`src/components/ThreadView/DateNotices.tsx`、`src/components/ThreadView/ThreadHeader.tsx`、`src/lib/ai/compress.test.ts`、`src/lib/ai/compress.ts`、`src/lib/ai/compressBlocks.test.ts`、`src/lib/ai/compressBlocks.ts`、`src/lib/ai/shield.test.ts`、`src/lib/blocks/dates.test.ts`、`src/lib/blocks/dates.ts`、`src/lib/blocks/provenance.test.ts`、`src/lib/blocks/quoteFold.test.ts`、`src/lib/blocks/quoteFold.ts`、`src/lib/blocks/quoteRelocate.test.ts`、`src/lib/blocks/quoteRelocate.ts`、`src/lib/blocks/staleGuards.test.ts`、`src/lib/blocks/staleGuards.ts`、`src/lib/db/blocks.test.ts`、`src/lib/db/blocks.ts`、`src/lib/db/client.test.ts`、`src/lib/db/dateDismissals.ts`、`src/lib/db/fileAccess.test.ts`、`src/lib/db/followUpItems.test.ts`、`src/lib/db/transfer.test.ts`、`src/lib/engine/followUp.test.ts`、`src/lib/i18n/index.ts`、`src/lib/pack/assemble.test.ts`、`src/lib/pack/assemble.ts`、`src/lib/pack/fixtures/golden-pack.expected.txt`、`src/lib/pack/fixtures/golden-pack.json`、`src/lib/pack/folder.test.ts`、`src/lib/pack/folder.ts`、`src/lib/pack/skeleton.test.ts`、`src/lib/pack/skeleton.ts`、`src/lib/pack/templates.ts`、`src/stores/compressStore.stale.test.ts`、`src/stores/compressStore.test.ts`
 
+**校名清单不入库**：要匹配的校名、考试名和申请类项目名放在仓库外的两个本机文件里——`~/Desktop/Spool/purge-patterns-words.txt`（英文，按整词匹配）和 `~/Desktop/Spool/purge-patterns-zh.txt`（中文）。文档里只写读这两个文件的命令，不写名字本身。
+
 重算这份清单：
 
 ```bash
-{ git grep -lwE 'UCLA|Cornell|CMU|UPenn|USC|TOEFL|UMich|MHCI|MSAII|GRE|UIUC|Georgia Tech' -- src src-tauri/src src-tauri/sidecar scripts site;
-  git grep -lE '申请规划|申请帮助|选校' -- src src-tauri/src src-tauri/sidecar scripts site; } | sort -u
+{ git grep -lwE -f ~/Desktop/Spool/purge-patterns-words.txt -- src src-tauri/src src-tauri/sidecar scripts site;
+  git grep -lE -f ~/Desktop/Spool/purge-patterns-zh.txt -- src src-tauri/src src-tauri/sidecar scripts site; } | sort -u
 ```
 
 清理这批时要注意：golden 夹具（`src/lib/pack/fixtures/golden-pack.*`）必须和两个渲染器一起用 `GOLDEN_WRITE=1` 重生成；改测试数据后要把 §4.1 的两套测试都重跑一遍。
 
 **光删文件去不掉的三处**
 1. **git 历史**：已推送的内容，删掉之后在历史里仍然查得到。要彻底去掉只能改写历史再强推。那等于把仓库 `CLAUDE.md` §5 记录过的那次去署名流程再走一遍：所有 tag 要重新指、GitHub 的缓存要等它重算。
-2. **提交信息**：全部 ref 上有 **18 个**提交的提交信息里出现校名或申请类项目名，其中 **17 个**已公开（`git log --all -E --grep='UCLA|Cornell|CMU|…|申请规划|选校'`）。
+2. **提交信息**：全部 ref 上有 **19 个**提交的提交信息里出现校名、考试名或申请类项目名，**全部早已公开**；本地未推送的提交里没有（2026-09-25 查）。命令：`git rev-list --all | while read h; do git log -1 --format=%B "$h" | grep -qE -f ~/Desktop/Spool/purge-patterns-words.txt -f ~/Desktop/Spool/purge-patterns-zh.txt && echo "$h"; done | sort -u | wc -l`。（09-23 写的「18 个，其中 17 个公开」用的是另一套不分大小写的词表，口径不同，以这次为准。）
 3. **GitHub 之外的副本**：本机评测归档（`~/Library/Application Support/spool-compress-sweep/`）不在仓库里、没公开，但也是真实内容。
 
 ---
@@ -948,7 +955,7 @@ grep -rl 'PURGE-BEFORE-APPLICATION' --include='*.md' . | grep -v node_modules
 | 2026-09-23 | §9 | 作品集线索：`app-*` 与 `mcp-*` 是 08-13 隔离库拍的 | 基本成立；`mcp-tools.png` 等 5 张是 07-29 的；`app-capture.png` 08-16 重拍、来源没写 | — |
 | 2026-09-23（第二轮） | 头部 · §4 · §6 | 本地 main HEAD `a0236a3` | `bbf31e8` | 按 `CLAUDE.md` §5 改写 4 个提交的信息；tree 相同，测试结果不受影响 |
 | 2026-09-23（第二轮） | §1.2 | Windows 链接 404「要定怎么处理」 | 已知问题，暂不处理 | Hanze 定：以后更新安装包 |
-| 2026-09-23（第二轮） | §4.3 | golden 夹具标「链接安全」 | 不安全 | 夹具里有一行选校相关的文字 |
+| 2026-09-23（第二轮） | §4.3 | golden 夹具标「链接安全」 | 不安全 | 夹具里有一行和申请相关的文字 |
 | 2026-09-23（第二轮） | §9 | 没有 v0.6.2 界面的截图 | 8 张（`docs/screenshots/portfolio/`） | 隔离构建 + 演示种子，零花费；MCP 写入那张是发布件的真实调用 |
 | 2026-09-23（第二轮） | §11.2 · §12 | 「缺，要 Hanze 自述 / 确认」 | 按仓库记录写明 | Hanze 定：按实际情况说明 |
 | 2026-09-23（第二轮） | §11.3 · §11.4 | 「v0.6.2 源码里 21 个文件」 | 28 份文档已标记；工作区 45 个源码 / 夹具文件列清单 | 21 是 v0.6.2 上只数校名 / 考试名的结果；45 是 main 上连申请类项目名一起数 |
@@ -960,3 +967,5 @@ grep -rl 'PURGE-BEFORE-APPLICATION' --include='*.md' . | grep -v node_modules
 | 2026-09-24（第二轮） | §2.1 | 没有单列「跟进」 | 新增「联网跟进（Follow up）」一行，只写 v0.6.2 做到的，附两处限定 | Hanze：把跟进加进作品集的 Spool 介绍 |
 | 2026-09-24（第二轮） | §2.3 | 本地 main 只到 `ee3dbda` | 加 `d1c972c` 和 `d576ee3` 两行 | 后者把引擎白名单补齐到 22 个工具 |
 | 2026-09-24（第二轮） | §9.2 · §9.3 · §13 | 18 张；§9.3 / §13 挂着「等修好后重拍」「下一窗修」 | 20 张（加 `main-d1c972c-10`、`-11` 两张跟进图，Hanze 拍）；这几条划掉、标已完成；§13 加 7c（Codex） | 命名规则加 `main-d1c972c-` 前缀 |
+| 2026-09-25 | §11.4 | 两条命令的正则里直接写着校名；「18 个提交、17 个公开」 | 校名挪到仓库外的 `~/Desktop/Spool/purge-patterns-*.txt`，命令改读文件；19 个提交、全部早已公开 | 推送前补查时发现是本文件自己泄露了校名 |
+| 2026-09-25 | 首行 · §11.4 | 已标 28 份 | 再标 2 份：CODEX 交接文件（私有仓库名）、本文件 | Hanze 定：推送前把有问题的文件照同样做法标记，申请时一并删除 |
