@@ -10,7 +10,7 @@
 > - Product definition and non-goals → `PLAN_EN.md` §2
 > - Publishable figures and incident records → `docs/CASE_STUDY_LEDGER.md`
 > - Per-feature design rationale → `docs/DESIGN_*.md`
-> - What to work on next → `docs/HANDOFF-2026-08-22.md` (read this first) and `docs/WORKPLAN-2026-08-22.md` (every open task)
+> - What to work on next → `docs/EXECUTION_POLICY.md` (long-term order, locked) plus the newest HANDOFF whose first screen says active (`docs/HANDOFF-2026-09-04.md` as of 2026-09-05); `docs/WORKPLAN-2026-08-22.md` holds the open-task detail. The old `HANDOFF-2026-08-22.md` is SUPERSEDED and now lives in `docs/archive/`
 >
 > Where this file and one of those disagree, the other one wins and this file is stale.
 >
@@ -1018,7 +1018,7 @@ Not "note-taking." Three things, in descending order of defensibility:
 
 | If you are… | Read |
 |---|---|
-| Deciding what to work on | `docs/HANDOFF-2026-08-22.md` first — it is the only working surface. Task detail lives in `docs/WORKPLAN-2026-08-22.md` |
+| Deciding what to work on | `docs/EXECUTION_POLICY.md` (locked long-term order) then the newest active HANDOFF — `docs/HANDOFF-2026-09-04.md` as of 2026-09-05. Task detail lives in `docs/WORKPLAN-2026-08-22.md` |
 | About to touch code | `docs/WORKPLAN-2026-08-22.md` §4 — the red-line quick reference. Every line there was once written backwards **and the tests still passed** |
 | Proposing a feature | `PLAN_EN.md` §2 — constitution, rejected list, the five-question filter |
 | Quoting a number publicly | `docs/CASE_STUDY_LEDGER.md` — the **only** authority for figures; append-only |
@@ -1037,12 +1037,12 @@ Not "note-taking." Three things, in descending order of defensibility:
 | `DESIGN_MCP_WRITE_ROLE.md` | Why AI write access exists at all, and the review queue |
 | `DESIGN_MCP_INTENT_ROUTING.md` | Making the model find the door (§8.4) |
 | `DESIGN_PROJECT_FILES.md` | Project-level attachments; **§9 = why file permission collapsed to one lock** |
-| `DESIGN_CAPTURE_FOCUS.md` | Capture focus and typing — **required reading before touching capture** |
-| `DESIGN_LIBRARY_TRANSFER.md` | Export/import (import merges) |
+| `archive/DESIGN_CAPTURE_FOCUS.md` | Capture focus and typing — **required reading before touching capture** |
+| `archive/DESIGN_LIBRARY_TRANSFER.md` | Export/import (import merges) |
 | `DESIGN_WORKSPACE_PACK.md` | Workspace nesting + folder pack |
 | `DESIGN_WINDOWS_PORT.md` | The Windows port; unsigned is a known debt |
-| `DESIGN_FIRST_DAY_VALUE.md` | The first-day value panel |
-| `DESIGN_VALENTINE_EDITION.md` | Appearance + break reminder, with the study citation |
+| `archive/DESIGN_FIRST_DAY_VALUE.md` | The first-day value panel |
+| `archive/DESIGN_VALENTINE_EDITION.md` | Appearance + break reminder, with the study citation |
 | `DESIGN_CASE_STUDY.md` | Why the public case study exists and how it is governed |
 
 **Archive.** `docs/archive/` holds finished designs and settled investigations. Some still carry
@@ -1051,7 +1051,7 @@ from them.
 
 **Manuals**: `RELEASE.md`, `DB_BACKUP_AND_RECOVERY.md`, `PRIVACY.md` (⚠️ three copies must change
 together: the doc, `site/privacy.html`, `scripts/site-zh-privacy.html`, then rebuild the Chinese
-site), `MCP_SCREENSHOT_GUIDE.md`, `DEMO_SCRIPT.md`, `WINDOWS-CHECK.md`, `MCP_LAB_PROMPT.md`.
+site), `archive/MCP_SCREENSHOT_GUIDE.md`, `archive/DEMO_SCRIPT.md`, `WINDOWS-CHECK.md`, `archive/MCP_LAB_PROMPT.md`.
 
 **Not in the repository** (deliberately): `docs/ID.txt`, the Apple signing credentials. Never
 commit it, never paste it into any document.

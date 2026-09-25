@@ -65,7 +65,7 @@
 |---|---|---|---|
 | 1 | **目标用户** | ⚠️ **散的**。官网首屏有一版说法;`DESIGN_MCP_WRITE_ROLE` §1 有"写入权限凭什么存在"的论证 | **一段正经的、写给外人看的**。这是唯一要从零写的一栏 |
 | 2 | **架构图** | 无图,但结构清楚:桌面端(Tauri + React)/ MCP stdio 服务 / CLI 引擎位(claude、codex)/ 本地 SQLite | **图本身**。⚠️ 排在代码收口之后(memory 里的时机是 Ocean 定的) |
-| 3 | **MCP / CLI / 桌面端关系** | `DESIGN_AI_ENGINE.md`、`DESIGN_MCP_WRITE_ROLE.md`、`docs/MCP_SCREENSHOT_GUIDE.md` | 提炼成外人能读的一页 |
+| 3 | **MCP / CLI / 桌面端关系** | `DESIGN_AI_ENGINE.md`、`DESIGN_MCP_WRITE_ROLE.md`、`docs/archive/MCP_SCREENSHOT_GUIDE.md` | 提炼成外人能读的一页 |
 | 4 | **隐私与写入边界** | ✅ **最全的一栏**。`PRIVACY.md`;两道开关 `mcpEnabled` / `mcpWriteEnabled`;不出网(memory `mcp-first-pivot`);`DESIGN_MCP_WRITE_ROLE` §2 那道"可推导性"闸门 | 基本只需要搬运 |
 | 5 | **release 链接** | `RELEASE.md`;仓库 **已经是公开的**(2026-05-17 建) | ⚠️ 见 §3-② |
 | 6 | **Apple notarization** | memory `distribution-route-notarized-dmg`(含不上 MAS 的沙盒冲突清单) | **公证回执的编号/时间截图** —— 这正是"可回溯"要的东西 |

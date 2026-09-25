@@ -2162,7 +2162,7 @@ gone; Story links honestly to the existing interactive browser demo.
   local scroll regions, keyboard horizontal scrolling, image alt/captions, and actual Chrome 200%
   page zoom on `/`, `/zh/`, and `/story.html` passed. VoiceOver was not run; this is not a complete
   formal audit. Full detail is in
-  `docs/QA_SITE_2026-08-13.md`.
+  `docs/archive/QA_SITE_2026-08-13.md`.
 - Browser matrix: all five static routes at 390, 768, and 1440px had no page-level horizontal
   overflow; Story images decoded and every figure had a caption.
 - Automated baseline: Vitest **361 / 361**, TypeScript clean, Rust **72 / 72**, Chinese site test
