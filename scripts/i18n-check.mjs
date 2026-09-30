@@ -14,52 +14,63 @@
 //   node scripts/i18n-check.mjs --dead   → also list dictionary keys nothing uses any more
 //
 // Exit code is 1 when something is missing, so it can gate a commit if that is ever wanted.
+// `scripts/i18n-check.test.mjs` runs the same scan inside vitest, so a green suite includes it.
 //
 // ⚠️ It only sees STRING LITERALS passed to t()/ts(). A call like `t(SOME_CONST)` is beyond
 // it — those are usually label tables (engineStore's ACTION_LABEL, pack templates), whose
 // values must be in the dictionary too. Check those by eye when you add one.
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const DICT = 'src/lib/i18n/index.ts';
 
-const sources = [];
-(function walk(dir) {
-  for (const name of fs.readdirSync(dir)) {
-    const p = path.join(dir, name);
-    if (fs.statSync(p).isDirectory()) walk(p);
-    else if (/\.tsx?$/.test(name) && !/\.test\./.test(name)) sources.push(p);
-  }
-})('src');
-
-const dict = fs.readFileSync(DICT, 'utf8');
 const hasChinese = (s) => /[一-鿿]/.test(s);
 // Quoted key, either quote style, escapes honoured; `\s*` covers a call broken over lines.
 const CALL = /\bts?\(\s*(['"])((?:(?!\1)[^\\]|\\.)*)\1/g;
-const inDict = (key) => dict.includes(`'${key}'`) || dict.includes(`"${key}"`);
 
-const used = new Map();
-for (const file of sources) {
-  if (path.normalize(file) === path.normalize(DICT)) continue;
-  const text = fs.readFileSync(file, 'utf8');
-  for (const m of text.matchAll(CALL)) {
-    if (hasChinese(m[2]) && !used.has(m[2])) used.set(m[2], file);
+// Paths are relative to the repo root — run it from there (vitest does).
+export function scan() {
+  const sources = [];
+  (function walk(dir) {
+    for (const name of fs.readdirSync(dir)) {
+      const p = path.join(dir, name);
+      if (fs.statSync(p).isDirectory()) walk(p);
+      else if (/\.tsx?$/.test(name) && !/\.test\./.test(name)) sources.push(p);
+    }
+  })('src');
+
+  const dict = fs.readFileSync(DICT, 'utf8');
+  const inDict = (key) => dict.includes(`'${key}'`) || dict.includes(`"${key}"`);
+
+  const used = new Map();
+  for (const file of sources) {
+    if (path.normalize(file) === path.normalize(DICT)) continue;
+    const text = fs.readFileSync(file, 'utf8');
+    for (const m of text.matchAll(CALL)) {
+      if (hasChinese(m[2]) && !used.has(m[2])) used.set(m[2], file);
+    }
   }
+
+  const missing = [...used].filter(([key]) => !inDict(key));
+  return { sources, dict, used, missing };
 }
 
-const missing = [...used].filter(([key]) => !inDict(key));
-for (const [key, file] of missing) console.log(`MISSING  ${key}\t${file}`);
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  const { sources, dict, missing } = scan();
+  for (const [key, file] of missing) console.log(`MISSING  ${key}\t${file}`);
 
-if (process.argv.includes('--dead')) {
-  const declared = [...dict.matchAll(/^\s*'((?:[^'\\]|\\.)*)':/gm)].map((m) => m[1]);
-  const body = sources
-    .filter((f) => path.normalize(f) !== path.normalize(DICT))
-    .map((f) => fs.readFileSync(f, 'utf8'))
-    .join('\n');
-  for (const key of declared) {
-    if (!body.includes(`'${key}'`) && !body.includes(`"${key}"`)) console.log(`DEAD     ${key}`);
+  if (process.argv.includes('--dead')) {
+    const declared = [...dict.matchAll(/^\s*'((?:[^'\\]|\\.)*)':/gm)].map((m) => m[1]);
+    const body = sources
+      .filter((f) => path.normalize(f) !== path.normalize(DICT))
+      .map((f) => fs.readFileSync(f, 'utf8'))
+      .join('\n');
+    for (const key of declared) {
+      if (!body.includes(`'${key}'`) && !body.includes(`"${key}"`)) console.log(`DEAD     ${key}`);
+    }
   }
-}
 
-if (missing.length === 0) console.log('(none missing)');
-process.exit(missing.length === 0 ? 0 : 1);
+  if (missing.length === 0) console.log('(none missing)');
+  process.exit(missing.length === 0 ? 0 : 1);
+}
