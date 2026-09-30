@@ -676,6 +676,7 @@ mod tests {
             reasoning_effort: None,
             thinking_disabled: false,
             timeout_secs: 30,
+            kind: String::new(),
         }
     }
 
@@ -683,6 +684,7 @@ mod tests {
         match e {
             Envelope::Err { kind, .. } => kind,
             Envelope::Ok { .. } => "ok",
+            Envelope::Balance { .. } => "balance",
         }
     }
 
@@ -695,6 +697,14 @@ mod tests {
     #[test]
     fn an_empty_key_is_refused_before_anything_is_sent() {
         assert_eq!(kind_of(&run(req("https://api.example.com", "   "))), "bad_config");
+    }
+
+    // 查余额也带着 key。明文 http 那道闸必须排在「是不是查余额」前面。
+    #[test]
+    fn a_balance_query_over_plain_http_is_refused_before_anything_is_sent() {
+        let mut r = req("http://api.example.com", "sk-x");
+        r.kind = "balance".into();
+        assert_eq!(kind_of(&run(r)), "bad_config");
     }
 
     // §6.2 约束 4 点名的三类，界面要分别说话，所以它们不能塌成同一个 kind。
