@@ -10,7 +10,7 @@
 > - Product definition and non-goals → `PLAN_EN.md` §2
 > - Publishable figures and incident records → `docs/CASE_STUDY_LEDGER.md`
 > - Per-feature design rationale → `docs/DESIGN_*.md`
-> - What to work on next → `docs/EXECUTION_POLICY.md` (long-term order, locked) plus the newest HANDOFF whose first screen says active (`docs/HANDOFF-2026-09-04.md` as of 2026-09-05); `docs/WORKPLAN-2026-08-22.md` holds the open-task detail. The old `HANDOFF-2026-08-22.md` is SUPERSEDED and now lives in `docs/archive/`
+> - What to work on next → `docs/EXECUTION_POLICY.md` (long-term order, locked) plus the newest HANDOFF whose first screen says active (`docs/HANDOFF-2026-09-04.md` as of 2026-09-30); that HANDOFF's §10 holds the open-task detail and red lines (the old `WORKPLAN-2026-08-22.md` was merged into it on 2026-09-30 and moved to `docs/archive/`), and product work is dispatched as one ACTIVE `docs/TASKBOOK-P<n>-*.md` at a time. The old `HANDOFF-2026-08-22.md` is SUPERSEDED and now lives in `docs/archive/`
 >
 > Where this file and one of those disagree, the other one wins and this file is stale.
 >
@@ -840,14 +840,14 @@ reversed only by the owner, explicitly — never as a side effect of implementin
 
 ## 14. Open engineering debt
 
-From `docs/WORKPLAN-2026-08-22.md` (batch G). The 2026-08-19 list had five; two are done, and the environment-hygiene item turned out to be larger than described.
+From batch G (now `docs/HANDOFF-2026-09-04.md` §10.4; originally `docs/archive/WORKPLAN-2026-08-22.md`). The 2026-08-19 list had five; two are done, and the environment-hygiene item turned out to be larger than described.
 
 1. **Environment hygiene** — the two artefacts named on 2026-08-19 are gone, but a recount on
    2026-08-22 found **15 apps claiming `com.oceanjin.spool*`** on this machine (13 + `.verify` +
    `.fr5`) — the 08-21 count of 14 was already one behind, and the number grows by one on every
    install swap (each leaves a copy in `~/Desktop/Spool/spool-pre-install/`). Nothing has been deleted; which ones go is the owner's call. ⚠️ `mdfind` only answers
    for bundle ids you already thought to ask about — scan the filesystem by prefix instead
-   (command in `docs/WORKPLAN-2026-08-22.md` §4.3). ⚠️ `/Applications/Spool.app` is currently an
+   (command in `docs/HANDOFF-2026-09-04.md` §10.6, “本机环境”). ⚠️ `/Applications/Spool.app` is currently an
    **unnotarised dev build**, so any "release build check" done on this machine only checked a dev build.
 2. **Multi-monitor `frontmost_window_owner_pid()`** — unverifiable on the current hardware (one
    display). Needs a second monitor and a documented probe.
@@ -869,7 +869,7 @@ completed by the owner on 2026-08-20.
 **Current position**: free, all features, no account, no gate of any kind. The owner's stated
 assessment on 2026-08-19 is that the product has reached a commercially viable stage, and four
 work items were opened. ⚠️ **On 2026-08-20 pricing was deferred** — "no rush, finish the features
-first" — so it is filed, not scheduled (`docs/WORKPLAN-2026-08-22.md` batch G). The detailed record
+first" — so it is filed, not scheduled (batch G, now `docs/HANDOFF-2026-09-04.md` §10.4). The detailed record
 is `docs/archive/WORKPLAN-2026-08-20.md` §6.1.
 
 ⚠️ **Three of the four touch money or user data — two things this codebase has never touched.**
@@ -1018,8 +1018,8 @@ Not "note-taking." Three things, in descending order of defensibility:
 
 | If you are… | Read |
 |---|---|
-| Deciding what to work on | `docs/EXECUTION_POLICY.md` (locked long-term order) then the newest active HANDOFF — `docs/HANDOFF-2026-09-04.md` as of 2026-09-05. Task detail lives in `docs/WORKPLAN-2026-08-22.md` |
-| About to touch code | `docs/WORKPLAN-2026-08-22.md` §4 — the red-line quick reference. Every line there was once written backwards **and the tests still passed** |
+| Deciding what to work on | `docs/EXECUTION_POLICY.md` (locked long-term order) then the newest active HANDOFF — `docs/HANDOFF-2026-09-04.md` as of 2026-09-30. Task detail lives in its §9–§10, and the current ACTIVE `docs/TASKBOOK-P<n>-*.md` says what this window does |
+| About to touch code | `docs/HANDOFF-2026-09-04.md` §10.6 — the red-line quick reference. Every line there was once written backwards **and the tests still passed** |
 | Proposing a feature | `PLAN_EN.md` §2 — constitution, rejected list, the five-question filter |
 | Quoting a number publicly | `docs/CASE_STUDY_LEDGER.md` — the **only** authority for figures; append-only |
 | Writing for the public | `docs/CASE_STUDY_PAGE.md` (states) + the ledger (proves) |

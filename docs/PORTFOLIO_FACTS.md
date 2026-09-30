@@ -195,7 +195,7 @@
 | 东西 | 状态 | 出处 | 上站 |
 |---|---|---|---|
 | F2 来龙去脉的**界面**那一半 | 数据那一半在本地 `ee3dbda`；界面没做 | `ee3dbda` 提交信息 | 仅内部 |
-| F3 事件 / 时间层（C1–C7） | 设计中；存储模型要 Hanze 先定 | `WORKPLAN-2026-08-22.md` §2.F3；`EXECUTION_POLICY.md` §6.8 | 仅内部 |
+| F3 事件 / 时间层（C1–C7） | 设计中；存储模型要 Hanze 先定 | `HANDOFF-2026-09-04.md` §10.2（原 `WORKPLAN-2026-08-22.md` §2.F3，已归档）；`EXECUTION_POLICY.md` §6.8 | 仅内部 |
 | F4 音视频 | 开工前五项调查未做 | WORKPLAN §2.F4 | 仅内部 |
 | 压缩用 `supersedes` 写回（整条取代旧块） | **封着**：它压得动时会丢日期 | WORKPLAN §1「G 批」 | 仅内部 |
 | Windows 新版本 / Windows 代码签名 | 流水线在 `windows-port` 分支；签名跟着收费走 | WORKPLAN §1「G 批」、§4.1 | 可上站（只写 "not planned for now"） |
