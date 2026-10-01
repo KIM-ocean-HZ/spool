@@ -1,6 +1,7 @@
 # 产品任务书 P1 —— 左栏（去沉睡 + 默认折叠 + 工作区归档）、项目内查找、两处小修
 
-> **状态：ACTIVE —— 当前唯一可执行的产品任务书。**
+> **状态：COMPLETE（A0、A0b、A1）—— Ocean 2026-10-01 验收通过。A2、A3 没做，2026-10-01 按 Ocean 指令转入
+> `docs/TASKBOOK-P1B-ARCHIVE-PROJECT-FIND-2026-10-01.md`，以那一份为准。** 回执在 §7。
 >
 > **唯一交付：** 下面 §3 的五条（A0、A0b、A1、A2、A3），按顺序做完、各自测试通过、各自一笔提交，并在 §7 写回执。
 >
@@ -88,6 +89,8 @@ node scripts/i18n-check.mjs                               # 看输出，别只�
 
 ### A2 · 工作区归档（HANDOFF §9.1 第 9 条；Ocean 09-30：按「项目全完成」自动推出来）
 
+> 2026-10-01：本条没做，已转入 `TASKBOOK-P1B-…`，以那一份为准（那份对着 `f8828d7` 的代码重核过现状）。
+
 - 来源：「一个工作区内所有项目都完成了，工作区应该进入 archive，不显示在列表里面。右键也可以强制把工作区移入 archive，所有项目随之完成。」
 - 现在：`workspaces` 表没有归档字段（`src/lib/db/schema.sql:8`）；项目完成 = `threads.status='done'`（完成时的结论可以空）；
   工作区的树在 `src/lib/workspaces/tree.ts`；左栏右键菜单在 `WorkspaceGroup.tsx`（已有「移到…」）。
@@ -105,6 +108,9 @@ node scripts/i18n-check.mjs                               # 看输出，别只�
 - 真库提醒：09-30 只读查过，有 1 个工作区的项目已经全部完成 ⇒ 装上新版那一刻它会直接进归档。这是预期，验收单里要提前告诉 Ocean。
 
 ### A3 · 项目里的查找改成「本项目范围」（HANDOFF §9.1 第 4 条）
+
+> 2026-10-01：本条没做，已转入 `TASKBOOK-P1B-…`。⚠️ 下面「现在」一栏有一处不准：↵ / ⌘G 并不是只在一块里跳，
+> 已经会跳进下一块 —— 但走的是**全部工作区**的结果列表。更正写在 P1B 里。
 
 - 来源：「cmd f 之后的整体搜索没问题，但是进入项目后的查找有问题，正常逻辑应该显示单个项目范围内的查找，不应该有块内查找这个功能。」
 - 现在：⌘F（窗口内，`src/App.tsx:202`）和 ⌘⇧F（全局）都打开全库搜索面板 —— **这部分不动**。点一个结果进项目后，
@@ -159,6 +165,64 @@ node scripts/i18n-check.mjs                               # 看输出，别只�
 - 还差什么、有没有偏离本任务书、新发现记在 HANDOFF 哪里
 
 最后一段：换装（做了没有、装的是哪个 commit、`spctl` 结果、真库备份文件名）、Ocean 验收（还没有就写「待验收」）。
+
+### 回执（执行窗 2026-09-30 → 10-01 填）
+
+**开工**：`git log -1` = `44fc2cf`，符合 §2。基线：`tsc -b` 干净；Vitest 63 文件 / 803 条全过；主 crate 141 过 · 4 跳过；
+sidecar 编译不过（E0063 + E0004，正是 A0）；`i18n-check` 报 1 条 MISSING（正是 A0b）。和下发时写的完全一致。
+
+**开工前的一笔**：`cb38212 docs: 切回产品线 —— HANDOFF 加 §9–§11、WORKPLAN 并入并归档、下发 P1 任务书`。
+按 §2 问了 Ocean，他选「先单独提交，README 只提产品那一行」。README 用「HEAD 版本 + 只换那一行」造了一个 blob 放进暂存区
+（`git hash-object -w` + `git update-index --cacheinfo`），研究线那几行原样留在工作区没提交。
+
+**A0**
+- 提交：`ef84e95 test(sidecar): 测试跟上 kind 字段和余额信封，13 条重新能跑`
+- 文件：`src-tauri/sidecar/src/main.rs`（只动 `#[cfg(test)]` 里面）
+- 做法：`req()` 补 `kind: String::new()`；`kind_of()` 补 `Envelope::Balance` 分支；加一条
+  `a_balance_query_over_plain_http_is_refused_before_anything_is_sent`（钉住 https 闸排在「查余额」分支前面）。
+- 验：sidecar 14 / 14 过（原 13 + 新 1），无警告；主 crate 141 过 · 4 跳过不变。
+
+**A0b**
+- 提交：`84f8b74 fix(i18n): 「整条取代」那条提示在英文界面显示中文；中文字面量查字典进 vitest`
+- 文件：`src/components/Compress/StaleReview.tsx`、`scripts/i18n-check.mjs`、`scripts/i18n-check.test.mjs`（新）
+- 做法：调用点补上「整条」两个字（任务书写「差三个字」，实际是两个）。`i18n-check.mjs` 的扫描抽成 `export function scan()`，
+  命令行那段用 `process.argv[1] === fileURLToPath(import.meta.url)` 包住（照 `build-site-zh.mjs` 的先例），输出一字不变；
+  新测试直接调 `scan()`，规则只有一套。另加一条「至少扫到一个调用」，防扫描坏了之后空过。
+- 验：`node scripts/i18n-check.mjs` → `(none missing)`，退出码 0。**故意删掉字典里在用的 `'整条取代'` 那一行** ⇒ 新测试红，
+  报 `src/components/Compress/StaleReview.tsx  整条取代`；从备份恢复（`cmp` 一致、`git diff` 为空）⇒ 绿。Vitest 64 文件 / 805 条。
+
+**A1**
+- 提交：`f8828d7 feat(sidebar): 去掉「沉睡」，工作区默认折叠、只展开当前项目所在的那一支`
+- 文件：`src/components/Sidebar/WorkspaceGroup.tsx`、`src/components/Sidebar/index.tsx`、`src/components/ThreadView/ThreadHeader.tsx`、
+  `src/lib/i18n/index.ts`、`src/stores/settingsStore.ts`、`src/lib/workspaces/open.ts`（新）、`src/lib/workspaces/open.test.ts`（新）、
+  删 `src/lib/threads/dormancy.ts`、`src/lib/threads/dormancy.test.ts`
+- 做法：沉睡的派生、组尾那一行、顶栏标签、两条字典键全删；组内排序 = 原来不沉睡那一档的规则。
+  settings.json 新键 `expandedWorkspaceIds`（手动展开的工作区；读时类型不对就当空，库里没有的 id 不生效、下一次写的时候丢掉）。
+  当前项目所在的工作区连同上层**派生**展开、不存（`workspaceChain`）；用户把这一支收起只在这一支不变期间有效。
+- **两处任务书没写、执行窗自己定的（Ocean 10-01 验收时已看过，通过）**：
+  ① 切到别的工作区里的项目时，原来自动展开的那一支会收回去（除非手动点开过）—— 照「只展示最近打开的」理解；
+  代价是点下面工作区里的项目时，上面那一支收起、列表会往上挪。
+  ② 新建工作区（左下 ＋、组上的 📁+）建好就展开 —— 不然默认折叠会把「+ 创建第一个项目」藏起来，📁+ 建在折叠的组里更是什么都看不见。
+- 验：`tsc -b` 干净；Vitest 64 文件 / 806 条（+5 新、-4 删掉的沉睡测试）；主 crate 141 · sidecar 14；`(none missing)`。
+- ⚠️ 过程：执行窗跑 `git rm` 删那两个文件被权限分类器拦了（判成「不可逆的本地删除」），Ocean 自己在输入框里跑了
+  `! git rm …`。下一窗凡是要删 / 改名文件，提前请 Ocean 跑。
+
+**新发现**：记在 HANDOFF §9.9（`DISCOVERED-20261001-1`、`-2`）。另：任务书 A3「现在」一栏有一处不准（见 A3 开头的说明）。
+
+**换装（Ocean 10-01 明确指令「下面换装，我来验收」，装的是 A0–A1，A2/A3 还没做）**
+- 构建：`f8828d7`，`env -u APPLE_ID … APPLE_SIGNING_IDENTITY="Developer ID Application: Hanze JIN (Q5Y5JRXZ58)" npm run tauri build -- --bundles app`
+  （现装的是 Developer ID ⇒ 照用；没改 `tauri.conf.json`；公证变量全部 unset，日志里是「skipping app notarization」）。TSA 一次过。
+- 装前：`codesign` = Developer ID、`spctl` = `Unnotarized Developer ID`、0.6.2；真库 v29（代码也是 29，不迁移）。
+- 停：GUI pid 40075 + `--overlay` pid 40084 按 pid `kill -TERM`，一次就退；`--mcp` 子进程一个没碰。
+- 真库备份：`~/Desktop/spool.before-p1-install-20261001-111607.db`（`VACUUM INTO`，integrity ok，v29，计数和活库一致）。
+- 旧包：`mv` 到 `~/Desktop/Spool/spool-pre-install/Spool-old-20261001-111614-pre-p1.app`；新包 `ditto` 进 `/Applications`。
+- 装后：`--verify --deep --strict` 过、Developer ID、`spctl` = `Unnotarized Developer ID`；`/Applications` 里 `spool` 的 sha256
+  `ac47d291…a55a79fb` 和构建产物一致；主进程 53200 起于 11:16:22（换装之后），`lsof` 的 inode 就是新文件；
+  真库 v29 · 25 / 63 / 1013 / 1（工作区 / 项目 / 块 / 文件，含软删）· 正文总长 291894，前后一致。
+- 没 push、没发版。
+
+**Ocean 验收**：2026-10-01 回复「验收通过」—— 对应换装时给他的 7 条：§6 的 1、2、3、9，A1 自定的两处行为，双击 ⌥ 还能捕捉。
+§6 的 4–8（归档、本项目查找）随 A2/A3 转入 P1B。
 
 ## 8. 收尾的文档动作（执行窗做）
 
