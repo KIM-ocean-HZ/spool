@@ -4,11 +4,13 @@ import type { KeyboardEvent, MouseEvent } from 'react';
 import MenuDeleteItem from '@/components/ui/MenuDeleteItem';
 import { useMenuPosition } from '@/components/ui/useMenuPosition';
 import type { Thread } from '@/lib/db/threads';
+import type { Workspace } from '@/lib/db/workspaces';
 import { DROP_WORKSPACE_ATTR } from '@/lib/sidebar/railDrag';
 import { isImeComposing } from '@/lib/utils/ime';
 import { useT } from '@/lib/i18n';
+import { subtreeWorkspaceIds } from '@/lib/workspaces/archive';
 import type { WorkspaceNode } from '@/lib/workspaces/tree';
-import { compareWorkspaceTitles } from '@/lib/workspaces/tree';
+import { buildWorkspaceTree, compareWorkspaceTitles } from '@/lib/workspaces/tree';
 import { useRailDragStore } from '@/stores/railDragStore';
 import { useThreadsStore } from '@/stores/threadsStore';
 import { useWorkspacesStore } from '@/stores/workspacesStore';
@@ -22,6 +24,9 @@ interface Props {
   /** Which groups are drawn open (Sidebar decides — lib/workspaces/open). */
   openIds: ReadonlySet<string>;
   setOpen: (ids: string[], open: boolean) => void;
+  /** 归档 section only: the live workspaces above an archived sub-workspace, shown in front
+   *  of its name as 「上级 / 子工作区」 (lib/workspaces/archive). */
+  ancestors?: Workspace[];
 }
 
 // Thread ordering within a group (§9.9): live threads on top — those with a deadline by
@@ -47,6 +52,7 @@ export default function WorkspaceGroup({
   activeThreadId,
   openIds,
   setOpen,
+  ancestors = [],
 }: Props) {
   const t = useT();
   const workspace = node.workspace;
@@ -65,6 +71,7 @@ export default function WorkspaceGroup({
   const moveWorkspace = useWorkspacesStore((s) => s.move);
   const removeWorkspace = useWorkspacesStore((s) => s.remove);
   const setPackingWorkspace = useWorkspacesStore((s) => s.setPacking);
+  const setArchiving = useWorkspacesStore((s) => s.setArchiving);
   const createThread = useThreadsStore((s) => s.create);
   const selectThread = useThreadsStore((s) => s.select);
   const removeThread = useThreadsStore((s) => s.remove);
@@ -133,15 +140,13 @@ export default function WorkspaceGroup({
   // parent (that move does nothing), and ⚠️ not anything nested inside it — that one would
   // build a ring, and setWorkspaceParent throws on it. Filtering here means the user is
   // never offered a destination that will fail.
-  const subtreeIds = useMemo(() => {
-    const ids = new Set<string>();
-    const walk = (n: WorkspaceNode): void => {
-      ids.add(n.workspace.id);
-      n.children.forEach(walk);
-    };
-    walk(node);
-    return ids;
-  }, [node]);
+  // ⚠️ Over the FULL tree, not `node`: the rail takes an archived sub-workspace out of its
+  // parent's `node.children` (lib/workspaces/archive), but it is still inside — offered as a
+  // destination it would build that ring, and deleting the parent still takes it along.
+  const subtreeIds = useMemo(
+    () => subtreeWorkspaceIds(buildWorkspaceTree(allWorkspaces), workspace.id),
+    [allWorkspaces, workspace.id],
+  );
   const moveTargets = useMemo(
     () =>
       allWorkspaces
@@ -150,8 +155,22 @@ export default function WorkspaceGroup({
     [allWorkspaces, subtreeIds, workspace.parentId],
   );
 
+  // 归档 is offered only while it would finish something: an empty workspace cannot be
+  // archived (lib/workspaces/archive), and an all-done one already is.
+  const unfinished = useMemo(
+    () =>
+      [...subtreeIds].reduce(
+        (n, id) =>
+          n + (threadsByWorkspace[id] ?? []).filter((th) => th.status !== 'done').length,
+        0,
+      ),
+    [subtreeIds, threadsByWorkspace],
+  );
+
   const { fresh, done } = useMemo(() => sortThreads(threads), [threads]);
-  const headerTitle = workspace.title.trim() || t('未命名');
+  const headerTitle = [...ancestors, workspace]
+    .map((w) => w.title.trim() || t('未命名'))
+    .join(' / ');
 
   // v23: the rows of THIS group, in the order they are drawn — what ⇧-click measures a run
   // against.
@@ -371,9 +390,22 @@ export default function WorkspaceGroup({
             ))
           )}
           <div className="mt-1 border-t border-line pt-1">
+            {unfinished > 0 && (
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setArchiving(workspace.id);
+                  setMenu(null);
+                }}
+                className="block w-full px-3 py-1 text-left text-xs text-ink hover:bg-paper-2"
+              >
+                {t('归档')}
+              </button>
+            )}
             <MenuDeleteItem
               label={
-                node.children.length > 0
+                subtreeIds.size > 1
                   ? t('删除工作区（连同里面的工作区）')
                   : t('删除工作区')
               }

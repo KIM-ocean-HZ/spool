@@ -124,6 +124,17 @@ const EN: Record<string, string> = {
   '选中的 {n} 个项目': '{n} projects selected',
   '{n} 个项目': '{n} projects',
   '删除这 {n} 个项目': 'Delete these {n} projects',
+  // 归档 (Ocean 2026-09-30 #9) — the rail's bottom section, the right-click item and its
+  // confirmation (Sidebar/ArchiveWorkspaceDialog).
+  '归档': 'Archive',
+  '归档「{name}」': 'Archive “{name}”',
+  '这会把 {n} 个项目标为完成，结论留空。':
+    'This marks {n} project(s) as done, with the conclusion left blank.',
+  '工作区会移到左栏最底下的「归档」里。按 ⌘Z 可以撤回。':
+    'The workspace moves to Archive at the bottom of the sidebar. Press ⌘Z to undo.',
+  '捕捉目标会从「{from}」换到「{to}」。': 'Capture moves from “{from}” to “{to}”.',
+  '没有别的没完成的项目，捕捉目标仍留在「{from}」。':
+    'No other unfinished project is left, so capture stays on “{from}”.',
   '展开': 'Expand',
   '收起': 'Collapse',
   '+ 创建第一个项目': '+ Create the first project',
@@ -703,6 +714,8 @@ const EN: Record<string, string> = {
   // 撤销确认卡片上的动作名（overlay/CaptureOverlay UNDO_OP_LABEL）。2026-08-18 新增 'create'
   // —— 自己在输入框里写下的一块，跟「捕获」是两回事。
   '写下的一条': 'the line you wrote',
+  // 2026-10-01 新增 'workspace_archive'（右键工作区 →「归档」）。⚠️ i18n-check 看不见常量表，这一条是手加的。
+  '归档工作区': 'Archive workspace',
   '界面语言。切换立即生效。': 'UI language. Takes effect immediately.',
   // 情人节限定版 (2026-08-19) — the appearance switch, and the break card the theme brings with
   // it. Ocean: 「中英文都支持」.

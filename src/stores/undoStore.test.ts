@@ -13,7 +13,14 @@ import {
   updateBlockContent,
 } from '@/lib/db/blocks';
 import { __setTestDb } from '@/lib/db/client';
-import { createThread, listAllThreads, softDeleteThread } from '@/lib/db/threads';
+import {
+  createThread,
+  getCaptureTargetThread,
+  listAllThreads,
+  setCaptureTarget,
+  softDeleteThread,
+  updateThread,
+} from '@/lib/db/threads';
 import { createWorkspace, listWorkspaces, softDeleteWorkspace } from '@/lib/db/workspaces';
 import schemaSql from '@/lib/db/schema.sql?raw';
 import { clear as clearUndoLog } from '@/lib/undo/undoLog';
@@ -28,6 +35,8 @@ import {
   buildWorkspaceDeleteUndo,
   useUndoStore,
 } from './undoStore';
+import { useThreadsStore } from './threadsStore';
+import { useWorkspacesStore } from './workspacesStore';
 
 const { DatabaseSync } = createRequire(import.meta.url)(
   'node:sqlite',
@@ -407,5 +416,71 @@ describe('undoStore reversal against a real SQLite engine (§9.13)', () => {
     const live = (await listAllThreads()).map((t) => t.id);
     expect(live).toContain(b.id); // restored
     expect(live).not.toContain(a.id); // earlier delete preserved (selective restore)
+  });
+
+  // 归档 (Ocean 2026-09-30 #9): one ⌘Z puts back exactly what the archive changed — the
+  // projects it finished, each to the state it had (parked stays parked, and they keep their
+  // place in 最近), the one that was already done stays done, and the capture target goes
+  // back. Redo does the same archive again.
+  it('undo(workspace_archive) reverts only the projects it finished, and the capture target', async () => {
+    const w = await createWorkspace('W');
+    const inner = await createWorkspace('Inner', w.id);
+    const other = await createWorkspace('Other');
+    const active = await createThread(w.id, 'active');
+    const parked = await createThread(inner.id, 'parked');
+    const wasDone = await createThread(w.id, 'was done');
+    const elsewhere = await createThread(other.id, 'elsewhere');
+    await updateThread(parked.id, { status: 'parked' });
+    await updateThread(wasDone.id, { status: 'done', completedAt: 1, digest: 'kept' });
+    await setCaptureTarget(active.id);
+    await useWorkspacesStore.getState().load();
+    await useThreadsStore.getState().loadAll();
+    const before = new Map((await listAllThreads()).map((t) => [t.id, t]));
+    await tick();
+
+    await useWorkspacesStore.getState().archive(w.id);
+    const archived = new Map((await listAllThreads()).map((t) => [t.id, t]));
+    expect(archived.get(active.id)!.status).toBe('done');
+    expect(archived.get(parked.id)!.status).toBe('done');
+    expect(archived.get(active.id)!.digest).toBeNull(); // 结论留空
+    expect(archived.get(wasDone.id)).toEqual(before.get(wasDone.id));
+    expect(archived.get(elsewhere.id)!.status).toBe('active');
+    expect((await getCaptureTargetThread())?.id).toBe(elsewhere.id);
+
+    const entry = await useUndoStore.getState().undo();
+    expect(entry?.kind).toBe('workspace_archive');
+    const undone = new Map((await listAllThreads()).map((t) => [t.id, t]));
+    for (const id of [active.id, parked.id, wasDone.id, elsewhere.id]) {
+      const { isCaptureTarget: _a, ...was } = before.get(id)!;
+      const { isCaptureTarget: _b, ...now } = undone.get(id)!;
+      expect(now).toEqual(was);
+    }
+    expect((await getCaptureTargetThread())?.id).toBe(active.id);
+
+    expect((await useUndoStore.getState().redo())?.kind).toBe('workspace_archive');
+    const redone = new Map((await listAllThreads()).map((t) => [t.id, t]));
+    expect(redone.get(active.id)).toEqual(archived.get(active.id));
+    expect(redone.get(parked.id)).toEqual(archived.get(parked.id));
+    expect((await getCaptureTargetThread())?.id).toBe(elsewhere.id);
+  });
+
+  it('undo(workspace_archive) leaves a capture target the user picked since', async () => {
+    const w = await createWorkspace('W');
+    const other = await createWorkspace('Other');
+    const inside = await createThread(w.id, 'inside');
+    const a = await createThread(other.id, 'a');
+    const b = await createThread(other.id, 'b');
+    await setCaptureTarget(inside.id);
+    await useWorkspacesStore.getState().load();
+    await useThreadsStore.getState().loadAll();
+
+    await useWorkspacesStore.getState().archive(w.id);
+    const movedTo = (await getCaptureTargetThread())!.id;
+    const picked = movedTo === a.id ? b.id : a.id;
+    await setCaptureTarget(picked);
+
+    await useUndoStore.getState().undo();
+    expect((await getCaptureTargetThread())?.id).toBe(picked);
+    expect((await listAllThreads()).find((t) => t.id === inside.id)!.status).toBe('active');
   });
 });

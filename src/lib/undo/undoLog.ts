@@ -4,6 +4,7 @@
 // buffer mechanics (push / peek / pop / invalidate / clear) and the entry types.
 
 import type { Block } from '@/lib/db/blocks';
+import type { ThreadStatus } from '@/lib/db/threads';
 
 export type UndoOpKind =
   | 'capture'
@@ -14,6 +15,7 @@ export type UndoOpKind =
   | 'thread_delete'
   | 'thread_delete_many'
   | 'workspace_delete'
+  | 'workspace_archive'
   | 'forward';
 
 // Per-kind payloads. §8.2 types the schema-level payload as `unknown` for storage
@@ -85,6 +87,24 @@ export interface WorkspaceDeletePayload {
   deleteTimestamp: number;
 }
 
+// 归档 (Ocean 2026-09-30 #9): right-click a workspace → every unfinished project in it is
+// marked done, as ONE entry. Only the projects this archive finished are listed, each with
+// the state it had before — the ones that were already done stay done on undo. The capture
+// target moves with it when it sat inside (both ids null when it did not move).
+export interface WorkspaceArchivePayload {
+  workspaceTitle: string;
+  /** When the archive ran — completed_at and updated_at of every project it finished. */
+  archivedAt: number;
+  threads: {
+    threadId: string;
+    status: ThreadStatus;
+    completedAt: number | null;
+    updatedAt: number;
+  }[];
+  captureFrom: string | null;
+  captureTo: string | null;
+}
+
 // §20.1 forward (copy to another thread): the forward is purely additive — it INSERTed these
 // NEW copy blocks into a target thread; the originals were never touched. Reversal deletes
 // ONLY the copies; redo re-inserts them verbatim, so the array holds the copies, not the
@@ -133,6 +153,10 @@ export interface WorkspaceDeleteUndoEntry extends BaseEntry {
   kind: 'workspace_delete';
   payload: WorkspaceDeletePayload;
 }
+export interface WorkspaceArchiveUndoEntry extends BaseEntry {
+  kind: 'workspace_archive';
+  payload: WorkspaceArchivePayload;
+}
 export interface ForwardUndoEntry extends BaseEntry {
   kind: 'forward';
   payload: ForwardPayload;
@@ -147,6 +171,7 @@ export type UndoEntry =
   | ThreadDeleteUndoEntry
   | ThreadDeleteManyUndoEntry
   | WorkspaceDeleteUndoEntry
+  | WorkspaceArchiveUndoEntry
   | ForwardUndoEntry;
 
 const CAPACITY = 10;

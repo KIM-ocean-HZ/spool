@@ -1,9 +1,16 @@
 import { create } from 'zustand';
 import { ensureBaseData } from '@/lib/db/client';
+import { setCaptureTarget, setThreadCompletion } from '@/lib/db/threads';
 import * as db from '@/lib/db/workspaces';
 import type { Workspace } from '@/lib/db/workspaces';
-import { useThreadsStore } from './threadsStore';
-import { buildWorkspaceDeleteUndo, useUndoStore } from './undoStore';
+import { archivePlan } from '@/lib/workspaces/archive';
+import { buildWorkspaceTree } from '@/lib/workspaces/tree';
+import { selectAllThreadsFlat, useThreadsStore } from './threadsStore';
+import {
+  buildWorkspaceArchiveUndo,
+  buildWorkspaceDeleteUndo,
+  useUndoStore,
+} from './undoStore';
 
 interface WorkspacesState {
   workspaces: Workspace[];
@@ -14,6 +21,10 @@ interface WorkspacesState {
    *  would be two stacked dialogs. */
   packingId: string | null;
   setPacking: (id: string | null) => void;
+  /** Workspace whose 归档 confirmation is open, or null — mounted once in App, like
+   *  `packingId`. */
+  archivingId: string | null;
+  setArchiving: (id: string | null) => void;
   load: () => Promise<void>;
   create: (title?: string, parentId?: string | null) => Promise<Workspace>;
   rename: (id: string, title: string) => Promise<void>;
@@ -21,6 +32,8 @@ interface WorkspacesState {
   /** v23: re-parent a workspace. `null` sends it back to the top level. */
   move: (id: string, parentId: string | null) => Promise<void>;
   remove: (id: string) => Promise<void>;
+  /** 归档: mark every unfinished project in the subtree done, under one undo entry. */
+  archive: (id: string) => Promise<void>;
 }
 
 export const useWorkspacesStore = create<WorkspacesState>((set, get) => ({
@@ -30,6 +43,10 @@ export const useWorkspacesStore = create<WorkspacesState>((set, get) => ({
   packingId: null,
 
   setPacking: (packingId) => set({ packingId }),
+
+  archivingId: null,
+
+  setArchiving: (archivingId) => set({ archivingId }),
 
   load: async () => {
     try {
@@ -94,6 +111,43 @@ export const useWorkspacesStore = create<WorkspacesState>((set, get) => ({
     // may need re-promoting.
     await ensureBaseData();
     await get().load();
+    await useThreadsStore.getState().loadAll();
+  },
+
+  // 归档 (Ocean 2026-09-30 #9). Nothing about the workspace itself is written — archived is
+  // derived from its projects (lib/workspaces/archive) — so this is a batch of project
+  // completions plus, when the target sat inside, a capture-target move. Done first, target
+  // second: a failure in between leaves captures going to a finished project, never lost.
+  archive: async (id) => {
+    const plan = archivePlan(
+      buildWorkspaceTree(get().workspaces),
+      selectAllThreadsFlat(useThreadsStore.getState()),
+      id,
+    );
+    if (plan.toComplete.length === 0) return;
+    const archivedAt = Date.now();
+    for (const th of plan.toComplete) {
+      await setThreadCompletion(th.id, {
+        status: 'done',
+        completedAt: archivedAt,
+        updatedAt: archivedAt,
+      });
+    }
+    if (plan.captureTo) await setCaptureTarget(plan.captureTo.id);
+    useUndoStore.getState().pushUndo(
+      buildWorkspaceArchiveUndo({
+        workspaceTitle: get().workspaces.find((w) => w.id === id)?.title ?? '',
+        archivedAt,
+        threads: plan.toComplete.map((th) => ({
+          threadId: th.id,
+          status: th.status,
+          completedAt: th.completedAt,
+          updatedAt: th.updatedAt,
+        })),
+        captureFrom: plan.captureTo ? (plan.captureFrom?.id ?? null) : null,
+        captureTo: plan.captureTo?.id ?? null,
+      }),
+    );
     await useThreadsStore.getState().loadAll();
   },
 }));

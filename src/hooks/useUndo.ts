@@ -19,6 +19,7 @@ const refreshAfterUndoRedo = async (entry: UndoEntry): Promise<void> => {
       await useThreadsStore.getState().loadAll();
       break;
     case 'workspace_delete':
+    case 'workspace_archive':
       await useWorkspacesStore.getState().load();
       await useThreadsStore.getState().loadAll();
       break;

@@ -1,5 +1,7 @@
 import {
   CalendarRange,
+  ChevronDown,
+  ChevronRight,
   Inbox,
   LayoutGrid,
   PanelLeftClose,
@@ -11,8 +13,9 @@ import { useEffect, useMemo, useState } from 'react';
 import { RAIL_SCROLLER_ATTR } from '@/lib/sidebar/railDrag';
 import { DUE_SOON_DAYS, dueInDays } from '@/lib/threads/deadline';
 import { useT } from '@/lib/i18n';
+import { splitArchived } from '@/lib/workspaces/archive';
 import { nextExpandedIds, workspaceChain } from '@/lib/workspaces/open';
-import { buildWorkspaceTree, compareWorkspaceTitles } from '@/lib/workspaces/tree';
+import { buildWorkspaceTree, compareWorkspaceTitles, type WorkspaceNode } from '@/lib/workspaces/tree';
 import { useEngineStore } from '@/stores/engineStore';
 import { useProposalsStore } from '@/stores/proposalsStore';
 import { useSearchStore } from '@/stores/searchStore';
@@ -22,6 +25,7 @@ import { useWorkspacesStore } from '@/stores/workspacesStore';
 import FocusSection from './FocusSection';
 import RailDragGhost from './RailDragGhost';
 import RecentSection from './RecentSection';
+import SectionLabel from './SectionLabel';
 import SpoolCard from './SpoolCard';
 import Wordmark from './Wordmark';
 import WorkspaceGroup from './WorkspaceGroup';
@@ -61,6 +65,21 @@ export default function Sidebar({ onCollapse }: Props) {
     () => buildWorkspaceTree([...workspaces].sort(compareWorkspaceTitles)),
     [workspaces],
   );
+  // 归档 (Ocean 2026-09-30 #9): a workspace whose projects are all done leaves the tree for
+  // the 归档 section at the bottom of the rail — derived, nothing stored (lib/workspaces/archive).
+  const { live, archived } = useMemo(
+    () => splitArchived(tree, threadsByWs),
+    [tree, threadsByWs],
+  );
+  const archivedIds = useMemo(() => {
+    const ids = new Set<string>();
+    const walk = (n: WorkspaceNode): void => {
+      ids.add(n.workspace.id);
+      n.children.forEach(walk);
+    };
+    archived.forEach((e) => walk(e.node));
+    return ids;
+  }, [archived]);
 
   // Which workspace groups are drawn open (lib/workspaces/open): the ones opened by hand,
   // plus the open project's workspace and everything above it.
@@ -102,6 +121,21 @@ export default function Sidebar({ onCollapse }: Props) {
       ),
     });
     if (!open) setFolded({ key: chainKey, ids: new Set([...foldedNow, ...ids]) });
+  };
+  // The 归档 section is folded by default, and its state is not stored. Same rule as the
+  // groups on the open project's chain: while that project sits in an archived workspace the
+  // section opens by itself, and folding it then holds only while the chain stays the same.
+  const activeInArchive = activeWorkspaceId !== null && archivedIds.has(activeWorkspaceId);
+  const [archiveOpen, setArchiveOpen] = useState(false);
+  const [archiveFoldedFor, setArchiveFoldedFor] = useState<string | null>(null);
+  const archiveShown = archiveOpen || (activeInArchive && archiveFoldedFor !== chainKey);
+  const toggleArchive = (): void => {
+    if (archiveShown) {
+      setArchiveOpen(false);
+      setArchiveFoldedFor(activeInArchive ? chainKey : null);
+    } else {
+      setArchiveOpen(true);
+    }
   };
   const openSearch = useSearchStore((s) => s.openSearch);
   const openSettings = useSettingsStore((s) => s.openPanel);
@@ -253,7 +287,7 @@ export default function Sidebar({ onCollapse }: Props) {
             <p className="mt-2 text-xs text-muted">{t('点下方 + 工作区开始')}</p>
           </div>
         ) : (
-          tree.map((node) => (
+          live.map((node) => (
             <WorkspaceGroup
               key={node.workspace.id}
               node={node}
@@ -263,6 +297,33 @@ export default function Sidebar({ onCollapse }: Props) {
               setOpen={setOpen}
             />
           ))
+        )}
+        {archived.length > 0 && (
+          <div className="mt-3.5">
+            <SectionLabel>
+              <button
+                type="button"
+                onClick={toggleArchive}
+                aria-expanded={archiveShown}
+                className="-my-1 flex items-center gap-1.5 py-1 hover:text-ink"
+              >
+                {t('归档')}
+                {archiveShown ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
+              </button>
+            </SectionLabel>
+            {archiveShown &&
+              archived.map((e) => (
+                <WorkspaceGroup
+                  key={e.node.workspace.id}
+                  node={e.node}
+                  ancestors={e.ancestors}
+                  threadsByWorkspace={threadsByWs}
+                  activeThreadId={activeId}
+                  openIds={openIds}
+                  setOpen={setOpen}
+                />
+              ))}
+          </div>
         )}
       </div>
 

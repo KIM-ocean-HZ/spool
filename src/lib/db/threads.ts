@@ -237,6 +237,21 @@ export const ensureCaptureTarget = async (): Promise<string | null> => {
   return id;
 };
 
+// 归档 (Ocean 2026-09-30 #9) — one project's completion state, written exactly as given.
+// Unlike updateThread it does not stamp updated_at with "now": archiving, its undo and its
+// redo each put back a recorded value, so ⌘Z leaves the projects where they sorted before
+// rather than all jumping to the top of 最近.
+export const setThreadCompletion = async (
+  id: string,
+  state: { status: ThreadStatus; completedAt: number | null; updatedAt: number },
+): Promise<void> => {
+  const db = await getDb();
+  await db.execute(
+    'UPDATE threads SET status = $1, completed_at = $2, updated_at = $3 WHERE id = $4',
+    [state.status, state.completedAt, state.updatedAt, id],
+  );
+};
+
 // Soft-delete is always permitted, including the capture-target thread — the caller is
 // responsible for restoring a target afterwards (ensureBaseData + ensureCaptureTarget).
 export const softDeleteThread = async (id: string): Promise<void> => {

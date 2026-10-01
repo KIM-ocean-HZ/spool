@@ -9,7 +9,13 @@ import {
   restoreBlockFields,
   updateBlockContent,
 } from '@/lib/db/blocks';
-import { restoreThread, softDeleteThread } from '@/lib/db/threads';
+import {
+  getCaptureTargetThread,
+  restoreThread,
+  setCaptureTarget,
+  setThreadCompletion,
+  softDeleteThread,
+} from '@/lib/db/threads';
 import { restoreWorkspace, softDeleteWorkspace } from '@/lib/db/workspaces';
 import * as undoLog from '@/lib/undo/undoLog';
 import type {
@@ -22,6 +28,7 @@ import type {
   ThreadDeleteManyPayload,
   ThreadDeletePayload,
   UndoEntry,
+  WorkspaceArchivePayload,
   WorkspaceDeletePayload,
 } from '@/lib/undo/undoLog';
 
@@ -129,6 +136,16 @@ export const buildWorkspaceDeleteUndo = (payload: WorkspaceDeletePayload): UndoE
   invalidated: false,
 });
 
+// 归档 — one entry for the whole batch (WorkspaceArchivePayload). No block is touched.
+export const buildWorkspaceArchiveUndo = (payload: WorkspaceArchivePayload): UndoEntry => ({
+  id: nanoid(),
+  kind: 'workspace_archive',
+  timestamp: Date.now(),
+  payload,
+  affectedBlockIds: [],
+  invalidated: false,
+});
+
 // §20.1 forward (copy to thread). The copies are the affected blocks: editing a copy after
 // the forward invalidates this entry, so Cmd+Z won't delete an edited copy (the user's most-
 // recent edit wins, §9.13). The originals are never in affectedBlockIds — undo never touches
@@ -159,6 +176,7 @@ export const threadIdForEntry = (entry: UndoEntry): string => {
       return entry.payload.threadId;
     case 'thread_delete_many':
     case 'workspace_delete':
+    case 'workspace_archive':
       // No single thread — the orchestration layer (runUndo) refreshes the workspace and
       // thread stores instead of a block feed, so this is never used for these kinds.
       return '';
@@ -203,6 +221,8 @@ export const previewForEntry = (entry: UndoEntry): string => {
     }
     case 'workspace_delete':
       return '';
+    case 'workspace_archive':
+      return previewText(entry.payload.workspaceTitle);
     case 'forward': {
       const first = entry.payload.blocks[0];
       return first ? previewText(first.content) : '';
@@ -306,6 +326,27 @@ const reverseAndBuildRedo = async (
       // Redo re-stamps with the SAME timestamp so a following undo still matches.
       return async () => {
         await softDeleteWorkspace(workspaceId, deleteTimestamp);
+      };
+    }
+    // 归档: put back exactly the projects it finished, as they were; redo writes the same
+    // archive timestamps again. ⚠️ The capture target only moves back if it is still where
+    // the archive put it — a target the user has picked since is their latest word.
+    case 'workspace_archive': {
+      const { threads, archivedAt, captureFrom, captureTo } = entry.payload;
+      const moveTarget = async (from: string, to: string): Promise<void> => {
+        if ((await getCaptureTargetThread())?.id === from) await setCaptureTarget(to);
+      };
+      for (const th of threads) await setThreadCompletion(th.threadId, th);
+      if (captureFrom && captureTo) await moveTarget(captureTo, captureFrom);
+      return async () => {
+        for (const { threadId } of threads) {
+          await setThreadCompletion(threadId, {
+            status: 'done',
+            completedAt: archivedAt,
+            updatedAt: archivedAt,
+          });
+        }
+        if (captureFrom && captureTo) await moveTarget(captureFrom, captureTo);
       };
     }
     case 'forward': {

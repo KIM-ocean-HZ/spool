@@ -3,6 +3,7 @@ import { PanelLeftOpen, PanelRightOpen } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import PackHost from '@/components/Pack/PackHost';
 import WorkspacePackHost from '@/components/Pack/WorkspacePackHost';
+import ArchiveWorkspaceDialog from '@/components/Sidebar/ArchiveWorkspaceDialog';
 import BreakReminder from '@/components/BreakReminder';
 import CloseToTrayHint from '@/components/CloseToTrayHint';
 import PermissionBanner from '@/components/PermissionBanner';
@@ -432,6 +433,7 @@ export default function App() {
       <NightlyRunner />
       <PackHost />
       <WorkspacePackHost />
+      <ArchiveWorkspaceDialog />
       {briefOpen && activeThread && (
         <FollowUpPanel thread={activeThread} onClose={() => setBriefOpen(false)} />
       )}
