@@ -6,7 +6,6 @@ import { useT } from '@/lib/i18n';
 import { IS_MAC } from '@/lib/platform';
 import type { Block } from '@/lib/db/blocks';
 import type { Thread } from '@/lib/db/threads';
-import { isDormant } from '@/lib/threads/dormancy';
 import { useBlocksStore } from '@/stores/blocksStore';
 import type { Attachment } from '@/lib/db/attachments';
 import { ACTION_LABEL, useEngineStore } from '@/stores/engineStore';
@@ -350,7 +349,7 @@ export default function ThreadHeader({
       )}
 
       <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-2 text-xs">
-        {thread.status === 'done' ? (
+        {thread.status === 'done' && (
           // Done threads: session-only toggle between digest and full log (§9.9).
           // The override doesn't persist — reopens default back to DigestView.
           <div className="flex items-center gap-1">
@@ -372,16 +371,6 @@ export default function ThreadHeader({
               {t('全记录')}
             </button>
           </div>
-        ) : (
-          // #5 auto-dormancy (2026-07-13): the manual 进行中/搁置 pill pair is gone —
-          // parking is derived from idleness (lib/threads/dormancy) and any new
-          // activity wakes the thread by itself. The only status a live thread ever
-          // states is the derived one.
-          isDormant(thread, Date.now()) && (
-            <span className="rounded-full border border-line px-2 py-0.5 text-muted">
-              {t('沉睡')}
-            </span>
-          )
         )}
 
         <div className="flex items-center gap-1.5 text-muted">

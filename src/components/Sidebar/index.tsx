@@ -7,10 +7,11 @@ import {
   Search,
   Settings as SettingsIcon,
 } from 'lucide-react';
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { RAIL_SCROLLER_ATTR } from '@/lib/sidebar/railDrag';
 import { DUE_SOON_DAYS, dueInDays } from '@/lib/threads/deadline';
 import { useT } from '@/lib/i18n';
+import { nextExpandedIds, workspaceChain } from '@/lib/workspaces/open';
 import { buildWorkspaceTree, compareWorkspaceTitles } from '@/lib/workspaces/tree';
 import { useEngineStore } from '@/stores/engineStore';
 import { useProposalsStore } from '@/stores/proposalsStore';
@@ -29,6 +30,8 @@ interface Props {
   /** DESIGN_WORKBENCH §3: both rails collapse, so the sidebar grew a way to close itself. */
   onCollapse: () => void;
 }
+
+const NONE: ReadonlySet<string> = new Set();
 
 export default function Sidebar({ onCollapse }: Props) {
   const t = useT();
@@ -58,6 +61,48 @@ export default function Sidebar({ onCollapse }: Props) {
     () => buildWorkspaceTree([...workspaces].sort(compareWorkspaceTitles)),
     [workspaces],
   );
+
+  // Which workspace groups are drawn open (lib/workspaces/open): the ones opened by hand,
+  // plus the open project's workspace and everything above it.
+  const expandedIds = useSettingsStore((s) => s.expandedWorkspaceIds);
+  const updateSettings = useSettingsStore((s) => s.update);
+  const activeWorkspaceId = useMemo(() => {
+    if (!activeId) return null;
+    for (const [wsId, list] of Object.entries(threadsByWs)) {
+      if (list.some((th) => th.id === activeId)) return wsId;
+    }
+    return null;
+  }, [activeId, threadsByWs]);
+  const chain = useMemo(
+    () => workspaceChain(workspaces, activeWorkspaceId),
+    [workspaces, activeWorkspaceId],
+  );
+  const chainKey = chain.join('\n');
+  // Groups of that chain the user folded by hand. Not stored, and only honoured while the
+  // chain is the same: opening a project somewhere else starts over, and so does a restart —
+  // otherwise folding the group you are in would have no way to take effect.
+  const [folded, setFolded] = useState<{ key: string; ids: ReadonlySet<string> }>({
+    key: '',
+    ids: NONE,
+  });
+  const foldedNow = folded.key === chainKey ? folded.ids : NONE;
+  const openIds = useMemo(
+    () => new Set([...expandedIds, ...chain.filter((id) => !foldedNow.has(id))]),
+    [expandedIds, chain, foldedNow],
+  );
+  // ⚠️ Reads both lists fresh from their stores: a workspace created a moment ago is in
+  // neither of this render's copies yet.
+  const setOpen = (ids: string[], open: boolean): void => {
+    void updateSettings({
+      expandedWorkspaceIds: nextExpandedIds(
+        useSettingsStore.getState().expandedWorkspaceIds,
+        useWorkspacesStore.getState().workspaces,
+        ids,
+        open,
+      ),
+    });
+    if (!open) setFolded({ key: chainKey, ids: new Set([...foldedNow, ...ids]) });
+  };
   const openSearch = useSearchStore((s) => s.openSearch);
   const openSettings = useSettingsStore((s) => s.openPanel);
   // DESIGN_MCP_WRITE_ROLE §4.3: the only way in. A badge, in the footer, absent when the
@@ -214,14 +259,18 @@ export default function Sidebar({ onCollapse }: Props) {
               node={node}
               threadsByWorkspace={threadsByWs}
               activeThreadId={activeId}
+              openIds={openIds}
+              setOpen={setOpen}
             />
           ))
         )}
       </div>
 
       <footer className="flex items-center justify-between border-t border-line px-4 py-3">
+        {/* Opens the new workspace: groups start folded, and a folded empty one would hide
+            its 「+ 创建第一个项目」 row. */}
         <button
-          onClick={() => void createWorkspace()}
+          onClick={() => void createWorkspace().then((w) => setOpen([w.id], true))}
           className="flex items-center gap-1 rounded p-1 text-xs text-muted hover:bg-paper-2 hover:text-ink"
           title={t('新建工作区')}
         >

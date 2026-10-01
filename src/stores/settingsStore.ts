@@ -34,6 +34,7 @@ type PersistableKey =
   | 'firstCaptureHintPending'
   | 'blockNavHintPending'
   | 'railWidth'
+  | 'expandedWorkspaceIds'
   | 'sidebarCollapsed'
   | 'railCollapsed'
   | 'aiAutoMaintain'
@@ -143,6 +144,11 @@ interface SettingsState {
   // fixed now). An existing settings.json still holding one is simply ignored — nothing
   // reads it, and rewriting a file on disk to drop a dead key buys nothing.
   railWidth: number;
+  /** 2026-09-30 (Ocean #10): the rail folds every workspace by default. These are the ones
+   *  the user opened by hand, kept across restarts; the open project's own workspace opens by
+   *  itself and is not stored (lib/workspaces/open). Ids of deleted workspaces are ignored on
+   *  read and dropped on the next write. */
+  expandedWorkspaceIds: string[];
   sidebarCollapsed: boolean;
   // The right rail starts collapsed: it is about the engine, and a user with no CLI
   // installed has nothing to put in it (DESIGN_AI_ENGINE §0 — absence is the default
@@ -316,6 +322,7 @@ const KEYS: PersistableKey[] = [
   'firstCaptureHintPending',
   'blockNavHintPending',
   'railWidth',
+  'expandedWorkspaceIds',
   'sidebarCollapsed',
   'railCollapsed',
   'aiAutoMaintain',
@@ -373,6 +380,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   firstCaptureHintPending: false,
   blockNavHintPending: false,
   railWidth: DEFAULT_RAIL_WIDTH,
+  expandedWorkspaceIds: [],
   sidebarCollapsed: false,
   railCollapsed: true,
   aiAutoMaintain: false,
@@ -445,6 +453,10 @@ export const useSettingsStore = create<SettingsState>((set) => ({
       // or an API balance, so an unrecognised word must not fall through to either.
       if (next.autoReviewRoute !== undefined && next.autoReviewRoute !== 'api') {
         next.autoReviewRoute = 'cli';
+      }
+      // The rail calls array methods on this one; anything else would throw mid-render.
+      if (next.expandedWorkspaceIds !== undefined && !Array.isArray(next.expandedWorkspaceIds)) {
+        next.expandedWorkspaceIds = [];
       }
       // One-time cleanup for users upgrading across the MCP-first pivot.
       if (!legacyScrubDone) {

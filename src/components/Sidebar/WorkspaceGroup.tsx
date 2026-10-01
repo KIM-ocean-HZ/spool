@@ -5,7 +5,6 @@ import MenuDeleteItem from '@/components/ui/MenuDeleteItem';
 import { useMenuPosition } from '@/components/ui/useMenuPosition';
 import type { Thread } from '@/lib/db/threads';
 import { DROP_WORKSPACE_ATTR } from '@/lib/sidebar/railDrag';
-import { isDormant } from '@/lib/threads/dormancy';
 import { isImeComposing } from '@/lib/utils/ime';
 import { useT } from '@/lib/i18n';
 import type { WorkspaceNode } from '@/lib/workspaces/tree';
@@ -20,38 +19,39 @@ interface Props {
   node: WorkspaceNode;
   threadsByWorkspace: Record<string, Thread[]>;
   activeThreadId: string | null;
+  /** Which groups are drawn open (Sidebar decides — lib/workspaces/open). */
+  openIds: ReadonlySet<string>;
+  setOpen: (ids: string[], open: boolean) => void;
 }
 
-// Thread ordering within a group (§9.9, #5 auto-dormancy 2026-07-13): awake threads
-// on top — those with a deadline by urgency, the rest by recency; idle ones sink into
-// a collapsed 沉睡 row (derived, zero clicks — see lib/threads/dormancy); done stays
-// at the very bottom (dimmed by ThreadListItem itself).
-const sortThreads = (
-  threads: Thread[],
-  now: number,
-): { fresh: Thread[]; dormant: Thread[]; done: Thread[] } => {
+// Thread ordering within a group (§9.9): live threads on top — those with a deadline by
+// urgency, the rest by recency; done stays at the very bottom (dimmed by ThreadListItem
+// itself). ⚠️ The 沉睡 row that used to sit between them is gone (Ocean 2026-09-30 #10):
+// the rail stays short by folding whole workspaces instead.
+const sortThreads = (threads: Thread[]): { fresh: Thread[]; done: Thread[] } => {
   const live = threads.filter((t) => t.status !== 'done');
   const done = threads.filter((t) => t.status === 'done');
-  const dormant = live
-    .filter((t) => isDormant(t, now))
-    .sort((a, b) => b.updatedAt - a.updatedAt);
-  const awake = live.filter((t) => !isDormant(t, now));
-  const withDeadline = awake
+  const withDeadline = live
     .filter((t) => t.deadline != null)
     .sort((a, b) => a.deadline! - b.deadline!);
-  const noDeadline = awake
+  const noDeadline = live
     .filter((t) => t.deadline == null)
     .sort((a, b) => b.updatedAt - a.updatedAt);
   done.sort((a, b) => (b.completedAt ?? b.updatedAt) - (a.completedAt ?? a.updatedAt));
-  return { fresh: [...withDeadline, ...noDeadline], dormant, done };
+  return { fresh: [...withDeadline, ...noDeadline], done };
 };
 
-export default function WorkspaceGroup({ node, threadsByWorkspace, activeThreadId }: Props) {
+export default function WorkspaceGroup({
+  node,
+  threadsByWorkspace,
+  activeThreadId,
+  openIds,
+  setOpen,
+}: Props) {
   const t = useT();
   const workspace = node.workspace;
   const threads = threadsByWorkspace[workspace.id] ?? [];
-  const [collapsed, setCollapsed] = useState(false);
-  const [dormantOpen, setDormantOpen] = useState(false);
+  const collapsed = !openIds.has(workspace.id);
   const [editing, setEditing] = useState(false);
   const [titleInput, setTitleInput] = useState(workspace.title);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -150,17 +150,12 @@ export default function WorkspaceGroup({ node, threadsByWorkspace, activeThreadI
     [allWorkspaces, subtreeIds, workspace.parentId],
   );
 
-  const { fresh, dormant, done } = useMemo(() => sortThreads(threads, Date.now()), [threads]);
+  const { fresh, done } = useMemo(() => sortThreads(threads), [threads]);
   const headerTitle = workspace.title.trim() || t('未命名');
 
   // v23: the rows of THIS group, in the order they are drawn — what ⇧-click measures a run
-  // against. ⚠️ It follows `dormantOpen`, because a run can only cover rows the user can
-  // actually see: with 沉睡 folded, shift-selecting across it would silently pick up rows
-  // that are not on screen.
-  const orderedIds = useMemo(
-    () => [...fresh, ...(dormantOpen ? dormant : []), ...done].map((th) => th.id),
-    [fresh, dormant, done, dormantOpen],
-  );
+  // against.
+  const orderedIds = useMemo(() => [...fresh, ...done].map((th) => th.id), [fresh, done]);
 
   return (
     /* The drop zone for a project drag (lib/sidebar/railDrag). It is an attribute rather
@@ -220,7 +215,7 @@ export default function WorkspaceGroup({ node, threadsByWorkspace, activeThreadI
         )}
 
         <button
-          onClick={() => setCollapsed((v) => !v)}
+          onClick={() => setOpen([workspace.id], collapsed)}
           className="-m-0.5 flex-none rounded p-0.5 text-muted hover:text-ink"
           aria-label={collapsed ? t('展开') : t('收起')}
         >
@@ -239,8 +234,12 @@ export default function WorkspaceGroup({ node, threadsByWorkspace, activeThreadI
         {/* v23 — 「可以在每个工作区内再新建工作区」 (Ocean 2026-08-15). It sits next to ＋ on the
             same hover, because a folder inside a folder is the same kind of act as a project
             inside a folder: the icon is what says which one you get. */}
+        {/* ⚠️ Opens this group and the new one: groups start folded, and a folder made inside
+            a folded one would otherwise appear nowhere. */}
         <button
-          onClick={() => void createWorkspace('', workspace.id)}
+          onClick={() =>
+            void createWorkspace('', workspace.id).then((w) => setOpen([workspace.id, w.id], true))
+          }
           className="invisible flex-none rounded p-0.5 text-muted hover:bg-paper-2 hover:text-ink group-hover:visible"
           aria-label={t('在里面新建工作区')}
           title={t('在里面新建工作区')}
@@ -280,7 +279,7 @@ export default function WorkspaceGroup({ node, threadsByWorkspace, activeThreadI
           is information rather than an accident of which section drew it. */}
       {!collapsed && (
         <ul className="space-y-0.5">
-          {fresh.length + dormant.length + done.length === 0 && (
+          {fresh.length + done.length === 0 && (
             <li
               onClick={() => void onAddThread()}
               className="cursor-pointer rounded px-3 py-1.5 text-xs italic text-muted hover:bg-paper-2/50"
@@ -299,32 +298,6 @@ export default function WorkspaceGroup({ node, threadsByWorkspace, activeThreadI
               onDelete={() => void removeThread(th.id)}
             />
           ))}
-          {/* #5 auto-dormancy: idle threads live behind one quiet row — no manual
-              parking. Expanding is per-workspace, session-local. */}
-          {dormant.length > 0 && (
-            <li>
-              <button
-                type="button"
-                onClick={() => setDormantOpen((v) => !v)}
-                className="flex w-full items-center gap-1 rounded px-3 py-1 text-[12px] text-muted transition-colors hover:bg-paper-2/50 hover:text-ink-2"
-              >
-                {dormantOpen ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
-                {t('沉睡 {n} 条', { n: dormant.length })}
-              </button>
-            </li>
-          )}
-          {dormantOpen &&
-            dormant.map((th) => (
-              <ThreadListItem
-                key={th.id}
-                thread={th}
-                active={th.id === activeThreadId}
-                selected={selectedIds.has(th.id)}
-                ordered={orderedIds}
-                onSelect={() => selectThread(th.id)}
-                onDelete={() => void removeThread(th.id)}
-              />
-            ))}
           {done.map((th) => (
             <ThreadListItem
               key={th.id}
@@ -349,6 +322,8 @@ export default function WorkspaceGroup({ node, threadsByWorkspace, activeThreadI
             node={child}
             threadsByWorkspace={threadsByWorkspace}
             activeThreadId={activeThreadId}
+            openIds={openIds}
+            setOpen={setOpen}
           />
         ))}
 
