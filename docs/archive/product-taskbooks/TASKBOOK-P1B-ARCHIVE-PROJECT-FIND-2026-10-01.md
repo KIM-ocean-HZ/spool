@@ -1,6 +1,6 @@
 # 产品任务书 P1B —— 工作区归档、项目内查找（P1 的后两条）
 
-> **状态：ACTIVE —— 当前唯一可执行的产品任务书。**
+> **状态：COMPLETE —— 待 Ocean 验收。**（A2 `afb50d4`、A3 `4328d57`，2026-10-01 已换装；回执在 §7）
 >
 > **唯一交付：** 下面 §3 的两条（A2、A3），按顺序做完、各自测试通过、各自一笔提交，并在 §7 写回执。
 >
@@ -163,6 +163,85 @@ Vitest 输出里有 31 行 `[db] pre-migration backup FAILED … window is not d
 - 还差什么、有没有偏离本任务书、新发现记在 HANDOFF 哪里
 
 最后一段：换装（做了没有、装的是哪个 commit、`spctl` 结果、真库备份文件名）、Ocean 验收（还没有就写「待验收」）。
+
+### 回执（执行窗 2026-10-01 填）
+
+**开工**：`git log -1` = `7ec2e2e`（上一笔 `f8828d7`），符合 §2。基线和 §2 写的完全一致：`tsc -b` 干净；Vitest 64 文件 / 806 条；
+主 crate 141 过 · 4 跳过；sidecar 14 过；`i18n-check` → `(none missing)`；`--dead` 87 条。
+
+**A2 · 工作区归档**
+- 提交：`afb50d4 feat(sidebar): 工作区归档 —— 项目全完成自动进左栏底部「归档」，右键可强制归档、⌘Z 一次撤回`
+- 文件：
+  - `src/lib/workspaces/archive.ts`（新：`splitArchived` 判定 + 拆树、`subtreeWorkspaceIds`、`archivePlan`）
+  - `src/lib/workspaces/archive.test.ts`（新，14 条）
+  - `src/components/Sidebar/index.tsx`（拆树、左栏最底下的「归档」节）
+  - `src/components/Sidebar/WorkspaceGroup.tsx`（右键「归档」、归档节里显示「上级 / 子工作区」）
+  - `src/components/Sidebar/ArchiveWorkspaceDialog.tsx`（新：确认框，App 里挂一次，同 `packingId` 的做法）
+  - `src/App.tsx`、`src/stores/workspacesStore.ts`（`archivingId` / `archive`）
+  - `src/lib/db/threads.ts`（`setThreadCompletion`：按给定值写 status / completed_at / updated_at）
+  - `src/lib/undo/undoLog.ts`、`src/stores/undoStore.ts`、`src/hooks/useUndo.ts`、`src/overlay/CaptureOverlay.tsx`（新撤销类型 `workspace_archive`）
+  - `src/stores/undoStore.test.ts`（+2 条，真 SQLite：归档 → ⌘Z → 重做；⌘Z 不动用户后来自己选的捕捉目标）
+  - `src/lib/i18n/index.ts`
+- 验：`tsc -b` 干净；Vitest 65 文件 / 822 条；主 crate 141 · 4 跳过；sidecar 14；`i18n-check` → `(none missing)`；`--dead` 与基线逐行相同（87）。
+  `UNDO_OP_LABEL` 新加的「归档工作区」i18n-check 看不见，字典里那一条是手加、手核的（`'归档工作区': 'Archive workspace'`）。
+  另用真库只读导出（`sqlite3 -readonly`）跑了一遍判定：13 个工作区、47 个项目，**正好 1 个**算归档（顶层、4 个项目），和 §3 写的一致；临时测试文件跑完即删。
+- 施工时自己定的：
+  - **第 2 条的边角**：上级归档了、下面有个没有项目的子工作区 ⇒ 跟着上级整棵进归档节（测试 `carries an empty sub-workspace along with its archived parent`）；
+    另有一条「一个工作区都不许掉出去」的测试（含孤儿、环）。
+  - **第 6 条**：归档节默认收起、开合不存 settings；当前项目在归档节里时自己展开，那时候手动收起只在这条链不变期间有效（和 A1 同一条规矩）。
+    顺带的现象：当前项目在一个「上级没归档、自己归档了」的子工作区里时，A1 的派生展开也会把树里那个上级展开（它在这条链上）。没改，写在这里。
+  - **捕捉目标**：只在目标落在这棵子树里时才换，换到子树外「最近更新的一个没完成的项目」；子树外一个没完成的都没有时，目标留在原处，确认框照实说
+    「没有别的没完成的项目，捕捉目标仍留在『…』」—— 不替用户新建项目。⌘Z 时只有目标还停在归档换过去的那个项目上才换回去（用户中间自己改过就不动）。
+  - **撤回不留痕**：撤回把这几个项目的 `updated_at` 也还原，不然 ⌘Z 之后它们会全部挤到「最近」最上面。
+  - 右键「归档」只在子树里还有没完成的项目时出现（空工作区归不了档，全完成的已经在归档里）。
+  - 执行中自己抓到并修掉的一处：拆树之后，树里的上级拿到的 `node.children` 已经不含归档的子工作区 ⇒ 它的「移进工作区」会把自己的子工作区列成目标（选了必抛「成环」），
+    「删除工作区（连同里面的工作区）」也会少那半句。改成按**整棵树**算子树（`subtreeWorkspaceIds`）。
+- 偏离：无。没改库结构、没碰 MCP、没碰「最近」「聚焦」。
+
+**A3 · 在本项目里查找**
+- 提交：`4328d57 feat(search): 项目里的查找改成「在本项目里查找」—— 按时间线跨块走、首尾相接、不跳出本项目`
+- 文件：
+  - `src/components/Search/InBlockNavigator.tsx` → `ProjectFindBar.tsx`（Ocean 跑的 `git mv`；计数只剩「本项目 第 i / N 处」、列表只列本项目、底下一行「在全部工作区里搜这个词」）
+  - `src/stores/searchStore.ts`（按本项目、时间线顺序走，首尾相接；改词在整个项目里重查；`navResults` 和 `countMatches` 删掉，换成 `findPosition`）
+  - `src/lib/search/query.ts`（新 `hitsInBlocks` / `BlockHit`；`hitLine` / `hitLead` 形参放宽成只要 `snippet`）
+  - `src/components/ThreadView/LogView.tsx`、`ScaleRail.tsx`（刻度条和查找条读同一份命中）、`BlockFeed.tsx`（见下面「更正折叠」）、`BlockItem.tsx`（两处注释里的组件名）
+  - `src/stores/searchCounts.test.ts`（重写：`findPosition` + 六条按项目走的测试）、`src/lib/search/query.test.ts`（+3 条 `hitsInBlocks`）
+  - `src/lib/i18n/index.ts`（删 8 条块内模式 / 全库计数的键，加 6 条新键）
+- 命中从哪来：`hitsInBlocks` = 对本项目已加载的块逐块跑全库搜索**同一套** `buildSnippet` + `buildHitOffsets`，按块在 store 里的顺序（= 时间线，`created_at` 升序）。
+  ⛔ 没用 `search()` 再按项目过滤：它的 FTS / LIKE 查询对**全库**有 `LIMIT 60`，长项目会被截短、「第 i / N 处」会数错。命中位置照旧走 `data-o` 偏移，没碰 `content.indexOf`。
+- 改词时落在哪：当前这一块还对得上就留在这一块；对不上就跳到时间线上它下面的第一处，没有就从头。一处都没有时查找条留着、写「本项目里没有」。
+- 验：`tsc -b` 干净；Vitest 65 文件 / 829 条；主 crate 141 · 4 跳过；sidecar 14；`i18n-check` → `(none missing)`；`--dead` 与基线逐行相同（87）——
+  删掉的 8 条键正好是改动造出来的孤儿，新键都在用。
+- **第 4 条查过的「折叠」**：
+  - 6 行截断：`isNavTarget` 时不截（`showCollapsed`）—— 够；
+  - 退役块折到一行：`isNavTarget` 一票否决（`staleFolded`）—— 够；
+  - 合并块（`SegmentedContent`）：`isNavTarget` 时摊平成 `MarkdownContent`，命中照画 —— 够；
+  - 批注里的命中：`ContentRuns` 画 `<mark>` —— 够；
+  - 压缩过的块：正文就是压缩稿，命中算的、画的都是它；压缩前原文在另开的只读区，FTS 也只索引 content + annotation，不在任何查找范围 —— 不涉及；
+  - 尾部窗口（「查看更早的」）：落点走 `highlight`，BlockFeed 会把窗口放宽到够得着 —— 够；
+  - **更正折叠：不够**。挂在句子底下的更正不在时间线上，原来只在 `highlightBlockId`（1.2 秒自清）期间放出来 ⇒ 按回车走进一条更正，它闪一下就折回去，命中跟着没了。
+    改了 `BlockFeed.tsx`：查找停在它上面的整段时间都留在时间线上（`navBlockId`），走开就折回去。
+  - 引用项目块（`kind = ref`）：它画的是被引项目的**现名**，没有命中高亮；落点能滚到那一行，但看不到 `<mark>`。没改，写在这里。
+- 没碰到的那几处中文（关闭按钮的 `title` / `aria-label`）照任务书留给 `DISCOVERED-20261001-1`，HANDOFF 里那一条已更新还剩什么。
+- 偏离：无。全库搜索面板、⌘F 键位都没动。
+
+**新发现**：HANDOFF §9.9 新增 `DISCOVERED-20261001-3`（全库搜索结果上的「批注」标签英文显示成动词 Annotate）；`-1` 补了进度。
+
+**换装（Ocean 10-01「做完后续步骤然后换装等我验收」）**
+- 构建：`4328d57`（工作区只有 docs 改动），`env -u APPLE_ID -u APPLE_PASSWORD -u APPLE_TEAM_ID -u APPLE_API_KEY -u APPLE_API_ISSUER -u APPLE_API_KEY_PATH
+  APPLE_SIGNING_IDENTITY="Developer ID Application: Hanze JIN (Q5Y5JRXZ58)" npm run tauri build -- --bundles app`，日志进文件；没改 `tauri.conf.json`，日志里是「skipping app notarization」。
+  ⚠️ 第一次 TSA 失败（`A timestamp was expected but was not found`，`.app` 没签成），整个重跑一次过。
+- 装前：`codesign` = Developer ID、`spctl` = `Unnotarized Developer ID`、0.6.2、`spool` sha256 `ac47d291…a55a79fb`（就是 P1 那一版）；真库 v29（代码也是 29，不迁移）。
+- 停：GUI pid 53200 + `--overlay` pid 53222 按 pid `kill -TERM`，1 秒内都退了、再查已不在；`--mcp` 子进程（约 20 个）一个没碰。
+- 真库备份：`~/Desktop/spool.before-p1b-install-20261001-145647.db`（`VACUUM INTO`，integrity ok，v29，计数和活库一致）。
+- 旧包：`mv` 到 `~/Desktop/Spool/spool-pre-install/Spool-old-20261001-145654-pre-p1b.app`；新包 `ditto` 进 `/Applications`。
+- 装后：`--verify --deep --strict` 过、Developer ID、`spctl` = `Unnotarized Developer ID`、identifier `com.oceanjin.spool`；`/Applications` 里 `spool` 的 sha256
+  `f3ded3e5…35981b97` 和构建产物一致；主进程 46012 起于 14:57:03（换装之后），`lsof` 的 inode 就是新文件；stderr `[double-tap] installed at HID/active`（两个授权都在）；
+  真库 v29 · 25 / 63 / 1013 / 1（工作区 / 项目 / 块 / 文件，含软删）· 正文总长 291894 · 捕捉目标没变，前后一致。截了一张窗口图，正常出画面（归档节在左栏最底下，要往下滚才看得到）。
+- 没 push、没发版。
+
+**Ocean 验收**：待验收（§6 七条）。
+
 
 ## 8. 收尾的文档动作（执行窗做）
 
