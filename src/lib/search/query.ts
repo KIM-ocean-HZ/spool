@@ -31,7 +31,7 @@ export interface SearchSnippetLine {
 }
 
 // v2.9 §9.10 / §19.17: every position the query matches within a hit block, used
-// for in-block <mark> rendering and InBlockNavigator stepping. Offsets are
+// for in-block <mark> rendering and ProjectFindBar stepping. Offsets are
 // UTF-16 character indices into the field's text, ordered by field then by
 // appearance (content offsets first, then annotation offsets).
 export interface HitOffset {
@@ -63,7 +63,7 @@ export interface SearchHit {
  *  ⚠️ 2026-08-27 晚：兜底那一步要**跳过空行**。命中行找不到的时候（FTS 对上了但没有逐字
  *  的子串），原来直接拿 `snippet[0]`，而块正文常常是「段落 + 空行 + 段落」，`snippet[0]`
  *  正好是那个空行 ⇒ 「所有匹配」那张单子上就出现一条**什么字都没有**的结果。 */
-export const hitLine = (hit: SearchHit): string => {
+export const hitLine = (hit: Pick<SearchHit, 'snippet'>): string => {
   const line =
     hit.snippet.find((l) => l.isHit) ??
     hit.snippet.find((l) => l.text.trim().length > 0) ??
@@ -86,7 +86,7 @@ export interface HitLead {
 /** 命中词前面留几个字，好让它不贴着卡片左边。 */
 const LEAD_CHARS = 6;
 
-export const hitLead = (hit: SearchHit, max: number): HitLead => {
+export const hitLead = (hit: Pick<SearchHit, 'snippet'>, max: number): HitLead => {
   const line = hit.snippet.find((l) => l.isHit);
   if (!line?.match) {
     // 没有逐字命中：退回第一行**有字的**（⛔ 不是 snippet[0]，那可能是空行）。
@@ -246,6 +246,31 @@ export const buildHitOffsets = (
   ...findAllOffsets(content, query, 'content'),
   ...(annotation ? findAllOffsets(annotation, query, 'annotation') : []),
 ];
+
+/** One block's matches for the find bar (P1B A3 「在本项目里查找」) — the fields of a SearchHit
+ *  that do not depend on which project or workspace the block sits in. */
+export type BlockHit = Pick<SearchHit, 'blockId' | 'threadId' | 'field' | 'snippet' | 'hitOffsets'>;
+
+/** 「在本项目里查找」: the same match rule as `search` (buildSnippet + buildHitOffsets), run over
+ *  one project's blocks in the order given — the feed's timeline order. Blocks with no literal
+ *  hit are left out: they have no 处 to step to.
+ *  ⚠️ Not the FTS query: its LIMIT 60 is over the whole library, so a long project would be cut
+ *  short and 「第 i / N 处」 would count wrong. */
+export const hitsInBlocks = (
+  blocks: readonly { id: string; threadId: string; content: string; annotation: string | null }[],
+  raw: string,
+): BlockHit[] => {
+  const q = raw.trim();
+  if (!q) return [];
+  const out: BlockHit[] = [];
+  for (const b of blocks) {
+    const hitOffsets = buildHitOffsets(b.content, b.annotation, q);
+    if (hitOffsets.length === 0) continue;
+    const { field, snippet } = buildSnippet(b.content, b.annotation, q);
+    out.push({ blockId: b.id, threadId: b.threadId, field, snippet, hitOffsets });
+  }
+  return out;
+};
 
 // Wrap a query as an FTS5 phrase literal: doubled quotes, surrounding quotes. A
 // quoted phrase is always valid FTS5 syntax and forces a contiguous (substring)

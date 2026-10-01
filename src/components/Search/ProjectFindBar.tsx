@@ -1,22 +1,20 @@
 import { ChevronDown, ChevronUp, List, Search as SearchIcon, X } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { isImeComposing } from '@/lib/utils/ime';
-import { hitLine, type SearchHit } from '@/lib/search/query';
-import { countMatches } from '@/stores/searchStore';
+import { hitLine, type BlockHit } from '@/lib/search/query';
+import { findPosition } from '@/stores/searchStore';
 import { useT } from '@/lib/i18n';
 
-// v2.9 §9.10 / §13.2 / §19.17: in-block search find bar. Mounted at the top of
-// the destination thread's LogView (a fixed band above the scrollable feed)
-// so it stays put while the user scrolls and is large enough to read at a
-// glance — closer to vscode's find widget than a floating pill.
+// v2.9 §9.10 / §13.2 / §19.17: the find bar. Mounted at the top of the destination thread's
+// LogView (a fixed band above the scrollable feed) so it stays put while the user scrolls
+// and is large enough to read at a glance — closer to vscode's find widget than a floating
+// pill.
 //
-// The query field is a real editable input: typing re-runs buildHitOffsets
-// against the target block (in LogView, via `onQueryChange`), so the user can
-// refine the search inside the block without going back to the global overlay.
-//
-// v2.10: a 全部 list (the count chip) opens every block that contains the text —
-// across ALL workspaces — so the user can jump to any match, in any thread, from
-// here. Picking one navigates to that thread/block (`onPickResult`).
+// P1B A3 (HANDOFF §9.1 #4, Ocean: 「进入项目后的查找……应该显示单个项目范围内的查找，不应该有
+// 块内查找这个功能」): it finds in THIS PROJECT. ↵ / ⌘G / ▲▼ walk every match of the project
+// in timeline order and wrap from the last to the first; the count is 「本项目 第 i / N 处」;
+// the list holds this project's matching blocks, with one row at the bottom back to the
+// all-workspaces search. Typing re-finds over the whole project (searchStore).
 //
 // `data-search-nav-bar` 是这一栏的记号。2026-08-27 之后它只剩一个用处：useSearch 的 Esc
 // 处理要认出「焦点在查找框里」，好让 Esc 从这里也能关掉查找（原来还有一个 BlockItem 的
@@ -24,41 +22,38 @@ import { useT } from '@/lib/i18n';
 
 interface Props {
   query: string;
-  index: number;
-  total: number;
-  // All blocks matching the original search (across workspaces) + the currently-shown one,
-  // for the jump-to-any-match list.
-  results: SearchHit[];
+  /** Every match in this project, in timeline order (`hitsInBlocks`). */
+  hits: BlockHit[];
   currentBlockId: string | null;
-  /** 数「本项目」那两个数要知道现在是哪个项目。⚠️ ⛔ 不能从 `currentBlockId` 反推 —— 查找
-   *  可以停在别的项目的块上，那时候「本项目」说的仍然是屏幕上这个。 */
-  threadId: string;
+  hitIndex: number;
   onQueryChange: (next: string) => void;
   onPrev: () => void;
   onNext: () => void;
   onPickResult: (blockId: string) => void;
+  /** The row under the list: the same word, searched in every workspace. */
+  onSearchAll: () => void;
   onDismiss: () => void;
 }
 
-export default function InBlockNavigator({
+export default function ProjectFindBar({
   query,
-  index,
-  total,
-  results,
+  hits,
   currentBlockId,
-  threadId,
+  hitIndex,
   onQueryChange,
   onPrev,
   onNext,
   onPickResult,
+  onSearchAll,
   onDismiss,
 }: Props) {
   const t = useT();
   const inputRef = useRef<HTMLInputElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const [listOpen, setListOpen] = useState(false);
-  const empty = total === 0;
-  const counts = useMemo(() => countMatches(results, threadId), [results, threadId]);
+  const { i, n } = findPosition(hits, currentBlockId, hitIndex);
+  const empty = n === 0;
+  const hasQuery = query.trim().length > 0;
 
   // Auto-focus the input on mount so the user can immediately refine the
   // search. preventScroll keeps focus from yanking the viewport.
@@ -67,7 +62,7 @@ export default function InBlockNavigator({
     inputRef.current?.select();
   }, []);
 
-  // Close the all-matches list on a click outside the bar.
+  // Close the list on a click outside the bar.
   useEffect(() => {
     if (!listOpen) return;
     const onDown = (e: MouseEvent): void => {
@@ -94,7 +89,7 @@ export default function InBlockNavigator({
       ref={rootRef}
       data-search-nav-bar
       role="toolbar"
-      aria-label={t('块内查找')}
+      aria-label={t('在本项目里查找')}
       // ⚠️⚠️ `z-20` —— 2026-08-27 Ocean:「点击调出所有项目的查找词，背景透明的，和其他文字
       // 重叠，导致看不清」。⛔ 那张列表**没有**透明（它就是 bg-paper），是它画在正文底下：
       // `backdrop-blur-sm` 让这一栏自己成了一个层叠上下文，里面的 z-20 出不去；而下面那个
@@ -110,45 +105,26 @@ export default function InBlockNavigator({
         value={query}
         onChange={(e) => onQueryChange(e.target.value)}
         onKeyDown={onInputKeyDown}
-        placeholder={t('块内查找…')}
+        placeholder={t('在本项目里查找…')}
         spellCheck={false}
         className="w-[220px] flex-none rounded border border-line bg-paper px-2 py-1 font-mono text-[12px] text-ink outline-none transition-colors placeholder:text-muted focus:border-accent"
       />
-      {/* ⭐ 2026-08-27（Ocean:「搜索的计数有歧义」）——**三个数，各自说清自己在数什么**。
-          原来只有两个：`1 / N`（这一块里的第几处）和 `≡ 6`（全部工作区里几个块），
-          谁也答不上「这个项目里一共多少处」。⚠️ 处 ≠ 块，所以两个都写出来。 */}
       <span className="whitespace-nowrap font-ui text-[11px] text-muted" aria-live="polite">
-        {!query.trim()
-          ? ''
-          : empty
-            ? t('这一块里没有')
-            : t('这一块 第 {i} / {n} 处', { i: index + 1, n: total })}
+        {!hasQuery ? '' : empty ? t('本项目里没有') : t('本项目 第 {i} / {n} 处', { i, n })}
       </span>
-      {query.trim() && counts.allHits > 0 && (
-        <span className="whitespace-nowrap font-ui text-[11px] text-ink-2">
-          {t('本项目 {hits} 处 · {blocks} 块', {
-            hits: counts.threadHits,
-            blocks: counts.threadBlocks,
-          })}
-        </span>
-      )}
 
-      {/* All matching blocks across every workspace — jump to any of them. */}
+      {/* This project's matching blocks — jump to any of them. */}
       <button
         type="button"
         onClick={() => setListOpen((v) => !v)}
-        disabled={results.length === 0}
-        title={t('所有包含该文字的块（全部工作区）')}
-        aria-label={t('所有匹配的块')}
-        className={`flex h-6 flex-none items-center gap-1 whitespace-nowrap rounded px-1.5 font-ui text-[11px] transition-colors disabled:opacity-40 ${
+        disabled={!hasQuery}
+        title={t('本项目里命中的块')}
+        aria-label={t('本项目里命中的块')}
+        className={`flex h-6 w-6 flex-none items-center justify-center rounded transition-colors disabled:opacity-40 ${
           listOpen ? 'bg-paper text-accent' : 'text-muted hover:bg-paper hover:text-accent'
         }`}
       >
         <List size={13} />
-        {t('全部 {hits} 处 · {blocks} 块', {
-          hits: counts.allHits,
-          blocks: counts.allBlocks,
-        })}
       </button>
 
       <div className="flex-1" />
@@ -184,12 +160,12 @@ export default function InBlockNavigator({
         <X size={14} />
       </button>
 
-      {listOpen && results.length > 0 && (
+      {listOpen && hasQuery && (
         <div
           className="absolute left-4 top-full z-20 mt-1 max-h-72 w-[380px] max-w-[calc(100%-2rem)] overflow-y-auto rounded-md border border-line-strong bg-paper py-1"
           style={{ boxShadow: 'var(--shadow-toast)' }}
         >
-          {results.map((hit) => (
+          {hits.map((hit) => (
             <button
               key={hit.blockId}
               type="button"
@@ -197,21 +173,32 @@ export default function InBlockNavigator({
                 onPickResult(hit.blockId);
                 setListOpen(false);
               }}
-              className={`block w-full px-3 py-1.5 text-left transition-colors ${
+              className={`flex w-full items-baseline gap-1.5 px-3 py-1.5 text-left transition-colors ${
                 hit.blockId === currentBlockId ? 'bg-accent/10' : 'hover:bg-paper-2'
               }`}
             >
-              <div className="truncate font-ui text-[12px] text-ink-2">{hitLine(hit) || ' '}</div>
-              <div className="mt-0.5 flex items-center gap-1 text-[10px] text-muted">
-                {hit.field === 'annotation' && (
-                  <span className="flex-none rounded-sm border border-line px-1 text-accent">批注</span>
-                )}
-                <span className="truncate">
-                  {hit.workspaceTitle || '收件箱'} / {hit.threadTitle || '无标题'}
+              {hit.field === 'annotation' && (
+                <span className="flex-none rounded-sm border border-line px-1 text-[10px] text-accent">
+                  {t('批注命中')}
                 </span>
-              </div>
+              )}
+              <span className="min-w-0 truncate font-ui text-[12px] text-ink-2">
+                {hitLine(hit) || ' '}
+              </span>
             </button>
           ))}
+          <button
+            type="button"
+            onClick={() => {
+              setListOpen(false);
+              onSearchAll();
+            }}
+            className={`block w-full px-3 py-1.5 text-left font-ui text-[12px] text-muted transition-colors hover:bg-paper-2 hover:text-accent ${
+              hits.length > 0 ? 'mt-1 border-t border-line' : ''
+            }`}
+          >
+            {t('在全部工作区里搜这个词')}
+          </button>
         </div>
       )}
     </div>

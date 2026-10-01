@@ -100,7 +100,7 @@ interface FieldRange {
 }
 
 // Filter the flat hits array down to one field and keep each hit's global
-// index in the original array — InBlockNavigator counts and the active-index
+// index in the original array — ProjectFindBar counts and the active-index
 // comparison still operate over the unified order.
 const hitsForField = (
   hits: readonly HitOffset[],
@@ -479,7 +479,7 @@ function TextBlockItem({
   //      是不是它），查找条就没了。而**点外面正是查找的用法**：找到了就要去看、去改。
   //   2. 滚开两百像素就关（wheel / touchmove）—— 上下翻着看别的命中，翻着翻着它自己关了。
   // 两条都是「替用户决定他找完了」。⌘F 那一栏在别的软件里从来不这样：开着就是开着，
-  // 直到人按 ✕ 或 Esc。现在也是——那两条路仍然在（InBlockNavigator 的 ✕、useSearch 的 Esc）。
+  // 直到人按 ✕ 或 Esc。现在也是——那两条路仍然在（ProjectFindBar 的 ✕、useSearch 的 Esc）。
   //
   // ⚠️ 想加回任何一条之前先问一句：用户下一步要做的事，是不是正好会触发它。
 

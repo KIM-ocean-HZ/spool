@@ -1,6 +1,8 @@
 import { create } from 'zustand';
-import { search } from '@/lib/search/query';
-import type { HitOffset, SearchHit } from '@/lib/search/query';
+import type { Block } from '@/lib/db/blocks';
+import { hitsInBlocks, search } from '@/lib/search/query';
+import type { BlockHit, HitOffset, SearchHit } from '@/lib/search/query';
+import { useBlocksStore } from './blocksStore';
 import { useThreadsStore } from './threadsStore';
 
 // How long a navigated-to block keeps its highlight. Slightly longer than the
@@ -17,26 +19,25 @@ interface SearchState {
   // flashes it. Self-clears after HIGHLIGHT_MS.
   highlightBlockId: string | null;
 
-  // v2.9 §9.10 / §19.17: in-block navigation state. Set when a search result is
-  // activated. While set, the find bar (mounted at the top of the destination
-  // thread's LogView) is visible and BlockItem force-expands its target +
-  // wraps every hit position in <mark>.
+  // v2.9 §9.10 / §19.17: find-bar state. Set when a search result is activated. While set,
+  // the find bar (mounted at the top of the destination thread's LogView) is visible and
+  // BlockItem force-expands its target + wraps every hit position in <mark>.
+  // P1B A3 (HANDOFF §9.1 #4): the bar finds in THIS PROJECT — ↵ / ⌘G / ▲▼ walk every match
+  // in the open project in timeline order and never leave it. The match list is derived on
+  // demand (`hitsInBlocks` over the project's blocks + `activeQuery`), never stored.
   // ⭐ 2026-08-27 起**只有** ✕ 和 Esc 关得掉它（Ocean:「不能长期显示，点击外面就会消失」）——
   // 原来点外面、或者滚开一段就会自动清掉，那两条已经删了，见 BlockItem 里的说明。
   activeNavigationBlockId: string | null;
   activeHits: HitOffset[];
   activeHitIndex: number;
-  // The query string that triggered navigation — surfaced in the find bar so
-  // the user keeps context after the global search overlay closes.
+  // The query the find bar is finding — the one that triggered navigation, then whatever the
+  // user types into the bar.
   activeQuery: string;
   // Bumps on every hit advance — used by BlockItem's scroll-active-into-view
   // effect so the same-index wrap-around still re-scrolls.
   flashTick: number;
-  // v2.10: snapshot of the last search's result set + query, kept alive after the overlay
-  // closes (which wipes `results`). Lets ▲/▼ step from the current block's last/first match
-  // straight into the next/previous matching block — and its thread — instead of being
-  // trapped inside one block.
-  navResults: SearchHit[];
+  // The last search's query, kept after the overlay closes (which wipes `query`) — the ↵
+  // path into a result still needs it (useSearch).
   navQuery: string;
 
   // `seed` 预填搜索词（⌘F 划词查找 —— 见 lib/search/selection.ts）。不传就是原来那样，
@@ -47,82 +48,71 @@ interface SearchState {
   runSearch: () => Promise<void>;
   highlight: (blockId: string) => void;
   startNavigation: (blockId: string, hits: HitOffset[], query: string) => void;
-  // Live edit of the find bar's query: caller (LogView) re-runs
-  // buildHitOffsets against the target block and passes the new hits in.
-  setNavigationQuery: (query: string, hits: HitOffset[]) => void;
+  // Live edit of the find bar's query: re-finds in the whole project, not just this block.
+  setNavigationQuery: (query: string) => void;
   clearNavigation: () => void;
   nextHit: () => void;
   prevHit: () => void;
-  // Jump straight to a chosen matching block (from the find bar's cross-thread result list),
-  // selecting its thread if needed. No-op if the id isn't in the kept result set.
+  // Jump straight to a chosen matching block of this project (the find bar's list, the
+  // scale rail). No-op if the block has no match.
   jumpToResult: (blockId: string) => void;
 }
 
-/** 查找条上那几个数（2026-08-27，Ocean:「搜索的计数有歧义」）。
+/** 查找条上那唯一一个数：「本项目 第 i / N 处」（P1B A3）。
  *
- *  ⚠️ 原来条上只有两个数，而且**两个数在数不同的东西**：`1 / N` 数的是「这一块里的第几处」，
- *  `≡ 6` 数的是「全部工作区里有几个**块**命中」。于是「这个项目里一共有多少处」——
- *  最常想知道的那一个 —— 一个数都答不上来。
- *
- *  ⚠️ 处 ≠ 块：一块里可以有五处。两个都要，因为它们回答的是两个问题
- *  （「还要按多少次下一个」和「要翻多少块」）。
- *
- *  ⚠️ 纯函数，⛔ 不进 store 的状态：它是 `navResults` 的算术，存一份就要跟着它更新，
- *  而那正是两个数开始互相说不一样的话的方式。 */
-export interface MatchCounts {
-  /** 这个项目里的处数 / 块数。 */
-  threadHits: number;
-  threadBlocks: number;
-  /** 全部工作区。 */
-  allHits: number;
-  allBlocks: number;
-}
-
-export const countMatches = (results: SearchHit[], threadId: string | null): MatchCounts => {
-  let threadHits = 0;
-  let threadBlocks = 0;
-  let allHits = 0;
-  for (const hit of results) {
-    // ⚠️ `hitOffsets` 是**两个字段合起来**的每一处（正文的在前，批注的在后）——
-    // 「处」在查找条上下翻的时候就是按它走的，所以数它才和 ▲▼ 对得上。
-    const n = hit.hitOffsets.length;
-    allHits += n;
-    if (threadId !== null && hit.threadId === threadId) {
-      threadHits += n;
-      threadBlocks += 1;
-    }
+ *  ⚠️ 处 ≠ 块：`hitOffsets` 是一块里**两个字段合起来**的每一处（正文在前、批注在后）——
+ *  ▲▼ 就是按它一处一处走的，所以数它才和按回车的次数对得上。
+ *  `i` 从 1 起；目标块不在命中里时是 0。⚠️ 纯函数、⛔ 不进 store：它是命中列表的算术，
+ *  存一份就要跟着列表更新，两个数就是这么开始各说各话的。 */
+export const findPosition = (
+  hits: readonly BlockHit[],
+  blockId: string | null,
+  hitIndex: number,
+): { i: number; n: number } => {
+  let i = 0;
+  let n = 0;
+  for (const h of hits) {
+    if (h.blockId === blockId) i = n + Math.min(hitIndex, h.hitOffsets.length - 1) + 1;
+    n += h.hitOffsets.length;
   }
-  return { threadHits, threadBlocks, allHits, allBlocks: results.length };
+  return { i, n };
 };
 
 export const useSearchStore = create<SearchState>((set, get) => {
-  // Land in-block navigation on `hit` at `hitIndex`, selecting its thread if it differs and
-  // flashing it into view — the same orchestration as a search-result click (select +
-  // highlight). Shared by ▲/▼ stepping and the find bar's result list.
-  const goToHit = (hit: SearchHit, hitIndex: number): void => {
-    if (hit.threadId !== useThreadsStore.getState().activeId) {
-      useThreadsStore.getState().select(hit.threadId);
-    }
+  // The open project's blocks (timeline order, as the feed draws them) and every match in
+  // them. ⚠️ Null unless the find target is one of those blocks: a ⌘G pressed while another
+  // project is open must not quietly start a find over there.
+  const project = (): { blocks: Block[]; hits: BlockHit[] } | null => {
+    const threadId = useThreadsStore.getState().activeId;
+    const blocks = threadId ? useBlocksStore.getState().byThread[threadId] : undefined;
+    const target = get().activeNavigationBlockId;
+    if (!blocks || !blocks.some((b) => b.id === target)) return null;
+    return { blocks, hits: hitsInBlocks(blocks, get().activeQuery) };
+  };
+
+  // Land the find on `hit` at `hitIndex` and flash its block into view (BlockFeed scrolls to
+  // the highlight — and widens its tail window to reach it). Same project, always.
+  const goToHit = (hit: BlockHit, hitIndex: number): void => {
     set((s) => ({
       activeNavigationBlockId: hit.blockId,
       activeHits: hit.hitOffsets,
       activeHitIndex: hitIndex,
-      activeQuery: s.navQuery,
       flashTick: s.flashTick + 1,
     }));
     get().highlight(hit.blockId);
   };
 
-  // Step into the next (dir=1) / previous (dir=-1) matching block in the kept result set.
-  // Wraps around the whole list. Forward → land on the first match; backward → the last.
+  // Step into the next (dir=1) / previous (dir=-1) matching block of the project, wrapping
+  // from the last to the first. Forward → land on its first match; backward → its last.
   const advanceBlock = (dir: 1 | -1): void => {
-    const list = get().navResults;
-    if (list.length === 0) return;
-    const cur = list.findIndex((h) => h.blockId === get().activeNavigationBlockId);
-    if (cur < 0) return;
-    const next = list[(cur + dir + list.length) % list.length];
-    if (!next) return;
-    goToHit(next, dir > 0 ? 0 : Math.max(0, next.hitOffsets.length - 1));
+    const hits = project()?.hits ?? [];
+    if (hits.length === 0) return;
+    const cur = hits.findIndex((h) => h.blockId === get().activeNavigationBlockId);
+    const next =
+      cur < 0
+        ? hits[dir > 0 ? 0 : hits.length - 1]!
+        : hits[(cur + dir + hits.length) % hits.length]!;
+    goToHit(next, dir > 0 ? 0 : next.hitOffsets.length - 1);
   };
 
   return {
@@ -137,7 +127,6 @@ export const useSearchStore = create<SearchState>((set, get) => {
   activeHitIndex: 0,
   activeQuery: '',
   flashTick: 0,
-  navResults: [],
   navQuery: '',
 
   // ⚠️ 没有 seed 的时候**不碰** query：closeSearch 已经把它清空了，这里再写一次空串会把
@@ -158,9 +147,8 @@ export const useSearchStore = create<SearchState>((set, get) => {
     set({ loading: true, error: null });
     try {
       const results = await search(q);
-      // navResults/navQuery mirror the results but survive closeSearch, so cross-block ▲/▼
-      // still has the full match list after the overlay is gone.
-      set({ results, navResults: results, navQuery: q, loading: false });
+      // navQuery survives closeSearch — see its declaration.
+      set({ results, navQuery: q, loading: false });
     } catch (e) {
       console.error('[search] query failed', e);
       set({ error: e instanceof Error ? e.message : String(e), results: [], loading: false });
@@ -183,13 +171,25 @@ export const useSearchStore = create<SearchState>((set, get) => {
       flashTick: s.flashTick + 1,
     })),
 
-  setNavigationQuery: (query, hits) =>
-    set((s) => ({
-      activeQuery: query,
-      activeHits: hits,
-      activeHitIndex: 0,
-      flashTick: s.flashTick + 1,
-    })),
+  // Typing in the bar re-finds in the whole project. The find stays on the block it is on
+  // while that block still matches; otherwise it moves to the next match below it in the
+  // timeline (from the top when there is none below).
+  setNavigationQuery: (query) => {
+    set({ activeQuery: query });
+    const p = project();
+    if (!p) return;
+    const target = get().activeNavigationBlockId;
+    const own = p.hits.find((h) => h.blockId === target);
+    if (own) {
+      set((s) => ({ activeHits: own.hitOffsets, activeHitIndex: 0, flashTick: s.flashTick + 1 }));
+      return;
+    }
+    const at = new Map(p.blocks.map((b, i) => [b.id, i]));
+    const here = at.get(target!)!;
+    const next = p.hits.find((h) => at.get(h.blockId)! > here) ?? p.hits[0];
+    if (next) goToHit(next, 0);
+    else set((s) => ({ activeHits: [], activeHitIndex: 0, flashTick: s.flashTick + 1 }));
+  },
 
   clearNavigation: () =>
     set({
@@ -200,7 +200,7 @@ export const useSearchStore = create<SearchState>((set, get) => {
     }),
 
   // Step to the next match: within the current block until its last hit, then on into the
-  // next matching block/thread (§9.10 v2.10 — no longer trapped in one block).
+  // next matching block of this project.
   nextHit: () => {
     const s = get();
     if (s.activeHitIndex < s.activeHits.length - 1) {
@@ -211,7 +211,7 @@ export const useSearchStore = create<SearchState>((set, get) => {
   },
 
   // Step to the previous match: backward within the block to its first hit, then into the
-  // previous matching block/thread (landing on that block's last hit).
+  // previous matching block of this project (landing on that block's last hit).
   prevHit: () => {
     const s = get();
     if (s.activeHitIndex > 0) {
@@ -222,7 +222,7 @@ export const useSearchStore = create<SearchState>((set, get) => {
   },
 
   jumpToResult: (blockId) => {
-    const hit = get().navResults.find((h) => h.blockId === blockId);
+    const hit = project()?.hits.find((h) => h.blockId === blockId);
     if (hit) goToHit(hit, 0);
   },
   };

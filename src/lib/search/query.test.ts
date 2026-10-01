@@ -6,7 +6,7 @@ import { __setTestDb } from '@/lib/db/client';
 import schemaSql from '@/lib/db/schema.sql?raw';
 import { createThread } from '@/lib/db/threads';
 import { createWorkspace } from '@/lib/db/workspaces';
-import { buildHitOffsets, buildSnippet, hitLead, search, type SearchHit } from './query';
+import { buildHitOffsets, buildSnippet, hitLead, hitsInBlocks, search, type SearchHit } from './query';
 
 // node:sqlite is a Node builtin that Vite's transform pipeline won't resolve as a
 // static import — load it via createRequire so the specifier stays opaque to Vite.
@@ -174,7 +174,7 @@ describe('FTS index stays in sync after edits (§19.5)', () => {
 
 // PLAN_EN.md §9.10 v2.9 / §18 rule 10: hitOffsets must carry every match across
 // both fields so BlockItem can wrap each occurrence in <mark> and the
-// InBlockNavigator can step through them.
+// ProjectFindBar can step through them.
 describe('hitLead —— 预览卡里那一小段字', () => {
   const hitOf = (content: string, query: string): SearchHit => {
     const { field, snippet } = buildSnippet(content, null, query);
@@ -241,6 +241,32 @@ describe('buildHitOffsets', () => {
       { field: 'content', start: 0, end: 5 },
       { field: 'annotation', start: 11, end: 16 },
     ]);
+  });
+});
+
+// P1B A3: the find bar's matches for one project — the search's own rule, over the blocks in
+// the order the feed draws them.
+describe('hitsInBlocks', () => {
+  const b = (id: string, content: string, annotation: string | null = null) => ({
+    id,
+    threadId: 't',
+    content,
+    annotation,
+  });
+
+  it('keeps the timeline order and leaves out blocks with no literal match', () => {
+    const hits = hitsInBlocks([b('late', 'Spool'), b('none', 'nope'), b('early', 'x', 'spool')], 'spool');
+    expect(hits.map((h) => h.blockId)).toEqual(['late', 'early']);
+    expect(hits[1]!.field).toBe('annotation');
+  });
+
+  it('counts every 处 with the same offsets as buildHitOffsets, query trimmed', () => {
+    const [hit] = hitsInBlocks([b('a', 'Spool spools', 'a spool')], '  spool ');
+    expect(hit!.hitOffsets).toEqual(buildHitOffsets('Spool spools', 'a spool', 'spool'));
+  });
+
+  it('finds nothing for an empty query', () => {
+    expect(hitsInBlocks([b('a', 'anything')], '   ')).toEqual([]);
   });
 });
 

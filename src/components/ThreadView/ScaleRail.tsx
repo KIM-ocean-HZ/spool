@@ -1,7 +1,7 @@
 import { type RefObject, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { plainText } from '@/lib/blocks/contentRuns';
 import { indexAtOffset, scrollBlockIntoView } from '@/lib/blocks/viewportAnchor';
-import { hitLead, hitLine, type SearchHit } from '@/lib/search/query';
+import { hitLead, hitLine, hitsInBlocks, type BlockHit } from '@/lib/search/query';
 import { useActiveBlockStore } from '@/stores/activeBlockStore';
 import { useBlocksStore } from '@/stores/blocksStore';
 import { useSearchStore } from '@/stores/searchStore';
@@ -25,9 +25,9 @@ import { useT } from '@/lib/i18n';
 // ⭐ 2026-08-27（Ocean:「复用右侧的刻度栏，在查找时，找到的同一项目内的相同信息可以在右侧的
 // block 预览中显示出来，点击 block 可以跳转」）—— 查找开着的时候，这一列刻度同时是命中图：
 // 这个项目里对上的每一块，那根横线亮成 accent 色并且加长；悬浮上去，预览卡显示的是**对上的
-// 那一行**（不是批注/正文开头）；点下去直接跳过去并接上块内查找的高亮。
+// 那一行**（不是批注/正文开头）；点下去直接跳过去并接上查找的高亮。
 // ⚠️ 只画**挂载着的**块（刻度本来就只认 DOM 里的 `data-block-id`）：更早的块要先点「查看更早
-// 的」才滚得到，给一根跳不过去的刻度是骗人。跨项目那一份仍然在查找条的「全部」列表里。
+// 的」才滚得到，给一根跳不过去的刻度是骗人。别的项目要从查找条列表底下那一行回全库搜索。
 // ⛔ 仍然不是浮窗，也没有新控件 —— 复用的就是这一列，安静的那条红线没动。
 
 // The lens (Ocean 2026-08-25: 「当前块刻度最长间隔最大,然后依次递减」). A gaussian falloff
@@ -120,18 +120,16 @@ export default function ScaleRail({ scrollRef, revision, threadId }: Props) {
 
   const blocks = useBlocksStore((s) => s.byThread[threadId]);
 
-  // 查找开着的时候（= 块内查找条正显示），这个项目里对上的块。⚠️ 用 `navResults`：它在全局
-  // 搜索面板关掉之后仍然留着，正是查找条上下翻用的那一份。
+  // 查找开着的时候（= 查找条正显示），这个项目里对上的块。⚠️ 和查找条**同一份**：同一个
+  // `hitsInBlocks`、同一句 `activeQuery` —— 查找条上按回车走过的，正是这里亮着的那几根。
   const navActive = useSearchStore((st) => st.activeNavigationBlockId !== null);
-  const navResults = useSearchStore((st) => st.navResults);
+  const navQuery = useSearchStore((st) => st.activeQuery);
   const matches = useMemo(() => {
-    const map = new Map<string, SearchHit>();
+    const map = new Map<string, BlockHit>();
     if (!navActive) return map;
-    for (const hit of navResults) {
-      if (hit.threadId === threadId) map.set(hit.blockId, hit);
-    }
+    for (const hit of hitsInBlocks(blocks ?? [], navQuery)) map.set(hit.blockId, hit);
     return map;
-  }, [navActive, navResults, threadId]);
+  }, [navActive, navQuery, blocks]);
 
   // ⭐ Measure ONCE per layout change, not per scroll frame. The first version called
   // getBoundingClientRect on every mounted block on every frame — up to 200 forced layouts
@@ -298,7 +296,7 @@ export default function ScaleRail({ scrollRef, revision, threadId }: Props) {
   // ⚠️ 命中不超过六个时**一张不少地全排出来**（他要的「直接显示所有 blocks 的命中预览」）；
   // 超过了才截，而截出来的那一段永远**含着中心**，所以滑动时窗口跟着人走。
   const miniList = useMemo(() => {
-    if (matches.size === 0) return [] as { idx: number; hit: SearchHit }[];
+    if (matches.size === 0) return [] as { idx: number; hit: BlockHit }[];
     const hitIdxs: number[] = [];
     for (let i = 0; i < entries.length; i++) {
       if (matches.has(entries[i]!.id)) hitIdxs.push(i);
@@ -327,7 +325,7 @@ export default function ScaleRail({ scrollRef, revision, threadId }: Props) {
   // ⭐ 2026-08-25（Ocean）:「用户悬浮在每一个刻度上可以预览 block 的信息块(少放点内容,
   // 有批注用批注,没批注用正文前几句话)」. 批注优先是他定的,也是对的 —— 批注是这个人自己
   // 写下的「这一块是干什么的」,比正文开头更像一个标题（W7 在正文那边也是这么排的）。
-  const preview = ((): { at: number; text: string; hit: SearchHit | null } | null => {
+  const preview = ((): { at: number; text: string; hit: BlockHit | null } | null => {
     // ⚠️ 小 block 那一列展开的时候就不画这张单卡了 —— 两个一起出会互相盖。
     if (miniOpen) return null;
     if (hovered === null || dragging) return null;

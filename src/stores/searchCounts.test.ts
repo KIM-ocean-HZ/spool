@@ -1,19 +1,19 @@
-import { describe, expect, it } from 'vitest';
-import type { SearchHit } from '@/lib/search/query';
-import { countMatches } from './searchStore';
+import { beforeEach, describe, expect, it } from 'vitest';
+import type { Block } from '@/lib/db/blocks';
+import { buildHitOffsets, type BlockHit } from '@/lib/search/query';
+import { useBlocksStore } from './blocksStore';
+import { findPosition, useSearchStore } from './searchStore';
+import { useThreadsStore } from './threadsStore';
 
-// ⭐ 2026-08-27（Ocean:「搜索的计数有歧义」）。查找条上原来那两个数在数不同的东西，
-// 而「这个项目里一共多少处」一个都答不上。这一组把四个数各自数什么钉死。
-const hit = (blockId: string, threadId: string, hits: number): SearchHit => ({
+// P1B A3 (HANDOFF §9.1 #4, Ocean: 「进入项目后的查找……应该显示单个项目范围内的查找，不应该有
+// 块内查找这个功能」). The find bar finds in the open project: one count, 「本项目 第 i / N 处」,
+// and ↵ walks every match of the project in timeline order — never into another project.
+
+const hit = (blockId: string, hits: number): BlockHit => ({
   blockId,
-  threadId,
-  threadTitle: '',
-  workspaceId: 'w',
-  workspaceTitle: '',
-  createdAt: 0,
+  threadId: 't1',
   field: 'content',
   snippet: [],
-  gist: null,
   hitOffsets: Array.from({ length: hits }, (_, i) => ({
     field: 'content' as const,
     start: i,
@@ -21,40 +21,93 @@ const hit = (blockId: string, threadId: string, hits: number): SearchHit => ({
   })),
 });
 
-describe('countMatches', () => {
-  it('处和块分开数 —— 一块里有五处就是五处、一块', () => {
-    const c = countMatches([hit('b1', 't1', 5)], 't1');
-    expect(c.threadHits).toBe(5);
-    expect(c.threadBlocks).toBe(1);
-    expect(c.allHits).toBe(5);
-    expect(c.allBlocks).toBe(1);
+describe('findPosition', () => {
+  it('counts 处 across every block of the project, not just the one the find is on', () => {
+    expect(findPosition([hit('b1', 2), hit('b2', 3)], 'b2', 1)).toEqual({ i: 4, n: 5 });
+    expect(findPosition([hit('b1', 2), hit('b2', 3)], 'b1', 0)).toEqual({ i: 1, n: 5 });
   });
 
-  it('本项目只数本项目的，全部数所有的', () => {
-    const c = countMatches(
-      [hit('b1', 't1', 2), hit('b2', 't1', 3), hit('b3', 't2', 4)],
-      't1',
+  it('is 0 of 0 when nothing matches', () => {
+    expect(findPosition([], 'b1', 0)).toEqual({ i: 0, n: 0 });
+  });
+});
+
+const block = (id: string, threadId: string, content: string, annotation: string | null = null) =>
+  ({ id, threadId, content, annotation }) as Block;
+
+describe('stepping through the project (searchStore)', () => {
+  // Timeline order is the order the feed holds them in: b1, b2, b3. b2 has no match.
+  const t1 = [
+    block('b1', 't1', 'apple and apple'),
+    block('b2', 't1', 'nothing here'),
+    block('b3', 't1', 'one apple', 'apple note'),
+  ];
+  const other = [block('x1', 't2', 'apple elsewhere')];
+  const at = (): [string | null, number] => {
+    const s = useSearchStore.getState();
+    return [s.activeNavigationBlockId, s.activeHitIndex];
+  };
+
+  beforeEach(() => {
+    useBlocksStore.setState({ byThread: { t1, t2: other } });
+    useThreadsStore.setState({ activeId: 't1' });
+    // As a search result lands: on b1, with b1's own offsets for the query.
+    useSearchStore
+      .getState()
+      .startNavigation('b1', buildHitOffsets(t1[0]!.content, null, 'apple'), 'apple');
+  });
+
+  it('walks every match in timeline order and wraps from the last back to the first', () => {
+    const { nextHit } = useSearchStore.getState();
+    const seen: [string | null, number][] = [at()];
+    for (let k = 0; k < 4; k++) {
+      nextHit();
+      seen.push(at());
+    }
+    expect(seen).toEqual([
+      ['b1', 0],
+      ['b1', 1],
+      ['b3', 0], // b2 has no match — skipped
+      ['b3', 1], // the annotation's match comes after the content's
+      ['b1', 0], // wrapped; ⛔ never x1, which is in another project
+    ]);
+  });
+
+  it('goes backwards the same way, landing on a block’s last match', () => {
+    const { prevHit } = useSearchStore.getState();
+    prevHit();
+    expect(at()).toEqual(['b3', 1]);
+    prevHit();
+    expect(at()).toEqual(['b3', 0]);
+    prevHit();
+    expect(at()).toEqual(['b1', 1]);
+  });
+
+  it('re-finds over the whole project when the word changes, not just this block', () => {
+    useSearchStore.getState().setNavigationQuery('note');
+    expect(at()).toEqual(['b3', 0]);
+    expect(useSearchStore.getState().activeHits).toEqual(
+      buildHitOffsets(t1[2]!.content, t1[2]!.annotation, 'note'),
     );
-    expect(c.threadHits).toBe(5);
-    expect(c.threadBlocks).toBe(2);
-    expect(c.allHits).toBe(9);
-    expect(c.allBlocks).toBe(3);
   });
 
-  it('命中全在别的项目时，本项目是 0 —— ⛔ 不是把全部的数字搬过来', () => {
-    const c = countMatches([hit('b1', 't2', 4)], 't1');
-    expect(c.threadHits).toBe(0);
-    expect(c.threadBlocks).toBe(0);
-    expect(c.allHits).toBe(4);
-    expect(c.allBlocks).toBe(1);
+  it('stays on the block it is on while that block still matches the new word', () => {
+    useSearchStore.getState().setNavigationQuery('and');
+    expect(at()).toEqual(['b1', 0]);
   });
 
-  it('一条结果都没有的时候四个数都是 0', () => {
-    expect(countMatches([], 't1')).toEqual({
-      threadHits: 0,
-      threadBlocks: 0,
-      allHits: 0,
-      allBlocks: 0,
-    });
+  it('keeps the bar open with nothing to step to when the project has no match', () => {
+    useSearchStore.getState().setNavigationQuery('elsewhere');
+    expect(at()).toEqual(['b1', 0]);
+    expect(useSearchStore.getState().activeHits).toEqual([]);
+    useSearchStore.getState().nextHit();
+    expect(at()).toEqual(['b1', 0]);
+  });
+
+  it('never jumps out to a block while another project is open', () => {
+    useThreadsStore.setState({ activeId: 't2' });
+    useSearchStore.getState().nextHit();
+    useSearchStore.getState().nextHit();
+    expect(at()).toEqual(['b1', 1]); // the in-block step still moves; the jump out does not
   });
 });

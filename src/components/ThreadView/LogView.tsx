@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useThreadDropTarget } from '@/hooks/useThreadDropTarget';
 import { scrollBlockIntoView, topmostVisibleBlockId } from '@/lib/blocks/viewportAnchor';
 import { isTutorialSource } from '@/lib/db/client';
@@ -8,10 +8,10 @@ import {
   saveReadPosition,
   type ReadPosition,
 } from '@/lib/db/readPositions';
-import { buildHitOffsets } from '@/lib/search/query';
+import { hitsInBlocks } from '@/lib/search/query';
 import { useBlocksStore } from '@/stores/blocksStore';
 import { useSearchStore } from '@/stores/searchStore';
-import InBlockNavigator from '../Search/InBlockNavigator';
+import ProjectFindBar from '../Search/ProjectFindBar';
 import BlockFeed from './BlockFeed';
 import Composer from './Composer';
 import MergeToolbar from './MergeToolbar';
@@ -150,17 +150,19 @@ export default function LogView({ threadId }: Props) {
     setPendingScroll(null);
   }, [pendingScroll, threadBlocks]);
 
-  // v2.9 §9.10 / §19.17: the in-block find bar lives at the top of this thread
-  // whenever a search result has landed on one of its blocks. Mounting it here
-  // (above the scrollable feed) keeps it visible and at a readable size as the
-  // user pages through matches, the way vscode's find widget does.
+  // v2.9 §9.10 / §19.17: the find bar lives at the top of this thread whenever a search
+  // result has landed on one of its blocks. Mounting it here (above the scrollable feed)
+  // keeps it visible and at a readable size as the user pages through matches, the way
+  // vscode's find widget does. P1B A3: what it finds in is this project.
   const navBlockId = useSearchStore((s) => s.activeNavigationBlockId);
-  const navHits = useSearchStore((s) => s.activeHits);
   const navHitIndex = useSearchStore((s) => s.activeHitIndex);
   const navQuery = useSearchStore((s) => s.activeQuery);
-  const navResults = useSearchStore((s) => s.navResults);
   const showNavBar =
     navBlockId !== null && (threadBlocks?.some((b) => b.id === navBlockId) ?? false);
+  const projectHits = useMemo(
+    () => (showNavBar ? hitsInBlocks(threadBlocks ?? [], navQuery) : []),
+    [showNavBar, threadBlocks, navQuery],
+  );
 
   return (
     <div ref={rootRef} className="relative flex flex-1 flex-col overflow-hidden">
@@ -181,23 +183,14 @@ export default function LogView({ threadId }: Props) {
           panel inside sets `pointer-events-auto`. */}
       <div data-block-editor-host className="pointer-events-none absolute inset-0 z-30" />
       {showNavBar && (
-        <InBlockNavigator
+        <ProjectFindBar
           query={navQuery}
-          index={navHitIndex}
-          total={navHits.length}
-          results={navResults}
+          hits={projectHits}
           currentBlockId={navBlockId}
-          threadId={threadId}
+          hitIndex={navHitIndex}
           onPickResult={(blockId) => useSearchStore.getState().jumpToResult(blockId)}
-          onQueryChange={(next) => {
-            // Live in-block re-search: recompute hit positions on the
-            // destination block as the user types. Falls through to the
-            // store's setNavigationQuery which also resets index + bumps
-            // flashTick so BlockItem re-scrolls to the new active hit.
-            const target = threadBlocks?.find((b) => b.id === navBlockId);
-            const hits = target ? buildHitOffsets(target.content, target.annotation, next) : [];
-            useSearchStore.getState().setNavigationQuery(next, hits);
-          }}
+          onQueryChange={(next) => useSearchStore.getState().setNavigationQuery(next)}
+          onSearchAll={() => useSearchStore.getState().openSearch(navQuery.trim())}
           onPrev={() => useSearchStore.getState().prevHit()}
           onNext={() => useSearchStore.getState().nextHit()}
           onDismiss={() => useSearchStore.getState().clearNavigation()}

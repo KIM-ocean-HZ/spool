@@ -91,6 +91,7 @@ export default function BlockFeed({ threadId, scrollRef }: Props) {
   const blocks = useBlocksStore((s) => s.byThread[threadId] ?? EMPTY);
   const overEmpty = useDropStore((s) => s.overThread);
   const highlightBlockId = useSearchStore((s) => s.highlightBlockId);
+  const navBlockId = useSearchStore((s) => s.activeNavigationBlockId);
   // 拍板点 2/5: the empty state forks on the capture grant, and the capture that takes a
   // new user to three gets a one-time line under it.
   const inputMonitoring = usePermissionStore((s) => s.inputMonitoring);
@@ -155,13 +156,17 @@ export default function BlockFeed({ threadId, scrollRef }: Props) {
     // sentence (CorrectionNote), so it must not ALSO get a card here — that duplicate is
     // what Ocean read as 「多条重复信息」 the first time MCP corrected three blocks at once.
     // ⚠️ 搜索落点是例外：「跳到命中处」必须落得下去。
+    // ⚠️ P1B A3：查找停在它上面的整段时间都算（`navBlockId`），⛔ 不只是闪一下的那 1.2 秒 ——
+    // 只认 `highlightBlockId` 的话，按回车走进一条更正，它闪一下就又折回去了，命中跟着消失。
     const folded = foldedCorrectionIds(blocks);
     const shown =
       folded.size === 0
         ? blocks
-        : blocks.filter((b) => !folded.has(b.id) || b.id === highlightBlockId);
+        : blocks.filter(
+            (b) => !folded.has(b.id) || b.id === highlightBlockId || b.id === navBlockId,
+          );
     return shown;
-  }, [blocks, highlightBlockId]);
+  }, [blocks, highlightBlockId, navBlockId]);
 
   // If a search result targets a block outside the current tail window, widen so it's
   // mounted before the scrollIntoView below runs. Runs before the highlight effect so

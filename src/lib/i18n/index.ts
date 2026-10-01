@@ -437,11 +437,7 @@ const EN: Record<string, string> = {
   '{n} 条结果': '{n} results',
   '全文搜索 · 纯本地': 'Full-text search · fully local',
   '↑↓ 选择 · ↵ 跳转 · esc 关闭': '↑↓ select · ↵ jump · esc close',
-  '块内查找': 'Find in block',
-  '块内查找…': 'Find in block…',
   '无匹配': 'No matches',
-  '所有包含该文字的块（全部工作区）': 'Every block containing this text (all workspaces)',
-  '所有匹配的块': 'All matching blocks',
   '上一个匹配 (⇧⌘G / ⇧↵)': 'Previous match (⇧⌘G / ⇧↵)',
   '上一个匹配': 'Previous match',
   '下一个匹配 (⌘G / ↵)': 'Next match (⌘G / ↵)',
@@ -546,12 +542,14 @@ const EN: Record<string, string> = {
   // ③ 长按 ⌥ 直接写笔记（2026-08-27）
   '写点什么…（⌘↵ 保存，Esc 放弃）': 'Write something… (⌘↵ to save, Esc to discard)',
   '第 {n} / {total} 块': 'Block {n} of {total}',
-  // 查找条上的三个数（2026-08-27）。⚠️ 「处」= occurrence，「块」= block —— 英文也要
-  // 分得开，⛔ 别都译成 match。
-  '这一块里没有': 'not in this block',
-  '这一块 第 {i} / {n} 处': 'in this block {i} of {n}',
-  '本项目 {hits} 处 · {blocks} 块': 'this project {hits} in {blocks} blocks',
-  '全部 {hits} 处 · {blocks} 块': 'everywhere {hits} in {blocks} blocks',
+  // 查找条（P1B A3，2026-10-01）：在本项目里查找，只留一个数。⚠️ 「处」= occurrence ——
+  // 按一次回车走一处，⛔ 别译成 block。
+  '在本项目里查找': 'Find in this project',
+  '在本项目里查找…': 'Find in this project…',
+  '本项目里没有': 'not in this project',
+  '本项目 第 {i} / {n} 处': 'this project {i} of {n}',
+  '本项目里命中的块': 'Matching blocks in this project',
+  '在全部工作区里搜这个词': 'Search all workspaces for this',
   // 刻度上的查找命中 (2026-08-27)。两个词分开，是因为它们回答的是两个问题：对上的是这一块的
   // 正文，还是这个人自己写的那句批注。
   '查找命中': 'match',
