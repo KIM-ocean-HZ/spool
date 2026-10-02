@@ -1,6 +1,6 @@
 # 产品任务书 P3 —— 捕捉浮窗：两种卡统一、长按卡 Enter 完成、每张卡能固定、长按带上刚复制的内容
 
-> **状态：COMPLETE —— 待 Ocean 验收。**（2026-10-02：P3-1 – P3-4 已提交、已换装，回执在 §7；验收单在 §6。）
+> **状态：COMPLETE。**（2026-10-02：P3-1 – P3-4 已提交、已换装，第一轮反馈三条已改并换装；**Ocean 同日验收通过**。回执在 §7。）
 >
 > **唯一交付：** 下面 §3 的四步（P3-1 – P3-4），按顺序做完、各自测试通过、各自一笔提交，并在 §7 写回执。
 >
@@ -327,6 +327,8 @@ node -e "const fs=require('fs');const d=fs.readFileSync('src/lib/i18n/index.ts',
   旧包 `~/Desktop/Spool/spool-pre-install/Spool-old-20261002-175719-pre-p3fb.app`。装后：sha256 `ee7f780d…27de58344` 和构建产物一致；
   主进程 34719 / `--overlay` 34729 起于 17:57:19–20，txt inode 都是 75319656 = 新文件；`[double-tap] installed at HID/active`，没有 error / panic；
   `spctl` = `Unnotarized Developer ID`；真库前后一致，没有新的迁移快照。没 push、没发版。
+
+**Ocean 验收**：2026-10-02 回复「验收通过，下发下一轮」—— P3（含第一轮反馈的三处）通过。
 
 ## 8. 收尾的文档动作（执行窗做）
 
