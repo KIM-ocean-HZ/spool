@@ -307,6 +307,27 @@ node -e "const fs=require('fs');const d=fs.readFileSync('src/lib/i18n/index.ts',
 
 **Ocean 验收**：待验收（§6 六条）。
 
+**Ocean 验收反馈第一轮（2026-10-02）与修改**
+- 原话：「1. …功能没问题，但是如果复制后的内容已经被存了，或者说被 discard 了之后就不应该出现在第二次的操作中，也就是说这个快捷方式只能是单次操作；
+  2. hold ⌥ within a second 显示的 card 捕捉文字的显示区域有点小了，扩大；3. 整个 spool 出现的上下移动的滑轨组件不美观，中间白色的部分太宽，改成简洁无痕的小滑轨提示」
+- ① `6c38e41 fix(capture): 一下 ⌘C 只带进一张长按卡 …`：`src-tauri/src/double_tap.rs`。新 `LONG_PRESS_COPY_USED_NS` 记已经用掉的那一下 ⌘C 的时刻；
+  `copied_within` 改名 `fresh_copy_within`，多一个「不是用过的那一下」条件。长按真正弹出带字的卡时记为用掉（之后那张卡存了还是放弃了都一样）；
+  **双击捕捉走了那一下 ⌘C 也记为用掉**（字已经在库里了，再带进长按卡就是重复）—— 这半条是我按「单次」推的，Ocean 可改。
+  ⛔ 复制闸用的 `LAST_COPY_CHORD_NS` 没动，双击的判定不变。+1 单测 `a_copy_is_used_once`（第一次带、第二次不带、新的 ⌘C 又带）。
+- ② `d0de340 fix(capture): 长按卡的正文框放大 …`：`src/overlay/CaptureOverlay.tsx`。正文框挪到右上角那排按钮**下面**、占满整宽（原来右边让出 72px 给按钮）；
+  跟着字长高，上限 240px（约 11 行），再多就在框里滚；空着的时候照旧 3 行。卡片宽度不变，双击卡不动。截图核过：中等长度 4 行、长的到上限出滑轨、空卡、双击卡。
+- ③ `b3d9bca style: 全局滑轨改成 6px 的细圆条 …`：新 `src/styles/scrollbar.css`，`src/styles/global.css`（主窗）和 `src/overlay/style.css`（浮窗）各 `@import` 一行。
+  6px 圆角、淡墨色（`--ink-rgb` 16%，指上去 30%，情人节主题自动跟着换）、没有底槽、没有箭头。项目里那条刻度轨（`.no-native-scrollbar`）照旧隐藏原生滑轨。
+  ⚠️ 这一条**不在 P3 任务书范围里**，是 Ocean 当面要的（`EXECUTION_POLICY.md` §3.2 一次性指令），已记进 HANDOFF §9.8。
+  主窗的样子没截图（不能起第二个连真库的主窗），浮窗里截到的是同一份样式。
+- 验：`tsc -b` 干净；Vitest 66 / 843；主 crate 146 · 4（+1）；sidecar 14；`(none missing)`；`--dead` 与基线相同；浮窗文案 `28 … missing: []`。
+- 换装（Ocean 10-02 又选了「现在换装」）：构建 `b3d9bca`，同一条命令；TSA 第一遍过（17:56:54），`--verify --deep --strict` 过。
+  停 GUI 65620 + `--overlay` 65677（按 pid，第一遍就退，`--mcp` 前后都是 25 个没碰）；真库备份 `~/Desktop/spool.before-p3fb-install-20261002-175710.db`
+  （integrity ok，和活库一致：v29 · 25 / 63 / 1014 / 1 · 正文总长 291916 —— 比上一次多一块，是 Ocean 验收时存的）；
+  旧包 `~/Desktop/Spool/spool-pre-install/Spool-old-20261002-175719-pre-p3fb.app`。装后：sha256 `ee7f780d…27de58344` 和构建产物一致；
+  主进程 34719 / `--overlay` 34729 起于 17:57:19–20，txt inode 都是 75319656 = 新文件；`[double-tap] installed at HID/active`，没有 error / panic；
+  `spctl` = `Unnotarized Developer ID`；真库前后一致，没有新的迁移快照。没 push、没发版。
+
 ## 8. 收尾的文档动作（执行窗做）
 
 1. 本文件首屏状态改成 `COMPLETE —— 待 Ocean 验收`（Ocean 验过后改成 `COMPLETE`），`git mv` 进 `docs/archive/product-taskbooks/`。
