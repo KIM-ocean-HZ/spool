@@ -87,6 +87,9 @@ const UNDO_OP_LABEL: Record<OverlayUndoPayload['op'], string> = {
 const PICKER_DROPDOWN_ALLOWANCE = 300;
 // Tiny extra so the box-shadow isn't clipped by the bottom edge of the window.
 const SHADOW_ALLOWANCE = 8;
+// 长按卡的正文框跟着字长高，到这么高为止（约 11 行），再多就在框里滚
+// （Ocean 2026-10-02「捕捉文字的显示区域有点小了，扩大」）。空着的时候照旧是 3 行。
+const BODY_MAX_HEIGHT_PX = 240;
 
 const hideOverlay = (): void => {
   void invoke(HIDE_OVERLAY_COMMAND).catch((e) => {
@@ -528,6 +531,16 @@ export default function CaptureOverlay() {
     return () => ro.disconnect();
   }, [content, expanded, pickerOpen]);
 
+  // 长按卡的正文框：跟着字长高（带进来一大段复制的字时尤其要紧），上限 BODY_MAX_HEIGHT_PX。
+  // 卡片变高了，上面那个 ResizeObserver 会把窗口和「点外面收起」的框一起跟上。
+  useLayoutEffect(() => {
+    const el = bodyRef.current;
+    if (!el) return;
+    el.style.height = 'auto'; // 先回到 rows={3} 的高度，scrollHeight 才量得准
+    const border = el.offsetHeight - el.clientHeight;
+    el.style.height = `${Math.min(el.scrollHeight + border, BODY_MAX_HEIGHT_PX)}px`;
+  }, [bodyDraft, content]);
+
   // Esc dismisses while a toast is showing. Note-first semantics: Esc is the explicit
   // "no note" exit, so the draft is DISCARDED (click-outside is the ambient exit and
   // keeps a non-empty draft — see the dismiss listener below).
@@ -900,7 +913,11 @@ export default function CaptureOverlay() {
       {/* Body — the captured content takes the lead; attribution is a quiet condensed line.
           Drag to move. The note editor below is always open (note-first). */}
       <div
-        className="cursor-grab px-3.5 pb-2 pt-2.5 pr-[4.5rem] active:cursor-grabbing"
+        // 长按卡的正文框放在右上角那排按钮**下面**、占满整宽（Ocean 10-02「显示区域有点小了，
+        // 扩大」）；双击卡那段字照旧在按钮左边，右边让出一格。
+        className={`cursor-grab px-3.5 pb-2 active:cursor-grabbing ${
+          isNote ? 'pt-8' : 'pt-2.5 pr-[4.5rem]'
+        }`}
         onMouseDown={startToastDrag}
       >
         {/* ⭐⭐ 长按 ⌥ 那一路：这一格从「刚复制的那段字」换成**一个空的输入框**。
