@@ -1379,6 +1379,8 @@ const EN: Record<string, string> = {
   '{who} 提的': 'proposed by {who}',
   '聊天里提的': 'proposed in a chat',
   '更正一处': 'Correct one point',
+  '库里已经记着 #{n} 更正了 #{m}。再点「更正一处」只会把引文重写一遍；想让 #{m} 不再进打包，点「整条取代」。':
+    'The library already records #{n} correcting #{m}. Clicking “Correct one point” again only rewrites the quote; to keep #{m} out of packs, click “Replace in full”.',
   '整条取代': 'Replace in full',
   '不动': 'Leave alone',
   '两块都留着，只在 #{n} 上记一句「它更正了 #{m}」。打包的时候两块还是都在，不会因此变短。':

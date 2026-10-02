@@ -1,9 +1,11 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, Loader2, ScanSearch } from 'lucide-react';
 import { splitPackEntries } from '@/lib/ai/compressBlocks';
 import { estimateCost, formatYuan, FAILURE_SENTENCE, type StaleDropped } from '@/lib/ai/compress';
+import { alreadyCorrects } from '@/lib/blocks/staleGuards';
 import { useT } from '@/lib/i18n';
 import { retirementLineChars } from '@/lib/pack/assemble';
+import { useBlocksStore } from '@/stores/blocksStore';
 import { useCompressStore } from '@/stores/compressStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 import type { StaleSession } from '@/stores/compressStore';
@@ -57,6 +59,12 @@ export default function StaleReview({ threadId }: { threadId: string }) {
   const cancel = useCompressStore((s) => s.cancel);
   const decide = useCompressStore((s) => s.decideStale);
   const loadProposed = useCompressStore((s) => s.loadProposedStale);
+  // P2 · B3：这个项目此刻的块，按 #n 找 —— 卡片要问「这一对是不是已经记着更正了」。
+  const liveBlocks = useBlocksStore((s) => s.byThread[threadId]);
+  const blockBySeq = useMemo(
+    () => new Map((liveBlocks ?? []).flatMap((b) => (b.seq === null ? [] : [[b.seq, b] as const]))),
+    [liveBlocks],
+  );
   const enabled = useSettingsStore((s) => s.apiEngineEnabled);
   const timeoutSecs = useSettingsStore((s) => s.apiTimeoutSecs);
 
@@ -149,6 +157,14 @@ export default function StaleReview({ threadId }: { threadId: string }) {
             <ul className="space-y-2">
               {session.proposals.map((p, i) => {
                 const done = session.decided[i];
+                // ⭐ P2 · B3（DISCOVERED-20260829-14）：库里已经是 `corrects` 的这一对，「更正一处」
+                // 几乎是空操作 —— 说出来，⛔ 不藏按钮（原文：这是措辞问题，不是要不要显示的问题）。
+                const correctedNote = alreadyCorrects(blockBySeq.get(p.staleSeq), blockBySeq.get(p.bySeq))
+                  ? t('库里已经记着 #{n} 更正了 #{m}。再点「更正一处」只会把引文重写一遍；想让 #{m} 不再进打包，点「整条取代」。', {
+                      n: p.bySeq,
+                      m: p.staleSeq,
+                    })
+                  : null;
                 return (
                   <li
                     key={`${p.staleSeq}-${p.bySeq}-${i}`}
@@ -189,6 +205,7 @@ export default function StaleReview({ threadId }: { threadId: string }) {
                         「{p.quoteNew}」
                       </div>
                     </div>
+                    {!done && correctedNote && <div className="mt-1.5 text-muted">{correctedNote}</div>}
 
                     {done ? (
                       <div className="mt-1.5 text-muted">
@@ -208,10 +225,13 @@ export default function StaleReview({ threadId }: { threadId: string }) {
                       <div className="mt-2 flex flex-wrap items-center gap-1.5">
                         <Choice
                           label={t('更正一处')}
-                          hint={t('两块都留着，只在 #{n} 上记一句「它更正了 #{m}」。打包的时候两块还是都在，不会因此变短。', {
-                            n: p.bySeq,
-                            m: p.staleSeq,
-                          })}
+                          hint={
+                            correctedNote ??
+                            t('两块都留着，只在 #{n} 上记一句「它更正了 #{m}」。打包的时候两块还是都在，不会因此变短。', {
+                              n: p.bySeq,
+                              m: p.staleSeq,
+                            })
+                          }
                           onClick={() => void decide(threadId, i, 'merge')}
                         />
                         <Choice

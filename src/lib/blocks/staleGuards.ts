@@ -98,3 +98,12 @@ export const supersedeProposalSettled = (
   if (newer.refKind === 'supersedes') return older.staleAt !== null;
   return true;
 };
+
+/** P2 · B3（DISCOVERED-20260829-14）：新块**已经**以 `corrects` 指着旧块。
+ *
+ *  `supersedeProposalSettled` 故意放行这一对（`corrects` 和「整条退掉」不是同一个决定），
+ *  于是它会出现在「过期检测」上 —— 而这时点「更正一处」几乎是空操作：关系本来就是
+ *  `corrects`，只会把引文重写一遍。卡片靠这一句把这件事说出来。
+ *  ⛔ 只看 store 里两块的 `refBlockId` / `refKind`，不另查库。 */
+export const alreadyCorrects = (older: Block | undefined, newer: Block | undefined): boolean =>
+  relationAlreadySettled(older, newer) && newer!.refKind === 'corrects';

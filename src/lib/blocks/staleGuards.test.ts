@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  alreadyCorrects,
   relationAlreadySettled,
   supersedeProposalSettled,
   wouldOverwriteRelation,
@@ -153,5 +154,26 @@ describe('supersedeProposalSettled —— AI 提的「整条取代」问过没�
         expect(wouldOverwriteRelation(older, newer)).toBe(false);
       }
     }
+  });
+});
+
+describe('alreadyCorrects —— 更正卡上那一行「库里已经记着」只在这一种时候出现', () => {
+  it('新块已经以 corrects 指着旧块 ⇒ 出现', () => {
+    expect(alreadyCorrects(OLD, block('new', 'old', 'corrects'))).toBe(true);
+  });
+
+  it('两块之间没有关系 ⇒ 不出现', () => {
+    expect(alreadyCorrects(OLD, block('new'))).toBe(false);
+  });
+
+  it('别的关系、或者 corrects 指着别处 ⇒ 都不出现', () => {
+    expect(alreadyCorrects(OLD, block('new', 'old', 'supersedes'))).toBe(false);
+    expect(alreadyCorrects(OLD, block('new', 'old', null))).toBe(false);
+    expect(alreadyCorrects(OLD, block('new', 'somewhere-else', 'corrects'))).toBe(false);
+  });
+
+  it('块还没读进来 ⇒ 不出现（宁可少说，⛔ 不猜）', () => {
+    expect(alreadyCorrects(undefined, block('new', 'old', 'corrects'))).toBe(false);
+    expect(alreadyCorrects(OLD, undefined)).toBe(false);
   });
 });
