@@ -1,6 +1,6 @@
 # 产品任务书 P2 —— 单项目 pack 导出 .md、「移除引用」进撤销、更正卡说清已记着、批量复制可移动并查重
 
-> **状态：ACTIVE —— 当前唯一可执行的产品任务书。**
+> **状态：COMPLETE —— 待 Ocean 验收。**（B1–B4 已提交 `39b267f` `bf1ae8e` `1de95cf` `cb6ba57`，已换装；回执在 §7）
 >
 > **唯一交付：** 下面 §3 的四条（B1–B4），按顺序做完、各自测试通过、各自一笔提交，并在 §7 写回执。
 >
@@ -206,6 +206,115 @@ Vitest 输出里有 31 行 `[db] pre-migration backup FAILED … window is not d
 - 还差什么、有没有偏离本任务书、新发现记在 HANDOFF 哪里
 
 最后一段：换装（做了没有、装的是哪个 commit、`spctl` 结果、真库备份文件名）、Ocean 验收（还没有就写「待验收」）。
+
+### 回执（执行窗 2026-10-02 填）
+
+**开工**：`git log -1` = `6cbd91c`（上一笔 `8d74916`），符合 §2。基线和 §2 一致：`tsc -b` 干净；Vitest 65 文件 / 829；主 crate 141 过 · 4 跳过；
+sidecar 14；`i18n-check` → `(none missing)`；`--dead` 87 条。之后每条做完都跑全套，`--dead` 每次都和基线**逐行**比（`diff` 无输出）。
+
+**B1 · 单项目 pack 导出 .md**
+- 提交：`39b267f feat(pack): 单个项目的 pack 导出成 .md —— 主按钮「导出 .md」走系统存储对话框，旁边留一个小的「复制」`
+- 文件：
+  - `src-tauri/src/pack.rs`（新命令 `write_pack_file`，`(async)`；`write_pack_file_to` + 2 条测试）
+  - `src-tauri/src/transfer.rs`（`data_dir`、`clear_export_target` 改成 `pub(crate)` —— pack.rs 用的是 `export_library` **同一道闸**，不是抄一份）
+  - `src-tauri/src/lib.rs`（注册）
+  - `src/components/Pack/PackDialog.tsx`（主按钮「导出 .md」+ 小的「复制」）
+  - `src/lib/i18n/index.ts`（+3 条；「复制到剪贴板」随按钮改名成了孤儿，删掉）
+- 验：`tsc -b` 干净；Vitest 65 / 829（`assemble.test.ts` golden 照旧过）；主 crate 143 · 4 跳过（+2：`a_pack_file_reads_back_byte_for_byte` —— 中文、`\r\n`、结尾无换行三种，
+  外加覆盖已有文件；`a_pack_file_is_never_written_into_the_data_dir` —— 拒绝、而且被拒时数据目录里同名文件一个字节没动）；sidecar 14；`(none missing)`；`--dead` 与基线相同。
+- 施工时自己定的：
+  - **文件名** = `sanitizeFolderName(项目名, t('无标题'))` + `-YYYYMMDD.md`（例 `申请规划-20261002.md`）。用的是工作区导出里「用户自己起的名字」那一套清洗：
+    只换掉 `/ \ :` 和控制字符、去首尾的点和空白，空格和中文都保留；空标题跟界面语言（无标题 / Untitled）。日期写法同工作区导出文件夹（`spool-…-20261002`）。
+  - 覆盖已有文件：先过 `clear_export_target`（先拒数据目录，再删掉对话框已经问过的同名文件），再 `fs::write`，和 `export_library` 同一个顺序。
+  - 导出成功：按钮变成「✓ 已导出」1.5 秒（和「复制」同一种反馈），对话框不关 —— 方便接着点「复制」对一下。失败：底栏左边那行换成「没导出成，换个位置再试一次」，
+    原始错误进控制台（Rust 的报错是中文，不直接给英文界面看）。
+  - 存储对话框的标题传了 `t('导出 .md')`。⚠️ macOS 存储面板以 sheet 形式出现时不一定显示标题，以实机为准。
+  - 对话框副标题「纯本地组装 · 直接粘贴给 AI 即可」没动（任务书没要求）。
+- 偏离：无。pack 内容、工作区 pack、MCP `get_pack` 都没动。验收 ②「导出的和复制的逐字节一致」靠结构保证（两个出口拿的是同一个 `text`，Rust 原样写）+ 上面的单测；真机核对是 §6 第 1 条。
+
+**B2 · 「移除引用」进撤销环**
+- 提交：`bf1ae8e feat(undo): 「移除引用」进撤销环 —— ⌘Z 把引用方那一行的四个字段原样写回，重做再清一次`
+- 文件：
+  - `src/lib/undo/undoLog.ts`（新类型 `ref_remove` + `RefRemovePayload`）
+  - `src/stores/undoStore.ts`（builder、`threadIdForEntry` / `previewForEntry`、`reverseAndBuildRedo`）
+  - `src/lib/db/blocks.ts`（新 `restoreRefFields`：只写引用方这一行的四个字段）
+  - `src/stores/blocksStore.ts`（`clearSupersession`：清之前从库里读这一行，清完 push 撤销）
+  - `src/hooks/useUndo.ts`（`refreshAfterUndoRedo`：引用方项目 `load`，引用方和被引方两个项目 `reloadIncoming`）
+  - `src/overlay/CaptureOverlay.tsx`（`UNDO_OP_LABEL` 加 `ref_remove: '移除引用'`）
+  - `src/stores/undoStore.test.ts`（+2 条真 SQLite）
+- 验：`tsc -b` 干净；Vitest 65 / 831（+2：`corrects` + 引文 + 已审过 + 被引块已退役的一对，移除 → ⌘Z ⇒ 引用方**整行**和移除前相等、被引块整行三步都不变，重做 ⇒ 又清掉；
+  普通引用撤回后还是普通引用）；主 crate 143 · 4；sidecar 14；`(none missing)`；`--dead` 与基线相同。
+- 施工时自己定的：类型名 `ref_remove`。撤销浮窗上的动作名用现成的「移除引用」（英文 `Remove the citation`）—— 按钮本身就用这个键，字典里早就有，这次不用手加。
+  撤回**不走** `setBlockSupersession`（它在 `supersedes` 时会顺手退役目标、还会无条件清掉 `ref_reviewed_stale_at`），另写了只动这一行的 `restoreRefFields`；
+  重做走 `setBlockSupersession(id, null, null)`，和按钮同一条路。`clearSupersession` 里「原来指着谁」从读 store 改成读库，撤回要写回的四个字段以库为准。
+- 偏离：无。另外两个动作、「移除引用」本身的语义都没动。
+
+**B3 · 更正卡说清已记着**
+- 提交：`1de95cf feat(stale): 「过期检测」卡片说清「库里已经记着更正了」—— 已是 corrects 的那一对，引文下面多一行、「更正一处」的提示跟着换`
+- 文件：`src/lib/blocks/staleGuards.ts`（新 `alreadyCorrects`）、`src/lib/blocks/staleGuards.test.ts`（+4 条）、`src/components/Compress/StaleReview.tsx`、`src/lib/i18n/index.ts`
+- 验：`tsc -b` 干净；Vitest 65 / 835（+4：已有 `corrects` ⇒ 出现；没关系 ⇒ 不出现；`supersedes` / 普通引用 / `corrects` 指着别处 ⇒ 不出现；块还没读进来 ⇒ 不出现）；
+  主 crate 143 · 4；sidecar 14；`(none missing)`；`--dead` 与基线相同。
+- 最后的措辞（**草稿，等 Ocean 定**）：「库里已经记着 #{n} 更正了 #{m}。再点「更正一处」只会把引文重写一遍；想让 #{m} 不再进打包，点「整条取代」。」
+  英文 `The library already records #{n} correcting #{m}. Clicking “Correct one point” again only rewrites the quote; to keep #{m} out of packs, click “Replace in full”.`
+  引文下面那一行和「更正一处」按钮的悬停提示用的是**同一句**（一个键），只在这一条还没决定时出现。判断只看 store 里两块（`useBlocksStore.byThread[项目]`，按 `#n` 找），不另查库。
+- 偏离：无。放行规则、三个按钮的动作都没动，按钮也没藏。
+
+**B4 · 批量复制可移动并查重**
+- 提交：`cb6ba57 feat(forward): 批量「复制到…」先查重，复制完可以变成移动 —— 相同的跳过、相似的逐条选，「删掉原块」是真移动、⌘Z 一次撤回`
+- **选了乙**。比较完把两边的好处 / 代价写给 Ocean，他 10-02 选了「乙 · 真移动」。要点：甲删掉的是原块、留下的是复制品 —— 真库（只读查）**23 块**被别的块引用着，删了引用就断；
+  **34 块**压缩过，复制品按设计不带压缩前原文，原块一删原文就没了；「已审过」记号也不跟着复制。乙搬过去的还是原来那一块，这三样都跟着走；代价是施工多（编号重分配、撤回撞号、
+  整条取代提案对不上项目）。
+- 文件：
+  - `src-tauri/src/mcp.rs`（`ForwardDuplicate` + `forward_duplicates`，紧挨 `find_similar_blocks_json`，复用 `trigram_set` / `jaccard` / `SIMILAR_THRESHOLD`；**不进** MCP 工具表；+1 条测试）
+  - `src-tauri/src/api_engine.rs`（新命令 `forward_duplicate_check`，`(async)`，放在 `compress_duplicate_probe` 旁边，只开库）、`src-tauri/src/lib.rs`（注册）
+  - `src/components/ThreadView/MergeToolbar.tsx`（查重 → 相似的逐条选 → 复制 → 问「删掉原块 / 只删没被引用的 / 两边都留」）
+  - `src/stores/blocksStore.ts`（`forwardToThread` 改为返回「复制品 ← 原块」对照；新 `moveForwarded`）
+  - `src/lib/db/blocks.ts`（新 `moveBlock`：只改 `thread_id` / `seq` / `created_at`，号被占就拿 MAX+1）
+  - `src/lib/undo/undoLog.ts`、`src/stores/undoStore.ts`、`src/hooks/useUndo.ts`、`src/overlay/CaptureOverlay.tsx`（新撤销类型 `move`，动作名「移动」——
+    `UNDO_OP_LABEL` 的值 i18n-check 看不见，`'移动': 'Move'` 是手加、手核的）
+  - `src/lib/db/supersedeProposals.ts`（见下面「跟着改的一处」）、`src/lib/i18n/index.ts`（+19 条）
+  - 测试：`src/stores/undoStore.test.ts`（+2）、`src/stores/compressStore.stale.test.ts`（+1）
+- 验：`tsc -b` 干净；Vitest 65 / 837；主 crate 144 · 4 跳过（+1：`forward_duplicates_reports_same_and_similar_with_the_find_similar_ruler` —— 相同（只差首尾空白）/ 相似（≥ 阈值且 < 1）/
+  不相似、ref 块、不存在的 id 都不出现；最后拿 `find_similar_blocks_json` 交叉核：它把相似那一对分进同一组、不相似的那块不进任何组 ⇒ 同一把尺子、同一个常量）；sidecar 14；
+  `(none missing)`；`--dead` 与基线相同。
+  真 SQLite：`undo(move) puts every moved and deleted block back exactly, in one press`（2 块移过去 + 1 块一模一样的删掉：原块占复制品的编号、别处的引用还指着它、压缩前原文还在；
+  一次 ⌘Z ⇒ 原项目三块逐字段和之前相等、目标里只剩原有的；重做 ⇒ 又移过去）；`undo(move) survives a moved block’s old number having been taken since`（挪空后新捕捉的块拿到 #1，
+  ⌘Z ⇒ 原块回来、换成 #2、不报错）。
+- 施工时自己定的：
+  - **「相同」**= 两边都去掉首尾空白之后逐字相同（中间的空白、标点一个不改）。「相似」= 不相同、Jaccard ≥ `SIMILAR_THRESHOLD`（0.6）。每块只报一条：有相同的报相同，否则报最像的一块。
+    只看 `kind = 'text'`，同 `find_similar_blocks`。
+  - 相同的直接跳过、不逐条列（面板上一句「另有 k 块一模一样，会直接跳过」）；相似的逐条「跳过 / 照样复制」，默认「照样复制」（相似不等于重复，默认不丢东西）。没有相似的就不弹面板，直接复制。
+    查重本身失败就不复制，报「查重没做成，这次没有复制」。
+  - 复制完的那一问挂在原来浮条的位置：「已复制 n 个块到「…」，k 块重复，已跳过 · 原项目里的这 m 块要删掉吗？（删掉就等于移动）」。
+    m = 复制过去的 + 一模一样被跳过的；**相似而被跳过的不算、不删**（它们的内容目标里没有）。
+  - 「删掉原块」= 乙：每块复制品删掉、原块（id 不变）挪进复制品的编号和位置（目标底部、目标里的新 #n）；一模一样被跳过的那几块，原项目里这一份真删。
+    第 3 条的提示只对这几块**真删的**出现（有被别的块引用着的才出现，同时多一个「只删没被引用的」）。
+  - 撤销：整件事一条 `move`，同时把 forward 那一条作废（复制品已经不在了）⇒ **按一次 ⌘Z 回到复制之前**（原块回原项目、原编号、原时间，目标里什么都不多）。
+    原编号被新捕捉的块占了就换新号、不报错；删掉的那几块撤回时走同一个退路（先不带号插回去，再拿回原号或新号）。「两边都留」时 forward 那一条照旧，⌘Z 删复制品。
+  - `created_at`：移过去用复制品的时间（排到目标底部，和复制看起来一样）；撤回原样还原。
+  - **跟着改的一处**：`listSupersedeProposals` 加了「两块都还在这个项目里」的条件。卡片和 `decideStale` 按**本项目**的 `#n` 找块 —— 提案里有一块被移走后，读出来的是它在另一个项目里的编号，
+    拿这个号在本项目里找会落到一块不相干的块上。现在这一条先不出现，撤回移动后又出现（测试 `⛔ 两块里有一块被移动到别的项目`）。真库此刻 0 条待审提案。
+- 偏离：工程护栏都守着（查重走 Rust、新命令 `(async)`；乙不写任何关系字段，所以没有绕开 `setBlockSupersession` 的写法）。文件不跟着走（v15）、内容页「合并」、MCP 工具表都没动。
+- 没覆盖到的：查重 → 跳过的提示文字（验收 ①）和「只删没被引用的」那一档（验收 ③）在界面那一层没有组件测试（仓库没有 DOM 测试环境），靠 §6 第 4、5 条手指验。
+  一个边角没拦：那一问挂着的时候先按 ⌘Z 撤掉复制、再点「删掉原块」，原块照样会被挪过去（排到目标底部、拿新号）—— 结果等于「移动」，没丢东西。
+
+**新发现**：HANDOFF §9.9 新增 `DISCOVERED-20261002-1`（删掉项目里编号最大的那块、再捕捉一块之后，⌘Z 撤不回那次删除；B4 的 `move` 撤回已绕开，旧的 `delete` / `merge` 没碰）。
+
+**换装（Ocean 10-02 在「现在换装吗」上选了「现在换装」）**
+- 构建：`cb6ba57`（工作区只有 docs 改动），`env -u APPLE_ID -u APPLE_PASSWORD -u APPLE_TEAM_ID -u APPLE_API_KEY -u APPLE_API_ISSUER -u APPLE_API_KEY_PATH
+  APPLE_SIGNING_IDENTITY="Developer ID Application: Hanze JIN (Q5Y5JRXZ58)" npm run tauri build -- --bundles app`，日志进文件；没改 `tauri.conf.json`，日志里是「skipping app notarization」。
+  这次 TSA 第一遍就过（`Timestamp=Oct 2, 2026 at 13:14:54`），`--verify --deep --strict` 过，产物 identifier `com.oceanjin.spool`。
+- 装前：`codesign` = Developer ID、`spctl` = `Unnotarized Developer ID`、0.6.2、`spool` sha256 `f3ded3e5…35981b97`（就是 P1B 那一版）；真库 v29（代码也是 29，不迁移）。
+- 停：GUI pid 46012 + `--overlay` pid 46017 按 pid `kill -TERM`，1 秒内都退了、再查已不在；`--mcp` 子进程（25 个）一个没碰。
+- 真库备份：`~/Desktop/spool.before-p2-install-20261002-131513.db`（`VACUUM INTO`，integrity ok，v29，计数和活库一致）。
+- 旧包：`mv` 到 `~/Desktop/Spool/spool-pre-install/Spool-old-20261002-131526-pre-p2.app`；新包 `ditto` 进 `/Applications`。
+- 装后：`--verify --deep --strict` 过、Developer ID、`spctl` = `Unnotarized Developer ID`、identifier `com.oceanjin.spool`、0.6.2；`/Applications` 里 `spool` 的 sha256
+  `ac596bf2…56bf411a4` 和构建产物一致；主进程 77333 起于 13:15:33（换装之后），`lsof` 的 txt inode 75252519 就是新文件；stderr `[double-tap] installed at HID/active`（两个授权都在），
+  stderr 里没有 error / panic；真库 v29 · 25 / 63 / 1013 / 1（工作区 / 项目 / 块 / 文件，含软删）· 正文总长 291894 · 捕捉目标没变，前后一致，没有新的迁移快照。
+  没截窗口图：本机 21 个包认领同一个 id，按名字 / id 抬窗口有起第二个实例的风险（§10.6），界面留给 Ocean 亲眼看。
+- 没 push、没发版。
+
+**Ocean 验收**：待验收（§6 六条）。
 
 ## 8. 收尾的文档动作（执行窗做）
 
