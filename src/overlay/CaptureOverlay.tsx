@@ -840,9 +840,9 @@ export default function CaptureOverlay() {
                 e.stopPropagation();
                 return;
               }
-              // ⚠️ 正文这一格 **Enter 是换行**，⌘↵ 才是保存 —— 它是「写一条」用的，
-              // 换行是常事；批注那一格才是 Enter 保存（那儿一句话就够）。
-              if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+              // ⭐ P3-1（2026-10-02，Ocean「回车可以直接完成输入而不是换行」）：和批注框一样，
+              // **Enter 保存、Shift+Enter 换行**。⌘↵ 也落在这一支里（没按 Shift），照旧是保存。
+              if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
                 finishNote();
                 return;
@@ -853,7 +853,7 @@ export default function CaptureOverlay() {
                 cancelNote();
               }
             }}
-            placeholder={tr('写点什么…（⌘↵ 保存，Esc 放弃）')}
+            placeholder={tr('写点什么…（Enter 保存，Shift+Enter 换行，Esc 放弃）')}
             rows={3}
             spellCheck={false}
             className="w-full resize-none rounded-md border border-line bg-paper px-2 py-1.5 font-ui text-[14px] leading-snug text-ink outline-none placeholder:text-muted/70 focus:border-line-strong"

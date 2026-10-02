@@ -542,7 +542,8 @@ const EN: Record<string, string> = {
   '这一行当正文（去掉标题和斜体）': 'Make this line body text (drops heading and italic)',
   '斜体（划中的那一段，没划就是整行）': 'Italic (the selection, or the whole line)',
   // ③ 长按 ⌥ 直接写笔记（2026-08-27）
-  '写点什么…（⌘↵ 保存，Esc 放弃）': 'Write something… (⌘↵ to save, Esc to discard)',
+  '写点什么…（Enter 保存，Shift+Enter 换行，Esc 放弃）':
+    'Write something… (Enter saves, Shift+Enter for a new line, Esc discards)',
   '第 {n} / {total} 块': 'Block {n} of {total}',
   // 查找条（P1B A3，2026-10-01）：在本项目里查找，只留一个数。⚠️ 「处」= occurrence ——
   // 按一次回车走一处，⛔ 别译成 block。
