@@ -1,0 +1,33 @@
+/* 滑轨（Ocean 2026-10-02：「整个 spool 出现的上下移动的滑轨组件不美观，中间白色的部分太宽，
+   改成简洁无痕的小滑轨提示」）。
+
+   Until now nothing styled it, so every scroll area showed the system scrollbar — and with
+   「always show scroll bars」 (or a mouse plugged in) that is a ~15px white track with a grey
+   thumb down the side of a cream page. Here: a 6px rounded thumb in a faint ink tint, no
+   track, no arrow buttons, a little darker under the pointer.
+
+   ⚠️ Shared by the main window (styles/global.css) and the capture overlay (overlay/style.css),
+   so the card and the app scroll the same way. Colours come from the theme's `--ink-rgb`, so
+   情人节 gets its own ink without a rule of its own.
+   ⚠️ `.no-native-scrollbar` (global.css — the feed, where the scale rail IS the scrollbar)
+   still wins: a class beats this bare selector.
+   ⛔ No standard `scrollbar-width` / `scrollbar-color` here: Chromium (Windows WebView2) drops
+   every `::-webkit-scrollbar` rule as soon as either is set. */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+::-webkit-scrollbar-button {
+  display: none;
+}
+::-webkit-scrollbar-thumb {
+  background: rgb(var(--ink-rgb) / 0.16);
+  border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgb(var(--ink-rgb) / 0.3);
+}
