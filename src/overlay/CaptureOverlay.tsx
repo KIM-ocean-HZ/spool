@@ -1,7 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { emit, listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import { Coffee, Forward, Pin, RotateCcw, RotateCw, X } from 'lucide-react';
+import { Coffee, Forward, Pin, RotateCcw, RotateCw, Trash2, X } from 'lucide-react';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
 import type { Block } from '@/lib/db/blocks';
 // 🚨 Not @/lib/db — this process never opens SQLite (DESIGN_CAPTURE_HELPER_PROCESS §3.3).
@@ -656,6 +656,8 @@ export default function CaptureOverlay() {
   }
 
   const toast = content.data;
+  /** ⭐ 这张卡是「长按 ⌥ 直接写」还是「双击 ⌥ 捕捉」。 */
+  const isNote = toast.noteMode === true;
 
   // v2.9 §9.13: route through the main window's shared undo machinery. The main window
   // reverses the op, then pushes the undo-confirmation card back into this overlay
@@ -674,6 +676,30 @@ export default function CaptureOverlay() {
   const onRedirect = async (targetThreadId: string): Promise<void> => {
     if (targetThreadId === toast.threadId) {
       setPickerOpen(false);
+      return;
+    }
+    // ⭐ P3-2 长按那一路：块还没建，「改投」= 保存之前换目标。⛔ 不建块、不删块，也不动
+    // 「当前捕捉项目」—— 只换这张卡上记着的那一个（标题跟着换），保存时 createBlock 用它。
+    if (isNote) {
+      const th = Object.values(threadsByWs)
+        .flat()
+        .find((x) => x.id === targetThreadId);
+      if (!th) return;
+      const ws = workspaces.find((w) => w.id === th.workspaceId);
+      setContent({
+        kind: 'toast',
+        data: {
+          ...toast,
+          threadId: th.id,
+          workspaceId: th.workspaceId,
+          workspaceTitle: ws?.title.trim() || tr('收件箱'),
+          threadTitle: th.title.trim() || tr('未命名'),
+        },
+      });
+      if (pendingBodyRef.current) pendingBodyRef.current = { ...pendingBodyRef.current, threadId: th.id };
+      setPickerOpen(false);
+      // 点下拉的那一下把光标从正文框拿走了；还回去，接着 Enter 就能存。
+      bodyRef.current?.focus();
       return;
     }
     const note = annotationDraft.trim();
@@ -709,6 +735,15 @@ export default function CaptureOverlay() {
   // updates immediately so the icon feedback feels instant; DB write + cross-window
   // sync follow. togglePinDb returns the new value — we trust it over the local guess.
   const onTogglePin = async (): Promise<void> => {
+    // ⭐ P3-2 长按那一路：块还没建，置顶只是记下来，保存时随 createBlock 一起写。
+    // ⚠️ 以前这里照样去库里 togglePin('')（一行都不更新），而存下去的 pinned 只在正文框
+    // 打字时才刷新 —— 打完字再点图钉，存进去的还是没置顶。
+    if (isNote) {
+      const next = !pinned;
+      setPinned(next);
+      if (pendingBodyRef.current) pendingBodyRef.current = { ...pendingBodyRef.current, pinned: next };
+      return;
+    }
     const optimistic = !pinned;
     setPinned(optimistic);
     let next: boolean;
@@ -736,8 +771,6 @@ export default function CaptureOverlay() {
   // Note-first exits. Finish (Enter / 完成): commit the draft and dismiss — the user
   // is done with this capture, focus goes back to their app (Rust side of hide).
   // Cancel (Esc): discard the draft and dismiss.
-  /** ⭐ 这张卡是「长按 ⌥ 直接写」还是「双击 ⌥ 捕捉」。 */
-  const isNote = toast.noteMode === true;
 
   /** 长按那一路的保存：**这时候才建块**。
    *
@@ -784,14 +817,15 @@ export default function CaptureOverlay() {
       className="overlay-in capture-bloom relative w-full rounded-lg border border-line-strong bg-paper"
       style={{ boxShadow: 'var(--shadow-toast)' }}
     >
-      {/* Top-right cluster: one-click 📌 pin (no longer bundled with the note) + × close. */}
+      {/* Top-right cluster: one-click 📌 pin (no longer bundled with the note) + × close.
+          ⭐ P3-2：两种卡一模一样。图钉管的是**这一块**（不是这张卡），名字上写清楚。 */}
       <div className="absolute right-1.5 top-1.5 z-10 flex items-center gap-0.5">
         <button
           type="button"
           onMouseDown={(e) => e.stopPropagation()}
           onClick={() => void onTogglePin()}
-          title={pinned ? tr('取消置顶') : tr('置顶')}
-          aria-label={pinned ? tr('取消置顶') : tr('置顶')}
+          title={pinned ? tr('取消置顶这一块') : tr('置顶这一块')}
+          aria-label={pinned ? tr('取消置顶这一块') : tr('置顶这一块')}
           className={`rounded p-1 transition-colors ${
             pinned ? 'text-accent' : 'text-muted/70 hover:bg-paper-2 hover:text-ink'
           }`}
@@ -934,47 +968,50 @@ export default function CaptureOverlay() {
             spellCheck={false}
             className="w-full resize-none rounded-md border border-line bg-paper-2/40 px-2 py-1.5 font-ui text-[12px] leading-[1.5] text-ink-2 placeholder:text-muted/70 outline-none focus:border-line-strong focus:bg-paper focus:text-ink"
           />
-          <div className="mt-1.5 flex justify-end">
-            <button
-              type="button"
-              onMouseDown={(e) => e.preventDefault()} // don't blur the textarea first
-              onClick={finishNote}
-              className="rounded-md border border-accent bg-accent-soft px-2.5 py-0.5 text-[11px] text-accent hover:bg-accent/10"
-            >
-              {tr('完成')}
-            </button>
-          </div>
         </div>
       )}
 
-      {/* Footer — concise, icon-only: ↩ undo, ⤳ redirect (dropdown).
+      {/* Footer: ↩ undo, ⤳ redirect (dropdown), and 完成 on the right.
           ⚠️ The ⌘Z half of 丙 is advertised on the undo button's tooltip rather than in the
           note box's placeholder (Ocean 2026-08-15): at 340px a third bracketed hint wraps
           the box taller, and the placeholder disappears the moment the user starts typing —
           which is exactly when they might reach for ⌘Z. The key belongs on the button that
-          already does the same thing. */}
-      {/* ⚠️ 长按 ⌥ 那一路**不画这条底栏**：「撤销刚才的捕捉」和「改投到其它项目」说的都是
-          一个还不存在的块。存完之后它就是一条普通的块，在主窗里照样撤销得了（⌘Z 走的是
-          同一套 undoStore）。 */}
-      {!isNote && (
+          already does the same thing.
+          ⭐ P3-2（2026-10-02，Ocean「所有捕捉窗口需要一致」）：两种卡**同一条底栏**，按钮带名字，
+          位置一样。长按那张卡左边那一格是「放弃」（= Esc 那条路），因为它还没有块可撤；
+          「改投」在那张卡上是保存前换目标。「完成」从批注框下面挪到这儿，两种卡同一个位置。 */}
       <div className="flex items-center gap-1 border-t border-line bg-paper-2/30 px-2 py-1">
-        <button
-          onClick={() => void onUndo()}
-          className="rounded p-1 text-muted hover:bg-paper hover:text-ink"
-          title={tr('撤销刚才的捕捉 · ⌘Z')}
-          aria-label={tr('撤销')}
-        >
-          <RotateCcw size={13} />
-        </button>
+        {isNote ? (
+          <button
+            type="button"
+            onClick={cancelNote}
+            className="flex shrink-0 items-center gap-1 rounded px-1.5 py-1 font-ui text-[11px] text-muted hover:bg-paper hover:text-ink"
+            title={tr('放弃这一条 · Esc')}
+          >
+            <Trash2 size={12} />
+            <span>{tr('放弃')}</span>
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={() => void onUndo()}
+            className="flex shrink-0 items-center gap-1 rounded px-1.5 py-1 font-ui text-[11px] text-muted hover:bg-paper hover:text-ink"
+            title={tr('撤销刚才的捕捉 · ⌘Z')}
+          >
+            <RotateCcw size={12} />
+            <span>{tr('撤销')}</span>
+          </button>
+        )}
 
         <div className="relative" ref={pickerRef}>
           <button
+            type="button"
             onClick={() => setPickerOpen((v) => !v)}
-            className="rounded p-1 text-muted hover:bg-paper hover:text-ink"
+            className="flex shrink-0 items-center gap-1 rounded px-1.5 py-1 font-ui text-[11px] text-muted hover:bg-paper hover:text-ink"
             title={tr('改投到其它项目')}
-            aria-label={tr('改投')}
           >
-            <Forward size={13} />
+            <Forward size={12} />
+            <span>{tr('改投')}</span>
           </button>
           {pickerOpen && (
             <div
@@ -1009,8 +1046,16 @@ export default function CaptureOverlay() {
             </div>
           )}
         </div>
+
+        <button
+          type="button"
+          onMouseDown={(e) => e.preventDefault()} // don't blur the textarea first
+          onClick={finishNote}
+          className="ml-auto rounded-md border border-accent bg-accent-soft px-2.5 py-0.5 text-[11px] text-accent hover:bg-accent/10"
+        >
+          {tr('完成')}
+        </button>
       </div>
-      )}
     </div>
   );
 }

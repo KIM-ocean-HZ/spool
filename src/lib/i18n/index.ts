@@ -1006,6 +1006,11 @@ const EN: Record<string, string> = {
   '撤销': 'Undo',
   '改投到其它项目': 'Redirect to another project',
   '改投': 'Redirect',
+  // P3-2（2026-10-02）：两种捕捉卡同一套按钮。图钉管的是这一块，长按那张卡左下是「放弃」。
+  '置顶这一块': 'Pin this block',
+  '取消置顶这一块': 'Unpin this block',
+  '放弃': 'Discard',
+  '放弃这一条 · Esc': 'Discard this note · Esc',
 
   // Tray
   '当前目标：（无）': 'Current target: (none)',
