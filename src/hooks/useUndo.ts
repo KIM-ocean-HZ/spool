@@ -38,6 +38,11 @@ const refreshAfterUndoRedo = async (entry: UndoEntry): Promise<void> => {
       }
       break;
     }
+    // P2 · B4: both ends of the move.
+    case 'move':
+      await useBlocksStore.getState().load(entry.payload.fromThreadId);
+      await useBlocksStore.getState().load(entry.payload.toThreadId);
+      break;
     default:
       await useBlocksStore.getState().load(threadIdForEntry(entry));
   }

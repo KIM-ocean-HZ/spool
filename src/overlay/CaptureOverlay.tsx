@@ -73,6 +73,7 @@ const UNDO_OP_LABEL: Record<OverlayUndoPayload['op'], string> = {
   workspace_archive: '归档工作区',
   forward: '复制',
   ref_remove: '移除引用',
+  move: '移动',
   empty: '',
 };
 // Window width must match Rust's OVERLAY_WIDTH (capture.rs). Heights are now

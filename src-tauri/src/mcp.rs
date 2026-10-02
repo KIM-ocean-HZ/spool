@@ -2222,6 +2222,84 @@ pub(crate) fn find_similar_blocks_json(
     .map_err(|e| e.to_string())
 }
 
+/// One selected block that the target project already has — exactly, or nearly.
+#[derive(Debug, serde::Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ForwardDuplicate {
+    pub block_id: String,
+    /// true = the same text (leading/trailing whitespace aside); false = only similar.
+    pub same: bool,
+    pub match_block_id: String,
+    pub match_seq: Option<i64>,
+    pub match_content: String,
+    pub similarity: f64,
+}
+
+/// P2 · B4 (Ocean 09-30 #6): before 「复制到…」, which of these blocks the target project
+/// already holds. ⚠️ The same ruler as `find_similar_blocks_json` — `trigram_set`, `jaccard`,
+/// `SIMILAR_THRESHOLD` — ⛔ never a second one in TS (HANDOFF §10.6): the GUI's "this is a
+/// duplicate" and what an AI sees through MCP must not drift apart. Only the question differs:
+/// that one groups a scope against itself, this one asks "these blocks × that project".
+///
+/// 「相同」= equal once leading/trailing whitespace is trimmed; 「相似」= not the same, but
+/// Jaccard ≥ the threshold. Text blocks only (a ref block is a pointer, not content). One
+/// answer per block: a same match wins, otherwise the closest similar one; a block with
+/// neither is left out. Not an MCP tool — the GUI calls it through `forward_duplicate_check`.
+pub(crate) fn forward_duplicates(
+    conn: &Connection,
+    target_thread_id: &str,
+    block_ids: &[String],
+) -> Result<Vec<ForwardDuplicate>, String> {
+    use rusqlite::OptionalExtension;
+    let mut stmt = conn
+        .prepare("SELECT id, seq, content FROM blocks WHERE thread_id = ?1 AND kind = 'text'")
+        .map_err(|e| e.to_string())?;
+    let targets: Vec<(String, Option<i64>, String)> = stmt
+        .query_map([target_thread_id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+        .map_err(|e| e.to_string())?
+        .collect::<Result<_, _>>()
+        .map_err(|e| e.to_string())?;
+    let target_grams: Vec<HashSet<[char; 3]>> =
+        targets.iter().map(|(_, _, c)| trigram_set(c)).collect();
+
+    let mut source = conn
+        .prepare("SELECT content FROM blocks WHERE id = ?1 AND kind = 'text'")
+        .map_err(|e| e.to_string())?;
+    let mut out = Vec::new();
+    for id in block_ids {
+        let Some(content) = source
+            .query_row([id], |r| r.get::<_, String>(0))
+            .optional()
+            .map_err(|e| e.to_string())?
+        else {
+            continue;
+        };
+        let hit = |i: usize, same: bool, similarity: f64| ForwardDuplicate {
+            block_id: id.clone(),
+            same,
+            match_block_id: targets[i].0.clone(),
+            match_seq: targets[i].1,
+            match_content: targets[i].2.clone(),
+            similarity,
+        };
+        if let Some(i) = targets.iter().position(|(_, _, c)| c.trim() == content.trim()) {
+            out.push(hit(i, true, 1.0));
+            continue;
+        }
+        let grams = trigram_set(&content);
+        let best = target_grams
+            .iter()
+            .enumerate()
+            .map(|(i, g)| (i, jaccard(&grams, g)))
+            .filter(|&(_, s)| s >= SIMILAR_THRESHOLD)
+            .max_by(|a, b| a.1.total_cmp(&b.1));
+        if let Some((i, s)) = best {
+            out.push(hit(i, false, s));
+        }
+    }
+    Ok(out)
+}
+
 // ---------------------------------------------------------------------------------------
 // §20.13 v2.4 (D3): get_digest — the cross-thread briefing ("我最近一周在忙什么").
 // Deterministic assembly only (Constitution 4/5): mechanical selection rules — recency
@@ -10766,6 +10844,57 @@ mod tests {
             get_blocks_json(&conn, "t1", None, None, Some("b4"), None, &NO_FILTERS, false).unwrap_err();
         assert!(err.contains("别处"), "{err}");
         assert!(!err.contains("  "), "double-space artifact: {err}");
+    }
+
+    // P2 · B4: 「这几块 × 那个项目」 — same / similar / neither, judged by the very ruler
+    // find_similar_blocks uses (the cross-check at the bottom is what pins that).
+    #[test]
+    fn forward_duplicates_reports_same_and_similar_with_the_find_similar_ruler() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(include_str!("../../src/lib/db/schema.sql")).unwrap();
+        conn.execute_batch(
+            "INSERT INTO workspaces (id, title, sort_order, created_at, updated_at)
+               VALUES ('ws1', '收件箱', 0, 1, 1);
+             INSERT INTO threads (id, workspace_id, title, created_at, updated_at)
+               VALUES ('src', 'ws1', '来处', 1, 1), ('dst', 'ws1', '去处', 1, 1);
+             INSERT INTO blocks (id, thread_id, kind, content, pinned, seq, created_at) VALUES
+               ('d1', 'dst', 'text', 'GRE 填空题目里 mercurial 的意思是善变的', 0, 1, 1),
+               ('d2', 'dst', 'text', '完全不相关的一条：明天去图书馆借书', 0, 2, 2),
+               ('s_same', 'src', 'text', '  GRE 填空题目里 mercurial 的意思是善变的\n', 0, 1, 3),
+               ('s_sim',  'src', 'text', 'GRE 填空题里 mercurial 的意思是：善变的。', 0, 2, 4),
+               ('s_diff', 'src', 'text', '西红柿炒蛋：先炒蛋后下西红柿，出锅前撒糖', 0, 3, 5),
+               ('s_ref',  'src', 'ref',  'GRE 填空题目里 mercurial 的意思是善变的', 0, 4, 6);",
+        )
+        .unwrap();
+
+        let ids: Vec<String> =
+            ["s_same", "s_sim", "s_diff", "s_ref", "nope"].iter().map(|s| s.to_string()).collect();
+        let out = forward_duplicates(&conn, "dst", &ids).unwrap();
+
+        // Same: only the surrounding whitespace differs.
+        assert_eq!(out.len(), 2, "{out:?}");
+        assert_eq!(out[0].block_id, "s_same");
+        assert!(out[0].same);
+        assert_eq!((out[0].match_block_id.as_str(), out[0].match_seq), ("d1", Some(1)));
+        // Similar: above the shared threshold, but not the same text.
+        assert_eq!(out[1].block_id, "s_sim");
+        assert!(!out[1].same);
+        assert_eq!(out[1].match_block_id, "d1");
+        assert!(out[1].similarity >= SIMILAR_THRESHOLD && out[1].similarity < 1.0);
+        // Not similar (below that same threshold), a ref block, and an unknown id: absent.
+
+        // ⚠️ The same ruler: find_similar_blocks puts s_sim and d1 in one group, and leaves
+        // s_diff out of every group — exactly what forward_duplicates answered above.
+        let v: Value =
+            serde_json::from_str(&find_similar_blocks_json(&conn, None, None, None).unwrap()).unwrap();
+        let groups: Vec<Vec<&str>> = v["groups"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|g| g["blocks"].as_array().unwrap().iter().map(|b| b["block_id"].as_str().unwrap()).collect())
+            .collect();
+        assert!(groups.iter().any(|g| g.contains(&"s_sim") && g.contains(&"d1")), "{groups:?}");
+        assert!(groups.iter().all(|g| !g.contains(&"s_diff")), "{groups:?}");
     }
 
     // set_thread_summary provenance guard: MCP may fill an empty card or refresh its

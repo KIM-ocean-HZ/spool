@@ -5,6 +5,7 @@ import {
   deleteBlock,
   getBlockById,
   mergeBlocks,
+  moveBlock,
   restoreBlock,
   restoreBlockFields,
   restoreRefFields,
@@ -27,6 +28,7 @@ import type {
   ForwardPayload,
   HighlightPayload,
   MergePayload,
+  MovePayload,
   RefRemovePayload,
   ThreadDeleteManyPayload,
   ThreadDeletePayload,
@@ -173,6 +175,17 @@ export const buildRefRemoveUndo = (payload: RefRemovePayload): UndoEntry => ({
   invalidated: false,
 });
 
+// P2 · B4 移动. Every block it moved or deleted is affected: editing one afterwards
+// invalidates the whole entry (the user's latest edit wins, §9.13).
+export const buildMoveUndo = (payload: MovePayload): UndoEntry => ({
+  id: nanoid(),
+  kind: 'move',
+  timestamp: Date.now(),
+  payload,
+  affectedBlockIds: [...payload.moved.map((m) => m.block.id), ...payload.deleted.map((b) => b.id)],
+  invalidated: false,
+});
+
 // --- Pure helpers over an entry (exported for runUndo / the toast). ---
 
 export const threadIdForEntry = (entry: UndoEntry): string => {
@@ -183,6 +196,8 @@ export const threadIdForEntry = (entry: UndoEntry): string => {
     case 'forward':
     case 'ref_remove':
       return entry.payload.threadId;
+    case 'move':
+      return entry.payload.fromThreadId;
     case 'create':
       return entry.payload.threadId;
     case 'delete':
@@ -244,6 +259,12 @@ export const previewForEntry = (entry: UndoEntry): string => {
     }
     case 'ref_remove':
       return previewText(entry.payload.content);
+    case 'move': {
+      const all = [...entry.payload.moved.map((m) => m.block), ...entry.payload.deleted];
+      const [first, ...rest] = all;
+      if (!first) return '';
+      return rest.length === 0 ? previewText(first.content) : `${previewText(first.content)} +${rest.length}`;
+    }
   }
 };
 
@@ -383,6 +404,26 @@ const reverseAndBuildRedo = async (
       await restoreRefFields(blockId, { refBlockId, refKind, correctedQuote, refReviewedStaleAt });
       return async () => {
         await setBlockSupersession(blockId, null, null, Date.now());
+      };
+    }
+    // P2 · B4: each block goes back to its own project, number and place (a number taken
+    // since falls back to a fresh one in moveBlock); the deleted duplicates come back
+    // verbatim. Redo makes the same move again.
+    case 'move': {
+      const { toThreadId, moved, deleted } = entry.payload;
+      for (const { block } of moved) {
+        await moveBlock(block.id, block.threadId, block.seq, block.createdAt);
+      }
+      for (const b of deleted) {
+        // ⚠️ Its #n may have been handed to a block captured since (seq is MAX+1). Restoring
+        // it verbatim would hit idx_blocks_thread_seq; come back numberless, then take the
+        // old number if it is still free.
+        await restoreBlock({ ...b, seq: null });
+        await moveBlock(b.id, b.threadId, b.seq, b.createdAt);
+      }
+      return async () => {
+        for (const b of deleted) await deleteBlock(b.id);
+        for (const m of moved) await moveBlock(m.block.id, toThreadId, m.toSeq, m.toCreatedAt);
       };
     }
   }

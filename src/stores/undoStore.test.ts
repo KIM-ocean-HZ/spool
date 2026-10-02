@@ -549,4 +549,81 @@ describe('undoStore reversal against a real SQLite engine (§9.13)', () => {
     await useUndoStore.getState().undo();
     expect(await getBlockById(citing.id)).toEqual(before);
   });
+
+  // P2 · B4（乙，Ocean 10-02「真移动」）：复制到一个已经有其中 1 块的项目，再选「删掉原块」。
+  // 移过去的还是原来那几块 —— 别处的引用不断、压缩前原文还在 —— 而按一次 ⌘Z 全部回来。
+  it('undo(move) puts every moved and deleted block back exactly, in one press', async () => {
+    const ws = await createWorkspace('W');
+    const src = await createThread(ws.id, 'Src');
+    const dst = await createThread(ws.id, 'Dst');
+    const elsewhere = await createThread(ws.id, 'Elsewhere');
+    const already = await createBlock({ threadId: dst.id, content: 'gamma three' });
+    await tick();
+    const a = await createBlock({ threadId: src.id, content: 'alpha one' });
+    await tick();
+    const b = await createBlock({ threadId: src.id, content: 'beta two' });
+    await tick();
+    const dup = await createBlock({ threadId: src.id, content: 'gamma three' });
+    sqlite
+      .prepare("UPDATE blocks SET original_content = 'alpha, before compression', compressed_at = 1 WHERE id = ?")
+      .run(a.id);
+    const cites = await createBlock({ threadId: elsewhere.id, content: 'see alpha', refBlockId: a.id });
+    await useBlocksStore.getState().load(src.id);
+    await useBlocksStore.getState().load(dst.id);
+    const before = await listBlocksByThread(src.id);
+
+    const pairs = await useBlocksStore.getState().forwardToThread([a.id, b.id], dst.id);
+    expect(pairs.map((p) => p.originalId)).toEqual([a.id, b.id]);
+    const copySeqs = await Promise.all(pairs.map(async (p) => (await getBlockById(p.copyId))!.seq));
+
+    const result = await useBlocksStore.getState().moveForwarded({
+      fromThreadId: src.id,
+      toThreadId: dst.id,
+      pairs,
+      deleteIds: [dup.id],
+    });
+    expect(result).toEqual({ moved: 2, deleted: 1 });
+    expect(await listBlocksByThread(src.id)).toHaveLength(0);
+    const moved = await listBlocksByThread(dst.id);
+    // The originals themselves, in the copies' slots — the copies are gone.
+    expect(moved.map((x) => x.id)).toEqual([already.id, a.id, b.id]);
+    expect(moved.slice(1).map((x) => x.seq)).toEqual(copySeqs);
+    expect(moved[1]!.originalContent).toBe('alpha, before compression');
+    expect((await getBlockById(cites.id))!.refBlockId).toBe(a.id);
+
+    const entry = await useUndoStore.getState().undo();
+    expect(entry?.kind).toBe('move');
+    expect(await listBlocksByThread(src.id)).toEqual(before);
+    expect((await listBlocksByThread(dst.id)).map((x) => x.id)).toEqual([already.id]);
+
+    expect((await useUndoStore.getState().redo())?.kind).toBe('move');
+    expect((await listBlocksByThread(dst.id)).map((x) => x.id)).toEqual([already.id, a.id, b.id]);
+    expect(await listBlocksByThread(src.id)).toHaveLength(0);
+  });
+
+  // #n is MAX+1 per project, so a block captured after the move can take a moved block's old
+  // number. ⌘Z must still bring everything back — on a fresh number — rather than fail.
+  it('undo(move) survives a moved block\u2019s old number having been taken since', async () => {
+    const ws = await createWorkspace('W');
+    const src = await createThread(ws.id, 'Src');
+    const dst = await createThread(ws.id, 'Dst');
+    const a = await createBlock({ threadId: src.id, content: 'alpha one' });
+    expect(a.seq).toBe(1);
+    await useBlocksStore.getState().load(src.id);
+    const pairs = await useBlocksStore.getState().forwardToThread([a.id], dst.id);
+    await useBlocksStore.getState().moveForwarded({
+      fromThreadId: src.id,
+      toThreadId: dst.id,
+      pairs,
+      deleteIds: [],
+    });
+    const newcomer = await createBlock({ threadId: src.id, content: 'captured afterwards' });
+    expect(newcomer.seq).toBe(1); // src is empty now, so #1 is handed out again
+
+    expect((await useUndoStore.getState().undo())?.kind).toBe('move');
+    const back = (await getBlockById(a.id))!;
+    expect(back.threadId).toBe(src.id);
+    expect(back.seq).toBe(2); // #1 is taken, so a comes back on a fresh number
+    expect((await getBlockById(newcomer.id))!.seq).toBe(1);
+  });
 });

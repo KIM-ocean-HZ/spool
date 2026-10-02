@@ -918,6 +918,34 @@ export const setCorrectedQuote = async (id: string, quote: string | null): Promi
   await db.execute('UPDATE blocks SET corrected_quote = $1 WHERE id = $2', [quote, id]);
 };
 
+/** P2 · B4（乙，Ocean 2026-10-02 拍板「真移动」）—— 把一块挪进另一个项目，**id 不变**。
+ *
+ *  ⭐ 只改这一行的 `thread_id` / `seq` / `created_at`，所以别处对它的引用、压缩前的原文、
+ *  「已审过」的记号全都跟着这一行走 —— 这正是选「移动」而不是「复制 + 删原块」的理由。
+ *  ⚠️ `seq` 按项目唯一（`idx_blocks_thread_seq`）：给的号在目标里已经被别的块占了，
+ *  就拿目标里的 MAX+1（#n 会变，但不会撞号、不会让这一下失败）。`null` 还是 `null`。 */
+export const moveBlock = async (
+  id: string,
+  threadId: string,
+  seq: number | null,
+  createdAt: number,
+): Promise<void> => {
+  const db = await getDb();
+  await db.execute(
+    `UPDATE blocks
+        SET thread_id = $1,
+            seq = CASE
+                    WHEN $2 IS NULL THEN NULL
+                    WHEN EXISTS (SELECT 1 FROM blocks WHERE thread_id = $3 AND seq = $4 AND id <> $5)
+                      THEN (SELECT COALESCE(MAX(seq), 0) + 1 FROM blocks WHERE thread_id = $6)
+                    ELSE $7
+                  END,
+            created_at = $8
+      WHERE id = $9`,
+    [threadId, seq, threadId, seq, id, threadId, seq, createdAt, id],
+  );
+};
+
 /** P2 · B2 —— 「移除引用」的撤回：把引用方这一行的四个字段原样写回。
  *
  *  ⛔ 只动这一行。⛔ 不走 `setBlockSupersession`：它在 `supersedes` 时会顺手退役目标、

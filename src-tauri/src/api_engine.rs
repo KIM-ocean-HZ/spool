@@ -494,6 +494,19 @@ pub fn compress_duplicate_probe(thread_id: String) -> Result<DuplicateProbe, Str
     Ok(probe_from(&v))
 }
 
+/// P2 · B4：「复制到…」之前，这几块在目标项目里有没有相同 / 相似的。
+/// ⚠️ 判断全在 `mcp::forward_duplicates`（和上面这个探针同一把尺子），这里只开库。
+// ⚠️ `(async)`：开库 + 一趟比对，⛔ 不占主线程。
+#[tauri::command(async)]
+pub fn forward_duplicate_check(
+    target_thread_id: String,
+    block_ids: Vec<String>,
+) -> Result<Vec<crate::mcp::ForwardDuplicate>, String> {
+    let dir = crate::mcp::app_data_dir().ok_or_else(|| "no app data dir".to_string())?;
+    let conn = crate::mcp::open_db(&dir)?;
+    crate::mcp::forward_duplicates(&conn, &target_thread_id, &block_ids)
+}
+
 // ---------------------------------------------------------------------------------------
 // API key 存哪儿
 //

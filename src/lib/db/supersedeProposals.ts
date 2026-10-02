@@ -55,7 +55,9 @@ interface Row {
  *
  *  ⚠️ **两块里少一块，这一条就不出现**（INNER JOIN）—— 块被删了，行会被外键带走，
  *  但删块和读这张表之间还有一段时间，而一条指不着块的提议在卡片上是画不出来的。
- *  ⚠️ `seq` 为空的行（v9 回填之前的老块）同样过不了 —— 屏幕上没有 `#N` 可说。 */
+ *  ⚠️ `seq` 为空的行（v9 回填之前的老块）同样过不了 —— 屏幕上没有 `#N` 可说。
+ *  ⚠️ P2 · B4：两块里有一块被**移动**到别的项目，这一条也不出现 —— 卡片按本项目的 `#N`
+ *  找块，拿另一个项目的编号来找会落到一块不相干的块上。撤回移动，它就又出现了。 */
 export const listSupersedeProposals = async (
   threadId: string,
   now: number,
@@ -64,8 +66,8 @@ export const listSupersedeProposals = async (
   const rows = await db.select<Row[]>(
     `SELECT sp.*, s.seq AS stale_seq, n.seq AS by_seq
        FROM supersede_proposals sp
-       JOIN blocks s ON s.id = sp.stale_block_id
-       JOIN blocks n ON n.id = sp.by_block_id
+       JOIN blocks s ON s.id = sp.stale_block_id AND s.thread_id = sp.thread_id
+       JOIN blocks n ON n.id = sp.by_block_id AND n.thread_id = sp.thread_id
       WHERE sp.thread_id = $1 AND sp.expires_at > $2
       ORDER BY sp.created_at ASC`,
     [threadId, now],

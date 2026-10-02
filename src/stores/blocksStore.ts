@@ -16,9 +16,11 @@ import {
   buildDeleteUndo,
   buildForwardUndo,
   buildMergeUndo,
+  buildMoveUndo,
   buildRefRemoveUndo,
   useUndoStore,
 } from './undoStore';
+import type { MovePayload } from '@/lib/undo/undoLog';
 import { useSettingsStore } from './settingsStore';
 import { toast } from './toastStore';
 import { t } from '@/lib/i18n';
@@ -112,9 +114,21 @@ interface BlocksState {
   // §20.1 forward: COPY the given blocks into another thread (cross-workspace allowed).
   // Strictly additive — inserts NEW block + attachment rows and never mutates or deletes the
   // originals. Copies append to the target's bottom (created_at = now, +1ms per block to keep
-  // their relative order). Pushes a forward undo (deletes only the copies) and returns the
-  // number of blocks copied (0 if none resolved).
-  forwardToThread: (ids: string[], targetThreadId: string) => Promise<number>;
+  // their relative order). Pushes a forward undo (deletes only the copies) and returns each
+  // copy with the block it was made from (empty if none resolved or the copy failed).
+  forwardToThread: (
+    ids: string[],
+    targetThreadId: string,
+  ) => Promise<{ originalId: string; copyId: string }[]>;
+  /** P2 · B4（乙，Ocean 10-02「真移动」）：「复制到…」之后选「删掉原块」。每一对里复制品删掉、
+   *  原块（id 不变）挪进复制品的编号和位置；`deleteIds` 是目标里已经有一模一样的那几块的原块，直接删。
+   *  整件事一条撤销（forward 那一条随之作废 —— 复制品已经不在了）。返回真正移动 / 删掉了几块。 */
+  moveForwarded: (args: {
+    fromThreadId: string;
+    toThreadId: string;
+    pairs: { originalId: string; copyId: string }[];
+    deleteIds: string[];
+  }) => Promise<{ moved: number; deleted: number }>;
 }
 
 // Patch one field of one attachment in the by-thread index. A no-op if that project is not
@@ -688,7 +702,7 @@ export const useBlocksStore = create<BlocksState>((set, get) => {
     },
 
     forwardToThread: async (ids, targetThreadId) => {
-      if (ids.length === 0) return 0;
+      if (ids.length === 0) return [];
       const state = get();
       // Resolve the selected source blocks from the loaded feeds (in practice the active
       // thread — selection is per-feed). Sort by createdAt so the copies append to the
@@ -700,7 +714,7 @@ export const useBlocksStore = create<BlocksState>((set, get) => {
           if (wanted.has(b.id)) sources.push(b);
         }
       }
-      if (sources.length === 0) return 0;
+      if (sources.length === 0) return [];
       sources.sort((a, b) => a.createdAt - b.createdAt);
 
       // Build the NEW rows: fresh ids, target thread_id, now-based created_at (+i ms per
@@ -775,7 +789,7 @@ export const useBlocksStore = create<BlocksState>((set, get) => {
       } catch (e) {
         console.error('[forward] copy failed', e);
         toast.error(t('复制失败：{msg}', { msg: e instanceof Error ? e.message : String(e) }));
-        return 0;
+        return [];
       }
 
       useUndoStore.getState().pushUndo(
@@ -786,7 +800,38 @@ export const useBlocksStore = create<BlocksState>((set, get) => {
       // source feed is unchanged (additive), so it needs no reload.
       set((s) => (s.selectedBlockIds.size === 0 ? s : { selectedBlockIds: new Set() }));
       await get().load(targetThreadId);
-      return copyBlocks.length;
+      return sources.map((src, i) => ({ originalId: src.id, copyId: copyBlocks[i]!.id }));
+    },
+
+    moveForwarded: async ({ fromThreadId, toThreadId, pairs, deleteIds }) => {
+      const moved: MovePayload['moved'] = [];
+      // One pair at a time, copy out before original in: the copy frees the number the original
+      // takes, and a failure part-way leaves each block either still copied or already moved.
+      for (const { originalId, copyId } of pairs) {
+        const [original, copy] = await Promise.all([db.getBlockById(originalId), db.getBlockById(copyId)]);
+        if (!original) continue;
+        const toSeq = copy?.seq ?? original.seq;
+        const toCreatedAt = copy?.createdAt ?? Date.now();
+        if (copy) await db.deleteBlock(copy.id);
+        await db.moveBlock(original.id, toThreadId, toSeq, toCreatedAt);
+        moved.push({ block: original, toSeq, toCreatedAt });
+        // The forward entry would now delete a copy that is gone — retire it, so ONE ⌘Z undoes
+        // the whole move instead of a second press that does nothing.
+        useUndoStore.getState().invalidateForBlock(copyId);
+      }
+      const deleted: Block[] = [];
+      for (const id of deleteIds) {
+        const b = await db.getBlockById(id);
+        if (!b) continue;
+        await db.deleteBlock(id);
+        deleted.push(b);
+      }
+      if (moved.length + deleted.length > 0) {
+        useUndoStore.getState().pushUndo(buildMoveUndo({ fromThreadId, toThreadId, moved, deleted }));
+      }
+      await get().load(fromThreadId);
+      await get().load(toThreadId);
+      return { moved: moved.length, deleted: deleted.length };
     },
   };
 });

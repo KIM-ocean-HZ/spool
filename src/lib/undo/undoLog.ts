@@ -17,7 +17,8 @@ export type UndoOpKind =
   | 'workspace_delete'
   | 'workspace_archive'
   | 'forward'
-  | 'ref_remove';
+  | 'ref_remove'
+  | 'move';
 
 // Per-kind payloads. §8.2 types the schema-level payload as `unknown` for storage
 // flexibility; at every usage site we narrow it via the discriminated UndoEntry union
@@ -127,6 +128,18 @@ export interface RefRemovePayload {
   refReviewedStaleAt: number | null;
 }
 
+// P2 · B4（乙）：「复制到…」之后选「删掉原块」= 真移动。每块原块换掉它的复制品，占复制品的
+// 编号和位置（id 不变）；目标里已经有一模一样的那几块（查重跳过的）在原项目里删掉。整件事一条，
+// ⌘Z 一次全部回到原项目、原编号（被占了就换一个新号，见 db.moveBlock）。
+export interface MovePayload {
+  fromThreadId: string;
+  toThreadId: string;
+  /** Each moved block as it stood before the move, and the slot it took in the target. */
+  moved: { block: Block; toSeq: number | null; toCreatedAt: number }[];
+  /** Exact duplicates of blocks the target already had — removed, not moved. */
+  deleted: Block[];
+}
+
 interface BaseEntry {
   id: string;
   timestamp: number;
@@ -178,6 +191,10 @@ export interface RefRemoveUndoEntry extends BaseEntry {
   kind: 'ref_remove';
   payload: RefRemovePayload;
 }
+export interface MoveUndoEntry extends BaseEntry {
+  kind: 'move';
+  payload: MovePayload;
+}
 
 export type UndoEntry =
   | CaptureUndoEntry
@@ -190,7 +207,8 @@ export type UndoEntry =
   | WorkspaceDeleteUndoEntry
   | WorkspaceArchiveUndoEntry
   | ForwardUndoEntry
-  | RefRemoveUndoEntry;
+  | RefRemoveUndoEntry
+  | MoveUndoEntry;
 
 const CAPACITY = 10;
 

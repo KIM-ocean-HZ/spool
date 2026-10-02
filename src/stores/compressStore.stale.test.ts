@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useCompressStore } from './compressStore';
 import { useBlocksStore } from './blocksStore';
 import { useThreadsStore } from './threadsStore';
-import { createBlock, listBlocksByThread, setBlockStale, setBlockSupersession,
+import { createBlock, listBlocksByThread, moveBlock, setBlockStale, setBlockSupersession,
          setCorrectedQuote, type Block } from '@/lib/db/blocks';
 import { listSupersedeProposals } from '@/lib/db/supersedeProposals';
 import { __setTestDb } from '@/lib/db/client';
@@ -243,5 +243,21 @@ describe('AI 提的「整条取代」—— 什么时候该出现在「过期检
     await loadBlocks();
     await useCompressStore.getState().loadProposedStale(threadId);
     expect(shown()).toEqual([]);
+  });
+
+  // P2 · B4（乙）：卡片按本项目的 #N 找块。一块被移动到别的项目之后，拿它在那边的编号回来找，
+  // 会落到这边一块不相干的块上 —— 所以这一条先不出现；撤回移动，它又出现。
+  it('⛔ 两块里有一块被移动到别的项目 —— 提案不出现；移回来又出现', async () => {
+    proposeSupersede(older.id, newer.id);
+    const ws = await createWorkspace('Other');
+    const other = await createThread(ws.id, 'Other');
+
+    await moveBlock(newer.id, other.id, newer.seq, newer.createdAt);
+    expect(await listSupersedeProposals(threadId, Date.now())).toEqual([]);
+
+    await moveBlock(newer.id, threadId, newer.seq, newer.createdAt);
+    expect(
+      (await listSupersedeProposals(threadId, Date.now())).map((p) => [p.staleSeq, p.bySeq]),
+    ).toEqual([[older.seq, newer.seq]]);
   });
 });

@@ -1028,6 +1028,30 @@ const EN: Record<string, string> = {
   '双击 ⌥ 捕捉已停止 — 请重启 Spool 重新启用。':
     'Double-tap ⌥ capture stopped — restart Spool to re-enable.',
   '已复制 {n} 个块到「{target}」': 'Copied {n} blocks to “{target}”',
+  // P2 · B4 —— 复制到…之前查重、复制完可以变成移动
+  '查重没做成，这次没有复制': "Couldn't check for duplicates — nothing was copied",
+  '这 {n} 块和「{target}」里已有的很像，一条一条选：':
+    'These {n} blocks look like ones already in “{target}”. Choose for each:',
+  '另有 {k} 块和那里的一模一样，会直接跳过。': '{k} more are identical to blocks already there and will be skipped.',
+  '像那里的 #{seq}：': 'Looks like #{seq} there: ',
+  '跳过': 'Skip',
+  '照样复制': 'Copy anyway',
+  '一块都没复制：{k} 块都跳过了': 'Nothing copied — all {k} were skipped',
+  '已复制 {n} 个块到「{target}」，{k} 块重复，已跳过': 'Copied {n} blocks to “{target}”, {k} duplicates skipped',
+  '原项目里的这 {m} 块要删掉吗？（删掉就等于移动）':
+    'Delete these {m} blocks from this project? (Deleting them makes it a move)',
+  '其中 {r} 块被别的块引用着，删掉后那些引用会指向一块不存在的块。':
+    '{r} of them are cited by other blocks — those citations would point at a block that no longer exists.',
+  '删掉原块': 'Delete originals',
+  '只删没被引用的': 'Only delete the uncited ones',
+  '两边都留': 'Keep both',
+  '已移动 {n} 个块到「{target}」': 'Moved {n} blocks to “{target}”',
+  '已移动 {n} 个块到「{target}」，原项目里 {d} 块重复的已删掉':
+    'Moved {n} blocks to “{target}”; {d} duplicates deleted from this project',
+  '原项目里 {d} 块重复的已删掉': '{d} duplicates deleted from this project',
+  '没移动成：{msg}': 'Move failed: {msg}',
+  // ⚠️ 撤销浮窗上的动作名，经 UNDO_OP_LABEL 现翻 —— i18n-check 看不见常量表，手加手核。
+  '移动': 'Move',
 
   // Settings sub-panels
   '请按下 ⌘ / ⌃ / ⌥ 之一，再加一个普通键': 'Press ⌘ / ⌃ / ⌥ plus a regular key',

@@ -379,6 +379,7 @@ pub fn run() {
             api_engine::compress_cancel,
             api_engine::compress_sidecar_present,
             api_engine::compress_duplicate_probe,
+            api_engine::forward_duplicate_check,
             api_engine::stale_scan_via_api,
             api_engine::weekly_review_via_api,
             api_engine::api_balance,
