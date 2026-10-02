@@ -145,14 +145,24 @@ const COPY_GATE_WINDOW_MS: u64 = 10_000;
 // 没有输入监听授权时 LAST_COPY_CHORD_NS 永远是 0 ⇒ 永远不成立 ⇒ 照旧空框。
 const LONG_PRESS_COPY_WINDOW_MS: u64 = 2_000;
 
-/// ⌘C / ⌘X 是不是落在这一下按下**之前** `window_ms` 之内。`copy_ns == 0` = 从没见过。
+/// ⌘C / ⌘X 是不是落在这一下按下**之前** `window_ms` 之内、而且**还没被用过**。
+/// `copy_ns == 0` = 从没见过；`used_ns` = 已经被用掉的那一下 ⌘C 的时刻（见 LONG_PRESS_COPY_USED_NS）。
 /// 判断只在这里做一次，结果随 `note-trigger` 带走 —— ⛔ 前端不另算时间。
-fn copied_within(copy_ns: u64, press_ns: u64, window_ms: u64) -> bool {
-    copy_ns != 0 && copy_ns <= press_ns && (press_ns - copy_ns) / NANOS_PER_MS <= window_ms
+fn fresh_copy_within(copy_ns: u64, used_ns: u64, press_ns: u64, window_ms: u64) -> bool {
+    copy_ns != 0
+        && copy_ns != used_ns
+        && copy_ns <= press_ns
+        && (press_ns - copy_ns) / NANOS_PER_MS <= window_ms
 }
 
 // CGEventGetTimestamp (ns) of the last observed ⌘C/⌘X keydown; 0 = never.
 static LAST_COPY_CHORD_NS: AtomicU64 = AtomicU64::new(0);
+
+// ⭐ P3 验收（Ocean 2026-10-02「复制后的内容已经被存了，或者说被 discard 了之后就不应该出现在
+// 第二次的操作中，也就是说这个快捷方式只能是单次操作」）：已经用掉的那一下 ⌘C 的时刻。
+// 一下 ⌘C 只带进一张长按卡 —— 那张卡存了还是放弃了都一样；双击 ⌥ 捕捉走了它也算用掉（字已经在库里了）。
+// ⛔ 不清 LAST_COPY_CHORD_NS：它还管着双击的复制闸（10 秒），清掉它就改了双击的判定。
+static LONG_PRESS_COPY_USED_NS: AtomicU64 = AtomicU64::new(0);
 
 // Whether the copy-gate is enforced. Only true when Input Monitoring was granted at
 // install time: without the grant the tap cannot see keyDown AT ALL (verified — even
@@ -532,8 +542,10 @@ fn on_event(etype: u32, event_ptr: *mut c_void) -> bool {
             OPT_HELD.store(true, Ordering::SeqCst);
             let generation = OPT_GEN.fetch_add(1, Ordering::SeqCst) + 1;
             // P3-4：按下这一刻就判（⌘C 只可能在它之前 —— 按着 ⌥ 再按 ⌘C 会把长按作废）。
-            let copied = copied_within(
-                LAST_COPY_CHORD_NS.load(Ordering::Relaxed),
+            let copy_ns = LAST_COPY_CHORD_NS.load(Ordering::Relaxed);
+            let prefill = fresh_copy_within(
+                copy_ns,
+                LONG_PRESS_COPY_USED_NS.load(Ordering::Relaxed),
                 now,
                 LONG_PRESS_COPY_WINDOW_MS,
             );
@@ -554,12 +566,16 @@ fn on_event(etype: u32, event_ptr: *mut c_void) -> bool {
                 // ⛔ 这一下用掉了：别让它再跟下一次按下配成一个双击。
                 LAST_OPT_PRESS_NS.store(0, Ordering::Relaxed);
                 OPT_GEN.fetch_add(1, Ordering::SeqCst);
+                // 这下 ⌘C 带进这张卡了 ⇒ 用掉了，下一次长按不再带它（单次）。
+                if prefill {
+                    LONG_PRESS_COPY_USED_NS.store(copy_ns, Ordering::Relaxed);
+                }
                 eprintln!(
                     "[double-tap] LONG-PRESS ⌥ ({LONG_PRESS_MS}ms) — 直接写笔记 \
-                     (⌘C within {LONG_PRESS_COPY_WINDOW_MS}ms before: {copied})"
+                     (unused ⌘C within {LONG_PRESS_COPY_WINDOW_MS}ms before: {prefill})"
                 );
                 if let Some(e) = EMITTERS.get() {
-                    (e.note_trigger)(copied);
+                    (e.note_trigger)(prefill);
                 }
             });
 
@@ -591,6 +607,8 @@ fn on_event(etype: u32, event_ptr: *mut c_void) -> bool {
                         // ⛔ 这一下已经是双击了 —— 把还在等的那个长按作废，
                         // 「不许两条都触发」就是靠这一行。
                         cancel_long_press();
+                        // 这下 ⌘C 被捕捉走了 ⇒ 长按那边也算用掉了（只记账，⛔ 不改这里的判定）。
+                        LONG_PRESS_COPY_USED_NS.store(copied, Ordering::Relaxed);
                         (emitters.capture_trigger)();
                         // Suppression: Spool consumed this double-tap — delete the
                         // 2nd press (and, via the flag, its release) so Claude
@@ -766,10 +784,24 @@ mod tests {
     #[test]
     fn a_copy_counts_only_within_two_seconds_before_the_press() {
         let press = 50_000 * MS;
-        assert!(!copied_within(0, press, LONG_PRESS_COPY_WINDOW_MS), "never copied");
-        assert!(copied_within(press - 1_000 * MS, press, LONG_PRESS_COPY_WINDOW_MS));
-        assert!(copied_within(press - 2_000 * MS, press, LONG_PRESS_COPY_WINDOW_MS), "edge is in");
-        assert!(!copied_within(press - 2_001 * MS, press, LONG_PRESS_COPY_WINDOW_MS));
-        assert!(!copied_within(press + MS, press, LONG_PRESS_COPY_WINDOW_MS), "after the press");
+        let w = LONG_PRESS_COPY_WINDOW_MS;
+        assert!(!fresh_copy_within(0, 0, press, w), "never copied");
+        assert!(fresh_copy_within(press - 1_000 * MS, 0, press, w));
+        assert!(fresh_copy_within(press - 2_000 * MS, 0, press, w), "edge is in");
+        assert!(!fresh_copy_within(press - 2_001 * MS, 0, press, w));
+        assert!(!fresh_copy_within(press + MS, 0, press, w), "after the press");
+    }
+
+    // P3 验收 (Ocean 10-02): one ⌘C fills one card. Once it is used, the same copy never
+    // counts again; a newer ⌘C does.
+    #[test]
+    fn a_copy_is_used_once() {
+        let press = 50_000 * MS;
+        let w = LONG_PRESS_COPY_WINDOW_MS;
+        let copy = press - 500 * MS;
+        assert!(fresh_copy_within(copy, 0, press, w), "first long-press takes it");
+        assert!(!fresh_copy_within(copy, copy, press + 300 * MS, w), "second one does not");
+        let newer = press + 400 * MS;
+        assert!(fresh_copy_within(newer, copy, press + 900 * MS, w), "a new ⌘C counts again");
     }
 }
