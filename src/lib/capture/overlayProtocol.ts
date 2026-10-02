@@ -54,6 +54,9 @@ export const RAISE_MAIN_WINDOW_COMMAND = 'raise_main_window';
 // Disarms the click-outside dismiss watch when the user starts dragging the toast (so the
 // relocated toast isn't dismissed by a click on its new position).
 export const DISARM_DISMISS_COMMAND = 'disarm_capture_dismiss';
+// P3-3 (2026-10-02): the card's 「固定窗口」 switch — `{ fixed: boolean }`. While fixed the card
+// keeps itself up (no click-outside dismiss, no 8s dwell) and the global ⌘Z is released.
+export const FIX_CARD_COMMAND = 'set_capture_card_fixed';
 
 // -- Database proxy (2026-08-01, DESIGN_CAPTURE_HELPER_PROCESS §3.3) -----------------
 //

@@ -88,8 +88,18 @@ use tauri::{AppHandle, Emitter, Runtime};
 // (x, y, w, h) of the toast in global logical points; None when no toast is up.
 static OVERLAY_FRAME: Mutex<Option<(f64, f64, f64, f64)>> = Mutex::new(None);
 
+// ⭐ P3-3（2026-10-02，Ocean「捕捉窗口长期固定」）：卡片上开了「固定窗口」，点外面不收起。
+// ⚠️ 是「暂停」不是撤防：框照旧跟着 resize 更新，取消固定就接着生效；拖动过（disarm）的卡
+// 照旧不再布防。每次新卡布防时清掉 —— 固定是**每张卡单独开**的。
+static OVERLAY_DISMISS_HELD: AtomicBool = AtomicBool::new(false);
+
 pub fn arm_overlay_dismiss(x: f64, y: f64, w: f64, h: f64) {
     *OVERLAY_FRAME.lock().unwrap() = Some((x, y, w, h));
+    OVERLAY_DISMISS_HELD.store(false, Ordering::SeqCst);
+}
+
+pub fn hold_overlay_dismiss(held: bool) {
+    OVERLAY_DISMISS_HELD.store(held, Ordering::SeqCst);
 }
 
 pub fn update_overlay_dismiss_height(h: f64) {
@@ -412,7 +422,13 @@ fn on_event(etype: u32, event_ptr: *mut c_void) -> bool {
             let event = ManuallyDrop::new(unsafe { CGEvent::from_ptr(event_ptr as *mut _) });
             let loc = event.location();
             if click_outside_overlay(loc.x, loc.y) {
-                (emitters.overlay_dismiss)();
+                if OVERLAY_DISMISS_HELD.load(Ordering::SeqCst) {
+                    // P3-3：卡片固定着 —— 不收起。但这一下点出去 = 人自己挑了去处，
+                    // 卡片最后收起时⛔ 别再把前台拽回捕捉那一刻的 app（和下面那条同一个理由）。
+                    crate::capture::forget_restore_focus();
+                } else {
+                    (emitters.overlay_dismiss)();
+                }
             }
             true
         }

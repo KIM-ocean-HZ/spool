@@ -1011,6 +1011,10 @@ const EN: Record<string, string> = {
   '取消置顶这一块': 'Unpin this block',
   '放弃': 'Discard',
   '放弃这一条 · Esc': 'Discard this note · Esc',
+  // P3-3：每张卡单独「固定窗口」—— 管的是这张卡，不是块（那个是「置顶」）。
+  '固定窗口': 'Keep this card open',
+  '固定窗口：不会自己消失，点外面也不收起': "Keep this card open: it won't close by itself or on a click outside",
+  '取消固定窗口': 'Stop keeping this card open',
 
   // Tray
   '当前目标：（无）': 'Current target: (none)',

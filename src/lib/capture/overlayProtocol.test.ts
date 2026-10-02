@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
+  FIX_CARD_COMMAND,
   OVERLAY_BREAK_EVENT,
   OVERLAY_LANGUAGE_EVENT,
   OVERLAY_THEME_EVENT,
@@ -44,5 +45,17 @@ describe('overlay wire protocol ↔ overlay.rs', () => {
     // emit of its own — so what is pinned is its membership.
     expect(arm![0]).toContain('"break"');
     expect(handler).toContain(`"${OVERLAY_BREAK_EVENT}"`);
+  });
+
+  // P3-3 (2026-10-02). The 「固定窗口」 switch only flips a colour on the card; what keeps a fixed
+  // card up is the main process hearing it. If the command drops out of the helper's handler
+  // list the invoke fails into a console.warn, the card still LOOKS fixed — and the next click
+  // outside closes it. Nothing else would go red.
+  it('registers the 固定窗口 command and relays it to the main process', () => {
+    const handlers = /generate_handler!\[([\s\S]*?)\]/.exec(overlayRs);
+    expect(handlers, 'the helper process invoke_handler').not.toBeNull();
+    expect(handlers![1]).toContain(FIX_CARD_COMMAND);
+    expect(overlayRs).toContain(`fn ${FIX_CARD_COMMAND}(fixed: bool)`);
+    expect(overlayRs).toContain('"fixed" => crate::capture::on_overlay_fixed(');
   });
 });

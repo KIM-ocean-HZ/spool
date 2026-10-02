@@ -1,7 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { emit, listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import { Coffee, Forward, Pin, RotateCcw, RotateCw, Trash2, X } from 'lucide-react';
+import { Coffee, Forward, Lock, Pin, RotateCcw, RotateCw, Trash2, X } from 'lucide-react';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
 import type { Block } from '@/lib/db/blocks';
 // 🚨 Not @/lib/db — this process never opens SQLite (DESIGN_CAPTURE_HELPER_PROCESS §3.3).
@@ -16,6 +16,7 @@ import {
 } from './db';
 import {
   DISARM_DISMISS_COMMAND,
+  FIX_CARD_COMMAND,
   HIDE_OVERLAY_COMMAND,
   OVERLAY_ACTION_EVENT,
   OVERLAY_BREAK_EVENT,
@@ -98,6 +99,13 @@ const resizeOverlay = (height: number): void => {
   });
 };
 
+// P3-3: click-outside and the global ⌘Z live in the main process, so it has to hear the switch.
+const sendCardFixed = (fixed: boolean): void => {
+  void invoke(FIX_CARD_COMMAND, { fixed }).catch((e) => {
+    console.warn('set_capture_card_fixed failed', e);
+  });
+};
+
 const emitAction = (action: OverlayAction): void => {
   void emit(OVERLAY_ACTION_EVENT, action).catch((e) => {
     console.warn('overlay:action emit failed', e);
@@ -166,6 +174,9 @@ export default function CaptureOverlay() {
   const [expanded, setExpanded] = useState(false);
   // Local mirrors so pin/annotate writes feel instant; cross-window sync follows.
   const [pinned, setPinned] = useState(false);
+  // ⭐ P3-3（2026-10-02，Ocean「捕捉窗口长期固定」）：这张卡「固定窗口」开着没有。
+  // ⚠️ 每张卡单独开（Ocean 09-30）：新卡一律从 false 起，不存设置、不记住。
+  const [fixed, setFixed] = useState(false);
   const [annotationDraft, setAnnotationDraft] = useState('');
   const annotationRef = useRef<HTMLTextAreaElement>(null);
   // ⭐⭐ 长按 ⌥ 那一路（2026-08-27，Ocean）：正文是空的，人直接在这儿写。
@@ -231,6 +242,7 @@ export default function CaptureOverlay() {
    *  Rust 那边会把前台还回去，再弹一次就是第二次打扰。 */
   const leaveCard = useCallback((): void => {
     setExpanded(false);
+    setFixed(false);
     const due = pendingBreakRef.current;
     pendingBreakRef.current = null;
     if (due) {
@@ -323,6 +335,8 @@ export default function CaptureOverlay() {
         // the previous capture's draft/pin state never bleeds into this one.
         setExpanded(true);
         setPinned(false);
+        // 新卡不固定（主进程那边布防时同样清掉了）。
+        setFixed(false);
         setAnnotationDraft('');
         setBodyDraft('');
         pendingNoteRef.current = null;
@@ -454,6 +468,8 @@ export default function CaptureOverlay() {
     // 而长按那一路人写的是**正文框**，于是「写着写着卡片自己没了、字也没了」——
     // 那正是这一窗 ④ 在修的那种毛病，⛔ 不许在新功能里再造一个。
     if (content.kind === 'toast' && (annotationDraft.length > 0 || bodyDraft.length > 0)) return;
+    // P3-3：固定着的卡不自己走，框里有没有字都一样 —— 只有完成 / Esc / × 才走。
+    if (content.kind === 'toast' && fixed) return;
     const ms =
       content.kind === 'notice'
         ? NOTICE_AUTO_DISMISS_MS
@@ -466,7 +482,7 @@ export default function CaptureOverlay() {
       leaveCard();
     }, ms);
     return () => clearTimeout(t);
-  }, [content, hover, pickerOpen, annotationDraft, bodyDraft, leaveCard]);
+  }, [content, hover, pickerOpen, annotationDraft, bodyDraft, fixed, leaveCard]);
 
   useEffect(() => {
     if (!pickerOpen) return;
@@ -763,6 +779,12 @@ export default function CaptureOverlay() {
     });
   };
 
+  const onToggleFixed = (): void => {
+    const next = !fixed;
+    setFixed(next);
+    sendCardFixed(next);
+  };
+
   const dismissToast = (): void => {
     flushPendingNote();
     leaveCard();
@@ -832,6 +854,20 @@ export default function CaptureOverlay() {
         >
           <Pin size={12} className={pinned ? 'fill-current' : ''} />
         </button>
+        {/* ⭐ P3-3：「固定窗口」管的是**这张卡**。⚠️ 图标不能和上面那个图钉撞（图钉管的是块）。 */}
+        <button
+          type="button"
+          onMouseDown={(e) => e.stopPropagation()}
+          onClick={onToggleFixed}
+          title={fixed ? tr('取消固定窗口') : tr('固定窗口：不会自己消失，点外面也不收起')}
+          aria-label={fixed ? tr('取消固定窗口') : tr('固定窗口')}
+          aria-pressed={fixed}
+          className={`rounded p-1 transition-colors ${
+            fixed ? 'text-accent' : 'text-muted/70 hover:bg-paper-2 hover:text-ink'
+          }`}
+        >
+          <Lock size={12} />
+        </button>
         <button
           type="button"
           onMouseDown={(e) => e.stopPropagation()}
@@ -847,7 +883,7 @@ export default function CaptureOverlay() {
       {/* Body — the captured content takes the lead; attribution is a quiet condensed line.
           Drag to move. The note editor below is always open (note-first). */}
       <div
-        className="cursor-grab px-3.5 pb-2 pt-2.5 pr-14 active:cursor-grabbing"
+        className="cursor-grab px-3.5 pb-2 pt-2.5 pr-[4.5rem] active:cursor-grabbing"
         onMouseDown={startToastDrag}
       >
         {/* ⭐⭐ 长按 ⌥ 那一路：这一格从「刚复制的那段字」换成**一个空的输入框**。

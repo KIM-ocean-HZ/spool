@@ -181,6 +181,11 @@ fn on_message<R: Runtime>(app: &AppHandle<R>, msg: &serde_json::Value) {
             }
         }
         "disarm" => crate::capture::on_overlay_disarm(),
+        // P3-3: the card's 「固定窗口」 switch flipped.
+        "fixed" => crate::capture::on_overlay_fixed(
+            app,
+            msg.get("on").and_then(serde_json::Value::as_bool).unwrap_or(false),
+        ),
         "action" => {
             let payload = msg.get("payload").cloned().unwrap_or(serde_json::Value::Null);
             let _ = app.emit_to("main", ACTION_EVENT, payload);
@@ -231,6 +236,7 @@ pub fn run_helper(mut ctx: tauri::Context<tauri::Wry>) {
             hide_capture_overlay,
             resize_capture_overlay,
             disarm_capture_dismiss,
+            set_capture_card_fixed,
             overlay_db_request,
         ])
         .setup(|app| {
@@ -481,6 +487,13 @@ fn resize_capture_overlay(app: AppHandle, height: u32) {
 #[tauri::command]
 fn disarm_capture_dismiss() {
     out(&serde_json::json!({ "t": "disarm" }));
+}
+
+// P3-3 (2026-10-02): the card's 「固定窗口」 switch. Click-outside and the global ⌘Z both live
+// in the main process, so the switch is only a message there — see capture::on_overlay_fixed.
+#[tauri::command(async)]
+fn set_capture_card_fixed(fixed: bool) {
+    out(&serde_json::json!({ "t": "fixed", "on": fixed }));
 }
 
 // §3.3: the overlay never touches SQLite. Each DB call becomes a request the main

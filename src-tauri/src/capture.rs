@@ -1127,6 +1127,12 @@ pub(crate) fn forget_restore_focus() {
 #[cfg(target_os = "macos")]
 static ACTIVATE_ON_SHOWN: AtomicBool = AtomicBool::new(false);
 
+// P3-3 (2026-10-02): whether the capture card on screen is one that could not take the
+// foreground, so the global ⌘Z was claimed on its behalf (show_capture_overlay /
+// on_overlay_shown). Un-fixing the card reads this to put the claim back under today's rule.
+// Every platform — the Windows branch of on_overlay_shown claims it too.
+static CARD_CLAIMS_UNDO: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
 // =============================================================================
 // Note-first activation (2026-08-01, DESIGN_CAPTURE_NOTE_FIRST §3.6)
 // =============================================================================
@@ -1406,6 +1412,7 @@ pub fn show_capture_overlay<R: Runtime>(
     // is necessarily empty and 丙's second half is the only reachable case — exactly what
     // the global shortcut does. `on_overlay_shown` registers it late if activation is
     // refused, which is the same situation arriving by a different route.
+    CARD_CLAIMS_UNDO.store(!will_activate, std::sync::atomic::Ordering::SeqCst);
     if !will_activate {
         register_undo_shortcut(&app);
     }
@@ -1424,6 +1431,7 @@ pub fn on_overlay_shown<R: Runtime>(app: &AppHandle<R>, focused: bool) {
     {
         if !focused {
             eprintln!("[capture] the toast did not get the foreground — note box needs a click");
+            CARD_CLAIMS_UNDO.store(true, std::sync::atomic::Ordering::SeqCst);
             register_undo_shortcut(app);
         }
     }
@@ -1446,6 +1454,7 @@ pub fn on_overlay_shown<R: Runtime>(app: &AppHandle<R>, focused: bool) {
             // webview will never see a ⌘Z. show_capture_overlay skipped the global claim on
             // the strength of an activation that did not happen; make it now, or an undo
             // from the source app has no route at all.
+            CARD_CLAIMS_UNDO.store(true, Ordering::SeqCst);
             register_undo_shortcut(app);
         }
     }
@@ -1553,6 +1562,29 @@ pub fn show_undo_overlay<R: Runtime>(
 pub fn on_overlay_disarm() {
     #[cfg(target_os = "macos")]
     crate::double_tap::disarm_overlay_dismiss();
+}
+
+// ⭐ P3-3 (2026-10-02, Ocean: 「捕捉窗口长期固定」). The card's 「固定窗口」 switch, one card at a
+// time — the next capture's arm_overlay_dismiss clears it on this side, a fresh show clears
+// it on the card's.
+//
+// Fixed: a click outside no longer dismisses (macOS; Windows never had click-outside, so
+// there the switch only stops the card's own 8s timer), and the global ⌘Z comes down. ⚠️ The
+// second half is the one that matters: today a card is up for seconds, a fixed one can be up
+// all day, and a claimed ⌘Z would spend that day taking every other app's undo away — the
+// user undoing their typing in a browser would undo this capture instead. The card's own
+// 撤销 button keeps working.
+// Un-fixed: today's rule again — the ⌘Z goes back only if this card is one that cannot take
+// the foreground (CARD_CLAIMS_UNDO). ⛔ The claim in on_overlay_shown stays exactly as it is;
+// this only lifts it for as long as the card is fixed.
+pub fn on_overlay_fixed<R: Runtime>(app: &AppHandle<R>, fixed: bool) {
+    #[cfg(target_os = "macos")]
+    crate::double_tap::hold_overlay_dismiss(fixed);
+    if fixed {
+        unregister_undo_shortcut(app);
+    } else if CARD_CLAIMS_UNDO.load(std::sync::atomic::Ordering::SeqCst) {
+        register_undo_shortcut(app);
+    }
 }
 
 // The overlay resized itself to its real rendered height (e.g. the Redirect dropdown
