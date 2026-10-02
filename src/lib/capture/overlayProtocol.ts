@@ -130,6 +130,10 @@ export interface CaptureOverlayPayload {
    *
    *  ⚠️ 来源留空 = pack 里的 💭 Personal（权重最高的那一类），这是 Ocean 要的。 */
   noteMode?: boolean;
+  /** ⭐ P3-4（2026-10-02）：长按之前 2 秒内按过 ⌘C ⇒ `fullContent` 是刚复制的字，正文框里先填好。
+   *  来源由主窗按这个号记着（它在长按那一刻就去查了），浮窗存完时把号带回来，主窗回填 ——
+   *  和双击那一路「先存后补」同一个样子。⚠️ 正文被全删掉过，就不再带号（见 noteCopy.ts）。 */
+  copyId?: string;
 }
 
 export interface OverlaySourceUpdate {
@@ -192,7 +196,8 @@ export type OverlayAction =
     }
   // ⭐ 长按 ⌥ 写完了一条笔记。⚠️ 库已经由浮窗写好了（`createBlock` 走 DB 桥），
   // 这一条只是让主窗把它并进自己的 store —— 和 'redirect' 里的 newBlock 同一个道理。
-  | { kind: 'note-created'; block: Block; threadId: string }
+  // P3-4: `copyId` only when the body still came from the copy — main backfills the source.
+  | { kind: 'note-created'; block: Block; threadId: string; copyId?: string }
   // 休息提醒 (2026-08-22): the user clicked the break card. Main brings its window up and
   // puts the lock on — in that order, so the five minutes start where the user can see them.
   | { kind: 'break-open' }

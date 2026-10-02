@@ -54,6 +54,15 @@ const readClipboardWithRetry = async (): Promise<string> => {
   return '';
 };
 
+// ⭐ P3-4: the source of a long-press card that opened with copied text, looked up at the
+// long-press moment and kept under the card's copyId until the card saves (`note-created`).
+// Keyed per card, not "the latest one": a second long-press can land before the first card's
+// save arrives, and that save must not pick up the second card's source.
+// Small and bounded — a discarded card never comes back for its entry.
+const copySources = new Map<string, Promise<string | null>>();
+const COPY_SOURCES_KEPT = 8;
+let copySeq = 0;
+
 const DEV = import.meta.env.DEV;
 const tlog = (label: string, t0: number, extra?: string): void => {
   if (!DEV) return;
@@ -115,6 +124,34 @@ const applyOverlayAction = (action: OverlayAction): void => {
     useCaptureStore.getState().setFlash(action.threadId, action.block.id);
     useCaptureStore.getState().noteCapture(action.block.id);
     void useThreadsStore.getState().patch(action.threadId, {});
+    // P3-4: the body is still the copied text ⇒ it is a capture, and gets the source that was
+    // looked up when the long-press fired. Saved first, filled in here — the double-tap shape.
+    const pendingSource = action.copyId ? copySources.get(action.copyId) : undefined;
+    if (action.copyId) copySources.delete(action.copyId);
+    if (pendingSource) {
+      const { id: blockId } = action.block;
+      const { threadId } = action;
+      void (async () => {
+        const source = await pendingSource;
+        if (!source) return;
+        try {
+          await updateBlockSource(blockId, source);
+        } catch (e) {
+          console.warn('note source backfill failed', e);
+          return;
+        }
+        useBlocksStore.setState((s) => {
+          const list = s.byThread[threadId];
+          if (!list) return s;
+          return {
+            byThread: {
+              ...s.byThread,
+              [threadId]: list.map((b) => (b.id === blockId ? { ...b, source } : b)),
+            },
+          };
+        });
+      })();
+    }
     return;
   }
   if (action.kind === 'undo') {
@@ -362,8 +399,9 @@ export function useCapture(): void {
 
   // ⭐⭐ 长按 ⌥ —— 直接写一条笔记（2026-08-27，Ocean）。
   //
-  // ⚠️ 这一路**不读剪贴板、不落库**：它只是把浮窗弹出来，正文空着等人写。真正的写入在
-  // 浮窗那边（`note-created`）。⛔ 别在这里先存一个空块——按 Esc 就成了库里一条空记录。
+  // ⚠️ 这一路**不落库**：它只是把浮窗弹出来，正文等人写。真正的写入在浮窗那边
+  // （`note-created`）。⛔ 别在这里先存一个空块——按 Esc 就成了库里一条空记录。
+  // （P3-4 起：长按之前 2 秒内按过 ⌘C 才读剪贴板，把那段字先填进正文框。）
   // ⚠️ `getCaptureTargetThread()` 和捕捉走的是同一个「当前捕捉项目」，⛔ 不是「屏幕上开着
   // 的那个项目」：长按多半发生在别的 app 里，那时候屏幕上开着什么都不相干。
   // 红线：主窗永不跳前（记忆 capture-note-first）—— 这里一次 `raise_main_window` 都没有。
@@ -371,10 +409,16 @@ export function useCapture(): void {
     let unlisten: (() => void) | null = null;
     let cancelled = false;
     void (async () => {
-      const dispose = await listen('note-trigger', async () => {
-        if (DEV) console.info('[capture] note-trigger (长按 ⌥)');
+      const dispose = await listen<{ copied?: boolean } | null>('note-trigger', async (e) => {
+        // P3-4: Rust decided once, at the ⌥ press, whether a ⌘C/⌘X came within 2s before it.
+        // ⛔ No second clock here.
+        const copied = e.payload?.copied === true;
+        if (DEV) console.info('[capture] note-trigger (长按 ⌥)', copied ? '(⌘C ≤2s)' : '');
         if (inFlightRef.current) return;
         inFlightRef.current = true;
+        // Started first, for the same reason as the capture path: once the card is up and
+        // has the foreground, the question would only ever answer "Spool".
+        const frontmostPromise: Promise<ForegroundApp | null> = readForegroundApp();
         try {
           const target = await getCaptureTargetThread();
           if (!target) {
@@ -384,8 +428,24 @@ export function useCapture(): void {
           const ws = useWorkspacesStore
             .getState()
             .workspaces.find((w) => w.id === target.workspaceId);
+          // ⭐ P3-4：刚复制过 ⇒ 正文框先填好那段字（和双击同一个读法）。剪贴板空着 ⇒ 照旧空框。
+          const copiedText = copied ? await readClipboardWithRetry() : '';
+          let copyId: string | undefined;
+          if (copiedText) {
+            copyId = String(++copySeq);
+            copySources.set(
+              copyId,
+              Promise.race([
+                frontmostPromise.then((f) => f?.source ?? null),
+                sleep(FRONTMOST_BACKFILL_MS).then(() => null),
+              ]),
+            );
+            while (copySources.size > COPY_SOURCES_KEPT) {
+              copySources.delete(copySources.keys().next().value as string);
+            }
+          }
           const frontmost = await Promise.race([
-            readForegroundApp(),
+            frontmostPromise,
             sleep(FRONTMOST_HOT_PATH_MS).then(() => null),
           ]);
           const payload: CaptureOverlayPayload = {
@@ -396,11 +456,13 @@ export function useCapture(): void {
             workspaceTitle: ws?.title.trim() || t('收件箱'),
             threadTitle: target.title.trim() || t('未命名'),
             preview: '',
-            fullContent: '',
-            // ⛔ 来源留空 —— 这是用户自己写的，pack 里就该落在 💭 Personal。
+            fullContent: copiedText,
+            // ⛔ 来源留空 —— 自己写的那一条，pack 里就该落在 💭 Personal。
+            // 带着复制的字的那一条，存完由上面 note-created 那一支回填（P3-4）。
             source: null,
             prevSourceApp: frontmost?.app ?? null,
             noteMode: true,
+            ...(copyId ? { copyId } : {}),
           };
           await invoke(SHOW_OVERLAY_COMMAND, { payload });
         } catch (e) {

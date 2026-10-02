@@ -139,6 +139,18 @@ const KEYCODE_X: i64 = 7;
 // keystroke) does not arm the gate — press ⌘C and double-tap again.
 const COPY_GATE_WINDOW_MS: u64 = 10_000;
 
+// ⭐ P3-4（2026-10-02，Ocean「如果用户在长按住 option 之前的两秒钟之内使用过 cmd c，则被复制的
+// 内容会自动存进文本框」）。⚠️ 量到的是**这一下 ⌥ 按下**的时刻，⛔ 不是长按到点的时刻。
+// ⛔ 和上面那个 10 秒的复制闸是两件事：那个决定双击归谁，这个只决定长按那张卡带不带字。
+// 没有输入监听授权时 LAST_COPY_CHORD_NS 永远是 0 ⇒ 永远不成立 ⇒ 照旧空框。
+const LONG_PRESS_COPY_WINDOW_MS: u64 = 2_000;
+
+/// ⌘C / ⌘X 是不是落在这一下按下**之前** `window_ms` 之内。`copy_ns == 0` = 从没见过。
+/// 判断只在这里做一次，结果随 `note-trigger` 带走 —— ⛔ 前端不另算时间。
+fn copied_within(copy_ns: u64, press_ns: u64, window_ms: u64) -> bool {
+    copy_ns != 0 && copy_ns <= press_ns && (press_ns - copy_ns) / NANOS_PER_MS <= window_ms
+}
+
 // CGEventGetTimestamp (ns) of the last observed ⌘C/⌘X keydown; 0 = never.
 static LAST_COPY_CHORD_NS: AtomicU64 = AtomicU64::new(0);
 
@@ -227,8 +239,8 @@ static NOTIFIED_DISABLED: AtomicBool = AtomicBool::new(false);
 // so app-event emission goes through boxed closures installed once by install().
 struct Emitters {
     capture_trigger: Box<dyn Fn() + Send + Sync>,
-    /// 长按 ⌥ —— 弹一个空的浮窗让人直接写（2026-08-27）。
-    note_trigger: Box<dyn Fn() + Send + Sync>,
+    /// 长按 ⌥ —— 弹一个空的浮窗让人直接写（2026-08-27）。参数 = 按下之前 2 秒内按过 ⌘C 没有（P3-4）。
+    note_trigger: Box<dyn Fn(bool) + Send + Sync>,
     capture_disabled: Box<dyn Fn(&'static str) + Send + Sync>,
     overlay_dismiss: Box<dyn Fn() + Send + Sync>,
 }
@@ -342,8 +354,8 @@ pub fn install<R: Runtime>(app: AppHandle<R>) {
         capture_trigger: Box::new(move || {
             let _ = a1.emit("capture-trigger", ());
         }),
-        note_trigger: Box::new(move || {
-            let _ = a3.emit("note-trigger", ());
+        note_trigger: Box::new(move |copied| {
+            let _ = a3.emit("note-trigger", serde_json::json!({ "copied": copied }));
         }),
         capture_disabled: Box::new(move |reason| {
             let _ = a2.emit("capture-disabled", reason);
@@ -514,9 +526,17 @@ fn on_event(etype: u32, event_ptr: *mut c_void) -> bool {
                 return true;
             }
 
+            let now = unsafe { CGEventGetTimestamp(event_ptr as *const c_void) };
+
             // ⭐ 一次干净的 ⌥ 按下 —— 起一个长按定时器。它随时会被上面那几处作废掉。
             OPT_HELD.store(true, Ordering::SeqCst);
             let generation = OPT_GEN.fetch_add(1, Ordering::SeqCst) + 1;
+            // P3-4：按下这一刻就判（⌘C 只可能在它之前 —— 按着 ⌥ 再按 ⌘C 会把长按作废）。
+            let copied = copied_within(
+                LAST_COPY_CHORD_NS.load(Ordering::Relaxed),
+                now,
+                LONG_PRESS_COPY_WINDOW_MS,
+            );
             thread::spawn(move || {
                 thread::sleep(Duration::from_millis(LONG_PRESS_MS));
                 // 号变了 = 这段时间里发生过别的事（松开 / 又按一次 / 双击触发 / 别的键 /
@@ -534,13 +554,15 @@ fn on_event(etype: u32, event_ptr: *mut c_void) -> bool {
                 // ⛔ 这一下用掉了：别让它再跟下一次按下配成一个双击。
                 LAST_OPT_PRESS_NS.store(0, Ordering::Relaxed);
                 OPT_GEN.fetch_add(1, Ordering::SeqCst);
-                eprintln!("[double-tap] LONG-PRESS ⌥ ({LONG_PRESS_MS}ms) — 直接写笔记");
+                eprintln!(
+                    "[double-tap] LONG-PRESS ⌥ ({LONG_PRESS_MS}ms) — 直接写笔记 \
+                     (⌘C within {LONG_PRESS_COPY_WINDOW_MS}ms before: {copied})"
+                );
                 if let Some(e) = EMITTERS.get() {
-                    (e.note_trigger)();
+                    (e.note_trigger)(copied);
                 }
             });
 
-            let now = unsafe { CGEventGetTimestamp(event_ptr as *const c_void) };
             let prev = LAST_OPT_PRESS_NS.swap(now, Ordering::Relaxed);
             // Whether to delete THIS event from the stream (2nd press of a pair
             // that Spool consumed). Decided below.
@@ -732,4 +754,22 @@ fn run_tap() {
     // CFRunLoop::run_current() blocks this thread forever — exactly what we want
     // for a long-lived event-tap listener. The thread is dedicated to this loop.
     CFRunLoop::run_current();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const MS: u64 = NANOS_PER_MS;
+
+    // P3-4: the press is the reference point, and only a copy BEFORE it counts.
+    #[test]
+    fn a_copy_counts_only_within_two_seconds_before_the_press() {
+        let press = 50_000 * MS;
+        assert!(!copied_within(0, press, LONG_PRESS_COPY_WINDOW_MS), "never copied");
+        assert!(copied_within(press - 1_000 * MS, press, LONG_PRESS_COPY_WINDOW_MS));
+        assert!(copied_within(press - 2_000 * MS, press, LONG_PRESS_COPY_WINDOW_MS), "edge is in");
+        assert!(!copied_within(press - 2_001 * MS, press, LONG_PRESS_COPY_WINDOW_MS));
+        assert!(!copied_within(press + MS, press, LONG_PRESS_COPY_WINDOW_MS), "after the press");
+    }
 }

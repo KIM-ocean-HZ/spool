@@ -973,6 +973,11 @@ pub struct OverlayCapturePayload {
     /// ⚠️ `#[serde(default)]` —— 捕捉那一路不传它。
     #[serde(default)]
     pub note_mode: bool,
+    /// ⭐ P3-4：长按之前 2 秒内按过 ⌘C，正文框里带着刚复制的字。主窗按这个号记着那次的来源，
+    /// 浮窗存完（字没被全删掉）时把号带回去，由主窗回填。⚠️ 不声明就会在这里被丢掉 ——
+    /// 这个结构体是收进来再原样发给浮窗的。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub copy_id: Option<String>,
 }
 
 // macOS app names are short, human-readable strings (e.g. "Google Chrome", "Visual

@@ -37,6 +37,7 @@ import {
 } from '@/lib/capture/overlayProtocol';
 import type { Thread } from '@/lib/db/threads';
 import type { Workspace } from '@/lib/db/workspaces';
+import { copyIdAfterEdit } from '@/lib/capture/noteCopy';
 import { isImeComposing } from '@/lib/utils/ime';
 import { useAppliedTheme } from '@/hooks/useTheme';
 import { themeOrDefault } from '@/lib/theme';
@@ -193,6 +194,8 @@ export default function CaptureOverlay() {
     body: string;
     note: string;
     pinned: boolean;
+    /** P3-4：正文还是刚复制的那段字 ⇒ 主窗那边记着它的来源的号；全删过就是 null。 */
+    copyId: string | null;
   } | null>(null);
   // Latest pending note, mirrored to a ref so a dismiss path can flush it. A toast note
   // only committed on the textarea's onBlur — but clicking outside (the documented
@@ -217,11 +220,19 @@ export default function CaptureOverlay() {
         kind: 'text',
         content: b.body.trim(),
         // ⛔ 来源留空 = pack 里的 💭 Personal，这是 Ocean 定的。
+        // P3-4：正文还是复制来的那段字 ⇒ 带上 copyId，主窗存完回填来源（它在长按那一刻就查了）。
         source: null,
         annotation: note.length > 0 ? note : null,
         pinned: b.pinned,
       })
-        .then((block) => emitAction({ kind: 'note-created', block, threadId: b.threadId }))
+        .then((block) =>
+          emitAction({
+            kind: 'note-created',
+            block,
+            threadId: b.threadId,
+            ...(b.copyId ? { copyId: b.copyId } : {}),
+          }),
+        )
         .catch((e) => console.error('[overlay] note save failed', e));
     }
     const p = pendingNoteRef.current;
@@ -338,9 +349,15 @@ export default function CaptureOverlay() {
         // 新卡不固定（主进程那边布防时同样清掉了）。
         setFixed(false);
         setAnnotationDraft('');
-        setBodyDraft('');
         pendingNoteRef.current = null;
-        pendingBodyRef.current = null;
+        // ⭐ P3-4：长按之前刚复制过 ⇒ 正文框里先填好那段字。⚠️ 也要先记进 ref ——
+        // 一个字不改直接 Enter / 点外面，这段字照样得存得下去。
+        const p = e.payload;
+        const prefill = p.noteMode ? p.fullContent : '';
+        setBodyDraft(prefill);
+        pendingBodyRef.current = prefill
+          ? { threadId: p.threadId, body: prefill, note: '', pinned: false, copyId: p.copyId ?? null }
+          : null;
         void refresh();
       });
       if (cancelled) dispose();
@@ -902,6 +919,8 @@ export default function CaptureOverlay() {
                 body: e.target.value,
                 note: annotationDraft,
                 pinned,
+                // P3-4：带进来的字被全删光过 ⇒ 之后存的是人自己写的，不再带来源。
+                copyId: copyIdAfterEdit(pendingBodyRef.current?.copyId ?? null, e.target.value),
               };
             }}
             onMouseDown={(e) => e.stopPropagation()}
