@@ -101,6 +101,27 @@ pub fn write_pack_folder(
     Ok(root.to_string_lossy().to_string())
 }
 
+/// Write one project's pack to the single file the save dialog returned (P2 · B1).
+///
+/// Same reason as the folder command for going through Rust: the frontend gets no blanket
+/// write permission. ⚠️ `content` is written exactly as received — no BOM, no newline
+/// conversion — so the exported .md is byte-for-byte what the 复制 button puts on the
+/// clipboard. Whether to replace an existing file was the save dialog's question to ask.
+// ⚠️ `(async)`：磁盘活儿，⛔ 不占主线程（记忆 tauri-sync-commands-freeze-ui）。
+#[tauri::command(async)]
+pub fn write_pack_file(app: tauri::AppHandle, dest: String, content: String) -> Result<(), String> {
+    let data_dir = crate::transfer::data_dir(&app)?;
+    write_pack_file_to(Path::new(&dest), &content, &data_dir)
+}
+
+/// The command minus the AppHandle, so a test can point it at a scratch "data dir".
+/// ⚠️ The refusal is `export_library`'s own guard, not a copy of it: a .md steered into
+/// Spool's data directory must be refused before anything there is touched.
+fn write_pack_file_to(dest: &Path, content: &str, data_dir: &Path) -> Result<(), String> {
+    crate::transfer::clear_export_target(dest, data_dir)?;
+    fs::write(dest, content).map_err(|e| format!("写不了 {}：{e}", dest.display()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -161,5 +182,56 @@ mod tests {
         assert!(!segment_is_safe("a:b"));
         assert!(!segment_is_safe("a\nb"));
         assert!(segment_is_safe("01-申请规划.md"));
+    }
+
+    fn scratch(tag: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("spool-packfile-{tag}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    /// The exported file must be byte-identical to what 复制 puts on the clipboard: CJK,
+    /// Windows line endings and a missing final newline all survive untouched.
+    #[test]
+    fn a_pack_file_reads_back_byte_for_byte() {
+        let data = scratch("data");
+        let out = scratch("out");
+        for (i, content) in [
+            "# 升学申请\n\n## 文书\n- 第一稿已交\n",
+            "line one\r\nline two\r\n",
+            "结尾没有换行",
+        ]
+        .iter()
+        .enumerate()
+        {
+            let dest = out.join(format!("pack-{i}.md"));
+            write_pack_file_to(&dest, content, &data).unwrap();
+            assert_eq!(fs::read(&dest).unwrap(), content.as_bytes());
+        }
+        // Replacing a file the save dialog already asked about leaves only the new bytes.
+        let dest = out.join("pack-0.md");
+        write_pack_file_to(&dest, "短", &data).unwrap();
+        assert_eq!(fs::read(&dest).unwrap(), "短".as_bytes());
+
+        fs::remove_dir_all(&data).unwrap();
+        fs::remove_dir_all(&out).unwrap();
+    }
+
+    /// ⚠️ Steering the save dialog into Spool's data directory is refused, and the refusal
+    /// touches nothing there — not even a file of the same name.
+    #[test]
+    fn a_pack_file_is_never_written_into_the_data_dir() {
+        let data = scratch("refuse");
+        let live = data.join("spool.db");
+        fs::write(&live, b"the real library").unwrap();
+
+        assert!(write_pack_file_to(&live, "pack", &data).is_err());
+        assert_eq!(fs::read(&live).unwrap(), b"the real library");
+        let fresh = data.join("pack.md");
+        assert!(write_pack_file_to(&fresh, "pack", &data).is_err());
+        assert!(!fresh.exists());
+
+        fs::remove_dir_all(&data).unwrap();
     }
 }

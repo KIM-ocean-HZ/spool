@@ -1,14 +1,18 @@
+import { invoke } from '@tauri-apps/api/core';
 import { writeText } from '@tauri-apps/plugin-clipboard-manager';
-import { Check, Copy, X } from 'lucide-react';
+import { save } from '@tauri-apps/plugin-dialog';
+import { Check, Copy, FileDown, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { createBackdropClose } from '@/lib/utils/backdropClose';
 import {
   assemble,
   filterBlocksForRange,
+  formatPackDate,
   PACK_RANGE_KEYS,
   type CitedBlock,
   type PackRange,
 } from '@/lib/pack/assemble';
+import { sanitizeFolderName } from '@/lib/pack/folder';
 import { INSTRUCTION_HEADER } from '@/lib/pack/templates';
 import { useSettingsStore } from '@/stores/settingsStore';
 import type { Attachment } from '@/lib/db/attachments';
@@ -56,6 +60,8 @@ export default function PackDialog({
   // in — it follows the app's own language, not a hard-coded one (2026-08-04).
   const language = useLanguage();
   const [copied, setCopied] = useState(false);
+  const [exported, setExported] = useState(false);
+  const [exportError, setExportError] = useState(false);
   // ⚠️ **「压缩」不在这个对话框里了**（WORKPLAN-2026-08-20 §9.6.2，2026-08-21）。
   // Ocean:「压缩功能不要放在 pack 里面，放到右边栏，他不是和 pack 绑定的工作。」
   // 他是对的 —— 压缩改的是**库里的块**，不是这一次打包；挂在这儿等于说「只有你要粘贴的
@@ -109,6 +115,27 @@ export default function PackDialog({
     await writeText(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
+  };
+
+  // P2 · B1（Ocean 09-30「导出 .md 为主，留一个复制按键」）。⚠️ 写出去的就是上面复制的那个
+  // `text`，Rust 一个字节不改 —— 两个出口拿到的必须逐字节一样。
+  const onExport = async () => {
+    setExportError(false);
+    const name = sanitizeFolderName(thread.title, t('无标题'));
+    const dest = await save({
+      title: t('导出 .md'),
+      defaultPath: `${name}-${formatPackDate(Date.now()).replace(/-/g, '')}.md`,
+      filters: [{ name: 'Markdown', extensions: ['md'] }],
+    });
+    if (!dest) return; // cancelled — not an error
+    try {
+      await invoke('write_pack_file', { dest, content: text });
+      setExported(true);
+      setTimeout(() => setExported(false), 1500);
+    } catch (e) {
+      console.error('[pack] export failed', e);
+      setExportError(true);
+    }
   };
 
   return (
@@ -193,20 +220,33 @@ export default function PackDialog({
 
         <footer className="flex flex-none items-center justify-between border-t border-line bg-paper-2/40 px-5 py-3 text-xs">
           <span className="text-muted">
-            {t('{packed} / {total} 块 · {chars} 字符', { packed: packedCount, total: blocks.length, chars: text.length.toLocaleString() })}
+            {exportError
+              ? t('没导出成，换个位置再试一次')
+              : t('{packed} / {total} 块 · {chars} 字符', { packed: packedCount, total: blocks.length, chars: text.length.toLocaleString() })}
           </span>
           <div className="flex items-center gap-2">
           <button
             onClick={() => void onCopy()}
+            className={`flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] transition-colors ${
+              copied
+                ? 'border-accent bg-accent/10 text-accent'
+                : 'border-line bg-paper text-muted hover:border-line-strong hover:text-ink'
+            }`}
+          >
+            {copied ? <Check size={11} /> : <Copy size={11} />}
+            <span>{copied ? t('已复制') : t('复制')}</span>
+          </button>
+          <button
+            onClick={() => void onExport()}
             autoFocus
             className={`flex items-center gap-1.5 rounded-md border px-3 py-1.5 transition-colors ${
-              copied
+              exported
                 ? 'border-accent bg-accent/10 text-accent'
                 : 'border-line-strong bg-paper text-ink hover:border-accent hover:text-accent'
             }`}
           >
-            {copied ? <Check size={12} /> : <Copy size={12} />}
-            <span>{copied ? t('已复制') : t('复制到剪贴板')}</span>
+            {exported ? <Check size={12} /> : <FileDown size={12} />}
+            <span>{exported ? t('已导出') : t('导出 .md')}</span>
           </button>
           </div>
         </footer>

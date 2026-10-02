@@ -370,6 +370,7 @@ pub fn run() {
             capture::raise_main_window,
             overlay::overlay_db_reply,
             pack::write_pack_folder,
+            pack::write_pack_file,
             transfer::export_library,
             transfer::stage_import_db,
             transfer::discard_import_staging,

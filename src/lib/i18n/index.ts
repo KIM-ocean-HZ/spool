@@ -408,7 +408,9 @@ const EN: Record<string, string> = {
   '只打包最近 30 天捕捉的内容': 'Pack only the last 30 days',
   '关闭': 'Close',
   '详情': 'Details',
-  '复制到剪贴板': 'Copy to clipboard',
+  '导出 .md': 'Export .md',
+  '已导出': 'Exported',
+  '没导出成，换个位置再试一次': "Couldn't export — try saving it somewhere else",
 
   // Workspace pack — DESIGN_WORKSPACE_PACK §1. ⚠️ The subtitle deliberately does NOT say
   // 「直接粘贴」 like the single-project one: this produces a folder, and §2.3 says handing the

@@ -22,7 +22,7 @@ const STAGING: &str = "spool.import-staging.db";
 
 /// Where the SQL plugin actually opens `sqlite:spool.db` — see the `app_local_data_dir`
 /// call in lib.rs's setup, which exists so the plugin finds the directory on first launch.
-fn data_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+pub(crate) fn data_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     app.path().app_local_data_dir().map_err(|e| format!("找不到数据目录：{e}"))
 }
 
@@ -52,7 +52,7 @@ fn is_same_file(a: &Path, b: &Path) -> bool {
 /// their live library deleted by the command meant to back it up. That is the 2026-05-29
 /// class of accident. As two loose statements in the command body, nothing would notice the
 /// day someone moved the deletion up.
-fn clear_export_target(dest: &Path, data_dir: &Path) -> Result<(), String> {
+pub(crate) fn clear_export_target(dest: &Path, data_dir: &Path) -> Result<(), String> {
     // Refuse FIRST. Never delete anything under the data directory.
     if dest.starts_with(data_dir) {
         return Err("不能导出到 Spool 自己的数据目录里".into());
