@@ -7,6 +7,8 @@ import {
   mergeBlocks,
   restoreBlock,
   restoreBlockFields,
+  restoreRefFields,
+  setBlockSupersession,
   updateBlockContent,
 } from '@/lib/db/blocks';
 import {
@@ -25,6 +27,7 @@ import type {
   ForwardPayload,
   HighlightPayload,
   MergePayload,
+  RefRemovePayload,
   ThreadDeleteManyPayload,
   ThreadDeletePayload,
   UndoEntry,
@@ -159,6 +162,17 @@ export const buildForwardUndo = (payload: ForwardPayload): UndoEntry => ({
   invalidated: false,
 });
 
+// P2 · B2「移除引用」. The citing block is the affected one: editing it afterwards
+// invalidates this entry, the same rule as every other kind.
+export const buildRefRemoveUndo = (payload: RefRemovePayload): UndoEntry => ({
+  id: nanoid(),
+  kind: 'ref_remove',
+  timestamp: Date.now(),
+  payload,
+  affectedBlockIds: [payload.blockId],
+  invalidated: false,
+});
+
 // --- Pure helpers over an entry (exported for runUndo / the toast). ---
 
 export const threadIdForEntry = (entry: UndoEntry): string => {
@@ -167,6 +181,7 @@ export const threadIdForEntry = (entry: UndoEntry): string => {
     case 'merge':
     case 'highlight':
     case 'forward':
+    case 'ref_remove':
       return entry.payload.threadId;
     case 'create':
       return entry.payload.threadId;
@@ -227,6 +242,8 @@ export const previewForEntry = (entry: UndoEntry): string => {
       const first = entry.payload.blocks[0];
       return first ? previewText(first.content) : '';
     }
+    case 'ref_remove':
+      return previewText(entry.payload.content);
   }
 };
 
@@ -357,6 +374,15 @@ const reverseAndBuildRedo = async (
       for (const b of blocks) await deleteBlock(b.id);
       return async () => {
         for (const b of blocks) await restoreBlock(b);
+      };
+    }
+    // P2 · B2: the four fields go back exactly as they were; redo is the same clear the
+    // button does. Neither direction touches the cited block's retirement.
+    case 'ref_remove': {
+      const { blockId, refBlockId, refKind, correctedQuote, refReviewedStaleAt } = entry.payload;
+      await restoreRefFields(blockId, { refBlockId, refKind, correctedQuote, refReviewedStaleAt });
+      return async () => {
+        await setBlockSupersession(blockId, null, null, Date.now());
       };
     }
   }

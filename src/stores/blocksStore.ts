@@ -16,6 +16,7 @@ import {
   buildDeleteUndo,
   buildForwardUndo,
   buildMergeUndo,
+  buildRefRemoveUndo,
   useUndoStore,
 } from './undoStore';
 import { useSettingsStore } from './settingsStore';
@@ -435,9 +436,8 @@ export const useBlocksStore = create<BlocksState>((set, get) => {
     // exactly what §3.1 keeps AI out of. 「这条不作数了」 on the target is the way back.
     clearSupersession: async (id) => {
       // ⚠️ 先记下它**原来**指着谁 —— 清完就问不出来了，而要刷的正是那一块所在的项目。
-      const before = Object.values(get().byThread)
-        .flat()
-        .find((b) => b.id === id);
+      // P2 · B2：从库里读，⛔ 不读 store 那一份 —— 撤销要原样写回的四个字段以库为准。
+      const before = await db.getBlockById(id);
       await db.setBlockSupersession(id, null, null, Date.now());
       // ⚠️ v29：`setBlockSupersession` 顺手把 `ref_reviewed_stale_at` 也清了（那条确认
       // 说的是「我看过那一块退役了」，关系都没了就无从确认起），本地这一份要跟上。
@@ -447,6 +447,20 @@ export const useBlocksStore = create<BlocksState>((set, get) => {
         correctedQuote: null,
         refReviewedStaleAt: null,
       });
+      // P2 · B2（DISCOVERED-20260830-20）：这个动作以前是全屏唯一一个单向的，现在进撤销环。
+      if (before?.refBlockId) {
+        useUndoStore.getState().pushUndo(
+          buildRefRemoveUndo({
+            blockId: id,
+            threadId: before.threadId,
+            content: before.content,
+            refBlockId: before.refBlockId,
+            refKind: before.refKind,
+            correctedQuote: before.correctedQuote,
+            refReviewedStaleAt: before.refReviewedStaleAt,
+          }),
+        );
+      }
       await refreshIncomingFor(get, [before?.threadId, threadIdOf(get, before?.refBlockId)]);
     },
 

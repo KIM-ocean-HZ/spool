@@ -16,7 +16,8 @@ export type UndoOpKind =
   | 'thread_delete_many'
   | 'workspace_delete'
   | 'workspace_archive'
-  | 'forward';
+  | 'forward'
+  | 'ref_remove';
 
 // Per-kind payloads. §8.2 types the schema-level payload as `unknown` for storage
 // flexibility; at every usage site we narrow it via the discriminated UndoEntry union
@@ -114,6 +115,18 @@ export interface ForwardPayload {
   blocks: Block[];
 }
 
+// P2 · B2（DISCOVERED-20260830-20）：「移除引用」清掉的是引用方这一行上的四个字段，这里记下它们
+// 清掉之前的值，撤回原样写回、重做再清一次。⛔ 被引块的退役状态不在里面 —— 移除本来就不碰它，撤回也不碰。
+export interface RefRemovePayload {
+  blockId: string; // the citing block
+  threadId: string; // its project — for feed refresh on undo/redo
+  content: string; // snapshot for the toast preview
+  refBlockId: string;
+  refKind: Block['refKind'];
+  correctedQuote: string | null;
+  refReviewedStaleAt: number | null;
+}
+
 interface BaseEntry {
   id: string;
   timestamp: number;
@@ -161,6 +174,10 @@ export interface ForwardUndoEntry extends BaseEntry {
   kind: 'forward';
   payload: ForwardPayload;
 }
+export interface RefRemoveUndoEntry extends BaseEntry {
+  kind: 'ref_remove';
+  payload: RefRemovePayload;
+}
 
 export type UndoEntry =
   | CaptureUndoEntry
@@ -172,7 +189,8 @@ export type UndoEntry =
   | ThreadDeleteManyUndoEntry
   | WorkspaceDeleteUndoEntry
   | WorkspaceArchiveUndoEntry
-  | ForwardUndoEntry;
+  | ForwardUndoEntry
+  | RefRemoveUndoEntry;
 
 const CAPACITY = 10;
 

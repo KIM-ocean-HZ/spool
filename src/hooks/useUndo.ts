@@ -23,6 +23,21 @@ const refreshAfterUndoRedo = async (entry: UndoEntry): Promise<void> => {
       await useWorkspacesStore.getState().load();
       await useThreadsStore.getState().loadAll();
       break;
+    // P2 · B2: the citing block's project, plus the incoming edges of the cited block's
+    // project — which may be another one (same pair clearSupersession refreshes).
+    // ⚠️ `reloadIncoming`, not just `load`: `load` only merges, so an edge that redo removed
+    // would stay on screen.
+    case 'ref_remove': {
+      const blocks = useBlocksStore.getState();
+      await blocks.load(entry.payload.threadId);
+      const cited = Object.values(useBlocksStore.getState().byThread)
+        .flat()
+        .find((b) => b.id === entry.payload.refBlockId);
+      for (const id of new Set([entry.payload.threadId, cited?.threadId])) {
+        if (id) await blocks.reloadIncoming(id);
+      }
+      break;
+    }
     default:
       await useBlocksStore.getState().load(threadIdForEntry(entry));
   }

@@ -6,9 +6,14 @@ import {
   computeMergedFields,
   createBlock,
   deleteBlock,
+  getBlockById,
   insertBlocks,
   listBlocksByThread,
   mergeBlocks,
+  setBlockStale,
+  setBlockSupersession,
+  setCorrectedQuote,
+  setRefReviewed,
   togglePin,
   updateBlockContent,
 } from '@/lib/db/blocks';
@@ -35,6 +40,7 @@ import {
   buildWorkspaceDeleteUndo,
   useUndoStore,
 } from './undoStore';
+import { useBlocksStore } from './blocksStore';
 import { useThreadsStore } from './threadsStore';
 import { useWorkspacesStore } from './workspacesStore';
 
@@ -482,5 +488,65 @@ describe('undoStore reversal against a real SQLite engine (§9.13)', () => {
     await useUndoStore.getState().undo();
     expect((await getCaptureTargetThread())?.id).toBe(picked);
     expect((await listAllThreads()).find((t) => t.id === inside.id)!.status).toBe('active');
+  });
+
+  // P2 · B2（DISCOVERED-20260830-20）：「移除引用」以前是这一屏上唯一单向的动作。
+  // ⌘Z 要让引用方那一行**整行**回到移除前（四个字段逐一相等，`ref_note` 本来就没动），
+  // 重做再清一次；而被引块的退役状态从头到尾一下都不碰。
+  it('undo(ref_remove) writes the citation back exactly, and redo clears it again', async () => {
+    const ws = await createWorkspace('W');
+    const here = await createThread(ws.id, 'Here');
+    const there = await createThread(ws.id, 'There');
+    const cited = await createBlock({ threadId: there.id, content: 'the old sentence stands' });
+    const citing = await createBlock({ threadId: here.id, content: 'it was corrected later' });
+    await setBlockSupersession(citing.id, cited.id, 'corrects', Date.now());
+    await setCorrectedQuote(citing.id, 'old sentence');
+    await setBlockStale(cited.id, 1234);
+    await setRefReviewed(citing.id, 1234);
+    await useBlocksStore.getState().load(here.id);
+    await useBlocksStore.getState().load(there.id);
+
+    const before = (await getBlockById(citing.id))!;
+    const citedBefore = (await getBlockById(cited.id))!;
+    expect(before).toMatchObject({
+      refBlockId: cited.id,
+      refKind: 'corrects',
+      correctedQuote: 'old sentence',
+      refReviewedStaleAt: 1234,
+    });
+
+    await useBlocksStore.getState().clearSupersession(citing.id);
+    const cleared = (await getBlockById(citing.id))!;
+    expect(cleared).toMatchObject({
+      refBlockId: null,
+      refKind: null,
+      correctedQuote: null,
+      refReviewedStaleAt: null,
+    });
+    expect(await getBlockById(cited.id)).toEqual(citedBefore);
+
+    const entry = await useUndoStore.getState().undo();
+    expect(entry?.kind).toBe('ref_remove');
+    expect(await getBlockById(citing.id)).toEqual(before);
+    expect(await getBlockById(cited.id)).toEqual(citedBefore);
+
+    expect((await useUndoStore.getState().redo())?.kind).toBe('ref_remove');
+    expect(await getBlockById(citing.id)).toEqual(cleared);
+    expect(await getBlockById(cited.id)).toEqual(citedBefore);
+  });
+
+  it('a plain citation comes back as a plain citation', async () => {
+    const ws = await createWorkspace('W');
+    const th = await createThread(ws.id, 'T');
+    const cited = await createBlock({ threadId: th.id, content: 'source' });
+    const citing = await createBlock({ threadId: th.id, content: 'cites it', refBlockId: cited.id });
+    await useBlocksStore.getState().load(th.id);
+    const before = (await getBlockById(citing.id))!;
+    expect(before.refKind).toBeNull();
+
+    await useBlocksStore.getState().clearSupersession(citing.id);
+    expect((await getBlockById(citing.id))!.refBlockId).toBeNull();
+    await useUndoStore.getState().undo();
+    expect(await getBlockById(citing.id)).toEqual(before);
   });
 });

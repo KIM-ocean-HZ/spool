@@ -918,6 +918,23 @@ export const setCorrectedQuote = async (id: string, quote: string | null): Promi
   await db.execute('UPDATE blocks SET corrected_quote = $1 WHERE id = $2', [quote, id]);
 };
 
+/** P2 · B2 —— 「移除引用」的撤回：把引用方这一行的四个字段原样写回。
+ *
+ *  ⛔ 只动这一行。⛔ 不走 `setBlockSupersession`：它在 `supersedes` 时会顺手退役目标、
+ *  还会无条件清掉 `ref_reviewed_stale_at` —— 而撤回要的是「清掉之前什么样就还是什么样」，
+ *  被引块的退役状态在移除时没被碰过，撤回也不碰。 */
+export const restoreRefFields = async (
+  id: string,
+  fields: Pick<Block, 'refBlockId' | 'refKind' | 'correctedQuote' | 'refReviewedStaleAt'>,
+): Promise<void> => {
+  const db = await getDb();
+  await db.execute(
+    `UPDATE blocks SET ref_block_id = $1, ref_kind = $2, corrected_quote = $3, ref_reviewed_stale_at = $4
+      WHERE id = $5`,
+    [fields.refBlockId, fields.refKind, fields.correctedQuote, fields.refReviewedStaleAt, id],
+  );
+};
+
 /** F2 §3.2 —— 一条**指进来**的关系，连同说清它需要的那几件事。
  *
  *  ⚠️ 「谁引用了我」和「我引用了谁」不是同一个形状：出向只有一条（`ref_block_id` 是单列），
