@@ -1,6 +1,6 @@
 # 产品任务书 P4 —— AI 通过 MCP 提的东西在开着的 Spool 里自己冒出来、压缩稿保住 pack 的首尾两行
 
-> **状态：ACTIVE —— 当前唯一可执行的产品任务书。**
+> **状态：COMPLETE —— 待 Ocean 验收。**（2026-10-03：P4-1 – P4-3 已提交、已换装，回执在 §7；验收单在 §6。）
 >
 > **唯一交付：** 下面 §3 的三步（P4-1 – P4-3），按顺序做完、各自测试通过、各自一笔提交，并在 §7 写回执。
 >
@@ -219,6 +219,95 @@ Vitest 输出里有 31 行 `[db] pre-migration backup FAILED … window is not d
 - 还差什么、有没有偏离本任务书、新发现记在 HANDOFF 哪里
 
 最后一段：换装（做了没有、装的是哪个 commit、`spctl` 结果、真库备份文件名、`--mcp` 子进程还在跑旧二进制这件事）、Ocean 验收（还没有就写「待验收」）。
+
+### 回执（执行窗 2026-10-03 填）
+
+开工核对：`git log -1` = `8d371c5 docs: 下发 P4 …`，上一笔 `43dba4e`，和 §2 一致。基线逐条和 §2 一样：`tsc -b` 干净；Vitest 66 / 843；主 crate 146 · 4；
+sidecar 14；`(none missing)`；`--dead` 87 条（存了一份，之后每步逐行 diff）；`cargo tree` 那条空。
+
+**P4-1 · 「过期检测」的 AI 提议跟着其他待审一起刷新**
+
+- 提交：`690babd fix(stale): 「过期检测」的 AI 提议跟着其他待审一起刷新 —— 窗口拿到焦点、引擎跑完都走同一个重读函数，先读块再读提议`
+- 改了：`src/stores/outsideWrites.ts`（新）、`src/stores/outsideWrites.test.ts`（新）、`src/App.tsx`、`src/stores/engineStore.ts`、
+  `src/stores/compressStore.ts`、`src/stores/compressStore.stale.test.ts`
+- 验：`tsc -b` 干净；Vitest 67 / 849；主 crate 146 · 4；sidecar 14；`(none missing)`；`--dead` 和开工时逐行相同；`cargo tree` 那条空。
+  反证：把函数里「读块」和「读提议」对调 ⇒ 新测试那条红；把 `compressStore.ts` 换回旧版 ⇒ 4 条红。
+- 自己定的：函数叫 `reloadOutsideWrites`，放在 `src/stores/outsideWrites.ts`。顺序：项目列表 → 当前项目的块 → 待审数 → 当前项目的「过期检测」提议。
+  `App.tsx` 的 `onFocus` 和 `engineStore.ts` 跑完那一段都只调它（引擎那一路照旧不节流）。
+- 任务书没写到、但不做 P4-1 就会倒退的两处（都在 `loadProposedStale` 里）：
+  1. 它以前每次都把「已经下过的决定」清零（`decided: {}`）。只在切项目时跑的时候看不出来；现在焦点、引擎、定时都会跑，而点「不动 / 整条取代」会删掉库里那一行
+     ⇒ 下一次重读，那一条连同「这一条没动 / 已换」的回执一起消失（引擎关着的话页签可能在眼皮底下没了）；扫描出来、点过的那条又长回三个按钮。
+     改成**决定跟着条目走**：决定过的留在单子上（划掉），直到下一次花钱扫描或重启。
+     看得见的一处变化：以前切走再切回来，AI 提的、已经决定过的那几条会从单子上消失；现在留着划掉的回执，和扫描出来的那几条一个规矩。
+     现有测试「点整条取代之后」最后一句断言跟着改：从「单子为空」改成「只剩划掉的那一条，没有一条等着点」。
+  2. 卡片找块用的那一份 `blocks` 以前是开卡那一刻的快照：卡片已经开着时 AI 再写一块新的、再提「新的取代旧的」，那一条显示得出来，
+     点「整条取代 / 更正一处」却报「这两块里有一块已经不在了」。切项目那一刻 `BlockFeed` 读块和 `loadProposedStale` 同时起跑，第一次进项目也可能撞上。
+     改成有刚读进来的块就用它（新补 ② 要的「对上号」）。
+- 页签出不出、页签上的数、三个按钮、放行规则都没动；不切页签、不弹窗、不抬窗口。
+
+**P4-2 · Spool 一直开着时，AI 写进来的待审几秒内自己冒出来**
+
+- 提交：`dd17379 feat(pending): Spool 开着、窗口没拿焦点时，AI 写进来的待审几秒内自己冒出来`
+- 改了：`src/lib/db/librarySignature.ts`（新）、`src/stores/outsideWrites.ts`、`src/stores/outsideWrites.test.ts`、`src/App.tsx`
+- 验：`tsc -b` 干净；Vitest 67 / 854；主 crate 146 · 4；sidecar 14；`(none missing)`；`--dead` 相同；`cargo tree` 那条空。
+  反证五条，每条都有测试红：去掉「看不见就不查」、记号没变也重读、定时另起一个节流、记号去掉行数、记号去掉时间。
+- 自己定的：
+  - **记号**：一条 SELECT，项目（行数 + 最新 `updated_at`）、块、一批块待审、申请读文件、跟进单、整条取代（各自行数 + 最新 `created_at`）拼成一串。
+    真库只读副本（63 个项目 / 1014 块）上每次 0.024 毫秒；查询计划全是覆盖索引或几行的小表。⛔ 不用 rowid（删掉最后一行后会被重用，测试钉着）。
+  - **没用 `PRAGMA data_version`**：tauri-plugin-sql 2.4.0 用 `Pool::connect`，sqlx 0.8.6 默认最多 10 条连接，证明不了两次查询落在同一条连接上。
+  - **隔几秒**：3 秒（`POLL_MS`）。和窗口焦点**共用同一个 3 秒节流**（模块里一个变量）；被节流挡下的那一次不记，下一次查记号时再来；记号在重读之前取。
+  - **看得见才查**：`document.visibilityState === 'visible'`，不要求焦点。最小化 / 被盖住 / 在别的桌面 / 收进托盘时是 WebKit 自己报 hidden ——
+    这一点没有在真机上单独测，测试钉的是「hidden ⇒ 连记号都不查」。
+  - **块重读安不安全：安全**，所以定时这一路刷全部（项目列表、块、待审数、过期检测提议），不是只刷待审。理由：正在编辑的块，草稿在 `BlockItem` 自己的 state 里，
+    只有 `!editingContent` 时才会被新读到的正文覆盖；列表按块 id 做 key，重读不会把正在编辑的那块卸掉；左栏改名同样有 `!editingTitle` 守着。
+  - 余险（没处理，写在这里）：重读的查询发出去之后、结果回来之前，用户恰好提交了一次编辑或新建了一块，结果回来会把 store 里那一块盖回旧的。
+    窗口是毫秒级，焦点重读一直有同一个窗口。新建那一种下一次查记号就补回来（块数变了）；编辑那一种要等下一次焦点或切项目，库里的字没丢。
+- 没加 Tauri 命令，Rust / MCP 那边一行没动；不弹提示、不抬窗口、不切页签。
+
+**P4-3 · 压缩稿保住 pack 的首尾两行**
+
+- 提交：`aa32b8a fix(compress): 压缩稿保住 pack 的首尾两行 —— 代码补回 + 两条提示词的第 1 条都点名`
+- 改了：`src-tauri/src/mcp.rs`、`src-tauri/src/api_engine.rs`、`src/stores/compressStore.boundary.test.ts`（新）
+- 验：`tsc -b` 干净；Vitest 68 / 858；主 crate 153 · 4（+7）；sidecar 14；`(none missing)`；`--dead` 相同；`cargo tree` 那条空；编译警告和开工时一样（老的 3 条）。
+  反证：补回函数改成原样返回 ⇒ 5 条 Rust 测试红；删掉英文 API 提示词里新加的那半句 ⇒ `prompts_agree_on_what_must_survive` 红。
+- 自己定的：
+  - **补回放在 Rust**：`mcp.rs::keep_pack_boundaries`，紧挨 `split_cuts`（两行的常量就在 `mcp.rs`）；`api_engine::run_blocking` 在信封切完 `⟦CUTS⟧` 之后调它
+    （`parse_envelope` 拿不到原 pack，`run_blocking` 拿得到）。产品的两次压缩（第一次 + 自动重跑）都走这条命令。
+  - **「原 pack 没有就不补」怎么判**：送出去那一份的第一个非空行是不是 `PACK_BEGIN`、最后一个非空行是不是 `PACK_END`（逐字，去掉首尾空白再比）。
+    送出去的是摘过批注的那一份 —— 前端测试证明摘的时候首尾两行原样留着、放回批注时也原样留着（最后一块的批注落在 END 前面）。
+  - 已经在原位 ⇒ 原样返回，一个字节不动；抄到中间的 ⇒ 挪回原位；空稿 ⇒ 不补；补的样子照渲染器（BEGIN 后、END 前各空一行）。
+  - **提示词**：两条的第 1 条（中英各一，共四处）在照抄清单末尾加半句：「还有开头的 "[SPOOL CONTEXT PACK — BEGIN …]" 一行和结尾的 "[SPOOL CONTEXT PACK — END …]" 一行(各自整行照抄)」/
+    「, plus the opening "[SPOOL CONTEXT PACK — BEGIN …]" line and the closing "[SPOOL CONTEXT PACK — END …]" line (each copied as the whole line)」。其余字一个没改。
+  - `prompts_agree_on_what_must_survive`：加了这两个片段；另外改成中英两种语言都查。原来不设语言，`lang()` 读的是这台机器的设置，只查得到一种
+    （界面默认是英文，而英文那一份恰恰没被查到 —— 上面第二条反证改之前是绿的）。
+- 核对面：前端测试证明补上两行之后，核对的每一条都和没补时一样（只有字数多了这两行）；按块对照完全一样；整份对照里这两行是「没动」（没补时是「删掉了」）。
+  写回库：补没补这两行，写进每一块的字一样，两行不进任何一块，也不会冒出「有几行是 Spool 自己印的说明」那句提示。
+- 顺带的变化：压缩稿比原来多这两行（约 300 字）。「比原文还长 ⇒ 自动重跑一次」那条判断现在两边都算这两行，是同口径的比较；只有几乎没压的稿子会因此多重跑一次。
+- 没碰的：`api_engine::compress_for_test`（`#[cfg(test)]` 的实测台）照旧返回模型原样输出，不补 —— 它是研究线拿来量模型行为的。MCP `compress_pack` 那条路只能靠提示词。
+
+**界面新字**：这一轮没有（三步都没加新的 `t('…')`），§6 第 4 条可以跳过。
+
+**新发现**：`DISCOVERED-20261003-1`（压缩「用这一份」写回时，pack 里最后一块会多带一行 `---`；和这一轮无关，P4-3 写测试时撞到的）→ HANDOFF §9.9。
+真库只读副本上，压过的 34 块里有 1 块已经是这样。没修。
+
+**换装（Ocean 10-03 在「现在换装吗」上选了「现在换装」）**
+- 构建：`aa32b8a`（`src` / `src-tauri` 没有未提交改动），`env -u APPLE_ID -u APPLE_PASSWORD -u APPLE_TEAM_ID -u APPLE_API_KEY -u APPLE_API_ISSUER -u APPLE_API_KEY_PATH
+  APPLE_SIGNING_IDENTITY="Developer ID Application: Hanze JIN (Q5Y5JRXZ58)" npm run tauri build -- --bundles app`，日志进文件；没改 `tauri.conf.json`，日志里是「skipping app notarization」。
+  TSA 第一遍就过（主程序 21:59:55，sidecar `spool-ai` 21:59:54），日志里没有 `timestamp was expected`；`--verify --deep --strict` 过。
+- 装前：Developer ID、`spctl` = `Unnotarized Developer ID`、0.6.2、`spool` sha256 `ee7f780d…27de58344`（P3 第一轮反馈那一版）；真库 v29（代码也是 29，不迁移）。
+- 停：GUI pid 34719 + `--overlay` pid 34729 按 pid `kill -TERM`，1 秒内都退了、再查已不在；`--mcp` 子进程 15 个一个没碰（前后都是 15）。
+- 真库备份：`~/Desktop/spool.before-p4-install-20261003-220055.db`（`VACUUM INTO`，integrity ok，v29，计数和活库一致）。
+- 旧包：`mv` 到 `~/Desktop/Spool/spool-pre-install/Spool-old-20261003-220101-pre-p4.app`；新包 `ditto` 进 `/Applications`；`open --stdout … --stderr …` 起。
+- 装后：`--verify --deep --strict` 过、Developer ID、`spctl` = `Unnotarized Developer ID`、identifier `com.oceanjin.spool`、0.6.2；`spool` sha256 `cab59972…54d4ece` 和构建产物一致；
+  主进程 96295、`--overlay` 96310 起于 22:01:01–02（换装之后），两个的 `lsof` txt inode 都是 75479385 = 新文件；
+  stderr `[double-tap] installed at HID/active`、`[overlay] helper started`，没有 error / panic；
+  真库 v29 · 25 / 63 / 1014 / 1（工作区 / 项目 / 块 / 附件，含软删）· 正文总长 291916 · 捕捉目标没变，前后一致，没有新的迁移快照（前后都是 21 个）。
+- **`--mcp` 那 15 个子进程跑的还是旧二进制**（别人家 AI 客户端起的，没杀）⇒ MCP 那条路的 `compress_pack` 新规则要等那些客户端重启 MCP 之后才生效
+  （这一轮 MCP 服务端只改了这一条提示词）。GUI 这边的 P4-1 / P4-2 / P4-3 不受影响：重读、记号、补回都在 GUI 进程里，旧的 `--mcp` 写进库的东西照样会被看见。
+  §6 开头那句提醒的就是这个。
+- 没 push、没发版。
+
+**Ocean 验收**：待验收（§6 四条；第 4 条这一轮没有新字，可以跳过）。
 
 ## 8. 收尾的文档动作（执行窗做）
 
