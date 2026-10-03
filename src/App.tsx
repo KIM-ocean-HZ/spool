@@ -43,6 +43,7 @@ import { useBlocksStore } from '@/stores/blocksStore';
 import { useBreakStore } from '@/stores/breakStore';
 import { useCaptureStore } from '@/stores/captureStore';
 import { useEngineStore } from '@/stores/engineStore';
+import { reloadOutsideWrites } from '@/stores/outsideWrites';
 import { useProposalsStore } from '@/stores/proposalsStore';
 import { useSearchStore } from '@/stores/searchStore';
 import { useSettingsStore } from '@/stores/settingsStore';
@@ -248,19 +249,16 @@ export default function App() {
 
   // §20.13: the MCP write tools insert threads/blocks from OUTSIDE this process, so
   // the stores' in-memory state can go stale while Spool is in the background. Coming
-  // back to the window is the natural "show me what changed" moment — re-pull the
-  // thread list and the active thread's blocks, throttled so rapid focus flips don't
-  // hammer SQLite. Both loads are refresh-safe (selection preserved, rows replaced).
+  // back to the window is the natural "show me what changed" moment — re-read what an
+  // outside write can touch (stores/outsideWrites.ts owns the list and the order),
+  // throttled so rapid focus flips don't hammer SQLite.
   const lastFocusReloadRef = useRef(0);
   useEffect(() => {
     const onFocus = (): void => {
       const now = Date.now();
       if (now - lastFocusReloadRef.current < 3000) return;
       lastFocusReloadRef.current = now;
-      void useThreadsStore.getState().loadAll();
-      const active = useThreadsStore.getState().activeId;
-      if (active) void useBlocksStore.getState().load(active);
-      void useProposalsStore.getState().refresh();
+      void reloadOutsideWrites().catch((e) => console.warn('[focus] reload failed', e));
     };
     window.addEventListener('focus', onFocus);
     return () => window.removeEventListener('focus', onFocus);

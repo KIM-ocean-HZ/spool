@@ -1055,28 +1055,50 @@ export const useCompressStore = create<CompressState>((set, get) => ({
         );
       set((st) => {
         const cur = st.stale[threadId];
-        // 扫描出来的那几条留着，AI 提的整批换成刚读到的（库是唯一的真相）。
-        const scanned = (cur?.proposals ?? []).filter((p) => p.origin === 'scan');
-        const decidedRows = new Set(
-          Object.entries(cur?.decided ?? {})
-            .map(([i]) => cur?.proposals[Number(i)]?.rowId)
-            .filter((x): x is string => !!x),
-        );
-        const next = [...fresh.filter((p) => !decidedRows.has(p.rowId!)), ...scanned];
+        const prev = cur?.proposals ?? [];
+        // ⭐ P4-1（2026-10-03）：这个函数不再只在切项目时跑 —— 窗口拿到焦点、引擎跑完、库被别处
+        // 动过都会跑（`stores/outsideWrites.ts`）。所以**下过决定的那几条留在单子上，决定跟着条目走**：
+        // 「这一条没动 / 已换」那句回执不能被一次重读冲掉（AI 提的那一行库里已经删了，照旧写法它会
+        // 跟着消失，页签可能在他眼皮底下没了）；扫描出来、已经点过的那条也不能又长出三个按钮。
+        // ⚠️ 决定按下标记，单子会重排 —— 先按条目记下，排好之后再翻回下标。
+        const decidedBy = new Map<StaleEntry, StaleAction>();
+        prev.forEach((p, i) => {
+          const action = cur?.decided[i];
+          if (action) decidedBy.set(p, action);
+        });
+        // AI 提的：原来就在单子上的按原顺序 —— 决定过的原样留着，没决定的换成刚读到的那一行
+        // （库是唯一的真相，库里没了就拿掉）；新来的接在后面。扫描出来的那几条整批留着。
+        const freshByRow = new Map(fresh.map((p) => [p.rowId, p]));
+        const prevMcp = prev.filter((p) => p.origin === 'mcp');
+        const prevRows = new Set(prevMcp.map((p) => p.rowId));
+        const next = [
+          ...prevMcp.flatMap((p) => {
+            if (decidedBy.has(p)) return [p];
+            const row = freshByRow.get(p.rowId);
+            return row ? [row] : [];
+          }),
+          ...fresh.filter((p) => !prevRows.has(p.rowId)),
+          ...prev.filter((p) => p.origin === 'scan'),
+        ];
         if (next.length === 0 && !cur) return {};
+        const decided: Record<number, StaleAction> = {};
+        next.forEach((p, i) => {
+          const action = decidedBy.get(p);
+          if (action) decided[i] = action;
+        });
         return {
           stale: {
             ...st.stale,
             [threadId]: {
               source: cur?.source ?? '',
-              blocks: cur?.blocks ?? blocks,
+              // ⭐ P4-1：三个按钮按这一份找块（`decideStale`）。AI 先写的那块新的要在里面，
+              // 所以有刚读进来的块就用它；还没读进来（切项目那一刻）才留着原来那份。
+              blocks: blocks.length > 0 ? blocks : (cur?.blocks ?? []),
               proposals: next,
               dropped: cur?.dropped ?? [],
               already: cur?.already ?? 0,
               outcome: cur?.outcome ?? null,
-              // ⚠️ 单子重排了，下标跟着变 —— ⛔ 旧的 `decided`（按下标记的）不能留，
-              // 留着会把「已决定」的划线画到别的条目上。已经决定过的那几行本来就删掉了。
-              decided: {},
+              decided,
               startedAt: cur?.startedAt ?? now,
             },
           },

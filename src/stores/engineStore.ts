@@ -20,8 +20,7 @@ import {
 } from '@/lib/engine/followUp';
 import { toolCaption } from '@/lib/engine/progress';
 import { t } from '@/lib/i18n';
-import { useBlocksStore } from './blocksStore';
-import { useProposalsStore } from './proposalsStore';
+import { reloadOutsideWrites } from './outsideWrites';
 import { useSettingsStore } from './settingsStore';
 import { useThreadsStore } from './threadsStore';
 import { toast } from './toastStore';
@@ -333,12 +332,10 @@ export const useEngineStore = create<EngineState>((set, get) => {
     try {
       const after = await countMcpBlocks();
       written = before < 0 ? 0 : Math.max(0, after - before);
-      await useThreadsStore.getState().loadAll();
-      const active = useThreadsStore.getState().activeId;
-      if (active) await useBlocksStore.getState().load(active);
-      // An action may have queued proposals instead of writing (propose_blocks) — the
-      // badge has to notice without waiting for a window focus.
-      await useProposalsStore.getState().refresh();
+      // An action may have queued proposals instead of writing (propose_blocks,
+      // propose_supersede) — the badge and the 过期检测 tab have to notice without waiting
+      // for a window focus. Same list, same order as the focus reload.
+      await reloadOutsideWrites();
     } catch (e) {
       console.warn('[engine] post-run reload failed', e);
     }

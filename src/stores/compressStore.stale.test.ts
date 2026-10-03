@@ -240,9 +240,78 @@ describe('AI 提的「整条取代」—— 什么时候该出现在「过期检
     // 活干完了，库里那一行跟着走 —— ⚠️ 否则下次打开又问一遍。
     expect(await listSupersedeProposals(threadId, Date.now())).toEqual([]);
     // ⭐ 而且这一次是真的做完了：同一条提案再进来也不该再问。
+    // ⚠️ P4-1 起重读不冲掉回执：单子上只剩划掉的那一条（「已换」），⛔ 没有一条等着他点。
     await loadBlocks();
     await useCompressStore.getState().loadProposedStale(threadId);
-    expect(shown()).toEqual([]);
+    expect(shown()).toEqual([[older.seq, newer.seq]]);
+    expect(useCompressStore.getState().stale[threadId]!.decided).toEqual({ 0: 'retire' });
+  });
+
+  // ⭐ P4-1（2026-10-03）：这张卡从此在窗口拿到焦点、引擎跑完、库被别处动过时都会重读，
+  // 不再只在切项目时 —— 重读一次不能冲掉他刚下的决定，也不能让刚写进来的块对不上号。
+  describe('P4-1 · 一张开着的卡被重读', () => {
+    const decided = () => useCompressStore.getState().stale[threadId]!.decided;
+
+    it('⛔ AI 提的那条点过「不动」—— 重读之后还在、决定还在它身上；新来的接在后面', async () => {
+      const third = await createBlock({ threadId, content: '08-24 那份 16 项。' });
+      proposeSupersede(older.id, newer.id, 'row-1');
+      proposeSupersede(newer.id, third.id, 'row-2');
+      await loadBlocks();
+      await useCompressStore.getState().loadProposedStale(threadId);
+      await useCompressStore.getState().decideStale(threadId, 0, 'keep');
+      // 「不动」把库里那一行删了 —— 照旧写法，下一次重读它就从单子上消失。
+      expect((await listSupersedeProposals(threadId, Date.now())).map((p) => p.id)).toEqual([
+        'row-2',
+      ]);
+      proposeSupersede(older.id, third.id, 'row-3');
+
+      await useCompressStore.getState().loadProposedStale(threadId);
+
+      expect(shown()).toEqual([
+        [older.seq, newer.seq],
+        [newer.seq, third.seq],
+        [older.seq, third.seq],
+      ]);
+      expect(decided()).toEqual({ 0: 'keep' });
+    });
+
+    it('⛔ 扫描出来、点过「不动」的那条 —— AI 又提了一条排到它前面，决定跟着它挪，⛔ 不会又长出三个按钮', async () => {
+      const third = await createBlock({ threadId, content: '08-24 那份 16 项。' });
+      packBlocks.text = 'pack';
+      packBlocks.blocks = await loadBlocks();
+      scanResult.proposals = [proposal(older.seq!, newer.seq!)];
+      await useCompressStore.getState().runStaleScan(threadId);
+      await useCompressStore.getState().decideStale(threadId, 0, 'keep');
+      proposeSupersede(newer.id, third.id);
+
+      await useCompressStore.getState().loadProposedStale(threadId);
+
+      expect(shown()).toEqual([
+        [newer.seq, third.seq],
+        [older.seq, newer.seq],
+      ]);
+      expect(decided()).toEqual({ 1: 'keep' });
+    });
+
+    it('⭐ 卡片已经开着，AI 再写一块新的、提「新的取代旧的」—— 先重读块再读提议，那一条点得动', async () => {
+      proposeSupersede(older.id, newer.id, 'row-1');
+      await loadBlocks();
+      await useCompressStore.getState().loadProposedStale(threadId);
+      const latest = await createBlock({ threadId, content: '08-25 那份 17 所。' });
+      proposeSupersede(newer.id, latest.id, 'row-2');
+
+      await loadBlocks();
+      await useCompressStore.getState().loadProposedStale(threadId);
+      expect(shown()).toEqual([
+        [older.seq, newer.seq],
+        [newer.seq, latest.seq],
+      ]);
+      // 照旧写法卡片留着开卡那一刻的块（没有 #latest）⇒ 报「有一块已经不在了」，什么都不写。
+      await useCompressStore.getState().decideStale(threadId, 1, 'retire');
+
+      const rows = await listBlocksByThread(threadId);
+      expect(rows.find((b) => b.id === newer.id)!.staleAt).not.toBeNull();
+    });
   });
 
   // P2 · B4（乙）：卡片按本项目的 #N 找块。一块被移动到别的项目之后，拿它在那边的编号回来找，
