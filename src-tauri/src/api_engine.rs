@@ -22,7 +22,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use crate::mcp::{compress_messages_for_api, split_cuts, CompressLevel};
+use crate::mcp::{compress_messages_for_api, keep_pack_boundaries, split_cuts, CompressLevel};
 
 /// 一次只跑一个。和 `engine.rs` 一样，闸在 Rust 这边而不是只在 JS 队列里——第二个窗口
 /// 或者一次手工 invoke 否则就能起第二个进程，而取消按钮只握得住一个。
@@ -192,7 +192,13 @@ fn run_blocking(
         Ok(v) => v,
         Err(e) => return CompressOutcome::failed("internal", e.to_string(), None),
     };
-    spawn_sidecar_with(&bin, payload, timeout_secs, Some(app.clone()))
+    let mut outcome = spawn_sidecar_with(&bin, payload, timeout_secs, Some(app.clone()));
+    // P4-3：模型丢掉的 pack 首尾两行由代码补回来（`split_cuts` 已经在信封里切过了）。
+    // ⚠️ 对的是**送出去的那一份**（摘过批注的）：首尾两行摘的时候原样留着，放回去时也原样留着。
+    if outcome.ok {
+        outcome.text = keep_pack_boundaries(&pack_text, &outcome.text);
+    }
+    outcome
 }
 
 /// 递给 `spool-ai` 的那个请求。
