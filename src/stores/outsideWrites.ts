@@ -1,3 +1,4 @@
+import { librarySignature } from '@/lib/db/librarySignature';
 import { useBlocksStore } from './blocksStore';
 import { useCompressStore } from './compressStore';
 import { useProposalsStore } from './proposalsStore';
@@ -23,3 +24,48 @@ export async function reloadOutsideWrites(): Promise<void> {
   // 这个项目的块（`#n`）对上号的 —— 块还没读进来，那一条就对不上。
   if (active) await useCompressStore.getState().loadProposedStale(active);
 }
+
+// P4-2：Spool 一直开着、窗口却没有重新拿到焦点的时候（和 AI 客户端左右并排、人在那边打字；
+// 或者让终端里的 AI 慢慢干活，自己切过来看着）—— 焦点那一次不会发生，所以隔几秒查一次记号，
+// 变了才重读。数字和页签自己变就是全部反馈：⛔ 不弹提示、不抬窗口、不切页签。
+export const POLL_MS = 3000;
+// 窗口焦点和查记号**共用这一个节流**：刚因为焦点重读过，记号再变也等满 3 秒。
+const THROTTLE_MS = 3000;
+let lastRunAt = 0;
+/** 上一次重读开始那一刻的记号。`null` = 还没重读过，第一次查记号就当「变了」。 */
+let seenSignature: string | null = null;
+
+/** 窗口拿到焦点、以及记号变了，都走这里。 */
+export async function reloadOutsideWritesThrottled(): Promise<void> {
+  const now = Date.now();
+  if (now - lastRunAt < THROTTLE_MS) return;
+  lastRunAt = now;
+  // ⚠️ 记号在重读**之前**取：重读那几毫秒里又写进来的，下一次查记号时就是「变了」。
+  // 重读失败就不记 —— 下一次查记号还算「变了」，再试一次。
+  const signature = await librarySignature();
+  await reloadOutsideWrites();
+  seenSignature = signature;
+}
+
+/** 查一次记号，变了才重读。被节流挡下的那一次不记，下一次查记号时再来。 */
+export async function pollOutsideWrites(): Promise<void> {
+  if ((await librarySignature()) === seenSignature) return;
+  await reloadOutsideWritesThrottled();
+}
+
+/** 窗口看得见就隔 `POLL_MS` 查一次记号；返回停掉它的函数。
+ *  ⚠️ 只问「看不看得见」，⛔ 不问有没有焦点 —— 没焦点正是这一路要管的情况。
+ *  看不见（最小化、被盖住、在别的桌面）就不查；回来时由焦点那一次补上，或者下一次查记号。 */
+export function watchOutsideWrites(): () => void {
+  const id = setInterval(() => {
+    if (document.visibilityState !== 'visible') return;
+    void pollOutsideWrites().catch((e) => console.warn('[outside-writes] poll failed', e));
+  }, POLL_MS);
+  return () => clearInterval(id);
+}
+
+/** 测试用：模块里那两个变量回到刚启动的样子。 */
+export const __resetOutsideWritesForTest = (): void => {
+  lastRunAt = 0;
+  seenSignature = null;
+};

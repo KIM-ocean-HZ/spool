@@ -43,7 +43,7 @@ import { useBlocksStore } from '@/stores/blocksStore';
 import { useBreakStore } from '@/stores/breakStore';
 import { useCaptureStore } from '@/stores/captureStore';
 import { useEngineStore } from '@/stores/engineStore';
-import { reloadOutsideWrites } from '@/stores/outsideWrites';
+import { reloadOutsideWritesThrottled, watchOutsideWrites } from '@/stores/outsideWrites';
 import { useProposalsStore } from '@/stores/proposalsStore';
 import { useSearchStore } from '@/stores/searchStore';
 import { useSettingsStore } from '@/stores/settingsStore';
@@ -252,17 +252,18 @@ export default function App() {
   // back to the window is the natural "show me what changed" moment — re-read what an
   // outside write can touch (stores/outsideWrites.ts owns the list and the order),
   // throttled so rapid focus flips don't hammer SQLite.
-  const lastFocusReloadRef = useRef(0);
   useEffect(() => {
     const onFocus = (): void => {
-      const now = Date.now();
-      if (now - lastFocusReloadRef.current < 3000) return;
-      lastFocusReloadRef.current = now;
-      void reloadOutsideWrites().catch((e) => console.warn('[focus] reload failed', e));
+      void reloadOutsideWritesThrottled().catch((e) => console.warn('[focus] reload failed', e));
     };
     window.addEventListener('focus', onFocus);
     return () => window.removeEventListener('focus', onFocus);
   }, []);
+
+  // P4-2: and while the window is visible but NOT focused (side by side with the AI client,
+  // the user typing over there), a cheap "did anything change" check every few seconds —
+  // same reload, same throttle as the focus one.
+  useEffect(() => watchOutsideWrites(), []);
 
   useEffect(() => {
     (window as unknown as Record<string, unknown>).__spool = {
