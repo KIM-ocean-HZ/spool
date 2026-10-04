@@ -141,8 +141,10 @@ export const createAttachment = async (args: CreateAttachmentArgs): Promise<Atta
   // Extraction columns start NULL — filled in asynchronously by the v2.7 extraction
   // pipeline (see updateAttachmentExtraction). include_in_pack defaults to false (v2.8
   // §20.2): extraction stays always-on for preview, but inlining is opt-in per attachment.
-  // ai_access defaults to false the same way and for a stronger reason (§5.1 ①): an AI
-  // starts with no claim on any file, and only the user can grant one.
+  // ⚠️ ai_access defaults to TRUE since P5-4 (Ocean 2026-09-30 §9.2 第 9 条:「默认可读（挂上去
+  // 就是同意）」). It used to default to false (DESIGN_PROJECT_FILES §5.1 ①); both callers are
+  // the user's own hand, and putting a file here is the consent. The switch in the right rail
+  // still turns it off, and an AI then has to ask (request_file_access) exactly as before.
   const a: Attachment = {
     id: nanoid(),
     threadId: args.threadId,
@@ -153,7 +155,7 @@ export const createAttachment = async (args: CreateAttachmentArgs): Promise<Atta
     extractedAt: null,
     extractionKind: null,
     includeInPack: false,
-    aiAccess: false,
+    aiAccess: true,
     createdAt: Date.now(),
     // Both entry points are the user's own hand (the file picker, a drop from Finder), and a
     // new file starts on the project — hanging it off a block is a second, separate gesture.
@@ -163,9 +165,9 @@ export const createAttachment = async (args: CreateAttachmentArgs): Promise<Atta
     supersededAt: null,
   };
   await db.execute(
-    `INSERT INTO attachments (id, thread_id, kind, target, label, created_at, added_by)
-     VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-    [a.id, a.threadId, a.kind, a.target, a.label, a.createdAt, a.addedBy],
+    `INSERT INTO attachments (id, thread_id, kind, target, label, created_at, added_by, ai_access)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+    [a.id, a.threadId, a.kind, a.target, a.label, a.createdAt, a.addedBy, a.aiAccess ? 1 : 0],
   );
   return a;
 };

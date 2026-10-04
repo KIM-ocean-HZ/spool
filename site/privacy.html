@@ -95,8 +95,11 @@ request is made on your behalf, by a subprocess Spool starts:</p>
     <td>The AI client you installed and configured yourself (Claude Desktop, Codex — including a
         Codex conversation inside the ChatGPT desktop app — Cursor, …)</td>
     <td>Your AI client reads project content over local inter-process communication; Spool
-        listens on no network port. Where those clients send content is governed by that
-        client and your agreement with its provider.</td>
+        listens on no network port. A file you added to a project yourself can be read by an AI
+        by default — the text Spool extracted from it, not the file itself. Each file has its own
+        switch you can turn off at any time; after that an AI can only ask you for it. Where
+        those clients send content is governed by that client and your agreement with its
+        provider.</td>
   </tr>
   <tr>
     <td>Follow Up, Weekly Review, or drafting follow-up goals (Settings → Engine; requires a

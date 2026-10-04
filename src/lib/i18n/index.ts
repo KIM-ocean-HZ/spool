@@ -461,8 +461,9 @@ const EN: Record<string, string> = {
   '项目文件': 'Project files',
   '加文件': 'Add file',
   '从文件选择器里加一个文件': 'Add a file through the file picker',
-  '这个项目还没有文件。加进来的文件默认谁都不读，打包时也不会带上正文。':
-    'No files in this project yet. Anything you add here is read by nobody by default, and its text stays out of packs.',
+  // P5-4 (Ocean 2026-09-30): a file the user adds is readable by an AI by default now.
+  '这个项目还没有文件。你加进来的文件，AI 默认能读到里面的文字，每个文件旁边的开关随时能关；打包时默认不带正文。':
+    'No files in this project yet. An AI can read the text of any file you add here — each file has its own switch to turn that off. Packs leave the text out unless you tick it.',
   '从这个项目里去掉（文件本身不动）': 'Remove from this project (the file itself is untouched)',
   '打包时带上这个文件的文字': 'Include this file\u2019s text when packing',
   // DESIGN_PROJECT_FILES §5.1 ① — the standing grant, shown where the file is listed

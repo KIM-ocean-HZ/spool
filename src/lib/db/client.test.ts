@@ -976,11 +976,14 @@ describe('migrateSchema registry (§19.3)', () => {
     applySchema(handle);
     downgradeToV29(handle);
     seedUserData(handle);
+    // One file the user opened up and one they did not — ⛔ the migration flips neither, and
+    // P5-4's new default is only ever written by createAttachment, never onto an existing row.
     handle.exec(
       `INSERT INTO attachments (id, thread_id, kind, target, label, ai_access, created_at)
-         VALUES ('a1', 't1', 'file', '/tmp/kept.pdf', 'kept.pdf', 1, ${NOW})`,
+         VALUES ('a1', 't1', 'file', '/tmp/kept.pdf', 'kept.pdf', 1, ${NOW}),
+                ('a2', 't1', 'file', '/tmp/closed.pdf', 'closed.pdf', 0, ${NOW})`,
     );
-    const before = handle.prepare('SELECT * FROM attachments').all();
+    const before = handle.prepare('SELECT * FROM attachments ORDER BY id').all();
     const blocksBefore = handle.prepare('SELECT * FROM blocks').all();
 
     await __migrateSchemaForTest(db);
@@ -991,13 +994,14 @@ describe('migrateSchema registry (§19.3)', () => {
     // ⛔ 不叫 block_id —— v15 去掉过一列同名的。
     expect(cols).not.toContain('block_id');
     expect(
-      (handle.prepare('SELECT * FROM attachments').all() as Record<string, unknown>[]).map(stripV30),
+      (handle.prepare('SELECT * FROM attachments ORDER BY id').all() as Record<string, unknown>[]).map(stripV30),
     ).toEqual(before);
+    const unwritten = { anchor_block_id: null, added_by: null, superseded_by: null, superseded_at: null };
     expect(
       handle
-        .prepare('SELECT anchor_block_id, added_by, superseded_by, superseded_at FROM attachments')
+        .prepare('SELECT anchor_block_id, added_by, superseded_by, superseded_at FROM attachments ORDER BY id')
         .all(),
-    ).toEqual([{ anchor_block_id: null, added_by: null, superseded_by: null, superseded_at: null }]);
+    ).toEqual([unwritten, unwritten]);
     expect(handle.prepare('SELECT * FROM blocks').all()).toEqual(blocksBefore);
   });
 

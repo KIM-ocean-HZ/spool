@@ -70,14 +70,23 @@ describe('项目文件挂到块上 (P5-2)', () => {
     sqlite.close();
   });
 
-  it('新加的文件挂在项目上、记着是你加的', () => {
+  // P5-4 (Ocean 2026-09-30 §9.2 第 9 条):「默认可读（挂上去就是同意）」—— 打包带正文照旧默认关。
+  it('新加的文件挂在项目上、记着是你加的、AI 默认可读', () => {
     expect(row(file.id)).toEqual({
       thread_id: threadId,
       anchor_block_id: null,
       added_by: 'user',
-      ai_access: expect.any(Number),
+      ai_access: 1,
       include_in_pack: 0,
     });
+    expect(file.aiAccess).toBe(true);
+    expect(file.includeInPack).toBe(false);
+  });
+
+  it('开关照旧能关', async () => {
+    await useBlocksStore.getState().setAiAccess(file.id, threadId, false);
+    expect((row(file.id) as { ai_access: number }).ai_access).toBe(0);
+    expect((await listAttachmentsByThread(threadId))[0]?.aiAccess).toBe(false);
   });
 
   it('挂上 → 改挂 → 改回：库里只动锚定那一列', async () => {

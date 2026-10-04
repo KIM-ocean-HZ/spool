@@ -1,7 +1,7 @@
 import { createRequire } from 'node:module';
 import type Database from '@tauri-apps/plugin-sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { createAttachment, listAttachmentsByThread } from './attachments';
+import { createAttachment, listAttachmentsByThread, setAiAccess } from './attachments';
 import { __setTestDb } from './client';
 import {
   __insertFileRequestForTest,
@@ -52,6 +52,10 @@ describe('file access requests (DESIGN_PROJECT_FILES §3.4)', () => {
       .id;
     bId = (await createAttachment({ threadId, kind: 'file', target: '/x/b.docx', label: 'b.docx' }))
       .id;
+    // P5-4: a file the user adds starts readable now. A request is for a file whose switch the
+    // user turned off, so that is where these start.
+    await setAiAccess(aId, false);
+    await setAiAccess(bId, false);
   });
 
   afterEach(() => {
@@ -87,6 +91,7 @@ describe('file access requests (DESIGN_PROJECT_FILES §3.4)', () => {
       target: '/x/c.pdf',
       label: 'c.pdf',
     });
+    await setAiAccess(other.id, false);
     await queue();
 
     expect(await approveFileRequest('req1')).toBe(2);

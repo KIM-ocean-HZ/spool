@@ -81,7 +81,7 @@ export default function ProjectFiles({ threadId }: { threadId: string }) {
     >
       {files.length === 0 ? (
         <p className="px-3 text-[12px] leading-relaxed text-muted">
-          {t('这个项目还没有文件。加进来的文件默认谁都不读，打包时也不会带上正文。')}
+          {t('这个项目还没有文件。你加进来的文件，AI 默认能读到里面的文字，每个文件旁边的开关随时能关；打包时默认不带正文。')}
         </p>
       ) : (
         <ul>
