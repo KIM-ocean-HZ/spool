@@ -25,6 +25,12 @@ export interface Attachment {
   includeInPack: boolean;                       // v2.8 §20.2: opt-in flag for inlining extracted_text into pack/summaries
   aiAccess: boolean;                            // v15 §5.1 ①: the user has let an AI ask for this file's text
   createdAt: number;
+  // v30 (P5). All four are NULL on every row from before v30 — read as「挂在项目、用户加的、
+  // 没被取代」. schema.sql has what each one means.
+  anchorBlockId: string | null;                 // block it hangs off; null = the project
+  addedBy: string | null;                       // 'user'; P6 adds `<client> · MCP`; null = the user
+  supersededBy: string | null;                  // P6: id of the attachment that replaced this one
+  supersededAt: number | null;                  // P6: ms epoch of that replacement
 }
 
 export interface CreateAttachmentArgs {
@@ -46,6 +52,10 @@ interface Row {
   include_in_pack: number;
   ai_access: number;
   created_at: number;
+  anchor_block_id: string | null;
+  added_by: string | null;
+  superseded_by: string | null;
+  superseded_at: number | null;
 }
 
 const fromRow = (r: Row): Attachment => ({
@@ -60,13 +70,17 @@ const fromRow = (r: Row): Attachment => ({
   includeInPack: r.include_in_pack === 1,
   aiAccess: r.ai_access === 1,
   createdAt: r.created_at,
+  anchorBlockId: r.anchor_block_id,
+  addedBy: r.added_by,
+  supersededBy: r.superseded_by,
+  supersededAt: r.superseded_at,
 });
 
 const SELECT_COLS =
-  'id, thread_id, kind, target, label, extracted_text, extracted_at, extraction_kind, include_in_pack, ai_access, created_at';
+  'id, thread_id, kind, target, label, extracted_text, extracted_at, extraction_kind, include_in_pack, ai_access, created_at, ' +
+  'anchor_block_id, added_by, superseded_by, superseded_at';
 
-const ALL_COLS =
-  '(id, thread_id, kind, target, label, extracted_text, extracted_at, extraction_kind, include_in_pack, ai_access, created_at)';
+const ALL_COLS = `(${SELECT_COLS})`;
 
 const allValues = (a: Attachment): unknown[] => [
   a.id,
@@ -80,6 +94,10 @@ const allValues = (a: Attachment): unknown[] => [
   a.includeInPack ? 1 : 0,
   a.aiAccess ? 1 : 0,
   a.createdAt,
+  a.anchorBlockId,
+  a.addedBy,
+  a.supersededBy,
+  a.supersededAt,
 ];
 
 export const listAttachmentsByThread = async (threadId: string): Promise<Attachment[]> => {
@@ -124,11 +142,17 @@ export const createAttachment = async (args: CreateAttachmentArgs): Promise<Atta
     includeInPack: false,
     aiAccess: false,
     createdAt: Date.now(),
+    // Both entry points are the user's own hand (the file picker, a drop from Finder), and a
+    // new file starts on the project — hanging it off a block is a second, separate gesture.
+    anchorBlockId: null,
+    addedBy: 'user',
+    supersededBy: null,
+    supersededAt: null,
   };
   await db.execute(
-    `INSERT INTO attachments (id, thread_id, kind, target, label, created_at)
-     VALUES ($1, $2, $3, $4, $5, $6)`,
-    [a.id, a.threadId, a.kind, a.target, a.label, a.createdAt],
+    `INSERT INTO attachments (id, thread_id, kind, target, label, created_at, added_by)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+    [a.id, a.threadId, a.kind, a.target, a.label, a.createdAt, a.addedBy],
   );
   return a;
 };
@@ -141,7 +165,7 @@ export const createAttachment = async (args: CreateAttachmentArgs): Promise<Atta
 export const insertAttachments = async (attachments: Attachment[]): Promise<void> => {
   if (attachments.length === 0) return;
   const db = await getDb();
-  const COLS = 11;
+  const COLS = 15;
   const tuples = attachments
     .map((_, i) => {
       const o = i * COLS;
@@ -200,7 +224,8 @@ export const deleteAttachment = async (id: string): Promise<void> => {
 export const restoreAttachment = async (a: Attachment): Promise<void> => {
   const db = await getDb();
   await db.execute(
-    `INSERT INTO attachments ${ALL_COLS} VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+    `INSERT INTO attachments ${ALL_COLS}
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
     allValues(a),
   );
 };

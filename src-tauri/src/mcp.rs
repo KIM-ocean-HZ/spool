@@ -3768,7 +3768,8 @@ fn thread_resources(conn: &Connection) -> Result<Vec<Value>, String> {
 // bugs happens — refuse instead.
 // ⚠️ v29 (F2, 2026-08-30)：GUI 的注册表走到 29 了，这里必须跟上 ——
 // 差一个数字的症状是 MCP 一连上就报「库比服务新」，而 app 本身完全正常。
-const EXPECTED_SCHEMA_VERSION: i64 = 29;
+// ⚠️ v30 (P5, 2026-10-04)：`attachments` 加了四个可空列；这边读文件的查询都是点名列的，只跟版本号。
+const EXPECTED_SCHEMA_VERSION: i64 = 30;
 
 // Name reported by the client at initialize (clientInfo.name); feeds the source label.
 static CLIENT_NAME: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);

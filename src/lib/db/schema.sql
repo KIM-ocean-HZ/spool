@@ -344,6 +344,20 @@ CREATE INDEX IF NOT EXISTS idx_blocks_ref_block
 -- not a file, and the two entry points that created them are gone from the block action bar.
 -- ⚠️ `target` is only ever written from the system file picker. Nothing may accept a path
 -- from anywhere else — that is the whole reason this shape was allowed at all (§2).
+-- v30 (P5, Ocean 2026-09-30 / 10-03): a project file can ALSO hang off one block of that
+-- project, and the row says who added it and what replaced it. Four nullable columns, all
+-- NULL on every row written before v30 — which reads as「挂在项目、用户加的、没被取代」,
+-- exactly the v29 behaviour. ⛔ No foreign keys: the real library's `thread_id` came in
+-- through ALTER (v15) without one, and what happens to a file when its block goes is the
+-- delete path's job (blocksStore), not a cascade's.
+--   anchor_block_id  the block this file hangs off; NULL = hangs off the project. ⛔ Not
+--                    called `block_id`: v15 dropped a column of that name (a file used to
+--                    belong to ONE block) and the v14→v15 step still recognises it by name.
+--   added_by         'user' = the user added it (file picker / dropped from Finder).
+--                    P6 adds the AI-proposed kind: the same `<client> · MCP` source label
+--                    a block written by that client carries. NULL = before v30 = the user.
+--   superseded_by    id of the attachment that replaced this one (P6, AI proposal approved).
+--   superseded_at    ms epoch when that happened.
 CREATE TABLE IF NOT EXISTS attachments (
   id              TEXT PRIMARY KEY,
   thread_id       TEXT NOT NULL REFERENCES threads(id) ON DELETE CASCADE,
@@ -355,7 +369,11 @@ CREATE TABLE IF NOT EXISTS attachments (
   extraction_kind TEXT,                            -- v2.7: 'pdf' | 'docx' | 'plaintext' | 'failed' | null
   include_in_pack INTEGER NOT NULL DEFAULT 0,      -- v2.8 §20.2: 1 = inline extracted_text into pack/summaries
   ai_access       INTEGER NOT NULL DEFAULT 0,      -- v15 §5.1 ①: 1 = an AI may ask for this file's text
-  created_at      INTEGER NOT NULL
+  created_at      INTEGER NOT NULL,
+  anchor_block_id TEXT,                            -- v30: block it hangs off; NULL = the project
+  added_by        TEXT,                            -- v30: 'user' | P6 `<client> · MCP`; NULL = user
+  superseded_by   TEXT,                            -- v30: attachment id that replaced this one
+  superseded_at   INTEGER                          -- v30: ms epoch of that replacement
 );
 
 CREATE INDEX IF NOT EXISTS idx_attachments_thread

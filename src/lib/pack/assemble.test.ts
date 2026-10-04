@@ -58,6 +58,10 @@ const attachment = (id: string, opts: Partial<Attachment> = {}): Attachment => (
   includeInPack: false,
   aiAccess: false,
   createdAt: T(0),
+  anchorBlockId: null,
+  addedBy: 'user',
+  supersededBy: null,
+  supersededAt: null,
   ...opts,
 });
 

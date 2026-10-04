@@ -12,6 +12,7 @@ import {
   retranslateTutorial,
 } from './client';
 import schemaSql from './schema.sql?raw';
+import { listAttachmentsByThread } from './attachments';
 
 const { DatabaseSync } = createRequire(import.meta.url)(
   'node:sqlite',
@@ -101,6 +102,11 @@ const stripV29 = (r: Record<string, unknown>): Record<string, unknown> => {
   return rest;
 };
 
+// v30's four columns, off an `attachments` row — same job as the strips above, one table over.
+const V30_ATTACHMENT_COLS = ['anchor_block_id', 'added_by', 'superseded_by', 'superseded_at'];
+const stripV30 = (r: Record<string, unknown>): Record<string, unknown> =>
+  Object.fromEntries(Object.entries(r).filter(([k]) => !V30_ATTACHMENT_COLS.includes(k)));
+
 // v19's three columns, off a `threads` row — the same job blocksSansV13 does for blocks:
 // a test that rewinds below v19 compares rows across a migration that legitimately added
 // them, and only these three may differ.
@@ -141,6 +147,21 @@ const downgradeToV13 = (handle: Sqlite): void => {
   `);
 };
 
+// Rewind past v30: a project file could not hang off a block, and nothing recorded who added
+// it or what replaced it.
+// ⚠️ 这四句就是 v30 的「能回滚」——`add-attachment-anchor-and-provenance` 只加了四个可空列，
+// ⛔ 一个字的既有数据都没动；退回来丢的只是「挂在哪一块」（全部回到挂在项目）和「谁加的」。
+// ⚠️ 必须先于 downgradeToV14 跑：那一步要丢 `thread_id`、加回老的 `block_id`。
+const downgradeToV29 = (handle: Sqlite): void => {
+  handle.exec(`
+    ALTER TABLE attachments DROP COLUMN anchor_block_id;
+    ALTER TABLE attachments DROP COLUMN added_by;
+    ALTER TABLE attachments DROP COLUMN superseded_by;
+    ALTER TABLE attachments DROP COLUMN superseded_at;
+    PRAGMA user_version = 29;
+  `);
+};
+
 // Rewind past v29: nothing remembered that a citation had been reviewed, and 「谁引用了我」
 // 是一次全表扫描。
 // ⚠️ 这两句就是 v29 的「能回滚」——`add-ref-reviewed-and-ref-block-index` 只加了一个可空列
@@ -152,6 +173,7 @@ const downgradeToV13 = (handle: Sqlite): void => {
 // 报的是 `error in index idx_blocks_ref_block after drop column`。
 // ⭐ `downgradeToV8` 里 `DROP INDEX idx_blocks_thread_seq` 先于 `DROP COLUMN seq` 是同一条。
 const downgradeToV28 = (handle: Sqlite): void => {
+  downgradeToV29(handle);
   handle.exec(`
     DROP INDEX IF EXISTS idx_blocks_ref_block;
     ALTER TABLE blocks DROP COLUMN ref_reviewed_stale_at;
@@ -946,6 +968,62 @@ describe('migrateSchema registry (§19.3)', () => {
         .prepare('SELECT COUNT(*) AS c FROM blocks WHERE ref_reviewed_stale_at IS NOT NULL')
         .get(),
     ).toEqual({ c: 0 });
+  });
+
+  // P5-1 (Ocean 2026-09-30 / 10-03). 四个可空列，⛔ 不回填、⛔ 不重建表：老行读出来就是
+  // 「挂在项目、用户加的、没被取代」，其余一个字节都没动（`ai_access` 开着的那一个照旧开着）。
+  it('v29 → v30 adds the four attachment columns and backfills none', async () => {
+    applySchema(handle);
+    downgradeToV29(handle);
+    seedUserData(handle);
+    handle.exec(
+      `INSERT INTO attachments (id, thread_id, kind, target, label, ai_access, created_at)
+         VALUES ('a1', 't1', 'file', '/tmp/kept.pdf', 'kept.pdf', 1, ${NOW})`,
+    );
+    const before = handle.prepare('SELECT * FROM attachments').all();
+    const blocksBefore = handle.prepare('SELECT * FROM blocks').all();
+
+    await __migrateSchemaForTest(db);
+
+    expect(userVersion(handle)).toBe(CURRENT_SCHEMA_VERSION);
+    const cols = columnNames(handle, 'attachments');
+    for (const c of V30_ATTACHMENT_COLS) expect(cols).toContain(c);
+    // ⛔ 不叫 block_id —— v15 去掉过一列同名的。
+    expect(cols).not.toContain('block_id');
+    expect(
+      (handle.prepare('SELECT * FROM attachments').all() as Record<string, unknown>[]).map(stripV30),
+    ).toEqual(before);
+    expect(
+      handle
+        .prepare('SELECT anchor_block_id, added_by, superseded_by, superseded_at FROM attachments')
+        .all(),
+    ).toEqual([{ anchor_block_id: null, added_by: null, superseded_by: null, superseded_at: null }]);
+    expect(handle.prepare('SELECT * FROM blocks').all()).toEqual(blocksBefore);
+  });
+
+  // ⚠️ 真库的 `attachments` 不是 schema.sql 那个形状：`thread_id` 是 v15 用 ALTER 加的（可空、
+  // 没外键、排在列尾）。从 v14 带老 `block_id` 的库一路走上来，正好就是那个形状 —— 用产品自己的
+  // 读函数读回来，四个新字段都是「没写过」。
+  it('v14 (block-owned files) → v30 reads back through the product reader', async () => {
+    applySchema(handle);
+    downgradeToV14(handle);
+    seedUserData(handle);
+    seedLegacyAttachments(handle);
+
+    await __migrateSchemaForTest(db);
+
+    expect(userVersion(handle)).toBe(CURRENT_SCHEMA_VERSION);
+    expect(columnNames(handle, 'attachments')).not.toContain('block_id');
+    const rows = await listAttachmentsByThread('t1');
+    expect(rows.map((a) => [a.id, a.anchorBlockId, a.addedBy, a.supersededBy, a.supersededAt])).toEqual([
+      ['a1', null, null, null, null],
+    ]);
+  });
+
+  it('a fresh install builds the four v30 columns straight from schema.sql', () => {
+    applySchema(handle);
+    const cols = columnNames(handle, 'attachments');
+    for (const c of V30_ATTACHMENT_COLS) expect(cols).toContain(c);
   });
 
   // DESIGN_PROJECT_FILES §3.4 (phase three). The queue starts empty and grants nothing: a

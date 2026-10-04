@@ -38,7 +38,7 @@ export const setSeedLanguage = (lang: SeedLanguage): void => {
 // carries a database from the previous version to the new one. On startup the
 // database's PRAGMA user_version is compared against this and every applicable step
 // runs in sequence, each stamping user_version as its own checkpoint (§19.3).
-const SCHEMA_VERSION = 29;
+const SCHEMA_VERSION = 30;
 
 // Things a migration did to the user's data that the user is entitled to hear about.
 // v15 is the first migration that removes anything (the retired `url` attachments), and
@@ -937,6 +937,44 @@ const MIGRATIONS: Migration[] = [
       await db.execute(
         'CREATE INDEX IF NOT EXISTS idx_blocks_ref_block ON blocks(ref_block_id) WHERE ref_block_id IS NOT NULL',
       );
+    },
+  },
+  {
+    // v30 (P5 任务书 P5-1, Ocean 2026-09-30 §9.2 第 6、9、10 条 + 10-03 四条)：
+    // 项目文件能挂在某一块上、记下是谁加的、留出「被哪个文件取代」的位置。
+    //
+    // ⚠️⚠️ **ADD COLUMN only，没有回填、⛔ 没有 rebuild 分支、⛔ 没有外键** —— 和
+    // v21 / v24 / v26 / v28 / v29 逐字同一条路（2026-05-29 抹库是**重建表**那条分支干的）。
+    // 四个可空列，`schema.sql` 那一段写了每一列的意思：
+    //   * `anchor_block_id` —— 挂在哪一块。⛔ 不叫 `block_id`：v15 刚用 `DROP COLUMN` 去掉过
+    //     一列同名的（那时文件只属于某一块），v14→v15 那一步和老库测试样本都按名字认它。
+    //   * `added_by` / `superseded_by` / `superseded_at` —— 谁加的、被谁取代、何时取代。
+    //   * ⛔ 不加外键：真库的 `thread_id` 是 v15 用 ALTER 加的，本来就没有外键；
+    //     块删了文件怎么办由 `blocksStore` 的删块路径管（P5-3），不交给级联。
+    //   * 往前：老库每一行四列都是 NULL —— 读出来是「挂在项目、用户加的、没被取代」，
+    //     也就是 v29 的行为（v15 起只有文件选择器和访达拖入两条路能加文件，都是用户）。
+    //   * 往回：`ALTER TABLE attachments DROP COLUMN` 四句退回 v29，⛔ 不丢任何 v29 就有的
+    //     数据 —— 丢的只是「挂在哪一块」（文件全部回到挂在项目）和「谁加的」。
+    //
+    // ⚠️ 半跑一次和跑完一次分不出来，而这正是安全的那一类：`ADD COLUMN` 撞上已存在的列
+    // 会抛、catch 掉再跑一遍什么都不会发生（v28 逐字同一个写法）。
+    from: 29,
+    to: 30,
+    name: 'add-attachment-anchor-and-provenance',
+    run: async (db) => {
+      const cols: Array<[string, string]> = [
+        ['anchor_block_id', 'TEXT'],
+        ['added_by', 'TEXT'],
+        ['superseded_by', 'TEXT'],
+        ['superseded_at', 'INTEGER'],
+      ];
+      for (const [col, type] of cols) {
+        try {
+          await db.execute(`ALTER TABLE attachments ADD COLUMN ${col} ${type}`);
+        } catch (e) {
+          console.info(`[db] attachments.${col}: not added (likely exists)`, e);
+        }
+      }
     },
   },
 ];

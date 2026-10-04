@@ -242,6 +242,38 @@ describe('库的导出与导入 (DESIGN_LIBRARY_TRANSFER)', () => {
     );
   });
 
+  // P5-1: the v30 columns ride along — the merge copies by column name, so a file hung off a
+  // block lands hung off the same block, and who added it / what replaced it come too.
+  it('文件挂在哪一块、谁加的、被谁取代，导出再导入原样回来', async () => {
+    __setTestDb(src.db);
+    const ws = await createWorkspace('材料');
+    const thread = await createThread(ws.id, '文书');
+    const block = await createBlock({ threadId: thread.id, content: '初稿' });
+    const old = await createAttachment({ threadId: thread.id, kind: 'file', target: '/Users/a/v1.pdf' });
+    const neu = await createAttachment({ threadId: thread.id, kind: 'file', target: '/Users/a/v2.pdf' });
+    __setTestDb(null);
+    src.handle
+      .prepare(
+        'UPDATE attachments SET anchor_block_id = ?, superseded_by = ?, superseded_at = ? WHERE id = ?',
+      )
+      .run(block.id, neu.id, 1700000000123, old.id);
+    src.handle.prepare("UPDATE attachments SET added_by = 'Claude Desktop · MCP' WHERE id = ?").run(neu.id);
+    const v30 =
+      'SELECT id, anchor_block_id, added_by, superseded_by, superseded_at FROM attachments ORDER BY id';
+    const before = src.handle.prepare(v30).all();
+
+    await mergeLibrary(src.db, dst.db);
+
+    expect(dst.handle.prepare(v30).all()).toEqual(before);
+    expect(before).toContainEqual({
+      id: old.id,
+      anchor_block_id: block.id,
+      added_by: 'user',
+      superseded_by: neu.id,
+      superseded_at: 1700000000123,
+    });
+  });
+
   // ⚠️⚠️ There is no transaction around a merge — tauri-plugin-sql's pool cannot hold one
   // (threads.ts:204). What makes a half-finished merge survivable is this order: a parent
   // is always inserted before its children, so whatever landed is a prefix in which every
