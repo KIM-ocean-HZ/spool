@@ -1,5 +1,6 @@
 import { nanoid } from 'nanoid';
 import { create } from 'zustand';
+import { deleteAttachment, restoreAttachment, setAttachmentAnchor } from '@/lib/db/attachments';
 import {
   computeMergedFields,
   deleteBlock,
@@ -299,17 +300,27 @@ const reverseAndBuildRedo = async (
       };
     }
     case 'delete': {
-      const { block } = entry.payload;
+      const { block, files = [], removedFiles = false } = entry.payload;
       await restoreBlock(block);
+      // v30 (P5-3): the files that hung off it go back on it — re-inserted verbatim if the
+      // user took them out of the project with the block, re-hung if they were left on it.
+      for (const f of files) {
+        if (removedFiles) await restoreAttachment(f);
+        else await setAttachmentAnchor(f.id, block.id);
+      }
       return async () => {
+        if (removedFiles) for (const f of files) await deleteAttachment(f.id);
         await deleteBlock(block.id);
       };
     }
     case 'merge': {
-      const { survivorId, sourceBlocks } = entry.payload;
+      const { survivorId, sourceBlocks, files = [] } = entry.payload;
       for (const b of sourceBlocks) {
         if (b.id !== survivorId) await restoreBlock(b);
       }
+      // v30 (P5-3): the merge moved these onto the survivor; each goes back on its own block.
+      // Redo needs nothing extra — mergeBlocks moves them onto the survivor again.
+      for (const f of files) await setAttachmentAnchor(f.id, f.anchorBlockId);
       const survivor = sourceBlocks.find((b) => b.id === survivorId);
       if (survivor) {
         await restoreBlockFields(
@@ -410,7 +421,8 @@ const reverseAndBuildRedo = async (
     // since falls back to a fresh one in moveBlock); the deleted duplicates come back
     // verbatim. Redo makes the same move again.
     case 'move': {
-      const { toThreadId, moved, deleted } = entry.payload;
+      const { toThreadId, moved, deleted, deletedFiles = [] } = entry.payload;
+      // v30 (P5-3): files hung off a moved block ride back with it inside moveBlock.
       for (const { block } of moved) {
         await moveBlock(block.id, block.threadId, block.seq, block.createdAt);
       }
@@ -421,6 +433,8 @@ const reverseAndBuildRedo = async (
         await restoreBlock({ ...b, seq: null });
         await moveBlock(b.id, b.threadId, b.seq, b.createdAt);
       }
+      // Removing a duplicate put its files on the project; they hang back on it now.
+      for (const f of deletedFiles) await setAttachmentAnchor(f.id, f.anchorBlockId);
       return async () => {
         for (const b of deleted) await deleteBlock(b.id);
         for (const m of moved) await moveBlock(m.block.id, toThreadId, m.toSeq, m.toCreatedAt);

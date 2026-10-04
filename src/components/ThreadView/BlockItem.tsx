@@ -26,6 +26,7 @@ import { useSearchStore } from '@/stores/searchStore';
 import { toast } from '@/stores/toastStore';
 import { buildHighlightUndo, useUndoStore } from '@/stores/undoStore';
 import { useCompressStore } from '@/stores/compressStore';
+import { askBeforeDeletingBlocks } from '@/stores/deleteFilesPromptStore';
 import { useFileDragStore } from '@/stores/fileDragStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { selectThreadById, useThreadsStore } from '@/stores/threadsStore';
@@ -151,6 +152,11 @@ function TextBlockItem({
   const setAnnotation = useBlocksStore((s) => s.setAnnotation);
   const setStale = useBlocksStore((s) => s.setStale);
   const removeBlock = useBlocksStore((s) => s.remove);
+  // P5-3: deleting a correction card is the user's own delete too — same question first.
+  const removeAsking = async (id: string): Promise<void> => {
+    const go = await askBeforeDeletingBlocks([id]);
+    if (go) await removeBlock(id, go);
+  };
   const addCorrection = useBlocksStore((s) => s.addCorrection);
   const siblings = useBlocksStore((s) => s.byThread[block.threadId]);
   // P5-2: the project files hung off THIS block, in the order they joined the project.
@@ -1008,7 +1014,7 @@ function TextBlockItem({
               ? undefined
               : () => {
                   setOpenCorrectionId(null);
-                  void removeBlock(c.id);
+                  void removeAsking(c.id);
                 }
           }
         />
@@ -1292,7 +1298,7 @@ function TextBlockItem({
                                     // 它的全部内容就是「这句话应该是……」，脱离了它更正的那
                                     // 一句之后没人读得懂。现在整块删掉。
                                     // ⚠️ 走的是普通删除那条路，所以它进撤销栈 —— ⌘Z 能拿回来。
-                                    void removeBlock(c.id);
+                                    void removeAsking(c.id);
                                   }
                             }
                           />

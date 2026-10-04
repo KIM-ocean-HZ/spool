@@ -62,7 +62,10 @@ interface BlocksState {
   ) => Promise<'ok' | 'quote-missing'>;
   append: (args: CreateBlockArgs) => Promise<Block>;
   togglePin: (id: string) => Promise<void>;
-  remove: (id: string) => Promise<void>;
+  /** The user's own delete. v30 (P5-3): `removeFiles` says what happens to files hung off the
+   *  block — taken out of the project with it, or (default) left on the project. The asking is
+   *  the calling screen's job (askBeforeDeletingBlocks); ⛔ nothing here opens a dialog. */
+  remove: (id: string, opts?: { removeFiles?: boolean }) => Promise<void>;
   setSource: (id: string, source: string | null) => Promise<void>;
   /** DESIGN_CONTEXT_HYGIENE §3.1 — 「这条不作数了」and taking it back. */
   setStale: (id: string, stale: boolean) => Promise<void>;
@@ -360,10 +363,11 @@ export const useBlocksStore = create<BlocksState>((set, get) => {
       set({ byThread: next });
     },
 
-    remove: async (id) => {
+    remove: async (id, opts) => {
       // §9.13: snapshot the block BEFORE the destructive delete so the undo entry captures
       // pre-state. ⚠️ v15: deleting a block no longer takes any file with it — files belong
-      // to the project now, so there is nothing else to snapshot and nothing to restore.
+      // to the project now. v30 (P5-3) brings back the one exception: a file hung off this
+      // block. Read from the library, not the in-memory index, so a file is never missed.
       const before = get();
       let snapshot: Block | undefined;
       for (const list of Object.values(before.byThread)) {
@@ -373,17 +377,31 @@ export const useBlocksStore = create<BlocksState>((set, get) => {
           break;
         }
       }
+      const files = await adb.listAttachmentsAnchoredTo([id]);
+      const removedFiles = opts?.removeFiles === true && files.length > 0;
 
+      // Out of the project first, then the block — deleteBlock would otherwise have put them
+      // back on the project (its default for every other path).
+      if (removedFiles) for (const f of files) await adb.deleteAttachment(f.id);
       await db.deleteBlock(id);
 
-      if (snapshot) useUndoStore.getState().pushUndo(buildDeleteUndo({ block: snapshot }));
+      if (snapshot) {
+        useUndoStore.getState().pushUndo(buildDeleteUndo({ block: snapshot, files, removedFiles }));
+      }
 
       const state = get();
       const next: Record<string, Block[]> = {};
       for (const [tId, list] of Object.entries(state.byThread)) {
         next[tId] = list.filter((b) => b.id !== id);
       }
-      set({ byThread: next });
+      const gone = new Set(files.map((f) => f.id));
+      const attachmentsByThread: Record<string, Attachment[]> = {};
+      for (const [tId, list] of Object.entries(state.attachmentsByThread)) {
+        attachmentsByThread[tId] = removedFiles
+          ? list.filter((a) => !gone.has(a.id))
+          : list.map((a) => (gone.has(a.id) ? { ...a, anchorBlockId: null } : a));
+      }
+      set(files.length > 0 ? { byThread: next, attachmentsByThread } : { byThread: next });
     },
 
     setSource: async (id, source) => {
@@ -684,7 +702,10 @@ export const useBlocksStore = create<BlocksState>((set, get) => {
       // §9.13: snapshot pre-merge state for undo — the full rows BEFORE the merge mutates
       // the survivor. ⚠️ v15: a merge no longer moves any file. Files belong to the project,
       // and merging two of its blocks does not change which project they are in.
+      // v30 (P5-3): except the files hung off a block being merged away — db.mergeBlocks
+      // moves them onto the survivor, and undo needs to know where each one was.
       const sourceBlocks = found.map((x) => x.block);
+      const files = await adb.listAttachmentsAnchoredTo(merged.nonSurvivorIds);
 
       try {
         await db.mergeBlocks(
@@ -702,7 +723,7 @@ export const useBlocksStore = create<BlocksState>((set, get) => {
       }
 
       useUndoStore.getState().pushUndo(
-        buildMergeUndo({ survivorId: merged.survivorId, threadId, sourceBlocks }),
+        buildMergeUndo({ survivorId: merged.survivorId, threadId, sourceBlocks, files }),
       );
       // Clear selection and reload — simpler and safer than reconstructing the merged
       // block in-memory.
@@ -828,6 +849,9 @@ export const useBlocksStore = create<BlocksState>((set, get) => {
         // the whole move instead of a second press that does nothing.
         useUndoStore.getState().invalidateForBlock(copyId);
       }
+      // v30 (P5-3): a removed duplicate is not the user's own delete, so its files go back on
+      // the project (deleteBlock) — and undo needs to know where they hung.
+      const deletedFiles = await adb.listAttachmentsAnchoredTo(deleteIds);
       const deleted: Block[] = [];
       for (const id of deleteIds) {
         const b = await db.getBlockById(id);
@@ -836,7 +860,9 @@ export const useBlocksStore = create<BlocksState>((set, get) => {
         deleted.push(b);
       }
       if (moved.length + deleted.length > 0) {
-        useUndoStore.getState().pushUndo(buildMoveUndo({ fromThreadId, toThreadId, moved, deleted }));
+        useUndoStore
+          .getState()
+          .pushUndo(buildMoveUndo({ fromThreadId, toThreadId, moved, deleted, deletedFiles }));
       }
       await get().load(fromThreadId);
       await get().load(toThreadId);

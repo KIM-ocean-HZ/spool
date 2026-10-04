@@ -11,6 +11,7 @@ import {
 import { useActiveBlockStore } from '@/stores/activeBlockStore';
 import { useBlocksStore } from '@/stores/blocksStore';
 import { useCaptureStore } from '@/stores/captureStore';
+import { askBeforeDeletingBlocks } from '@/stores/deleteFilesPromptStore';
 import { useDropStore } from '@/stores/dropStore';
 import { usePermissionStore } from '@/stores/permissionStore';
 import { IS_MAC } from '@/lib/platform';
@@ -88,6 +89,11 @@ export default function BlockFeed({ threadId, scrollRef }: Props) {
   const load = useBlocksStore((s) => s.load);
   const togglePin = useBlocksStore((s) => s.togglePin);
   const remove = useBlocksStore((s) => s.remove);
+  // P5-3: a block with project files hung off it asks what happens to them first.
+  const deleteAsking = async (id: string): Promise<void> => {
+    const go = await askBeforeDeletingBlocks([id]);
+    if (go) await remove(id, go);
+  };
   const blocks = useBlocksStore((s) => s.byThread[threadId] ?? EMPTY);
   const overEmpty = useDropStore((s) => s.overThread);
   const highlightBlockId = useSearchStore((s) => s.highlightBlockId);
@@ -556,7 +562,7 @@ export default function BlockFeed({ threadId, scrollRef }: Props) {
                 anySelected={anySelected}
                 onSelectClick={(shiftKey) => handleSelectClick(b.id, shiftKey)}
                 onTogglePin={() => void togglePin(b.id)}
-                onDelete={() => void remove(b.id)}
+                onDelete={() => void deleteAsking(b.id)}
               />
               {/* 拍板点 5 / 首日价值 §4.5: one line, once, under the block that took the
                   user to three captures — the point at which 「打个包试试」 is something

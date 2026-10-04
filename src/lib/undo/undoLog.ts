@@ -3,6 +3,7 @@
 // wraps this with reactive state + the actual reversal logic; this file only owns the
 // buffer mechanics (push / peek / pop / invalidate / clear) and the entry types.
 
+import type { Attachment } from '@/lib/db/attachments';
 import type { Block } from '@/lib/db/blocks';
 import type { ThreadStatus } from '@/lib/db/threads';
 
@@ -45,8 +46,14 @@ export interface CreatePayload {
 // ⚠️ v15 (DESIGN_PROJECT_FILES): the block, and nothing else. Deleting a block used to
 // cascade-delete its attachments, so undo had to carry them back; files now belong to the
 // project and a block's deletion never touches one.
+// v30 (P5-3): a project file can hang off a block again, so the entry carries the files that
+// hung off it at the time (full rows) and what the user chose for them — taken out of the
+// project with the block (`removedFiles`), or left on the project. Undo puts each back on
+// this block either way; redo makes the same choice again.
 export interface DeletePayload {
   block: Block;
+  files?: Attachment[];
+  removedFiles?: boolean;
 }
 
 export interface MergePayload {
@@ -55,6 +62,9 @@ export interface MergePayload {
   // Full pre-merge rows of every source block (survivor + non-survivors). Restored
   // verbatim on undo.
   sourceBlocks: Block[];
+  // v30 (P5-3): files that hung off a non-survivor, as they were. The merge moves them onto
+  // the survivor; undo hangs each back on its own block.
+  files?: Attachment[];
 }
 
 // Step 6 §20.5: a select-to-highlight gesture mutated stored content. Reversal restores
@@ -138,6 +148,9 @@ export interface MovePayload {
   moved: { block: Block; toSeq: number | null; toCreatedAt: number }[];
   /** Exact duplicates of blocks the target already had — removed, not moved. */
   deleted: Block[];
+  /** v30 (P5-3): files that hung off a removed duplicate. Removing it put them on the
+   *  project; undo hangs them back. (Files on a MOVED block travel with it — moveBlock.) */
+  deletedFiles?: Attachment[];
 }
 
 interface BaseEntry {

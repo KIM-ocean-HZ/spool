@@ -649,6 +649,11 @@ export const togglePin = async (id: string): Promise<boolean> => {
 
 export const deleteBlock = async (id: string): Promise<void> => {
   const db = await getDb();
+  // v30 (P5-3): a file hung off this block goes back onto the project — the side that loses
+  // nothing. Every path that deletes a block passes through here (undoing a capture, the
+  // duplicates a move removes, the overlay's 改投, …); only the user's own delete may take the
+  // files away too, and it does that explicitly BEFORE calling this (blocksStore.remove).
+  await db.execute('UPDATE attachments SET anchor_block_id = NULL WHERE anchor_block_id = $1', [id]);
   await db.execute('DELETE FROM blocks WHERE id = $1', [id]);
 };
 
@@ -931,6 +936,10 @@ export const moveBlock = async (
   createdAt: number,
 ): Promise<void> => {
   const db = await getDb();
+  // v30 (P5-3, Ocean 2026-10-03「跟着块走」): the files hung off this block move with it —
+  // same anchor, new project. Undoing / redoing a move goes through here too, so they follow
+  // it back as well.
+  await db.execute('UPDATE attachments SET thread_id = $1 WHERE anchor_block_id = $2', [threadId, id]);
   await db.execute(
     `UPDATE blocks
         SET thread_id = $1,
@@ -1289,7 +1298,8 @@ export const computeMergedFields = (blocks: Block[]): MergedFields => {
 // ⚠️ v15 (DESIGN_PROJECT_FILES): the re-point that used to run first is gone. Attachments
 // belonged to a block, so a merge had to move them onto the survivor before the FK cascade
 // took them; they belong to the PROJECT now, and merging two of its blocks does not move a
-// file anywhere.
+// file anywhere. v30 brings back a narrow version of it: a project file can hang off a block
+// again (anchor_block_id), and that anchor follows onto the survivor.
 export const mergeBlocks = async (
   survivorId: string,
   content: string,
@@ -1307,6 +1317,13 @@ export const mergeBlocks = async (
   );
 
   const deletePlaceholders = nonSurvivorIds.map((_, i) => `$${i + 1}`).join(', ');
+  // v30 (P5-3): a file hung off a block being merged away moves onto the survivor — before the
+  // DELETE, so there is never a moment it points at a block that is gone.
+  await db.execute(
+    `UPDATE attachments SET anchor_block_id = $${nonSurvivorIds.length + 1}
+      WHERE anchor_block_id IN (${deletePlaceholders})`,
+    [...nonSurvivorIds, survivorId],
+  );
   await db.execute(
     `DELETE FROM blocks WHERE id IN (${deletePlaceholders})`,
     [...nonSurvivorIds],

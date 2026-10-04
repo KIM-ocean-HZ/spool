@@ -477,6 +477,13 @@ const EN: Record<string, string> = {
   '挂在项目': 'On the project',
   '挂在 #{n}': 'On block #{n}',
   '改回挂在项目（文件还在这个项目里）': 'Move back onto the project (the file stays in this project)',
+  // P5-3 — deleting blocks that have project files hung off them asks first.
+  '要删的块上挂着文件': 'Files are attached to what you are deleting',
+  '这些文件要一起从项目里去掉吗？去掉只是 Spool 不再记着它，电脑上的文件不动。':
+    'Remove these files from the project too? Spool just stops keeping track of them — the files on your computer are not touched.',
+  '留在项目里的话，它们会改成挂在项目上。': 'If you keep them, they stay in the project, attached to the project itself.',
+  '留在项目里': 'Keep in project',
+  '一起从项目里去掉': 'Remove from project too',
   '这次更新去掉了「附加链接」，你原来加的 {n} 个链接已经删掉了。':
     'This update removed the \u201cattach link\u201d feature. The {n} link(s) you had added have been deleted.',
   '这个项目没有标记过的重点。翻翻完整记录？': 'No marked highlights in this project. Browse the full record?',

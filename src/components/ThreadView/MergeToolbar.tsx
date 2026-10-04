@@ -3,6 +3,7 @@ import { Copy, Merge, Trash2, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useT } from '@/lib/i18n';
 import { useBlocksStore } from '@/stores/blocksStore';
+import { askBeforeDeletingBlocks } from '@/stores/deleteFilesPromptStore';
 import { useThreadsStore } from '@/stores/threadsStore';
 import { toast } from '@/stores/toastStore';
 import ThreadPicker, { type PickedThread } from './ThreadPicker';
@@ -113,13 +114,17 @@ export default function MergeToolbar({ threadId }: Props) {
 
   // Batch delete = the single-block remove per id, so each block gets its own §9.13
   // delete-undo entry — ⌘Z walks them back newest-first, one at a time.
+  // P5-3: if any of them has project files hung off it, one question for the whole set
+  // (askBeforeDeletingBlocks) — and backing out of it deletes nothing.
   const handleDelete = async (): Promise<void> => {
     if (deleting) return;
     setConfirmingDelete(false);
     setDeleting(true);
     try {
       const ids = [...selectedBlockIds];
-      for (const id of ids) await removeBlock(id);
+      const go = await askBeforeDeletingBlocks(ids);
+      if (!go) return;
+      for (const id of ids) await removeBlock(id, go);
       clearSelection();
       toast.notice(t('已删除 {n} 个块', { n: ids.length }));
     } finally {

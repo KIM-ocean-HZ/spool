@@ -109,6 +109,19 @@ export const listAttachmentsByThread = async (threadId: string): Promise<Attachm
   return rows.map(fromRow);
 };
 
+// v30 (P5-3): the files hung off any of these blocks, as full rows — what a delete / merge /
+// move snapshots so its undo can put each one back where it hung.
+export const listAttachmentsAnchoredTo = async (blockIds: string[]): Promise<Attachment[]> => {
+  if (blockIds.length === 0) return [];
+  const db = await getDb();
+  const slots = blockIds.map((_, i) => `$${i + 1}`).join(', ');
+  const rows = await db.select<Row[]>(
+    `SELECT ${SELECT_COLS} FROM attachments WHERE anchor_block_id IN (${slots}) ORDER BY created_at ASC`,
+    blockIds,
+  );
+  return rows.map(fromRow);
+};
+
 // v2.7: file attachments that have never had an extraction pass — used by the one-time
 // startup backfill for rows created before v2.7 (PLAN §8.1 lazy backfill). All three
 // extraction columns being NULL means extraction was never attempted.
