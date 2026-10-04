@@ -96,6 +96,10 @@ interface BlocksState {
   // setIncludeInPack and deliberately NOT the same flag — one is "put the text in the pack
   // I am building", the other is "an AI may ask for this at all".
   setAiAccess: (attachmentId: string, threadId: string, value: boolean) => Promise<void>;
+  // v30 (P5-2): hang a project file off one of the project's blocks, or (null) back on the
+  // project. ⚠️ Not in the undo ring, on purpose — same reason as pin: the gesture is its own
+  // inverse (the × beside 「挂在 #n」, or dragging it onto another block), and both sit in view.
+  anchorAttachment: (attachmentId: string, threadId: string, blockId: string | null) => Promise<void>;
   // v2.7: one-time startup pass that extracts text for legacy file attachments created
   // before the extraction pipeline existed (PLAN §8.1, §9.6).
   backfillExtractions: () => Promise<void>;
@@ -583,6 +587,11 @@ export const useBlocksStore = create<BlocksState>((set, get) => {
     setAiAccess: async (attachmentId, threadId, value) => {
       await adb.setAiAccess(attachmentId, value);
       set((s) => patchAttachment(s, threadId, attachmentId, { aiAccess: value }));
+    },
+
+    anchorAttachment: async (attachmentId, threadId, blockId) => {
+      await adb.setAttachmentAnchor(attachmentId, blockId);
+      set((s) => patchAttachment(s, threadId, attachmentId, { anchorBlockId: blockId }));
     },
 
     backfillExtractions: async () => {

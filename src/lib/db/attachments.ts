@@ -214,6 +214,13 @@ export const setAiAccess = async (id: string, value: boolean): Promise<void> => 
   await db.execute('UPDATE attachments SET ai_access = $1 WHERE id = $2', [value ? 1 : 0, id]);
 };
 
+// v30 (P5-2): hang a project file off one block of its project, or (null) back on the project.
+// Only the anchor moves — the file stays in the same project, with every other column as it was.
+export const setAttachmentAnchor = async (id: string, blockId: string | null): Promise<void> => {
+  const db = await getDb();
+  await db.execute('UPDATE attachments SET anchor_block_id = $1 WHERE id = $2', [blockId, id]);
+};
+
 export const deleteAttachment = async (id: string): Promise<void> => {
   const db = await getDb();
   await db.execute('DELETE FROM attachments WHERE id = $1', [id]);

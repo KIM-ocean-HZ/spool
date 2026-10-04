@@ -68,7 +68,7 @@ export function threadsToMove(
  */
 const blockSelectStart = (e: Event): void => e.preventDefault();
 
-const suppressSelection = (on: boolean): void => {
+export const suppressSelection = (on: boolean): void => {
   const style = document.body.style;
   if (on) {
     style.setProperty('user-select', 'none');

@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useThreadDropTarget } from '@/hooks/useThreadDropTarget';
 import { scrollBlockIntoView, topmostVisibleBlockId } from '@/lib/blocks/viewportAnchor';
+import { TIMELINE_SCROLLER_ATTR } from '@/lib/files/fileDrag';
 import { isTutorialSource } from '@/lib/db/client';
 import {
   getReadPosition,
@@ -206,7 +207,11 @@ export default function LogView({ threadId }: Props) {
           the very top (「刻度条根本调不出来,只有划到最顶部才能看到」). Same trap the editor
           dim hit earlier in this batch. ⛔ Do not move ScaleRail back inside. */}
       <div className="relative flex min-h-0 flex-1 flex-col">
-        <div ref={scrollRef} className="no-native-scrollbar flex-1 overflow-y-auto">
+        <div
+          ref={scrollRef}
+          {...{ [TIMELINE_SCROLLER_ATTR]: '' }}
+          className="no-native-scrollbar flex-1 overflow-y-auto"
+        >
           {/* scrollRef is forwarded so BlockFeed's §20.1 drag-marquee selection can
             auto-scroll near the top/bottom edges and resolve block positions against
             the same scroll container. */}

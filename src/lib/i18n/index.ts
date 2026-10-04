@@ -472,6 +472,11 @@ const EN: Record<string, string> = {
   '关掉之后，AI 想再读它就得重新问你一次。':
     'Turn it off and an AI has to ask you again before it can read this file.',
   '添加文件失败：{msg}': 'Could not add the file: {msg}',
+  // P5-2 — who added a project file, and whether it hangs off one block or the project.
+  '你加的': 'Added by you',
+  '挂在项目': 'On the project',
+  '挂在 #{n}': 'On block #{n}',
+  '改回挂在项目（文件还在这个项目里）': 'Move back onto the project (the file stays in this project)',
   '这次更新去掉了「附加链接」，你原来加的 {n} 个链接已经删掉了。':
     'This update removed the \u201cattach link\u201d feature. The {n} link(s) you had added have been deleted.',
   '这个项目没有标记过的重点。翻翻完整记录？': 'No marked highlights in this project. Browse the full record?',

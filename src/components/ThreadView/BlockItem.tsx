@@ -1,3 +1,4 @@
+import { File, Folder } from 'lucide-react';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { flushSync } from 'react-dom';
@@ -10,7 +11,10 @@ import { locateQuote } from '@/lib/blocks/quoteFold';
 import { hasSegmentAnnotations } from '@/lib/blocks/segments';
 import { rawRangeFromSelection } from '@/lib/blocks/selectionRange';
 import { SegmentedContent } from '@/lib/blocks/SegmentedContent';
+import type { Attachment } from '@/lib/db/attachments';
 import type { Block, IncomingRef } from '@/lib/db/blocks';
+import { DROP_BLOCK_ATTR } from '@/lib/files/fileDrag';
+import { fileLabel, openFile } from '@/lib/files/openFile';
 import { correctionsBySource, type Correction } from '@/lib/pack/assemble';
 import type { HitOffset } from '@/lib/search/query';
 import { isImeComposing } from '@/lib/utils/ime';
@@ -22,6 +26,7 @@ import { useSearchStore } from '@/stores/searchStore';
 import { toast } from '@/stores/toastStore';
 import { buildHighlightUndo, useUndoStore } from '@/stores/undoStore';
 import { useCompressStore } from '@/stores/compressStore';
+import { useFileDragStore } from '@/stores/fileDragStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { selectThreadById, useThreadsStore } from '@/stores/threadsStore';
 import BlockActions from './BlockActions';
@@ -37,6 +42,8 @@ import SourceBadge from './SourceBadge';
  *  每次 render 新建一个数组会让 zustand 的选择器每次都判定「变了」，
  *  于是每一块每一帧都重渲染。这是 2026-08-05 那次 React #185 打死主窗的同一类问题。 */
 const EMPTY_INCOMING: IncomingRef[] = [];
+/** Same reason as EMPTY_INCOMING: a project with no files must not hand back a new [] each render. */
+const EMPTY_FILES: Attachment[] = [];
 
 interface Props {
   block: Block;
@@ -146,6 +153,13 @@ function TextBlockItem({
   const removeBlock = useBlocksStore((s) => s.remove);
   const addCorrection = useBlocksStore((s) => s.addCorrection);
   const siblings = useBlocksStore((s) => s.byThread[block.threadId]);
+  // P5-2: the project files hung off THIS block, in the order they joined the project.
+  const projectFiles = useBlocksStore((s) => s.attachmentsByThread[block.threadId] ?? EMPTY_FILES);
+  const blockFiles = useMemo(
+    () => projectFiles.filter((a) => a.anchorBlockId === block.id),
+    [projectFiles, block.id],
+  );
+  const fileDropOver = useFileDragStore((s) => s.overBlockId === block.id);
   // v13's warning, seen from the corrected block — the half the feed never had. Derived
   // from the project's own blocks through the SAME function the pack uses, so 「哪些块算更正
   // 了这一块」 cannot drift between the briefing and the screen.
@@ -1009,6 +1023,7 @@ function TextBlockItem({
     <article
       ref={articleRef}
       data-block-id={block.id}
+      {...(readOnly ? {} : { [DROP_BLOCK_ATTR]: block.id })}
       onMouseEnter={readOnly ? undefined : () => setHovered(true)}
       onMouseLeave={readOnly ? undefined : () => setHovered(false)}
       onClick={
@@ -1029,7 +1044,7 @@ function TextBlockItem({
         block.pinned ? 'pl-4' : ''
       } ${block.staleAt != null ? 'opacity-55' : ''} ${
         highlight || selfFlash ? 'flash' : ''
-      } ${isActive ? 'block-active' : ''}`}
+      } ${isActive ? 'block-active' : ''} ${fileDropOver ? 'bg-accent/5 ring-1 ring-inset ring-accent' : ''}`}
     >
       {block.pinned && (
         <span className="absolute bottom-2.5 left-0 top-2.5 w-[3px] rounded-r bg-accent" />
@@ -1344,6 +1359,27 @@ function TextBlockItem({
           )}
       </div>
 
+      {/* P5-2: the files hung off this block, one name each, opened the way the right rail
+          opens them. ⛔ A block with none draws nothing here — not an empty row. */}
+      {blockFiles.length > 0 && (
+        <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 font-ui text-[12px] text-muted">
+          {blockFiles.map((a) => {
+            const Icon = a.kind === 'folder' ? Folder : File;
+            return (
+              <button
+                key={a.id}
+                type="button"
+                onClick={() => void openFile(a.target)}
+                title={a.target}
+                className="inline-flex min-w-0 max-w-full items-center gap-1 transition-colors hover:text-accent"
+              >
+                <Icon size={11} className="flex-none" />
+                <span className="truncate">{fileLabel(a)}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {/* v2.4 P2-3: quiet citation line — the feed counterpart of the pack's ↩ cites
           row. Only MCP-written blocks carry refBlockId, so most blocks skip this.

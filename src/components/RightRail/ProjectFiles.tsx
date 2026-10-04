@@ -1,8 +1,13 @@
 import { File, Folder, Plus, X } from 'lucide-react';
+import { useMemo } from 'react';
+import FileDragGhost from './FileDragGhost';
 import RailSection from './RailSection';
 import { useT } from '@/lib/i18n';
 import type { Attachment } from '@/lib/db/attachments';
-import { basename, openTarget, pickFiles } from '@/lib/utils/openTarget';
+import type { Block } from '@/lib/db/blocks';
+import { startFileDrag } from '@/lib/files/fileDrag';
+import { fileLabel, openFile } from '@/lib/files/openFile';
+import { basename, pickFiles } from '@/lib/utils/openTarget';
 import { useBlocksStore } from '@/stores/blocksStore';
 import { toast } from '@/stores/toastStore';
 
@@ -33,6 +38,7 @@ import { toast } from '@/stores/toastStore';
 // they are building; this one is whether an AI may go and ask for the file at all.
 
 const EMPTY: readonly Attachment[] = [];
+const EMPTY_BLOCKS: readonly Block[] = [];
 
 export default function ProjectFiles({ threadId }: { threadId: string }) {
   const t = useT();
@@ -41,6 +47,10 @@ export default function ProjectFiles({ threadId }: { threadId: string }) {
   const detach = useBlocksStore((s) => s.detach);
   const setIncludeInPack = useBlocksStore((s) => s.setIncludeInPack);
   const setAiAccess = useBlocksStore((s) => s.setAiAccess);
+  const anchorAttachment = useBlocksStore((s) => s.anchorAttachment);
+  // P5-2: 「挂在 #12」 names the block by its number, so the rail needs the project's blocks.
+  const blocks = useBlocksStore((s) => s.byThread[threadId] ?? EMPTY_BLOCKS);
+  const seqById = useMemo(() => new Map(blocks.map((b) => [b.id, b.seq])), [blocks]);
 
   const add = async (): Promise<void> => {
     try {
@@ -51,15 +61,6 @@ export default function ProjectFiles({ threadId }: { threadId: string }) {
     } catch (e) {
       console.error('[files] picker failed', e);
       toast.error(t('添加文件失败：{msg}', { msg: e instanceof Error ? e.message : String(e) }));
-    }
-  };
-
-  const open = async (target: string): Promise<void> => {
-    try {
-      await openTarget(target);
-    } catch (e) {
-      // §14.4: a file the user has since moved is not a crash — say so and carry on.
-      toast.error(e instanceof Error ? e.message : t('无法打开附件'));
     }
   };
 
@@ -89,17 +90,23 @@ export default function ProjectFiles({ threadId }: { threadId: string }) {
             // v2.8 §20.2: the opt-in only means anything once there is text to inline, so
             // the control appears only on a file that actually has some.
             const canInline = a.kind === 'file' && a.extractedText != null;
+            // P5-2: a file hangs off a block only while that block is in this project's feed.
+            const anchorSeq = a.anchorBlockId != null ? seqById.get(a.anchorBlockId) : undefined;
+            const anchored = anchorSeq !== undefined;
             return (
               <li key={a.id} className="group/file rounded-md px-3 py-1 hover:bg-paper-2/60">
                 <div className="flex items-center gap-1.5">
                   <Icon size={12} className="flex-none text-muted" />
+                  {/* P5-2: press and carry onto a block to hang the file there; a plain click
+                      still opens it (the drag only starts past a few pixels). */}
                   <button
                     type="button"
-                    onClick={() => void open(a.target)}
+                    onClick={() => void openFile(a.target)}
+                    onPointerDown={(e) => startFileDrag(e, a, fileLabel(a))}
                     title={a.target}
                     className="min-w-0 flex-1 truncate text-left text-[12px] text-ink-2 transition-colors hover:text-accent"
                   >
-                    {a.label.trim() || basename(a.target)}
+                    {fileLabel(a)}
                   </button>
                   <button
                     type="button"
@@ -110,6 +117,28 @@ export default function ProjectFiles({ threadId }: { threadId: string }) {
                   >
                     <X size={11} />
                   </button>
+                </div>
+                {/* P5-2: who added it, and where it hangs. P6 adds AI-added files, which will
+                    name the AI here; until then every file is the user's. */}
+                <div className="flex items-center gap-1 pl-[20px] text-[11px] text-muted">
+                  {(a.addedBy ?? 'user') === 'user' && <span>{t('你加的')}</span>}
+                  <span aria-hidden>·</span>
+                  {anchored ? (
+                    <>
+                      <span>{t('挂在 #{n}', { n: anchorSeq ?? '?' })}</span>
+                      <button
+                        type="button"
+                        onClick={() => void anchorAttachment(a.id, threadId, null)}
+                        title={t('改回挂在项目（文件还在这个项目里）')}
+                        aria-label={t('改回挂在项目（文件还在这个项目里）')}
+                        className="rounded p-0.5 transition-colors hover:text-ink"
+                      >
+                        <X size={10} />
+                      </button>
+                    </>
+                  ) : (
+                    <span>{t('挂在项目')}</span>
+                  )}
                 </div>
                 {canInline && (
                   <div className="space-y-0.5 pl-[20px]">
@@ -146,6 +175,7 @@ export default function ProjectFiles({ threadId }: { threadId: string }) {
           })}
         </ul>
       )}
+      <FileDragGhost />
     </RailSection>
   );
 }
