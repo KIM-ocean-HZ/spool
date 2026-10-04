@@ -38,6 +38,8 @@ export interface CreateAttachmentArgs {
   kind: AttachmentKind;
   target: string;
   label?: string;
+  /** P5 (Ocean 2026-10-05): picked from a block's own 「加文件」 — the file hangs off that block. */
+  anchorBlockId?: string | null;
 }
 
 interface Row {
@@ -157,17 +159,17 @@ export const createAttachment = async (args: CreateAttachmentArgs): Promise<Atta
     includeInPack: false,
     aiAccess: true,
     createdAt: Date.now(),
-    // Both entry points are the user's own hand (the file picker, a drop from Finder), and a
-    // new file starts on the project — hanging it off a block is a second, separate gesture.
-    anchorBlockId: null,
+    // Every entry point is the user's own hand: the right rail's picker and a drop from Finder
+    // put it on the project, a block's own 「加文件」 puts it on that block.
+    anchorBlockId: args.anchorBlockId ?? null,
     addedBy: 'user',
     supersededBy: null,
     supersededAt: null,
   };
   await db.execute(
-    `INSERT INTO attachments (id, thread_id, kind, target, label, created_at, added_by, ai_access)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-    [a.id, a.threadId, a.kind, a.target, a.label, a.createdAt, a.addedBy, a.aiAccess ? 1 : 0],
+    `INSERT INTO attachments (id, thread_id, kind, target, label, created_at, added_by, ai_access, anchor_block_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+    [a.id, a.threadId, a.kind, a.target, a.label, a.createdAt, a.addedBy, a.aiAccess ? 1 : 0, a.anchorBlockId],
   );
   return a;
 };
@@ -229,8 +231,9 @@ export const setAiAccess = async (id: string, value: boolean): Promise<void> => 
   await db.execute('UPDATE attachments SET ai_access = $1 WHERE id = $2', [value ? 1 : 0, id]);
 };
 
-// v30 (P5-2): hang a project file off one block of its project, or (null) back on the project.
-// Only the anchor moves — the file stays in the same project, with every other column as it was.
+// v30 (P5): move a block's file back onto the project (null), or — undo only — hang it off a
+// block again. Only the anchor moves; the file stays in the same project, every other column as
+// it was.
 export const setAttachmentAnchor = async (id: string, blockId: string | null): Promise<void> => {
   const db = await getDb();
   await db.execute('UPDATE attachments SET anchor_block_id = $1 WHERE id = $2', [blockId, id]);

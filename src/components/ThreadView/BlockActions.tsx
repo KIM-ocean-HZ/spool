@@ -1,4 +1,4 @@
-import { CircleSlash, Highlighter, MessageSquarePlus, Pencil, PencilLine, Pin, PinOff, RotateCcw, Shrink, Trash2 } from 'lucide-react';
+import { CircleSlash, Highlighter, MessageSquarePlus, Paperclip, Pencil, PencilLine, Pin, PinOff, RotateCcw, Shrink, Trash2 } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useT } from '@/lib/i18n';
 
@@ -30,6 +30,8 @@ interface Props {
   onEdit: () => void;
   onHighlight: () => void;
   onAnnotate: () => void;
+  /** P5 (Ocean 2026-10-05): pick a file from the computer and hang it off this block. */
+  onAddFile: () => void;
   onToggleStale: () => void;
   onDelete: () => void;
   // WORKPLAN-2026-08-20 §9.6.6 —— 单块压缩。Ocean:「可以项目压缩也可以 block 压缩」。
@@ -98,6 +100,7 @@ export default function BlockActions({
   onEdit,
   onHighlight,
   onAnnotate,
+  onAddFile,
   onToggleStale,
   onDelete,
   onCompress,
@@ -151,6 +154,9 @@ export default function BlockActions({
       </ActionBtn>
       <ActionBtn title={t('添加批注')} onClick={onAnnotate}>
         <MessageSquarePlus size={11} />
+      </ActionBtn>
+      <ActionBtn title={t('给这一块加文件')} onClick={onAddFile}>
+        <Paperclip size={11} />
       </ActionBtn>
       {/* DESIGN_CONTEXT_HYGIENE §3.1. 「它更正了哪一条？」 used to sit beside this one —
           declared FROM the newer block, picking its target out of a list. Ocean retired it

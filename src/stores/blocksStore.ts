@@ -99,9 +99,9 @@ interface BlocksState {
   // setIncludeInPack and deliberately NOT the same flag — one is "put the text in the pack
   // I am building", the other is "an AI may ask for this at all".
   setAiAccess: (attachmentId: string, threadId: string, value: boolean) => Promise<void>;
-  // v30 (P5-2): hang a project file off one of the project's blocks, or (null) back on the
-  // project. ⚠️ Not in the undo ring, on purpose — same reason as pin: the gesture is its own
-  // inverse (the × beside 「挂在 #n」, or dragging it onto another block), and both sit in view.
+  // v30 (P5): move a block's file back onto the project (null) — the right rail's 「移到项目」.
+  // ⚠️ Not in the undo ring, on purpose — same reason as pin: nothing is lost (the file stays
+  // in the project's list, in view), and the move is one deliberate click.
   anchorAttachment: (attachmentId: string, threadId: string, blockId: string | null) => Promise<void>;
   // v2.7: one-time startup pass that extracts text for legacy file attachments created
   // before the extraction pipeline existed (PLAN §8.1, §9.6).

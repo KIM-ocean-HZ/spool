@@ -2,12 +2,11 @@ import { createRequire } from 'node:module';
 import type Database from '@tauri-apps/plugin-sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createAttachment, listAttachmentsByThread, type Attachment } from '@/lib/db/attachments';
-import { createBlock, listBlocksByThread, type Block } from '@/lib/db/blocks';
+import { createBlock, type Block } from '@/lib/db/blocks';
 import { __setTestDb } from '@/lib/db/client';
 import schemaSql from '@/lib/db/schema.sql?raw';
 import { createThread } from '@/lib/db/threads';
 import { createWorkspace } from '@/lib/db/workspaces';
-import { anchorForDrop } from '@/lib/files/fileDrag';
 import { clear as clearUndoLog } from '@/lib/undo/undoLog';
 import { useBlocksStore } from './blocksStore';
 import { useUndoStore } from './undoStore';
@@ -32,13 +31,11 @@ const makeAdapter = (handle: Sqlite): Database =>
       handle.prepare(toNumbered(sql)).all(...(params as SqlValue[])),
   }) as unknown as Database;
 
-describe('项目文件挂到块上 (P5-2)', () => {
+describe('项目文件挂到块上 (P5)', () => {
   let sqlite: Sqlite;
   let threadId = '';
-  let otherThreadId = '';
   let b1: Block;
   let b2: Block;
-  let elsewhere: Block;
   let file: Attachment;
 
   const row = (id: string) =>
@@ -56,10 +53,8 @@ describe('项目文件挂到块上 (P5-2)', () => {
     useUndoStore.setState({ entries: [], redoable: null });
     const ws = await createWorkspace('W');
     threadId = (await createThread(ws.id, '申请规划')).id;
-    otherThreadId = (await createThread(ws.id, '别的项目')).id;
     b1 = await createBlock({ threadId, content: '第一块' });
     b2 = await createBlock({ threadId, content: '第二块' });
-    elsewhere = await createBlock({ threadId: otherThreadId, content: '别处的一块' });
     file = await createAttachment({ threadId, kind: 'file', target: '/Users/a/方案.pdf', label: '方案.pdf' });
     useBlocksStore.setState({ byThread: {}, attachmentsByThread: {} });
     await useBlocksStore.getState().load(threadId);
@@ -89,7 +84,7 @@ describe('项目文件挂到块上 (P5-2)', () => {
     expect((await listAttachmentsByThread(threadId))[0]?.aiAccess).toBe(false);
   });
 
-  it('挂上 → 改挂 → 改回：库里只动锚定那一列', async () => {
+  it('改锚定（撤销用它挂回、「移到项目」用它清空）：库里只动锚定那一列', async () => {
     const before = row(file.id) as Record<string, unknown>;
     const store = useBlocksStore.getState();
 
@@ -107,22 +102,36 @@ describe('项目文件挂到块上 (P5-2)', () => {
     expect((await listAttachmentsByThread(threadId))[0]?.anchorBlockId).toBeNull();
   });
 
-  it('挂上 / 改回不进撤销环（和置顶一样，手势自己就是反向操作）', async () => {
+  it('「移到项目」不进撤销环（和置顶一样，挂回去就是再在块上加一次）', async () => {
     await useBlocksStore.getState().anchorAttachment(file.id, threadId, b1.id);
+    await useBlocksStore.getState().anchorAttachment(file.id, threadId, null);
     expect(useUndoStore.getState().entries).toHaveLength(0);
   });
 
-  it('松手落在哪里才算数', async () => {
-    const blocks = await listBlocksByThread(threadId);
-    // 落在本项目的一块上 ⇒ 挂上去。
-    expect(anchorForDrop(file, b1.id, blocks)).toBe(b1.id);
-    // 松在块外面 ⇒ 什么都不变。
-    expect(anchorForDrop(file, null, blocks)).toBeUndefined();
-    // 已经挂在这一块上 ⇒ 什么都不变。
-    expect(anchorForDrop({ ...file, anchorBlockId: b1.id }, b1.id, blocks)).toBeUndefined();
-    // 挂着 #1 拖到 #2 ⇒ 改挂。
-    expect(anchorForDrop({ ...file, anchorBlockId: b1.id }, b2.id, blocks)).toBe(b2.id);
-    // 别的项目的块 ⇒ 不挂（文件只能挂在自己项目的块上）。
-    expect(anchorForDrop(file, elsewhere.id, blocks)).toBeUndefined();
+  // Ocean 2026-10-05: the way onto a block is that block's own 「加文件」 (the file picker),
+  // not a drag. The file joins the project hung off that block — added by the user, readable.
+  it('块上「加文件」：新文件直接挂在那一块上，其余和右栏加的一样', async () => {
+    const onBlock = await useBlocksStore
+      .getState()
+      .attach({ threadId, kind: 'file', target: '/Users/a/课表.pdf', label: '课表.pdf', anchorBlockId: b2.id });
+    expect(row(onBlock.id)).toEqual({
+      thread_id: threadId,
+      anchor_block_id: b2.id,
+      added_by: 'user',
+      ai_access: 1,
+      include_in_pack: 0,
+    });
+    expect(
+      useBlocksStore.getState().attachmentsByThread[threadId]?.find((a) => a.id === onBlock.id)?.anchorBlockId,
+    ).toBe(b2.id);
+  });
+
+  it('块文件「移到项目」：只清锚定，文件还在这个项目里', async () => {
+    const onBlock = await useBlocksStore
+      .getState()
+      .attach({ threadId, kind: 'file', target: '/Users/a/课表.pdf', label: '课表.pdf', anchorBlockId: b1.id });
+    const before = row(onBlock.id) as Record<string, unknown>;
+    await useBlocksStore.getState().anchorAttachment(onBlock.id, threadId, null);
+    expect(row(onBlock.id)).toEqual({ ...before, anchor_block_id: null });
   });
 });

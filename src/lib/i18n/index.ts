@@ -465,19 +465,19 @@ const EN: Record<string, string> = {
   '这个项目还没有文件。你加进来的文件，AI 默认能读到里面的文字，每个文件旁边的开关随时能关；打包时默认不带正文。':
     'No files in this project yet. An AI can read the text of any file you add here — each file has its own switch to turn that off. Packs leave the text out unless you tick it.',
   '从这个项目里去掉（文件本身不动）': 'Remove from this project (the file itself is untouched)',
-  '打包时带上这个文件的文字': 'Include this file\u2019s text when packing',
+  // P5 (Ocean 2026-10-05:「改为打包可读和 AI 可读，并且只有鼠标悬浮才显示」).
+  '打包可读': 'In packs',
   // DESIGN_PROJECT_FILES §5.1 ① — the standing grant, shown where the file is listed
   // because that is the only place it can be taken back.
-  'AI 可以读这个文件': 'An AI may read this file',
-  'AI 不能读这个文件': 'No AI may read this file',
+  'AI 可读': 'AI can read',
   '关掉之后，AI 想再读它就得重新问你一次。':
     'Turn it off and an AI has to ask you again before it can read this file.',
   '添加文件失败：{msg}': 'Could not add the file: {msg}',
-  // P5-2 — who added a project file, and whether it hangs off one block or the project.
-  '你加的': 'Added by you',
-  '挂在项目': 'On the project',
-  '挂在 #{n}': 'On block #{n}',
-  '改回挂在项目（文件还在这个项目里）': 'Move back onto the project (the file stays in this project)',
+  // P5 — a file hung off one block: that block's number, and the way back onto the project.
+  '挂在第 {n} 块上': 'Attached to block {n}',
+  '移到项目（不再挂在这一块上，文件还在这个项目里）':
+    'Move to the project (no longer attached to this block; the file stays in this project)',
+  '给这一块加文件': 'Add a file to this block',
   // P5-3 — deleting blocks that have project files hung off them asks first.
   '要删的块上挂着文件': 'Files are attached to what you are deleting',
   '这些文件要一起从项目里去掉吗？去掉只是 Spool 不再记着它，电脑上的文件不动。':

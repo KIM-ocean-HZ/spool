@@ -13,7 +13,7 @@ import { rawRangeFromSelection } from '@/lib/blocks/selectionRange';
 import { SegmentedContent } from '@/lib/blocks/SegmentedContent';
 import type { Attachment } from '@/lib/db/attachments';
 import type { Block, IncomingRef } from '@/lib/db/blocks';
-import { DROP_BLOCK_ATTR } from '@/lib/files/fileDrag';
+import { addFilesFromPicker } from '@/lib/files/addFiles';
 import { fileLabel, openFile } from '@/lib/files/openFile';
 import { correctionsBySource, type Correction } from '@/lib/pack/assemble';
 import type { HitOffset } from '@/lib/search/query';
@@ -27,7 +27,6 @@ import { toast } from '@/stores/toastStore';
 import { buildHighlightUndo, useUndoStore } from '@/stores/undoStore';
 import { useCompressStore } from '@/stores/compressStore';
 import { askBeforeDeletingBlocks } from '@/stores/deleteFilesPromptStore';
-import { useFileDragStore } from '@/stores/fileDragStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { selectThreadById, useThreadsStore } from '@/stores/threadsStore';
 import BlockActions from './BlockActions';
@@ -159,13 +158,12 @@ function TextBlockItem({
   };
   const addCorrection = useBlocksStore((s) => s.addCorrection);
   const siblings = useBlocksStore((s) => s.byThread[block.threadId]);
-  // P5-2: the project files hung off THIS block, in the order they joined the project.
+  // P5: the project files hung off THIS block, in the order they joined the project.
   const projectFiles = useBlocksStore((s) => s.attachmentsByThread[block.threadId] ?? EMPTY_FILES);
   const blockFiles = useMemo(
     () => projectFiles.filter((a) => a.anchorBlockId === block.id),
     [projectFiles, block.id],
   );
-  const fileDropOver = useFileDragStore((s) => s.overBlockId === block.id);
   // v13's warning, seen from the corrected block — the half the feed never had. Derived
   // from the project's own blocks through the SAME function the pack uses, so 「哪些块算更正
   // 了这一块」 cannot drift between the briefing and the screen.
@@ -1029,7 +1027,6 @@ function TextBlockItem({
     <article
       ref={articleRef}
       data-block-id={block.id}
-      {...(readOnly ? {} : { [DROP_BLOCK_ATTR]: block.id })}
       onMouseEnter={readOnly ? undefined : () => setHovered(true)}
       onMouseLeave={readOnly ? undefined : () => setHovered(false)}
       onClick={
@@ -1050,7 +1047,7 @@ function TextBlockItem({
         block.pinned ? 'pl-4' : ''
       } ${block.staleAt != null ? 'opacity-55' : ''} ${
         highlight || selfFlash ? 'flash' : ''
-      } ${isActive ? 'block-active' : ''} ${fileDropOver ? 'bg-accent/5 ring-1 ring-inset ring-accent' : ''}`}
+      } ${isActive ? 'block-active' : ''}`}
     >
       {block.pinned && (
         <span className="absolute bottom-2.5 left-0 top-2.5 w-[3px] rounded-r bg-accent" />
@@ -1161,6 +1158,7 @@ function TextBlockItem({
             onEdit={() => openEditor('content')}
             onHighlight={() => void runHighlightFromToolbar()}
             onAnnotate={() => openEditor('annotation')}
+            onAddFile={() => void addFilesFromPicker(block.threadId, block.id)}
             stale={block.staleAt != null}
             onToggleStale={() => {
               setActive(block.id);
@@ -1365,8 +1363,8 @@ function TextBlockItem({
           )}
       </div>
 
-      {/* P5-2: the files hung off this block, one name each, opened the way the right rail
-          opens them. ⛔ A block with none draws nothing here — not an empty row. */}
+      {/* P5: the files hung off this block (added with its own 「加文件」), one name each,
+          opened the way the right rail opens them. ⛔ A block with none draws nothing here. */}
       {blockFiles.length > 0 && (
         <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 font-ui text-[12px] text-muted">
           {blockFiles.map((a) => {
