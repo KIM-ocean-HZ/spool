@@ -1,6 +1,6 @@
 # 产品任务书 P5 —— 文件能挂在块上、右栏统一列出、用户亲手加的文件默认 AI 可读
 
-> **状态：ACTIVE —— 当前唯一可执行的产品任务书。**
+> **状态：COMPLETE —— 待 Ocean 验收。**（2026-10-04：P5-1 – P5-4 已提交（`f322750` `f956e7d` `d3bed3f` `0dad7e7`）、已换装，真库已迁到 v30。回执在 §7 末尾。）
 >
 > **唯一交付：** 下面 §3 的四步（P5-1 – P5-4），按顺序做完、各自测试通过、各自一笔提交，并在 §7 写回执。
 >
@@ -231,3 +231,87 @@ Vitest 输出里有 31 行 `[db] pre-migration backup FAILED … window is not d
 2. `docs/HANDOFF-2026-09-04.md`：§9.3 路线图 P5 那一行改成「已完成，任务书在 archive/product-taskbooks/…」；§9.6 P5 那一行同样改；
    §9.8「唯一下一步」改成「按 §9.4 下发 P6」；`docs/README.md` 入口表里 ACTIVE 产品任务书那一行改成「暂无」（README 只暂存这一行）。
 3. 这些文档改动单独一笔提交（同样只 add 自己改的路径）。
+
+### 回执（2026-10-04 执行窗）
+
+起点核过：`git log -1` = `2b02cc4`（`docs: 下发 P5…`），上一笔 `1fc88a2`。开工前基线和 §2 写的一样：tsc 干净、vitest 68 个文件 / 858 条、cargo 153 过 · 4 跳过、sidecar 14、`(none missing)`、`--dead` 87 条、`cargo tree` 那条是空的。
+
+#### P5-1 · 库 v30
+
+- 提交：`f322750 feat(db): 库 v30 —— 项目文件加四列（挂在哪一块、谁加的、被谁取代、何时取代）`
+- 改了：`src/lib/db/client.ts`（`SCHEMA_VERSION` 30 + v29→v30 `add-attachment-anchor-and-provenance`）、`src/lib/db/schema.sql`（建表四列 + 注释）、`src/lib/db/attachments.ts`（类型、`SELECT_COLS` / `fromRow` / `ALL_COLS` / `allValues` / `insertAttachments` / `restoreAttachment`，`ALL_COLS` 改成直接由 `SELECT_COLS` 拼，免得两份列表各写各的）、`src-tauri/src/mcp.rs`（只有 `EXPECTED_SCHEMA_VERSION` 30 那一行 + 一行注释）、`src/lib/db/client.test.ts`、`src/lib/db/transfer.test.ts`、`src/lib/pack/assemble.test.ts`（测试夹具补四个字段）
+- 施工时定的：四列叫 `anchor_block_id`（块 id，空 = 挂在项目；⛔ 没叫 `block_id`）、`added_by`、`superseded_by`（文件 id）、`superseded_at`（毫秒）。`added_by`：用户加的写 `'user'`；空 = v30 之前的行 = 用户加的；P6 起 AI 提议、用户点头挂上的写那个客户端的 MCP 来源标签（和它写块时 `source` 那一格同一个，形如 `<客户端> · MCP`），写在 `schema.sql` 注释里了。四列都可空、不回填、不加外键；ADD COLUMN 撞上已有列 catch 掉（照 v28 的写法）；注释写了往前老库什么样、往回 `DROP COLUMN` ×4 退回 v29。
+- Rust 那边核过：读 `attachments` 的查询全部点名列（`mcp.rs` 的 `search_attachments` 的 `{cols}`、`get_blocks` 文件段、pack 文件段、`request_file_access`、`PACK_CHARS_ATTACHMENTS`、overview 那几处），没有 `SELECT *` ⇒ 加列不影响，除了版本号没改别的。
+- 怎么验的：
+  - ① `client.test.ts` 新加三条：v29→v30（四列都在、全空、其余列逐字节相等、块表不动）、从 v14 带老 `block_id` 的库一路走到 v30 再用产品的 `listAttachmentsByThread` 读回来（这正是真库那种 ALTER 出来的形状）、新装的库照 `schema.sql` 就有四列。原有的整条历史链（v2 起）照样过。
+  - ② 真库副本跑真迁移：拿 `~/Desktop/spool.before-p4-install-20261003-220055.db`（sha256 `e0b7053f…f903a`）复制到 scratchpad，在 vitest 里用产品的 `__migrateSchemaForTest` 跑：`fresh === false`、版本 29 → 30、十二张表的行数全部不变（工作区 25 / 项目 63 / 块 1014 / 文件 1 / …）、块正文总长 291916 不变、批注总长 12011 不变、那 1 个文件整行不变（`ai_access` 仍是 1、`include_in_pack` 1、正文 16945 字）、四列都在且全空、`integrity_check ok`。⛔ 真库本身没碰。
+  - ③ 新二进制（`cargo build` 的 debug 版）起 `--mcp` 探针，`SPOOL_DATA_DIR` 指向迁好的副本：`initialize` 通、`list_threads` 正常（47 个项目 / 13 个工作区）、`get_blocks` 的 `files` 照常返回那个 PDF（`ai_readable: true`、`extracted_chars: 16945`）。反方向也试了：同一个新二进制对着没迁的 v29 副本，每次调用都回「库还是旧版本 v29，这个服务是 v30」⇒ 版本闸两个方向都活着。
+  - ④ `transfer.test.ts` 新加一条：一个文件挂在某块上、被另一个取代、另一个标成 AI 加的 —— 导出再导入，四列原样回来。
+  - 全套：tsc 干净；vitest 68 / 862；cargo 153 过 · 4 跳过；sidecar 14；`(none missing)`；`--dead` 和开工时逐行一样（87 条）；`cargo tree` 那条空。vitest 输出里「pre-migration backup FAILED」从 31 行变 33 行（新加的两条迁移测试各一行，同一类噪声），「SQL logic error」多出来的 8 行是 v21→v22 重跑那条测试在四个新列上走「列已存在」的 catch（设计里的那条路）。
+
+#### P5-2 · 拖到块上、块上看得见、右栏标清楚
+
+- 提交：`f956e7d feat(files): 右栏的项目文件按住拖到块上就挂在那一块；块上列出挂着的文件，右栏标「你加的」「挂在 #n / 挂在项目」`
+- 改了：`src/lib/files/fileDrag.ts`（新，拖拽手势 + `anchorForDrop` 判断）、`src/stores/fileDragStore.ts`（新）、`src/components/RightRail/FileDragGhost.tsx`（新）、`src/lib/files/openFile.ts`（新，右栏和块上共用的「打开文件」和文件名）、`src/components/RightRail/ProjectFiles.tsx`、`src/components/ThreadView/BlockItem.tsx`、`src/components/ThreadView/LogView.tsx`（时间线滚动区加一个属性）、`src/lib/db/attachments.ts`（`setAttachmentAnchor`）、`src/stores/blocksStore.ts`（`anchorAttachment`）、`src/lib/sidebar/railDrag.ts`（只把 `suppressSelection` 改成 export）、`src/lib/i18n/index.ts`、`src/stores/projectFiles.anchor.test.ts`（新）
+- 施工时定的：
+  - 落点：块的 `<article>` 上加 `data-drop-block`（只读视图不加），松手时 `elementFromPoint` 往上找这个属性；只认这个文件**自己项目**里的块（`anchorForDrop` 对着 `byThread[file.threadId]` 查）；松在块外面、松在它已经挂着的那块上 = 什么都不变；Esc 取消。按住的地方是右栏那一行的文件名（拖过 4px 才算拖，不动就是原来的「点开」）；拖完那一下的 click 吃掉，免得松手顺带打开文件。⛔ 没加 HTML5 `draggable`。
+  - 自动滚：做了，照左栏那一套 —— 时间线滚动区上下 36px 以内每帧滚 10px。
+  - 落点提示：鼠标下面那一块浅底色 + 一圈细框；鼠标旁边跟一个写着文件名的小牌子。
+  - 撤销：挂上 / 改挂 / 改回**不进撤销环** —— 和置顶同一个理由（手势自己就是反向操作：「挂在 #n」旁边的 ×，或者再拖到别的块上），测试钉了「撤销环里没多东西」。
+  - 块上那一行：正文下面（引用行上面），一个文件一个名字带小图标，点开走 `openFile`（和右栏同一个函数、打不开时同一句提示）；没挂文件的块不画这一行。
+  - 右栏：每个文件名下面一行小字「你加的 · 挂在 #12」+ ×，或「你加的 · 挂在项目」。「你加的」只在 `added_by` 是空或 `'user'` 时写（P6 才有 AI 加的）。排序照旧按加进项目的时间。
+  - 只有普通的文字块能接住文件；「引用」那一种块（`kind = 'ref'`）不接、也不画文件行 —— 真库副本里 1014 块全是文字块，一块引用块都没有。
+- 怎么验的：`projectFiles.anchor.test.ts` 四条（真 SQLite）：新加的文件挂在项目、记着 `'user'`；挂上 → 改挂 → 改回库里只动锚定那一列、重读回来一致；挂上不进撤销环；松手落点五种情况。全套：tsc 干净；vitest 69 / 866；cargo 153 · 4；sidecar 14；`(none missing)`；`--dead` 不变；`cargo tree` 空。
+
+#### P5-3 · 删块、移块、合并、撤销
+
+- 提交：`d3bed3f feat(files): 删块先问挂着的文件去不去；移块文件跟着走、合并改挂到留下那块；三种撤销都把文件放回原处`
+- 改了：`src/lib/db/blocks.ts`（`deleteBlock` / `moveBlock` / `mergeBlocks` 各加一句）、`src/lib/db/attachments.ts`（`listAttachmentsAnchoredTo`）、`src/lib/undo/undoLog.ts`（三种撤销条目各带上文件）、`src/stores/undoStore.ts`、`src/stores/blocksStore.ts`（`remove` 多一个参数、合并和移动记下文件）、`src/stores/deleteFilesPromptStore.ts`（新）、`src/components/ThreadView/DeleteBlockFilesDialog.tsx`（新）、`src/App.tsx`（挂上那个对话框）、`src/components/ThreadView/BlockFeed.tsx`、`src/components/ThreadView/BlockItem.tsx`、`src/components/ThreadView/MergeToolbar.tsx`、`src/lib/i18n/index.ts`、`src/stores/projectFiles.lifecycle.test.ts`（新）
+- 删块路径的完整清单（对着代码一条条找的）：
+  - **用户亲手删**（先问）：① 块上的删除（`BlockActions` → `BlockFeed` 的 `onDelete`；引用块 `RefBlockItem` 走同一个 `onDelete`）；② 更正卡上的删除（`BlockItem` 里两处 `removeBlock(c.id)`：正文里的更正卡、和「取消更正」那一下）；③ 多选工具条的批量删（`MergeToolbar`）。三处都先调 `askBeforeDeletingBlocks`：没挂文件 ⇒ 照旧不问；挂着 ⇒ 弹一次框，列出文件名，「一起从项目里去掉」/「留在项目里」，再加一个「取消」（Esc、点框外也一样）= 这次什么都不删。批量删是先过工具条原有的「删除 N 个块？」那一步，再问文件（一次问完，选择管全部）。store 的 `remove(id, { removeFiles })` 只收答案，⛔ 不弹框。
+  - **不是用户亲手删**（不问，文件回到项目上）：撤销一次捕捉、撤销一次自己写的块（`create`）、撤销一次复制（删复制品）、移动时删掉复制品、移动时查重删掉的那一块（以及重做这次移动）、浮窗改投（先删再建）。这些全部经过 `db.deleteBlock`，它在删之前先把挂在这一块上的文件改回挂在项目 —— 不丢东西的那一边写在最底层，以后新加的删块路径也自动落到这一边。用户选「一起去掉」时，`remove` 先删文件再调它。
+  - Rust 那边没有任何生产代码删块（`DELETE FROM blocks` 只在测试里）。
+  - 删项目照旧是软删，文件跟着项目走，没碰。复制到别的项目照旧不复制文件。
+- 移块：`moveBlock` 里先把挂在这块上的文件 `thread_id` 改成新项目、锚定不变。B4 两段核过：复制品被删掉（上面没挂文件），挂着文件的是挪过去的原块。撤销 / 重做移动也走 `moveBlock`，文件跟着来回。
+- 合并：`mergeBlocks` 在删被并掉的块之前，先把挂在它们上面的文件改挂到留下的那一块。
+- 撤销：删块条目带「当时挂着的文件（整行）+ 选的是去掉还是留下」——撤销时块回来，去掉的整行插回（挂回原块、AI 可读照旧），留下的挂回原块；重做按同一个选择再来一次。合并条目带「被并掉那几块上的文件」，撤销时各自挂回。移动条目带「查重删掉的那几块上的文件」，撤销时挂回；挪过去的块上的文件由 `moveBlock` 带回。
+- 怎么验的：`projectFiles.lifecycle.test.ts` 十条（真 SQLite，照 `compressStore.stale.test.ts` 的写法）：删块两种选择各带 ⌘Z 和重做、没挂文件不问、问了之后照选择删 / 取消就不删、批量删一个选择管全部且 ⌘Z 一块块撤回、撤销捕捉、直接删块（改投那一类）、移块带 ⌘Z 和重做、移块查重删掉的块带 ⌘Z、合并带 ⌘Z 和重做（文件特意挂在会被并掉的那块上）。全套：tsc 干净；vitest 70 / 876；cargo 153 · 4；sidecar 14；`(none missing)`；`--dead` 不变；`cargo tree` 空。
+- 撞上的老问题：`DISCOVERED-20261002-1`（删掉编号最大的那块、再捕捉一块之后 ⌘Z 撤不回）没改。它现在多牵连一样：那种情况下撤销失败，被选了「一起去掉」的文件也跟着回不来。补在那一条底下了。
+
+#### P5-4 · 默认可读 + 说明
+
+- 提交：`0dad7e7 feat(files): 用户亲手加的文件默认 AI 可读，相应说明同一笔改掉`
+- 改了：`src/lib/db/attachments.ts`（`createAttachment` 写 `ai_access = 1`）、`src/components/RightRail/ProjectFiles.tsx` + `src/lib/i18n/index.ts`（空状态那句换成新键：「这个项目还没有文件。你加进来的文件，AI 默认能读到里面的文字，每个文件旁边的开关随时能关；打包时默认不带正文。」）、`site/index.html` + `scripts/site-zh-strings.mjs`（`gate-x1`）、`docs/PRIVACY.md` + `site/privacy.html` + `scripts/site-zh-privacy.html`（MCP 那一行的说明里加一句：你亲手加进项目的文件，AI 默认能读到 Spool 从里面提取的文字；每个文件旁边都有开关，随时能关，关掉之后 AI 只能向你申请）、`site/zh/index.html` + `site/zh/privacy.html`（`node scripts/build-site-zh.mjs` 重新生成，各只差这一句）、`docs/DESIGN_PROJECT_FILES.md`（首屏加一段「已被取代」）、测试三个（`fileAccess.test.ts` 的文件改成先关掉开关再申请 —— 申请本来就是给关掉的文件用的；`projectFiles.anchor.test.ts` 钉 `aiAccess === true` + 开关能关；`client.test.ts` 的 v29→v30 多一个开关关着的老行，迁移后照旧是 0）
+- MCP 工具描述和路由文本：逐条核了 `search_blocks`（「the user has not opened up to AI」）、`get_blocks` 的 `include_extracted_text`（「files the user opened up」）、`request_file_access`（「call this only for the ones where ai_readable is false」）、`INSTRUCTION_BODY` / `OPENERS`（「A file you cannot read is a request you have not made yet」「request_file_access for every file with ai_readable:false」），还有两句 `locked` 提示。没有一句说「默认不读」，讲的都是「关着的要申请」，新默认下照样成立 ⇒ 一个字没改（P5 本来也不许动 MCP 输出）。
+- 「文件可读只认 `ai_access`」那条红线没碰；`request_file_access` 的行为没改；`include_in_pack` 默认照旧关；已有的行一行没动。
+- 怎么验的：全套 tsc 干净；vitest 70 / 877（含 `build-site-zh.test.mjs` 12 条，证明中文页是重新生成过的）；cargo 153 · 4；sidecar 14；`(none missing)`；`--dead` 不变；`cargo tree` 空。
+- 没改的一处：三份隐私说明顶上「最后更新：2026-08-23（对应 Spool v0.6.2）」没动 —— 任务书要中文页 diff 只有那一句，而且这批改动还没有版本号。发版时要一起改，记成 `DISCOVERED-20261004-1`。
+
+#### 新发现（记在 HANDOFF §9.9，都是 captured，没修）
+
+- `DISCOVERED-20261004-1` 隐私说明的「最后更新」日期发版时要跟着改
+- `DISCOVERED-20261004-2` 界面上没有任何地方告诉用户「文件可以拖到块上」
+- `DISCOVERED-20261004-3` `blocks.ts::updateBlockThread` 没有调用方，而且它不带文件走
+- 补在 `DISCOVERED-20261002-1` 底下：撤销失败那种情况现在也会让「一起去掉」的文件回不来
+
+#### 换装（Ocean 10-04 在「现在换装吗」上选了「现在换装」）
+
+- 构建：`0dad7e7`（`src` / `src-tauri` / `site` / `scripts` 没有未提交改动），`env -u APPLE_ID -u APPLE_PASSWORD -u APPLE_TEAM_ID -u APPLE_API_KEY -u APPLE_API_ISSUER -u APPLE_API_KEY_PATH
+  APPLE_SIGNING_IDENTITY="Developer ID Application: Hanze JIN (Q5Y5JRXZ58)" npm run tauri build -- --bundles app`，日志进文件；没改 `tauri.conf.json`，日志里是「skipping app notarization」。
+  TSA 第一遍就过（主程序和 `spool-ai` 都有 23:59:41 的时间戳），日志里没有 `timestamp was expected`；`--verify --deep --strict` 过；打出来的前端里有这一轮的新字。
+- 装前：Developer ID、`spctl` = `Unnotarized Developer ID`、0.6.2、`spool` sha256 `cab59972…54d4ece`（P4 那一版）；真库 v29 · 25 / 63 / 1014 / 1（工作区 / 项目 / 块 / 文件，含软删）· 正文总长 291916 · 批注总长 12011，迁移快照 21 个。
+- 停：GUI pid 96295 + `--overlay` pid 96310 按 pid `kill -TERM`，1 秒内都退了、再查已不在；`--mcp` 子进程 15 个一个没碰（前后都是 15）。
+- 真库备份：`~/Desktop/spool.before-p5-install-20261005-000010.db`（`VACUUM INTO`，integrity ok，v29，计数和正文总长和活库一致）。
+- 旧包：`mv` 到 `~/Desktop/Spool/spool-pre-install/Spool-old-20261005-000016-pre-p5.app`；新包 `ditto` 进 `/Applications`；`open --stdout … --stderr …` 起。
+- 装后：`--verify --deep --strict` 过、Developer ID、`spctl` = `Unnotarized Developer ID`、identifier `com.oceanjin.spool`、0.6.2；`spool` sha256 `cda7a76e…5d4e4e5` 和构建产物一致；
+  主进程 52692、`--overlay` 52709 都起于 00:00:16（换装之后），两个的 `lsof` txt inode 都是 75593490 = 新文件；stderr `[double-tap] installed at HID/active`、`[overlay] helper started`，没有 error / panic。
+- 真库迁移（第一次启动时 GUI 自己做的）：`PRAGMA user_version` = 30、`integrity_check ok`；工作区 / 项目 / 块 / 文件 25 / 63 / 1014 / 1、正文总长 291916、批注总长 12011，和备份一致；捕捉目标没变；
+  那 1 个文件整行没变（`ai_access` 1、`include_in_pack` 1），四个新列都在、都是空的；真库目录里**正好多出一个**快照 `spool.pre-migration-v29-2026-10-04T23-00-17-277Z.db`（21 → 22）。
+- `--mcp` 探针：拿新装的 `/Applications/Spool.app/Contents/MacOS/spool --mcp`，`SPOOL_DATA_DIR` 指向迁好之后的真库 `VACUUM INTO` 副本（scratchpad 里），`initialize` 通、`list_threads`（47 个项目 / 13 个工作区）、`get_blocks` 的文件照常（那个 PDF `ai_readable: true`）。
+  ⚠️ 没对着真库目录本身起探针：探针一连上就会往真库目录的 `mcp-clients.json` 记一行「客户端」，设置里会冒出一个只有开发者才认得的名字（那里已经有一行以前留下的 `probe`）；用副本证明的是同一个二进制、同一份数据。真库的 `mcp-clients.json` 前后都是 4 行。
+- **`--mcp` 那 15 个子进程跑的还是旧二进制，而且库已经是 v30 ⇒ 它们每一次调用都会报「库比服务新」**（别人家 AI 客户端起的，没杀）。Ocean 重启 Claude / Codex 之后就好；§6 开头那句提醒的就是这个。
+- 没 push、没发版。
+
+#### Ocean 验收
+
+待验收。
