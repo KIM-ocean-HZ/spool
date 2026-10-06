@@ -2,6 +2,7 @@ import { Check, FileText, Globe, Trash2, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useT } from '@/lib/i18n';
 import type { FileAccessRequest } from '@/lib/db/fileAccess';
+import type { FileProposal } from '@/lib/db/fileProposals';
 import { passageSource, type ProposalBatch } from '@/lib/db/proposals';
 import type { FollowUpProposal } from '@/lib/db/followUpItems';
 import { useProposalsStore } from '@/stores/proposalsStore';
@@ -31,6 +32,7 @@ export default function ReviewPanel() {
   const batches = useProposalsStore((s) => s.batches);
   const fileRequests = useProposalsStore((s) => s.fileRequests);
   const followUpProposals = useProposalsStore((s) => s.followUpProposals);
+  const fileProposals = useProposalsStore((s) => s.fileProposals);
   const expiredBatches = useProposalsStore((s) => s.expiredBatches);
   const busy = useProposalsStore((s) => s.busy);
   const close = useProposalsStore((s) => s.close);
@@ -40,6 +42,8 @@ export default function ReviewPanel() {
   const rejectFiles = useProposalsStore((s) => s.rejectFiles);
   const approveFollowUp = useProposalsStore((s) => s.approveFollowUp);
   const dismissFollowUp = useProposalsStore((s) => s.dismissFollowUp);
+  const approveFileProposal = useProposalsStore((s) => s.approveFileProposal);
+  const rejectFileProposal = useProposalsStore((s) => s.rejectFileProposal);
   const clearExpired = useProposalsStore((s) => s.clearExpired);
   // Subscribe to the stored map, then flatten here. NOT useThreadsStore(selectAllThreadsFlat):
   // that selector builds a fresh array on every call, so zustand's useSyncExternalStore sees
@@ -95,7 +99,10 @@ export default function ReviewPanel() {
         <div className="min-h-0 flex-1 overflow-y-auto px-5 py-3">
           {batches === null ? (
             <p className="py-8 text-center text-xs text-muted">{t('加载中…')}</p>
-          ) : batches.length + (fileRequests?.length ?? 0) + (followUpProposals?.length ?? 0) ===
+          ) : batches.length +
+              (fileRequests?.length ?? 0) +
+              (followUpProposals?.length ?? 0) +
+              (fileProposals?.length ?? 0) ===
             0 ? (
             <p className="py-8 text-center text-xs text-muted">{t('没有待你过目的。')}</p>
           ) : (
@@ -111,6 +118,19 @@ export default function ReviewPanel() {
                   busy={busy}
                   onApprove={() => void approveFiles(r.requestId)}
                   onReject={() => void rejectFiles(r.requestId)}
+                />
+              ))}
+              {/* P6-3 — next to the read requests: both are about a file, and approving one
+                  also lets an AI read it. */}
+              {(fileProposals ?? []).map((p) => (
+                <FileProposalCard
+                  key={p.id}
+                  proposal={p}
+                  title={titleOf(p.threadId)}
+                  daysLeft={dayCount(now, p.expiresAt)}
+                  busy={busy}
+                  onApprove={() => void approveFileProposal(p.id)}
+                  onReject={() => void rejectFileProposal(p.id)}
                 />
               ))}
               {(followUpProposals ?? []).map((p) => (
@@ -252,6 +272,111 @@ function FileRequestCard({
         >
           <Trash2 size={12} />
           {t('不给')}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+const humanSize = (bytes: number): string =>
+  bytes >= 1024 * 1024
+    ? `${(bytes / 1024 / 1024).toFixed(1)} MB`
+    : `${Math.max(1, Math.round(bytes / 1024))} KB`;
+
+const fileNameOf = (path: string): string => path.split(/[\\/]/).filter(Boolean).pop() ?? path;
+
+/**
+ * P6-3 (Ocean 2026-09-30 §9.2 第 7、10 条) — an AI proposing a file from the user's computer:
+ * attach it to a project / a block, or put it in place of an older version.
+ *
+ * What is on the card is what the user needs to judge it (P6 原文): the FULL path — the one
+ * thing that tells them where on their computer this is — the size, who proposed it, and why.
+ * And one sentence on what 「同意」 does (Ocean 2026-10-06 #2): it attaches AND lets an AI read
+ * the text, so the card says both, and where to take the second one back.
+ *
+ * Where it would hang is part of that sentence rather than a label of its own (10-05: no
+ * 「挂在 #n / 挂在项目」 tags on screen).
+ */
+function FileProposalCard({
+  proposal,
+  title,
+  daysLeft,
+  busy,
+  onApprove,
+  onReject,
+}: {
+  proposal: FileProposal;
+  title: string;
+  daysLeft: number;
+  busy: boolean;
+  onApprove: () => void;
+  onReject: () => void;
+}) {
+  const t = useT();
+  const client = proposal.client || 'AI';
+  const replacing = proposal.kind === 'supersede';
+  const blockGone = proposal.anchorBlockId !== null && proposal.anchorSeq === null;
+  const consent = replacing
+    ? t('同意之后新版挂在旧版原来的位置，AI 也能读到里面的文字（右栏随时能关）。旧版不删，收在新版下面。')
+    : blockGone
+      ? t('原来要挂的那一块已经删了。同意之后挂在这个项目上，AI 也能读到里面的文字（右栏随时能关）。')
+      : proposal.anchorSeq !== null
+        ? t('同意之后挂到第 {n} 块上，AI 也能读到里面的文字（右栏随时能关）。', { n: proposal.anchorSeq })
+        : t('同意之后挂进这个项目，AI 也能读到里面的文字（右栏随时能关）。');
+  return (
+    <div className="mb-3 rounded-md border border-line-strong bg-paper-2/30 p-3">
+      <div className="flex items-baseline justify-between gap-3">
+        <span className="min-w-0 truncate text-xs text-ink-2">
+          {replacing
+            ? t('{client} 提议用新版本取代〈{title}〉里的「{old}」', {
+                client,
+                title,
+                old: proposal.supersedesLabel ?? '',
+              })
+            : t('{client} 提议把一个文件挂进〈{title}〉', { client, title })}
+        </span>
+        <span className="flex-none font-mono text-[10px] text-muted">
+          {t('{n} 天后作废', { n: daysLeft })}
+        </span>
+      </div>
+
+      <div className="mt-2 flex items-center gap-1.5">
+        <FileText size={11} className="flex-none text-muted" />
+        <span className="min-w-0 flex-1 truncate text-xs text-ink">{fileNameOf(proposal.path)}</span>
+        <span className="flex-none font-mono text-[10px] text-muted">{humanSize(proposal.sizeBytes)}</span>
+      </div>
+      <p className="mt-1 select-text break-all font-mono text-[10px] leading-relaxed text-muted">
+        {proposal.path}
+      </p>
+
+      <div className="mt-2 rounded border border-line bg-paper px-2.5 py-2">
+        <div className="text-[10px] uppercase tracking-wide text-muted">{t('它说为什么')}</div>
+        <p className="mt-1 whitespace-pre-wrap break-words text-xs leading-relaxed text-ink-2">
+          {proposal.why}
+        </p>
+      </div>
+
+      <p className="mt-2 text-[10px] leading-relaxed text-muted">{consent}</p>
+
+      <div className="mt-2.5 flex items-center gap-2">
+        <button
+          type="button"
+          disabled={busy}
+          onClick={onApprove}
+          className="flex flex-1 items-center justify-center gap-1.5 rounded-md border border-accent/60 bg-accent-soft px-3 py-1.5 text-xs font-medium text-accent transition-colors enabled:hover:border-accent enabled:hover:bg-accent/15 disabled:opacity-40"
+        >
+          <Check size={12} />
+          {t('同意')}
+        </button>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={onReject}
+          title={t('直接扔掉，不留痕迹')}
+          className="flex flex-none items-center gap-1.5 rounded-md border border-line bg-paper px-3 py-1.5 text-xs text-muted transition-colors enabled:hover:border-line-strong enabled:hover:text-ink disabled:opacity-40"
+        >
+          <Trash2 size={12} />
+          {t('不同意')}
         </button>
       </div>
     </div>

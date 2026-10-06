@@ -344,6 +344,9 @@ CREATE INDEX IF NOT EXISTS idx_blocks_ref_block
 -- not a file, and the two entry points that created them are gone from the block action bar.
 -- ⚠️ `target` is only ever written from the system file picker. Nothing may accept a path
 -- from anywhere else — that is the whole reason this shape was allowed at all (§2).
+-- P6 (Ocean 2026-09-30 §9.2 第 7 条) adds exactly one more door, and it is still the user's
+-- hand: an AI may PROPOSE a path (`file_proposals`, after the Rust path gate), and the row
+-- here is written only when the user clicks 「同意」 on that card.
 -- v30 (P5, Ocean 2026-09-30 / 10-03): a project file can ALSO hang off one block of that
 -- project, and the row says who added it and what replaced it. Four nullable columns, all
 -- NULL on every row written before v30 — which reads as「挂在项目、用户加的、没被取代」,

@@ -1,6 +1,9 @@
 import { create } from 'zustand';
 import * as files from '@/lib/db/fileAccess';
 import type { FileAccessRequest } from '@/lib/db/fileAccess';
+import * as fileProposals from '@/lib/db/fileProposals';
+import type { FileProposal } from '@/lib/db/fileProposals';
+import { approveFileProposal as approveFileProposalNow } from '@/lib/files/fileProposals';
 import * as db from '@/lib/db/proposals';
 import type { ProposalBatch } from '@/lib/db/proposals';
 import * as followUp from '@/lib/db/followUpItems';
@@ -32,6 +35,8 @@ interface ProposalsState {
   fileRequests: FileAccessRequest[] | null;
   /** DESIGN_FOLLOW_UP §8.4 — lines an AI proposed for a project's follow-up list. */
   followUpProposals: FollowUpProposal[] | null;
+  /** P6-3 — files an AI proposed attaching to a project, or proposed as a newer version. */
+  fileProposals: FileProposal[] | null;
   /** Everything waiting on the user, in one number: the sidebar badge. */
   pendingCount: number;
   /** Batches past their 7 days — one line on the screen, never approvable. */
@@ -48,6 +53,8 @@ interface ProposalsState {
   rejectFiles: (requestId: string) => Promise<void>;
   approveFollowUp: (itemId: string) => Promise<void>;
   dismissFollowUp: (itemId: string) => Promise<void>;
+  approveFileProposal: (id: string) => Promise<void>;
+  rejectFileProposal: (id: string) => Promise<void>;
 }
 
 // Everything the approved blocks touched has to be re-read: they landed through a path
@@ -61,15 +68,16 @@ const reloadLibrary = async (): Promise<void> => {
 // Load everything the screen shows, in one place, so the three kinds can never be read
 // from different moments in time.
 const loadAll = async (): Promise<
-  Pick<ProposalsState, 'batches' | 'fileRequests' | 'followUpProposals'>
+  Pick<ProposalsState, 'batches' | 'fileRequests' | 'followUpProposals' | 'fileProposals'>
 > => {
   const now = Date.now();
-  const [batches, fileRequests, followUpProposals] = await Promise.all([
+  const [batches, fileRequests, followUpProposals, fileProposalList] = await Promise.all([
     db.listPendingBatches(now),
     files.listPendingFileRequests(now),
     followUp.listFollowUpProposals(),
+    fileProposals.listPendingFileProposals(now),
   ]);
-  return { batches, fileRequests, followUpProposals };
+  return { batches, fileRequests, followUpProposals, fileProposals: fileProposalList };
 };
 
 // What every act-on-something path does afterwards: re-count for the badge, re-read what
@@ -85,7 +93,8 @@ const settle = async (get: () => ProposalsState, set: Setter): Promise<void> => 
   const nothingLeft =
     state.batches!.length === 0 &&
     state.fileRequests!.length === 0 &&
-    state.followUpProposals!.length === 0;
+    state.followUpProposals!.length === 0 &&
+    state.fileProposals!.length === 0;
   if (nothingLeft) get().close();
 };
 
@@ -93,6 +102,7 @@ export const useProposalsStore = create<ProposalsState>((set, get) => ({
   batches: null,
   fileRequests: null,
   followUpProposals: null,
+  fileProposals: null,
   pendingCount: 0,
   expiredBatches: 0,
   panelOpen: false,
@@ -101,13 +111,18 @@ export const useProposalsStore = create<ProposalsState>((set, get) => ({
   refresh: async () => {
     try {
       const now = Date.now();
-      const [proposals, expiredBatches, fileRequests, followUpLines] = await Promise.all([
-        db.countPending(now),
-        db.countExpiredBatches(now),
-        files.countPendingFileRequests(now),
-        followUp.countFollowUpProposals(),
-      ]);
-      set({ pendingCount: proposals + fileRequests + followUpLines, expiredBatches });
+      const [proposals, expiredBatches, fileRequests, followUpLines, fileProposalCount] =
+        await Promise.all([
+          db.countPending(now),
+          db.countExpiredBatches(now),
+          files.countPendingFileRequests(now),
+          followUp.countFollowUpProposals(),
+          fileProposals.countPendingFileProposals(now),
+        ]);
+      set({
+        pendingCount: proposals + fileRequests + followUpLines + fileProposalCount,
+        expiredBatches,
+      });
       // Keep an open screen honest: a second client could have queued more while the
       // user was reading.
       if (get().panelOpen) set(await loadAll());
@@ -125,12 +140,18 @@ export const useProposalsStore = create<ProposalsState>((set, get) => ({
       set(await loadAll());
     } catch (e) {
       console.warn('[proposals] load failed', e);
-      set({ batches: [], fileRequests: [], followUpProposals: [] });
+      set({ batches: [], fileRequests: [], followUpProposals: [], fileProposals: [] });
     }
   },
 
   close: () =>
-    set({ panelOpen: false, batches: null, fileRequests: null, followUpProposals: null }),
+    set({
+      panelOpen: false,
+      batches: null,
+      fileRequests: null,
+      followUpProposals: null,
+      fileProposals: null,
+    }),
 
   approve: async (batchId, keepIds) => {
     if (get().busy) return;
@@ -228,10 +249,56 @@ export const useProposalsStore = create<ProposalsState>((set, get) => ({
     }
   },
 
+  // P6-3 — the click that attaches a file an AI proposed (or puts a newer version in place of
+  // an older one). What it checks and why is in lib/files/fileProposals.ts; this only says
+  // what happened, in the words of the card the user just pressed.
+  approveFileProposal: async (id) => {
+    if (get().busy) return;
+    set({ busy: true });
+    try {
+      const outcome = await approveFileProposalNow(id);
+      if (outcome.kind === 'attached') {
+        toast.notice(
+          outcome.blockGone
+            ? t('挂上了「{name}」。原来那一块已经删了，所以挂在项目上。', { name: outcome.label })
+            : t('挂上了「{name}」。', { name: outcome.label }),
+        );
+      } else if (outcome.kind === 'replaced') {
+        toast.notice(t('「{name}」换上了，旧版「{old}」收在它下面。', { name: outcome.label, old: outcome.oldLabel }));
+      } else if (outcome.kind === 'already') {
+        toast.notice(t('「{name}」已经在这个项目里了，没有重复挂。', { name: outcome.label }));
+      } else if (outcome.kind === 'missing') {
+        toast.error(t('找不到「{name}」了（挪走了，或者外接盘没插上），没有挂上。', { name: outcome.label }));
+      } else {
+        toast.notice(t('这条提议说的东西已经不在了，清掉了。'));
+      }
+    } catch (e) {
+      console.error('[file-proposals] approve failed', e);
+      toast.error(t('没能挂上：{msg}', { msg: e instanceof Error ? e.message : String(e) }));
+    } finally {
+      set({ busy: false });
+      await settle(get, set);
+    }
+  },
+
+  rejectFileProposal: async (id) => {
+    if (get().busy) return;
+    set({ busy: true });
+    try {
+      await fileProposals.deleteFileProposal(id);
+    } catch (e) {
+      console.error('[file-proposals] refusal failed', e);
+    } finally {
+      set({ busy: false });
+      await settle(get, set);
+    }
+  },
+
   clearExpired: async () => {
     try {
       await db.purgeExpired(Date.now());
       await files.purgeExpiredFileRequests(Date.now());
+      await fileProposals.purgeExpiredFileProposals(Date.now());
     } catch (e) {
       console.warn('[proposals] purge failed', e);
     }

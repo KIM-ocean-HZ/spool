@@ -4,8 +4,8 @@ import { getDb } from './client';
 //
 // The line this module keeps is the one §2 was allowed to exist on: **an AI can ask about a
 // file the user already put in a project, and can never introduce a new one.** Every id in
-// here points at an `attachments` row that came out of the system file dialog. Nothing takes
-// a path.
+// here points at an `attachments` row the user put there (since P6 that includes an AI's
+// proposal the user approved — `fileProposals.ts`). Nothing here takes a path.
 //
 // Approval is the only thing that sets `ai_access = 1`, and it is deliberately long-lived
 // (Ocean 2026-08-08 ①): re-approving the same PDF every session is exactly the approval

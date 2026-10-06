@@ -3,11 +3,12 @@ import { getDb } from './client';
 
 // DESIGN_PROJECT_FILES (Ocean 2026-08-08) — a file belongs to a PROJECT, not to one block.
 //
-// ⚠️ The one rule this module exists to hold: `target` is only ever a path the user picked
-// in the system file dialog. Nothing here takes a path from an AI, from a proposal, or from
-// captured web content. That is precisely why 「自动挂本地文件」 was rejected in
-// DESIGN_CONTEXT_HYGIENE §2 and why this shape was allowed instead (§2 of that design):
-// an AI can ask about a file the user already put here, and can never introduce a new one.
+// ⚠️ The one rule this module exists to hold: a row only ever appears because the USER did
+// something — picked the file in the system file dialog, dropped it from Finder, or (P6,
+// Ocean 2026-09-30 §9.2 第 7 条) clicked 「同意」 on an AI's proposal whose path the Rust gate
+// had already let through. Nothing here takes a path straight from an AI or from captured web
+// content. That is why 「自动挂本地文件」 was rejected in DESIGN_CONTEXT_HYGIENE §2: an AI can
+// propose a file and ask about one, and only the user's click puts one here.
 export type AttachmentKind = 'file' | 'folder';
 
 // v2.7: which extractor produced an attachment's cached text (or 'failed').
@@ -17,7 +18,7 @@ export interface Attachment {
   id: string;
   threadId: string;
   kind: AttachmentKind;
-  target: string;                              // absolute path, from the file picker only
+  target: string;                              // absolute path: file picker, Finder drop, or an approved AI proposal
   label: string;                               // display name
   extractedText: string | null;                // v2.7: auto-extracted text for file kinds
   extractedAt: number | null;                  // v2.7: ms epoch when extraction completed; null if unattempted
@@ -40,6 +41,9 @@ export interface CreateAttachmentArgs {
   label?: string;
   /** P5 (Ocean 2026-10-05): picked from a block's own 「加文件」 — the file hangs off that block. */
   anchorBlockId?: string | null;
+  /** P6-3: the `<client> · MCP` label of the AI whose proposal the user just approved.
+   *  Left out = the user's own hand ('user'). */
+  addedBy?: string;
 }
 
 interface Row {
@@ -159,10 +163,12 @@ export const createAttachment = async (args: CreateAttachmentArgs): Promise<Atta
     includeInPack: false,
     aiAccess: true,
     createdAt: Date.now(),
-    // Every entry point is the user's own hand: the right rail's picker and a drop from Finder
-    // put it on the project, a block's own 「加文件」 puts it on that block.
+    // The right rail's picker and a drop from Finder put it on the project, a block's own
+    // 「加文件」 puts it on that block — the user's own hand. P6-3: an AI's proposal the user
+    // approved records that AI; the click is still the user's, which is why ai_access is the
+    // same default (Ocean 2026-10-06: 点头就是同意).
     anchorBlockId: args.anchorBlockId ?? null,
-    addedBy: 'user',
+    addedBy: args.addedBy ?? 'user',
     supersededBy: null,
     supersededAt: null,
   };
@@ -237,6 +243,33 @@ export const setAiAccess = async (id: string, value: boolean): Promise<void> => 
 export const setAttachmentAnchor = async (id: string, blockId: string | null): Promise<void> => {
   const db = await getDb();
   await db.execute('UPDATE attachments SET anchor_block_id = $1 WHERE id = $2', [blockId, id]);
+};
+
+// P6-3: the user approved an AI's 「新版取代旧版」. The old row stays — readable as before,
+// openable from the right rail — and only these two columns say what replaced it and when.
+export const setAttachmentSuperseded = async (id: string, byId: string, at: number): Promise<void> => {
+  const db = await getDb();
+  await db.execute('UPDATE attachments SET superseded_by = $1, superseded_at = $2 WHERE id = $3', [
+    byId,
+    at,
+    id,
+  ]);
+};
+
+// P6-3: a file already in this project at this path and not replaced — approving a proposal
+// for it again would put the same file in twice.
+export const findLiveAttachmentByTarget = async (
+  threadId: string,
+  target: string,
+): Promise<Attachment | null> => {
+  const db = await getDb();
+  const rows = await db.select<Row[]>(
+    `SELECT ${SELECT_COLS} FROM attachments
+      WHERE thread_id = $1 AND target = $2 AND superseded_by IS NULL
+      LIMIT 1`,
+    [threadId, target],
+  );
+  return rows[0] ? fromRow(rows[0]) : null;
 };
 
 export const deleteAttachment = async (id: string): Promise<void> => {

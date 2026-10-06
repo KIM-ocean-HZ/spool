@@ -954,6 +954,30 @@ const EN: Record<string, string> = {
   '{n} 个文件现在 AI 可以读了。随时可以在项目文件那一栏点掉。':
     '{n} file(s) are now readable by an AI. You can untick them under Project files at any time.',
   '没能打开权限：{msg}': 'Could not grant it: {msg}',
+  // P6-3 — an AI proposing a file from the user's computer: attach it, or a newer version of one.
+  '{client} 提议把一个文件挂进〈{title}〉': '{client} proposes attaching a file to ‹{title}›',
+  '{client} 提议用新版本取代〈{title}〉里的「{old}」':
+    '{client} proposes a newer version to replace “{old}” in ‹{title}›',
+  '它说为什么': 'Why, in its words',
+  '同意之后挂进这个项目，AI 也能读到里面的文字（右栏随时能关）。':
+    'Approve and it is attached to this project, and an AI can read its text too (you can turn that off in the right panel at any time).',
+  '同意之后挂到第 {n} 块上，AI 也能读到里面的文字（右栏随时能关）。':
+    'Approve and it is attached to block {n}, and an AI can read its text too (you can turn that off in the right panel at any time).',
+  '原来要挂的那一块已经删了。同意之后挂在这个项目上，AI 也能读到里面的文字（右栏随时能关）。':
+    'The block it was meant for has been deleted. Approve and it is attached to this project instead, and an AI can read its text too (you can turn that off in the right panel at any time).',
+  '同意之后新版挂在旧版原来的位置，AI 也能读到里面的文字（右栏随时能关）。旧版不删，收在新版下面。':
+    'Approve and the new version takes the old one’s place, and an AI can read its text too (you can turn that off in the right panel at any time). The old version is kept, folded under the new one.',
+  '同意': 'Approve',
+  '不同意': 'Decline',
+  '挂上了「{name}」。': 'Attached “{name}”.',
+  '挂上了「{name}」。原来那一块已经删了，所以挂在项目上。':
+    'Attached “{name}”. The block it was meant for had been deleted, so it is on the project.',
+  '「{name}」换上了，旧版「{old}」收在它下面。': '“{name}” is in place; the old “{old}” is folded under it.',
+  '「{name}」已经在这个项目里了，没有重复挂。': '“{name}” is already in this project, so it was not added twice.',
+  '找不到「{name}」了（挪走了，或者外接盘没插上），没有挂上。':
+    'Could not find “{name}” any more (moved, or on a drive that is not plugged in), so nothing was attached.',
+  '这条提议说的东西已经不在了，清掉了。': 'What this proposal was about is no longer there, so it was cleared.',
+  '没能挂上：{msg}': 'Could not attach it: {msg}',
 
   // DESIGN_FOLLOW_UP §8.4 — an AI proposing ONE line for a project's follow-up list. This is
   // approval of a line that will tell the NEXT conversation what to go looking for, so it is
