@@ -72,7 +72,7 @@ const MCP_SERVER_NAME: &str = "spool";
 // (HANDOFF DISCOVERED-20260923-1), so mcp.rs's `the_engine_whitelist_is_every_spool_tool`
 // fails the moment the two differ. Consent still lives in each tool: the write switch, the
 // review screen, and the refusal to touch what the user wrote.
-pub(crate) const ALLOWED_TOOL_NAMES: [&str; 22] = [
+pub(crate) const ALLOWED_TOOL_NAMES: [&str; 24] = [
     "add_block",
     "check_library",
     "close_follow_up_item",
@@ -86,7 +86,9 @@ pub(crate) const ALLOWED_TOOL_NAMES: [&str; 22] = [
     "get_pack",
     "get_project_overview",
     "list_threads",
+    "propose_attach_file",
     "propose_blocks",
+    "propose_replace_file",
     "propose_supersede",
     "request_file_access",
     "search_blocks",
