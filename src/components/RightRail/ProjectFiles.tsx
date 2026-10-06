@@ -102,15 +102,27 @@ export default function ProjectFiles({ threadId }: { threadId: string }) {
                 >
                   {fileLabel(a)}
                 </button>
+                {/* ⚠️ `flex`, not a bare span (Ocean 2026-10-05:「数字符号没有和文字对齐」): a plain
+                    span has no font size of its own, so it inherits the page's 16px, builds a line
+                    box for it and sits the ring on that baseline — 2.5px below the 11px time beside
+                    it, and the row 6px taller than a project file's. Measured in WKWebView
+                    (scripts/wk-snapshot.m): ring and time centres now land on the same pixel. */}
                 {onBlock && seq != null && (
-                  <span title={t('挂在第 {n} 块上', { n: seq })} className="flex-none text-muted">
+                  <span
+                    title={t('挂在第 {n} 块上', { n: seq })}
+                    className="flex flex-none items-center text-muted"
+                  >
                     <SeqBadge seq={seq} />
                   </span>
                 )}
                 {/* At rest: when it was added. On hover the two switches take this place, so the
-                    row never grows a second line and the list does not jump under the pointer. */}
+                    row never grows a second line and the list does not jump under the pointer.
+                    ⚠️ Fixed width, right-aligned, and the buttons after it sit in a fixed-width
+                    slot too — so every row's time ends at the same x whether or not the file is on
+                    a block (「当前的时间会受到 block 标号的影响导致不整齐」), and the block numbers
+                    line up in a column of their own. 66px holds the longest form, 「10/14 08:01」. */}
                 <span
-                  className={`flex-none text-[11px] tabular-nums text-muted ${
+                  className={`w-[66px] flex-none whitespace-nowrap text-right text-[11px] tabular-nums text-muted ${
                     canInline ? 'group-focus-within/file:hidden group-hover/file:hidden' : ''
                   }`}
                 >
@@ -143,26 +155,28 @@ export default function ProjectFiles({ threadId }: { threadId: string }) {
                     </label>
                   </span>
                 )}
-                {onBlock && (
+                <span className="flex w-[34px] flex-none items-center justify-end gap-1">
+                  {onBlock && (
+                    <button
+                      type="button"
+                      onClick={() => void anchorAttachment(a.id, threadId, null)}
+                      title={t('移到项目（不再挂在这一块上，文件还在这个项目里）')}
+                      aria-label={t('移到项目（不再挂在这一块上，文件还在这个项目里）')}
+                      className="rounded p-0.5 text-muted opacity-0 transition-opacity hover:text-ink group-focus-within/file:opacity-100 group-hover/file:opacity-100"
+                    >
+                      <Unlink size={11} />
+                    </button>
+                  )}
                   <button
                     type="button"
-                    onClick={() => void anchorAttachment(a.id, threadId, null)}
-                    title={t('移到项目（不再挂在这一块上，文件还在这个项目里）')}
-                    aria-label={t('移到项目（不再挂在这一块上，文件还在这个项目里）')}
-                    className="flex-none rounded p-0.5 text-muted opacity-0 transition-opacity hover:text-ink group-focus-within/file:opacity-100 group-hover/file:opacity-100"
+                    onClick={() => void detach(a.id, threadId)}
+                    title={t('从这个项目里去掉（文件本身不动）')}
+                    aria-label={t('从这个项目里去掉（文件本身不动）')}
+                    className="rounded p-0.5 text-muted opacity-0 transition-opacity hover:text-ink group-focus-within/file:opacity-100 group-hover/file:opacity-100"
                   >
-                    <Unlink size={11} />
+                    <X size={11} />
                   </button>
-                )}
-                <button
-                  type="button"
-                  onClick={() => void detach(a.id, threadId)}
-                  title={t('从这个项目里去掉（文件本身不动）')}
-                  aria-label={t('从这个项目里去掉（文件本身不动）')}
-                  className="flex-none rounded p-0.5 text-muted opacity-0 transition-opacity hover:text-ink group-focus-within/file:opacity-100 group-hover/file:opacity-100"
-                >
-                  <X size={11} />
-                </button>
+                </span>
               </li>
             );
           })}
