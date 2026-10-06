@@ -291,8 +291,9 @@ describe('库的导出与导入 (DESIGN_LIBRARY_TRANSFER)', () => {
   // §3.2: three tables deliberately stay behind. `file_access_requests` is the one that
   // matters — carrying a granted claim on a file that does not exist here is a permission
   // travelling further than the user ever pointed it.
+  // P6-1：`file_proposals`（AI 提议挂上这台电脑上的某个路径）同一个理由 —— 不跟着走。
   it('运行痕迹和授权状态不跟着走', () => {
-    for (const table of ['engine_runs', 'date_dismissals', 'file_access_requests']) {
+    for (const table of ['engine_runs', 'date_dismissals', 'file_access_requests', 'file_proposals']) {
       expect(MERGE_TABLES_FOR_TEST).not.toContain(table);
     }
   });

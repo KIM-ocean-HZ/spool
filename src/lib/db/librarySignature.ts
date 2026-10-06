@@ -6,7 +6,7 @@ import { getDb } from './client';
 // **一条查询**，每张表只问「几行」和「最新那一行的时间」，走的都是覆盖索引或者只有几行的小表 ——
 // 2026-10-03 那份真库副本（63 个项目 / 1014 块）上一次 0.02 毫秒。
 //
-// 盯哪几张：重读会读、外面（`spool --mcp`）又能往里写的那几样 —— 项目、块、四种待审。
+// 盯哪几张：重读会读、外面（`spool --mcp`）又能往里写的那几样 —— 项目、块、五种待审（P6 加了 AI 提的文件）。
 // ⚠️ 行数和时间**两样都要**：只看时间漏「删了一行」（过期清掉的待审）；只看行数漏「删一行又加
 // 一行」。⛔ 也别拿 rowid 代替时间 —— 删掉最后一行之后，下一行会拿到同一个 rowid。
 //
@@ -19,6 +19,7 @@ const WATCHED: readonly (readonly [table: string, time: string])[] = [
   ['file_access_requests', 'created_at'],
   ['follow_up_items', 'created_at'],
   ['supersede_proposals', 'created_at'],
+  ['file_proposals', 'created_at'],
 ];
 
 const SQL =

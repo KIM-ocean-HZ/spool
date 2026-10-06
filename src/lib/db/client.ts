@@ -38,7 +38,7 @@ export const setSeedLanguage = (lang: SeedLanguage): void => {
 // carries a database from the previous version to the new one. On startup the
 // database's PRAGMA user_version is compared against this and every applicable step
 // runs in sequence, each stamping user_version as its own checkpoint (§19.3).
-const SCHEMA_VERSION = 30;
+const SCHEMA_VERSION = 31;
 
 // Things a migration did to the user's data that the user is entitled to hear about.
 // v15 is the first migration that removes anything (the retired `url` attachments), and
@@ -975,6 +975,43 @@ const MIGRATIONS: Migration[] = [
           console.info(`[db] attachments.${col}: not added (likely exists)`, e);
         }
       }
+    },
+  },
+  {
+    // v31 (P6 任务书 P6-1, Ocean 2026-10-06 批准这一次动库，HANDOFF §9.2 第 31 条)：
+    // AI 提的文件 —— 「把这个路径挂进项目 / 挂到某一块」和「用新文件取代旧文件」—— 排队等点头。
+    //
+    // ⚠️⚠️ **只有 `CREATE TABLE IF NOT EXISTS` + 它自己的索引**，⛔ 已有的表一列不动、没有回填、
+    // ⛔ 没有 rebuild 分支 —— 和 v25（`supersede_proposals`）/ v27（`read_positions`）同一条路
+    // （2026-05-29 抹库是**重建表**那条分支干的）。`schema.sql` 那一段写了每一列的意思。
+    //   * 一张表装两种提议（`kind`），一次调用一行 = 一张卡。
+    //   * ⛔ 外键只指 `attachments`（被取代的那个旧文件没了，提议跟着没）；`thread_id` /
+    //     `anchor_block_id` 不设外键 —— 项目软删、块删了由读的那一头和点头那一刻核。
+    //   * 往前：老库没有这张表 = 没有待审的文件提议，也就是 v30 的行为。
+    //   * 往回：`DROP TABLE file_proposals` 一句退回 v30，⛔ 不丢任何 v30 就有的数据 ——
+    //     丢的只是还没点头的提议（它们本来 7 天后也会自己过期）。
+    //
+    // ⚠️ 半跑一次和跑完一次分不出来，而这正是安全的那一类：`IF NOT EXISTS` 再跑一遍
+    // 什么都不会发生。
+    from: 30,
+    to: 31,
+    name: 'add-file-proposals',
+    run: async (db) => {
+      await db.execute(`CREATE TABLE IF NOT EXISTS file_proposals (
+        id              TEXT PRIMARY KEY,
+        kind            TEXT NOT NULL,
+        client          TEXT NOT NULL DEFAULT '',
+        thread_id       TEXT NOT NULL,
+        path            TEXT NOT NULL,
+        size_bytes      INTEGER NOT NULL,
+        anchor_block_id TEXT,
+        supersedes_id   TEXT REFERENCES attachments(id) ON DELETE CASCADE,
+        why             TEXT NOT NULL DEFAULT '',
+        created_at      INTEGER NOT NULL,
+        expires_at      INTEGER NOT NULL
+      )`);
+      await db.execute(`CREATE INDEX IF NOT EXISTS idx_file_proposals_thread
+        ON file_proposals(thread_id, created_at ASC)`);
     },
   },
 ];

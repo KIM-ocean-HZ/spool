@@ -174,6 +174,14 @@ describe('librarySignature —— 「库有没有被别处动过」的记号', (
           )
           .run(threadId, Date.now())],
       ['整条取代', () => proposeSupersede(older.id, older.id)],
+      // P6-1：AI 提议挂文件 / 取代旧文件也是从 `spool --mcp` 写进来的。
+      ['提议挂文件', () =>
+        sqlite
+          .prepare(
+            `INSERT INTO file_proposals (id, kind, client, thread_id, path, size_bytes, why,
+               created_at, expires_at) VALUES ('fp-1','attach','Codex · MCP',?,'/x/b.pdf',10,'要挂',?,?)`,
+          )
+          .run(threadId, Date.now(), 9e15)],
       ['又一批块待审', () => proposeBlocks('batch-2')],
       // ⚠️ 最新那一行还在、时间没变 —— 只有行数分得出来。
       ['早的那批过期被清掉', () => sqlite.exec("DELETE FROM proposal_batches WHERE id = 'batch-1'")],

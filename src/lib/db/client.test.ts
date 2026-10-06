@@ -107,6 +107,20 @@ const V30_ATTACHMENT_COLS = ['anchor_block_id', 'added_by', 'superseded_by', 'su
 const stripV30 = (r: Record<string, unknown>): Record<string, unknown> =>
   Object.fromEntries(Object.entries(r).filter(([k]) => !V30_ATTACHMENT_COLS.includes(k)));
 
+const V31_FILE_PROPOSAL_COLS = [
+  'id',
+  'kind',
+  'client',
+  'thread_id',
+  'path',
+  'size_bytes',
+  'anchor_block_id',
+  'supersedes_id',
+  'why',
+  'created_at',
+  'expires_at',
+];
+
 // v19's three columns, off a `threads` row — the same job blocksSansV13 does for blocks:
 // a test that rewinds below v19 compares rows across a migration that legitimately added
 // them, and only these three may differ.
@@ -147,12 +161,24 @@ const downgradeToV13 = (handle: Sqlite): void => {
   `);
 };
 
+// Rewind past v31: an AI had no way to put a path in front of the user.
+// ⚠️ 这一句 DROP 就是 v31 的「能回滚」——`add-file-proposals` 只加了一张新表，
+// ⛔ 一个字的既有数据都没动，所以退回来丢的只是还没点头的提议。
+// ⚠️ 必须先于 downgradeToV29 跑：`file_proposals.supersedes_id` 指着 `attachments`。
+const downgradeToV30 = (handle: Sqlite): void => {
+  handle.exec(`
+    DROP TABLE IF EXISTS file_proposals;
+    PRAGMA user_version = 30;
+  `);
+};
+
 // Rewind past v30: a project file could not hang off a block, and nothing recorded who added
 // it or what replaced it.
 // ⚠️ 这四句就是 v30 的「能回滚」——`add-attachment-anchor-and-provenance` 只加了四个可空列，
 // ⛔ 一个字的既有数据都没动；退回来丢的只是「挂在哪一块」（全部回到挂在项目）和「谁加的」。
 // ⚠️ 必须先于 downgradeToV14 跑：那一步要丢 `thread_id`、加回老的 `block_id`。
 const downgradeToV29 = (handle: Sqlite): void => {
+  downgradeToV30(handle);
   handle.exec(`
     ALTER TABLE attachments DROP COLUMN anchor_block_id;
     ALTER TABLE attachments DROP COLUMN added_by;
@@ -1028,6 +1054,55 @@ describe('migrateSchema registry (§19.3)', () => {
     applySchema(handle);
     const cols = columnNames(handle, 'attachments');
     for (const c of V30_ATTACHMENT_COLS) expect(cols).toContain(c);
+  });
+
+  // P6-1 (Ocean 2026-10-06). 只新建一张表，⛔ 已有的表一列不动、一个字节不动：
+  // 迁移之后队列是空的 —— 一条没人提过的提议出现在待审面上，就是在替 AI 说话。
+  it('v30 → v31 adds an empty file_proposals and leaves every other table byte-identical', async () => {
+    applySchema(handle);
+    downgradeToV30(handle);
+    seedUserData(handle);
+    handle.exec(
+      `INSERT INTO attachments (id, thread_id, kind, target, label, ai_access, created_at,
+                                anchor_block_id, added_by)
+         VALUES ('a1', 't1', 'file', '/tmp/kept.pdf', 'kept.pdf', 1, ${NOW}, 'b1', 'user')`,
+    );
+    const tables = (
+      handle
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE '%fts%' ORDER BY name")
+        .all() as { name: string }[]
+    ).map((r) => r.name);
+    const before = Object.fromEntries(
+      tables.map((t) => [t, handle.prepare(`SELECT * FROM ${t} ORDER BY rowid`).all()]),
+    );
+    const schemaBefore = handle
+      .prepare("SELECT name, sql FROM sqlite_master WHERE name NOT LIKE '%file_proposals%' ORDER BY name")
+      .all();
+
+    await __migrateSchemaForTest(db);
+
+    expect(userVersion(handle)).toBe(CURRENT_SCHEMA_VERSION);
+    expect(columnNames(handle, 'file_proposals')).toEqual(V31_FILE_PROPOSAL_COLS);
+    expect(handle.prepare('SELECT COUNT(*) AS c FROM file_proposals').get()).toEqual({ c: 0 });
+    expect(
+      handle
+        .prepare("SELECT COUNT(*) AS c FROM sqlite_master WHERE type='index' AND name='idx_file_proposals_thread'")
+        .get(),
+    ).toEqual({ c: 1 });
+    for (const t of tables) {
+      expect(handle.prepare(`SELECT * FROM ${t} ORDER BY rowid`).all(), t).toEqual(before[t]);
+    }
+    // 别的表的建表语句一个字没变（⛔ 只许 CREATE TABLE + 它自己的索引）。
+    expect(
+      handle
+        .prepare("SELECT name, sql FROM sqlite_master WHERE name NOT LIKE '%file_proposals%' ORDER BY name")
+        .all(),
+    ).toEqual(schemaBefore);
+  });
+
+  it('a fresh install builds file_proposals straight from schema.sql', () => {
+    applySchema(handle);
+    expect(columnNames(handle, 'file_proposals')).toEqual(V31_FILE_PROPOSAL_COLS);
   });
 
   // DESIGN_PROJECT_FILES §3.4 (phase three). The queue starts empty and grants nothing: a

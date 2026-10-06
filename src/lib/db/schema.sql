@@ -620,6 +620,42 @@ CREATE TABLE IF NOT EXISTS supersede_proposals (
 CREATE INDEX IF NOT EXISTS idx_supersede_proposals_thread
   ON supersede_proposals(thread_id, created_at ASC);
 
+-- v31 (P6, Ocean 2026-09-30 §9.2 第 7、10 条 + 10-06 第 31 条) —— AI 提的文件，排队等点头。
+--
+-- §2 原来那条「路径只来自文件选择器」在 09-30 改成了「AI 能**提议**一个路径，点头才挂」。
+-- ⭐ 改的只是「谁能把路径放到用户眼前」，不是「谁能把路径放进库」：这张表和 `proposals` /
+-- `file_access_requests` 同一个形状 —— **它只排队，从不生效**。`attachments` 只在 GUI 里、
+-- 用户点头那一刻写；MCP 进程只写这里（`mcp.rs` 的路径闸放行之后）。
+--
+-- 一张表装两种（`kind`），一次调用一行 = 一张卡：
+--   'attach'     把 `path` 挂进 `thread_id` 这个项目；`anchor_block_id` 非空 = 挂在那一块上。
+--   'supersede'  用 `path` 取代 `supersedes_id` 那个旧文件。新文件挂在哪 = 旧文件点头那一刻
+--                挂在哪，所以这一种的 `anchor_block_id` 永远是 NULL（不另存一份会 drift 的）。
+--
+-- ⚠️ `path` 是**路径闸放行之后的真实路径**（跟过软链接），⛔ 不是 AI 传进来的原样。
+-- `size_bytes` 是提的那一刻量的，卡片上给人看「多大」；点头时文件可能已经变了，以那时为准。
+-- ⛔ 外键只指 `attachments`：旧文件被用户去掉了，取代它的提议跟着没。项目和块不设外键 ——
+-- 项目是软删（读的那一头 JOIN `deleted_at IS NULL`），块删了点头时挂在项目（P6-3）。
+-- ⛔ 不跟着库搬（`transfer.ts` 的 `MERGE_TABLES` 不列它）：和 `file_access_requests` 同一个理由，
+-- 一个指着这台电脑上某个路径的待审提议，搬到别的电脑上没有意义。
+-- 不同意 = 删掉那一行、什么都不留；过期（7 天）同样删掉。
+CREATE TABLE IF NOT EXISTS file_proposals (
+  id              TEXT PRIMARY KEY,               -- one call = one row = one card
+  kind            TEXT NOT NULL,                  -- 'attach' | 'supersede'
+  client          TEXT NOT NULL DEFAULT '',       -- `<client> · MCP` source label, stored as-is
+  thread_id       TEXT NOT NULL,
+  path            TEXT NOT NULL,                  -- canonical path the gate let through
+  size_bytes      INTEGER NOT NULL,               -- measured when proposed
+  anchor_block_id TEXT,                           -- 'attach' only; NULL = hangs off the project
+  supersedes_id   TEXT REFERENCES attachments(id) ON DELETE CASCADE,  -- 'supersede' only
+  why             TEXT NOT NULL DEFAULT '',
+  created_at      INTEGER NOT NULL,
+  expires_at      INTEGER NOT NULL                -- same 7 days as the other three queues
+);
+
+CREATE INDEX IF NOT EXISTS idx_file_proposals_thread
+  ON file_proposals(thread_id, created_at ASC);
+
 -- v27 (WORKPLAN §2.V1, Ocean 2026-08-25) —— 上次读到哪儿，按项目分开记，存 30 天。
 --
 -- 他的原话：「切换到别的项目再回来，停留在刚刚浏览过的位置，而不是刷新。」
