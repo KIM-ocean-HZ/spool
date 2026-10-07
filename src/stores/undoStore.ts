@@ -1,6 +1,11 @@
 import { nanoid } from 'nanoid';
 import { create } from 'zustand';
-import { deleteAttachment, restoreAttachment, setAttachmentAnchor } from '@/lib/db/attachments';
+import {
+  deleteAttachment,
+  restoreAttachment,
+  setAttachmentAnchor,
+  setAttachmentSuperseded,
+} from '@/lib/db/attachments';
 import {
   computeMergedFields,
   deleteBlock,
@@ -300,7 +305,7 @@ const reverseAndBuildRedo = async (
       };
     }
     case 'delete': {
-      const { block, files = [], removedFiles = false } = entry.payload;
+      const { block, files = [], removedFiles = false, revived = [] } = entry.payload;
       await restoreBlock(block);
       // v30 (P5-3): the files that hung off it go back on it — re-inserted verbatim if the
       // user took them out of the project with the block, re-hung if they were left on it.
@@ -308,6 +313,9 @@ const reverseAndBuildRedo = async (
         if (removedFiles) await restoreAttachment(f);
         else await setAttachmentAnchor(f.id, block.id);
       }
+      // P7-1: the older versions they had replaced go back under them. Redo needs nothing
+      // extra — deleteAttachment brings them back into use again.
+      for (const r of revived) await setAttachmentSuperseded(r.id, r.supersededBy, r.supersededAt);
       return async () => {
         if (removedFiles) for (const f of files) await deleteAttachment(f.id);
         await deleteBlock(block.id);

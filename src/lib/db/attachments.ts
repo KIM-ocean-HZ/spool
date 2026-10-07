@@ -247,7 +247,7 @@ export const setAttachmentAnchor = async (id: string, blockId: string | null): P
 
 // P6-3: the user approved an AI's 「新版取代旧版」. The old row stays — readable as before,
 // openable from the right rail — and only these two columns say what replaced it and when.
-export const setAttachmentSuperseded = async (id: string, byId: string, at: number): Promise<void> => {
+export const setAttachmentSuperseded = async (id: string, byId: string, at: number | null): Promise<void> => {
   const db = await getDb();
   await db.execute('UPDATE attachments SET superseded_by = $1, superseded_at = $2 WHERE id = $3', [
     byId,
@@ -272,9 +272,35 @@ export const findLiveAttachmentByTarget = async (
   return rows[0] ? fromRow(rows[0]) : null;
 };
 
-export const deleteAttachment = async (id: string): Promise<void> => {
+/** P7-1: an older version that `deleteAttachment` brought back into use — kept so undo can
+ *  mark it replaced again. */
+export interface RevivedVersion {
+  id: string;
+  supersededBy: string;
+  supersededAt: number | null;
+}
+
+// P7-1 (Ocean 2026-10-07, DISCOVERED-20261007-1 甲): taking a newer version out of the project
+// puts the version it replaced back into use — otherwise that one would stay 「被取代」 by a file
+// that is gone: out of every pack and off its block, with nothing on screen to bring it back.
+// Done here, at the bottom, for the same reason as P5-3: every path that removes a file (the
+// right rail's ×, 「一起去掉」 when a block is deleted, an undo or redo) comes through this one
+// call, and a path added later lands on this side without anyone remembering. Only the version
+// directly under it comes back; in v1 ← v2 ← v3, removing v3 leaves v1 under v2.
+export const deleteAttachment = async (id: string): Promise<RevivedVersion[]> => {
   const db = await getDb();
+  const revived = await db.select<{ id: string; superseded_at: number | null }[]>(
+    'SELECT id, superseded_at FROM attachments WHERE superseded_by = $1',
+    [id],
+  );
+  if (revived.length > 0) {
+    await db.execute(
+      'UPDATE attachments SET superseded_by = NULL, superseded_at = NULL WHERE superseded_by = $1',
+      [id],
+    );
+  }
   await db.execute('DELETE FROM attachments WHERE id = $1', [id]);
+  return revived.map((r) => ({ id: r.id, supersededBy: id, supersededAt: r.superseded_at }));
 };
 
 // §9.13 Undo (delete): re-insert an attachment verbatim from an undo snapshot, preserving

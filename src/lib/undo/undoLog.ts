@@ -3,7 +3,7 @@
 // wraps this with reactive state + the actual reversal logic; this file only owns the
 // buffer mechanics (push / peek / pop / invalidate / clear) and the entry types.
 
-import type { Attachment } from '@/lib/db/attachments';
+import type { Attachment, RevivedVersion } from '@/lib/db/attachments';
 import type { Block } from '@/lib/db/blocks';
 import type { ThreadStatus } from '@/lib/db/threads';
 
@@ -54,6 +54,9 @@ export interface DeletePayload {
   block: Block;
   files?: Attachment[];
   removedFiles?: boolean;
+  /** P7-1: older versions that taking those files out brought back into use. Undo marks
+   *  each replaced again by the file it puts back. */
+  revived?: RevivedVersion[];
 }
 
 export interface MergePayload {

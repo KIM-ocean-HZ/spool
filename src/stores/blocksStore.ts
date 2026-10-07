@@ -156,6 +156,14 @@ const patchAttachment = (
   };
 };
 
+// P7-1: the in-memory side of what `deleteAttachment` just did in the table — the older
+// versions it brought back are no longer marked replaced.
+const revivedIn = (revived: adb.RevivedVersion[]) => {
+  const ids = new Set(revived.map((r) => r.id));
+  return (a: Attachment): Attachment =>
+    ids.has(a.id) ? { ...a, supersededBy: null, supersededAt: null } : a;
+};
+
 // v2.7: patch one attachment's extraction fields in the by-thread index. A no-op if the
 // thread is not currently loaded (e.g. a backfilled attachment in an unopened project — it
 // picks up the cached text from the DB the next time that project loads).
@@ -381,12 +389,16 @@ export const useBlocksStore = create<BlocksState>((set, get) => {
       const removedFiles = opts?.removeFiles === true && files.length > 0;
 
       // Out of the project first, then the block — deleteBlock would otherwise have put them
-      // back on the project (its default for every other path).
-      if (removedFiles) for (const f of files) await adb.deleteAttachment(f.id);
+      // back on the project (its default for every other path). P7-1: an older version one of
+      // them had replaced comes back into use; undo marks it replaced again.
+      const revived: adb.RevivedVersion[] = [];
+      if (removedFiles) for (const f of files) revived.push(...(await adb.deleteAttachment(f.id)));
       await db.deleteBlock(id);
 
       if (snapshot) {
-        useUndoStore.getState().pushUndo(buildDeleteUndo({ block: snapshot, files, removedFiles }));
+        useUndoStore
+          .getState()
+          .pushUndo(buildDeleteUndo({ block: snapshot, files, removedFiles, revived }));
       }
 
       const state = get();
@@ -398,7 +410,7 @@ export const useBlocksStore = create<BlocksState>((set, get) => {
       const attachmentsByThread: Record<string, Attachment[]> = {};
       for (const [tId, list] of Object.entries(state.attachmentsByThread)) {
         attachmentsByThread[tId] = removedFiles
-          ? list.filter((a) => !gone.has(a.id))
+          ? list.filter((a) => !gone.has(a.id)).map(revivedIn(revived))
           : list.map((a) => (gone.has(a.id) ? { ...a, anchorBlockId: null } : a));
       }
       set(files.length > 0 ? { byThread: next, attachmentsByThread } : { byThread: next });
@@ -584,14 +596,14 @@ export const useBlocksStore = create<BlocksState>((set, get) => {
     },
 
     detach: async (attachmentId, threadId) => {
-      await adb.deleteAttachment(attachmentId);
+      const revived = await adb.deleteAttachment(attachmentId);
       set((s) => {
         const list = s.attachmentsByThread[threadId];
         if (!list) return s;
         return {
           attachmentsByThread: {
             ...s.attachmentsByThread,
-            [threadId]: list.filter((a) => a.id !== attachmentId),
+            [threadId]: list.filter((a) => a.id !== attachmentId).map(revivedIn(revived)),
           },
         };
       });
