@@ -36,6 +36,7 @@ const block = (
     refNote: null,
     gistBy: null,
     refReviewedStaleAt: null,
+    replacedByBlockId: null,
     originalContent: null,
     compressedAt: null,
     ...over,
@@ -64,6 +65,13 @@ describe('refNeedsReview —— §3.2 ② 那条判据', () => {
     expect(
       refNeedsReview(block('new', { refBlockId: 'old', refKind: 'supersedes' }), RETIRED),
     ).toBe(false);
+  });
+
+  // v32（P7-3）：同一条「正常状态」的新记法 —— 被引块正是被引用方自己取代的（先更正、后取代）。
+  it('⛔ 被引块是被引用方自己整条取代的（v32 记在旧块上）⇒ 不待审；被别的块取代的照样待审', () => {
+    const corrects = block('new', { refBlockId: 'old', refKind: 'corrects' });
+    expect(refNeedsReview(corrects, block('old', { staleAt: 111, replacedByBlockId: 'new' }))).toBe(false);
+    expect(refNeedsReview(corrects, block('old', { staleAt: 111, replacedByBlockId: 'other' }))).toBe(true);
   });
 
   it('corrects 指着一块已退役的块 ⇒ 照样待审', () => {

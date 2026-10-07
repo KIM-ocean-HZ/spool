@@ -259,6 +259,8 @@ const EN: Record<string, string> = {
   '取消这条更正关系': 'Undo this correction link',
   // ⭐ S1（2026-08-24）：屏幕上这件事只许有一个名字 —— E3 的按钮、这条引用行的动词，全是「整条取代」。
   '整条取代了': 'replaces in full',
+  '已被整条取代：': 'replaced in full by',
+  '已被整条取代（取代它的那一块已删除）': 'replaced in full (the block that replaced it has been deleted)',
   '更正了其中一处：': 'corrects one point in:',
   '其中一处已被更正：': 'one point in this was corrected:',
   '点一下跳到那一块': 'Click to jump to that block',

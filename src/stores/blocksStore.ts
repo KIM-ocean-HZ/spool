@@ -71,13 +71,10 @@ interface BlocksState {
   setStale: (id: string, stale: boolean) => Promise<void>;
   /** ⭐ v24（R2 §1g）：把这一块换回压缩前的原文。⛔ 原文还在，还原是白拿的。 */
   restoreOriginal: (id: string) => Promise<void>;
-  /** §3.1 — declared FROM the newer block: which older one it replaces or corrects.
-   *  `supersedes` retires the target in the same call; `corrects` leaves it untouched. */
-  setSupersession: (
-    id: string,
-    targetBlockId: string,
-    kind: 'supersedes' | 'corrects',
-  ) => Promise<void>;
+  /** §3.1 — declared FROM the newer block: which older one it corrects. The target is left
+   *  untouched. ⛔ v32 (P7-3): a replacement no longer goes through here — it is
+   *  `db.replaceBlock`, written on the OLD block, so the newer one keeps its own relation. */
+  setSupersession: (id: string, targetBlockId: string, kind: 'corrects') => Promise<void>;
   /** §3.1 — undo either declaration: the relation goes and the target comes back. */
   clearSupersession: (id: string) => Promise<void>;
   /** 2026-08-19 — the user's own correction, written from the block being corrected: select the
@@ -432,7 +429,8 @@ export const useBlocksStore = create<BlocksState>((set, get) => {
     setStale: async (id, stale) => {
       const staleAt = stale ? Date.now() : null;
       await db.setBlockStale(id, staleAt);
-      patchBlock(set, get, id, { staleAt });
+      // v32 (P7-3): taking it back clears 「被第 n 块取代」 too (setBlockStale does the same).
+      patchBlock(set, get, id, stale ? { staleAt } : { staleAt, replacedByBlockId: null });
     },
 
     // ⭐ v24（R2 §1g）：一键还原。⚠️ 原文回到 `content` 之后，`original_content` 和
@@ -465,15 +463,7 @@ export const useBlocksStore = create<BlocksState>((set, get) => {
       const state = get();
       const next: Record<string, Block[]> = {};
       for (const [tId, list] of Object.entries(state.byThread)) {
-        next[tId] = list.map((b) => {
-          if (b.id === id) return { ...b, refBlockId: targetBlockId, refKind: kind };
-          // 'supersedes' retires the target in the same breath — the store has to show it,
-          // or the block stays looking live until the next thread load.
-          if (b.id === targetBlockId && kind === 'supersedes' && b.staleAt == null) {
-            return { ...b, staleAt: now };
-          }
-          return b;
-        });
+        next[tId] = list.map((b) => (b.id === id ? { ...b, refBlockId: targetBlockId, refKind: kind } : b));
       }
       set({ byThread: next });
     },

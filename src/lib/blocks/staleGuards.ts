@@ -25,25 +25,42 @@ import type { Block } from '@/lib/db/blocks';
  *  ⭐ 所以判断的依据是 **`refBlockId`**：**这块已经指着谁了没有**，
  *  ⛔ 而不是「它指的是哪一种关系」。 */
 
+/** v32（P7-3，Ocean 2026-10-07 第 41 条）：旧块**已经被新块整条取代了**。
+ *
+ *  ⚠️ **两种记法都认**：
+ *  - v32 起：记在**旧块**上 —— `stale_at` 有值 **且** `replacedByBlockId` = 新块（`replaceBlock`，一句 UPDATE）；
+ *  - v32 以前：记在**新块**那一格 —— 新块 `refKind === 'supersedes'` 指着旧块，**且**旧块 `stale_at` 有值
+ *    （那时是两条独立 SQL，只成一半的不算，见 `supersedeProposalSettled` 的老注释）。
+ *  ⛔ 没有回填，所以老的那一种会一直在库里。 */
+export const alreadyReplaced = (older: Block | undefined, newer: Block | undefined): boolean => {
+  if (!older || !newer || older.staleAt === null) return false;
+  if (older.replacedByBlockId === newer.id) return true;
+  return newer.refBlockId === older.id && newer.refKind === 'supersedes';
+};
+
 /** 这条提议说的关系，**库里已经记着了** —— 于是根本不该拿出来问。
  *
- *  「已经记着」= 新块**正指着**旧块。⚠️ 哪一种关系都算：
- *  `corrects` 是他选的「旧块留着」、`supersedes` 是他选的「退掉」、
+ *  「已经记着」= 新块**正指着**旧块，或者旧块**已经被它取代了**（v32 起记在旧块上）。
+ *  ⚠️ 哪一种关系都算：`corrects` 是他选的「旧块留着」、取代是他选的「退掉」、
  *  `cites` 是他自己连的引用 —— **三种都是已经决定过的事**。 */
 export const relationAlreadySettled = (
   older: Block | undefined,
   newer: Block | undefined,
 ): boolean => {
   if (!older || !newer) return false;
+  if (alreadyReplaced(older, newer)) return true;
   return newer.refBlockId !== null && newer.refBlockId === older.id;
 };
 
 /** 写下去会**冲掉**新块上已有的那条关系 —— 于是这一下必须拒绝。
  *
- *  ⚠️ 一块只存得下一条这样的关系（`setBlockSupersession` 是覆盖式写入）。
+ *  ⚠️ 一块只存得下一条**出向**关系（`setBlockSupersession` 是覆盖式写入）。
  *  新块要是已经指着**别的**块，写下去等于把那条悄悄删了。
  *  ⭐ 指着**同一块**的那种在扫描时就被 `relationAlreadySettled` 摘走了，
- *  走到这里的只剩「指着别处」。 */
+ *  走到这里的只剩「指着别处」。
+ *  ⛔⛔ v32（P7-3）起**只拦「更正」**：「取代」记在旧块上（`replaceBlock`），新块那一格一个字不动，
+ *  没有可冲掉的东西 —— 调用方只在「更正」那一档问它。Flux #20 那一摊（已经在更正 #3，
+ *  又要取代 #4、#14）就是被这道闸连「取代」一起拦死的。 */
 export const wouldOverwriteRelation = (
   older: Block | undefined,
   newer: Block | undefined,
@@ -91,12 +108,17 @@ export const wouldOverwriteRelation = (
 export const supersedeProposalSettled = (
   older: Block | undefined,
   newer: Block | undefined,
+  suggested: 'supersedes' | 'corrects' = 'supersedes',
 ): boolean => {
-  if (!older || !newer || !relationAlreadySettled(older, newer)) return false;
-  if (newer.refKind === 'corrects') return false;
-  // ⛔ 两个字段都写成了才算做完 —— 少一半就是半成品，得让用户看得见、点得着。
-  if (newer.refKind === 'supersedes') return older.staleAt !== null;
-  return true;
+  if (!older || !newer) return false;
+  // ⛔⛔ v32（P7-3 / P7-5）改了上面那张表：
+  // - 「取代」做完了 = `alreadyReplaced`（两种记法都认；老记法只成一半的照旧**显示**，是重试入口）。
+  //   做完了就不再问，不管 AI 建议的是哪一种 —— 他已经选了更重的那一个。
+  // - AI 建议「更正」：新块已经 `corrects` 这一块 = 做完了。
+  // - `cites`：⛔ **不再藏**。藏它的理由是「点『只退旧的』会冲掉那条引用」，而 v32 起取代
+  //   不碰新块那一格；「更正」指着同一块，等于把引用升级成更正，也冲不掉别的。
+  if (alreadyReplaced(older, newer)) return true;
+  return suggested === 'corrects' && alreadyCorrects(older, newer);
 };
 
 /** P2 · B3（DISCOVERED-20260829-14）：新块**已经**以 `corrects` 指着旧块。

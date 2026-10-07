@@ -3072,7 +3072,9 @@ fn get_blocks_json(
         .prepare(&format!(
             "SELECT id, kind, content, annotation, ref_thread_id, ref_block_id, source,
                     pinned, created_at, seq, stale_at, ref_kind,
-                    source_url, retrieved_at, recheck_after, corrected_quote
+                    source_url, retrieved_at, recheck_after, corrected_quote,
+                    replaced_by_block_id,
+                    (SELECT r.seq FROM blocks r WHERE r.id = blocks.replaced_by_block_id)
              FROM blocks WHERE thread_id = ?{fsql} ORDER BY created_at ASC, rowid ASC
              LIMIT ? OFFSET ?"
         ))
@@ -3085,7 +3087,7 @@ fn get_blocks_json(
     page_params.push(&offset);
     let mut rows = stmt
         .query_map(rusqlite::params_from_iter(page_params), |r| {
-            Ok(json!({
+            let mut row = json!({
                 "block_id": r.get::<_, String>(0)?,
                 "kind": r.get::<_, String>(1)?,
                 "content": r.get::<_, String>(2)?,
@@ -3120,7 +3122,15 @@ fn get_blocks_json(
                 // never read back would leave a later model unable to answer 「这一块里哪句
                 // 话被更正了」 about a block it can see is corrected.
                 "corrected_quote": r.get::<_, Option<String>>(15)?,
-            }))
+            });
+            // v32 (P7-3, Ocean 2026-10-07): a replacement is recorded on the OLD block now —
+            // which block replaced it, by number and id. Only on a block that was replaced
+            // (same as a file's superseded_by). Replacements from before v32 still read as
+            // the newer block's ref_kind "supersedes"; they were not backfilled.
+            if let Some(by) = r.get::<_, Option<String>>(16)? {
+                row["replaced_by"] = json!({ "seq": r.get::<_, Option<i64>>(17)?, "block_id": by });
+            }
+            Ok(row)
         })
         .map_err(|e| e.to_string())?
         .collect::<Result<Vec<Value>, _>>()
@@ -7114,7 +7124,7 @@ fn tools_descriptor() -> Value {
         },
         {
             "name": "get_blocks",
-            "description": "Page through one project's blocks in chronological order, as JSON (full content, annotation, source, pinned, timestamps, plus each block's attachments with the size of any extracted file text). The middle granularity between a search snippet and a full pack, and the way to read a project whose pack is over budget. To read around a search hit, pass its block_id as around_block_id (with optional context, default 3 each side) — this centers the page and returns anchor_position; offset/limit are ignored. Optional filters (pinned / has_annotation / source_contains / stale) AND-combine and narrow the page + total; they cannot be combined with around_block_id. Two v13 fields on every row: stale_at is set when the USER marked that block as no longer valid — packs and digests stop carrying it, this tool still returns it, and you must not relay it as a current fact; ref_kind says what the row's ref_block_id means — 'cites' (builds on it, the default and what null means), 'supersedes' (replaces it; that block is stale), 'corrects' (one point inside it is wrong, the rest of it still stands). Each file in `files` also says where it hangs (attached_to: \"#12\" or \"project\"), who added it (added_by: \"user\", or the label of the AI whose proposal the user approved), and — only once a newer version replaced it — superseded_by and superseded_at: a replaced file is still listed here, but it is no longer in packs.",
+            "description": "Page through one project's blocks in chronological order, as JSON (full content, annotation, source, pinned, timestamps, plus each block's attachments with the size of any extracted file text). The middle granularity between a search snippet and a full pack, and the way to read a project whose pack is over budget. To read around a search hit, pass its block_id as around_block_id (with optional context, default 3 each side) — this centers the page and returns anchor_position; offset/limit are ignored. Optional filters (pinned / has_annotation / source_contains / stale) AND-combine and narrow the page + total; they cannot be combined with around_block_id. Two v13 fields on every row: stale_at is set when the USER marked that block as no longer valid — packs and digests stop carrying it, this tool still returns it, and you must not relay it as a current fact; ref_kind says what the row's ref_block_id means — 'cites' (builds on it, the default and what null means), 'supersedes' (replaces it; that block is stale), 'corrects' (one point inside it is wrong, the rest of it still stands). A replacement the user approved is now recorded on the OLD block instead: a stale block a newer one replaced wholesale carries replaced_by {seq, block_id}, and the newer block keeps its own ref_kind (so one block can replace several and still correct another); 'supersedes' only remains on rows from before that change. Each file in `files` also says where it hangs (attached_to: \"#12\" or \"project\"), who added it (added_by: \"user\", or the label of the AI whose proposal the user approved), and — only once a newer version replaced it — superseded_by and superseded_at: a replaced file is still listed here, but it is no longer in packs.",
             "annotations": { "readOnlyHint": true },
             "inputSchema": {
                 "type": "object",
@@ -15346,6 +15356,62 @@ mod tests {
         assert!(!pack.contains("plan.pdf"), "{pack}");
         assert!(!pack.contains("v1 text"), "{pack}");
         assert!(pack_locked_files(&conn, "t1").unwrap().is_none());
+        drop(conn);
+        let _ = std::fs::remove_dir_all(&raw_tmp);
+    }
+
+    // P7-3（Ocean 2026-10-07 第 41 条）：取代记在旧块上。Flux #20 的形状 —— #3 已经在更正 #1，
+    // 又取代了 #2、#4；`get_blocks` 在旧块上说被哪一块取代，新块自己那一格照旧是更正。
+    // v32 以前的取代（新块 `ref_kind='supersedes'`）没回填，照旧那样读、照旧那样进 pack。
+    #[test]
+    fn a_replaced_block_says_which_block_replaced_it() {
+        store_lang(Lang::En);
+        let raw_tmp = std::env::temp_dir().join(format!("spool-replaced-by-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&raw_tmp);
+        std::fs::create_dir_all(&raw_tmp).unwrap();
+        let conn = Connection::open(raw_tmp.join("spool.db")).unwrap();
+        conn.execute_batch(include_str!("../../src/lib/db/schema.sql")).unwrap();
+        conn.execute_batch(&format!(
+            "PRAGMA user_version = {EXPECTED_SCHEMA_VERSION};
+             INSERT INTO workspaces (id, title, sort_order, created_at, updated_at)
+               VALUES ('ws1', 'W', 0, 1, 1);
+             INSERT INTO threads (id, workspace_id, title, created_at, updated_at)
+               VALUES ('t1', 'ws1', 'Flux', 1, 1);
+             INSERT INTO blocks (id, thread_id, kind, content, seq, created_at, stale_at,
+                                 ref_block_id, ref_kind, corrected_quote, replaced_by_block_id)
+               VALUES ('b1', 't1', 'text', 'budget is 40k for the pilot', 1, 1, NULL, NULL, NULL, NULL, NULL),
+                      ('b2', 't1', 'text', 'vendor list v1', 2, 2, 50, NULL, NULL, NULL, 'b3'),
+                      ('b3', 't1', 'text', 'budget is 55k; new vendor list', 3, 3, NULL, 'b1', 'corrects', '40k', NULL),
+                      ('b4', 't1', 'text', 'timeline v1', 4, 4, 60, NULL, NULL, NULL, 'b3'),
+                      ('b5', 't1', 'text', 'old plan', 5, 5, 70, NULL, NULL, NULL, NULL),
+                      ('b6', 't1', 'text', 'new plan', 6, 6, NULL, 'b5', 'supersedes', NULL, NULL);"
+        ))
+        .unwrap();
+
+        let filters = BlockFilters { pinned: None, has_annotation: None, source_contains: None, stale: None };
+        let v: Value = serde_json::from_str(
+            &get_blocks_json(&conn, "t1", None, None, None, None, &filters, false).unwrap(),
+        )
+        .unwrap();
+        let block = |id: &str| v["blocks"].as_array().unwrap().iter().find(|b| b["block_id"] == id).unwrap().clone();
+        assert_eq!(block("b2")["replaced_by"], json!({ "seq": 3, "block_id": "b3" }));
+        assert_eq!(block("b4")["replaced_by"], json!({ "seq": 3, "block_id": "b3" }));
+        let b3 = block("b3");
+        assert!(b3.get("replaced_by").is_none(), "{b3}");
+        assert_eq!(b3["ref_kind"], json!("corrects"));
+        assert_eq!(b3["ref_block_id"], json!("b1"));
+        // v32 以前的那一种：照旧只在新块上。
+        assert!(block("b5").get("replaced_by").is_none());
+        assert_eq!(block("b6")["ref_kind"], json!("supersedes"));
+
+        // pack：被取代的不进、底部照旧计数；新块下面没有「取代了哪一块」（Ocean 接受的代价），
+        // 它自己的更正照旧；老记法那一行照旧。
+        let pack = get_pack_text(&conn, "t1", "all").unwrap();
+        assert!(!pack.contains("vendor list v1") && !pack.contains("timeline v1"), "{pack}");
+        assert!(pack.contains("3 blocks the user has marked as no longer valid"), "{pack}");
+        assert!(pack.contains("↩ corrects one point in: ["), "{pack}");
+        // 正文里只有 #6 那一行（表头 Notation 里也提到这个记号，不算）。
+        assert_eq!(pack.matches("↩ replaces (that block no longer holds): [").count(), 1, "{pack}");
         drop(conn);
         let _ = std::fs::remove_dir_all(&raw_tmp);
     }

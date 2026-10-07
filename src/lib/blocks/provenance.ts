@@ -26,14 +26,17 @@ import type { Block, IncomingRef, RefKind } from '@/lib/db/blocks';
  *  那是**新的一次**退役 —— 布尔会说「审过了」并把它永远藏起来，
  *  比 `stale_at` 就会说「这是新的一次，再看一眼」。 */
 export const refNeedsReview = (
-  citing: Pick<Block, 'refBlockId' | 'refKind' | 'staleAt' | 'refReviewedStaleAt'> | undefined,
-  cited: Pick<Block, 'id' | 'staleAt'> | undefined,
+  citing: Pick<Block, 'id' | 'refBlockId' | 'refKind' | 'staleAt' | 'refReviewedStaleAt'> | undefined,
+  cited: Pick<Block, 'id' | 'staleAt' | 'replacedByBlockId'> | undefined,
 ): boolean => {
   if (!citing || !cited) return false;
   if (citing.refBlockId !== cited.id) return false;
   if (citing.staleAt !== null) return false;
   if (cited.staleAt === null) return false;
   if (citing.refKind === 'supersedes') return false;
+  // v32（P7-3）：同一条「正常状态」，新记法 —— 被引块正是被**引用方自己**整条取代的
+  //（先更正、后来用户选了取代）。退役是这条关系自己造成的，⛔ 不是要人看的异常。
+  if (cited.replacedByBlockId === citing.id) return false;
   return citing.refReviewedStaleAt !== cited.staleAt;
 };
 
@@ -42,10 +45,11 @@ export const refNeedsReview = (
  *  ⚠️ 入向边手上没有 `refBlockId`（它按定义就是指着我），所以这里补上那一半再走同一把尺子。 */
 export const incomingNeedsReview = (
   edge: Pick<IncomingRef, 'id' | 'refKind' | 'staleAt' | 'refReviewedStaleAt'>,
-  cited: Pick<Block, 'id' | 'staleAt'>,
+  cited: Pick<Block, 'id' | 'staleAt' | 'replacedByBlockId'>,
 ): boolean =>
   refNeedsReview(
     {
+      id: edge.id,
       refBlockId: cited.id,
       refKind: edge.refKind,
       staleAt: edge.staleAt,

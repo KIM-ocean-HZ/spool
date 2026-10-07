@@ -219,7 +219,7 @@ describe('AI 提的「整条取代」—— 什么时候该出现在「过期检
 
   // ⭐⭐ 这才是用户实际要走完的那条路 —— ⚠️ 断言的是**库里最后长什么样**，
   // ⛔ 不是"某个函数被调用过"。
-  it('⭐ 点「整条取代」之后：旧块退役、新块 supersedes、引文清掉、提案行删掉', async () => {
+  it('⭐ 点「整条取代」之后：旧块退役并记着被新块取代、新块原来的更正一个字不动、提案行删掉', async () => {
     await setBlockSupersession(newer.id, older.id, 'corrects', 1);
     await setCorrectedQuote(newer.id, '旧的那一句');
     proposeSupersede(older.id, newer.id);
@@ -230,12 +230,13 @@ describe('AI 提的「整条取代」—— 什么时候该出现在「过期检
     await useCompressStore.getState().decideStale(threadId, 0, 'retire');
 
     const rows = await listBlocksByThread(threadId);
+    // v32（P7-3）：取代记在旧块上 —— 新块那一格照旧是它自己的更正。
     expect(rows.find((b) => b.id === newer.id)).toMatchObject({
       refBlockId: older.id,
-      refKind: 'supersedes',
-      // ⚠️ 引文只属于 `corrects`：留着就是"关系还在、所以没人看得出不对"的那种脏数据。
-      correctedQuote: null,
+      refKind: 'corrects',
+      correctedQuote: '旧的那一句',
     });
+    expect(rows.find((b) => b.id === older.id)).toMatchObject({ replacedByBlockId: newer.id });
     expect(rows.find((b) => b.id === older.id)!.staleAt).not.toBeNull();
     // 活干完了，库里那一行跟着走 —— ⚠️ 否则下次打开又问一遍。
     expect(await listSupersedeProposals(threadId, Date.now())).toEqual([]);

@@ -729,7 +729,27 @@ export const restoreBlock = async (block: Block): Promise<void> => {
  *  ⚠️ There is no MCP counterpart on purpose (§3.1 «谁能用»). */
 export const setBlockStale = async (id: string, staleAt: number | null): Promise<void> => {
   const db = await getDb();
-  await db.execute('UPDATE blocks SET stale_at = $1 WHERE id = $2', [staleAt, id]);
+  // v32 (P7-3): taking a block back also forgets which block replaced it — otherwise a live
+  // block would still read 「被第 n 块取代」.
+  await db.execute(
+    `UPDATE blocks SET stale_at = $1${staleAt === null ? ', replaced_by_block_id = NULL' : ''} WHERE id = $2`,
+    [staleAt, id],
+  );
+};
+
+/** v32 (P7-3, Ocean 2026-10-07 HANDOFF §9.2 第 41 条) —— 「整条取代」：旧块退役，并记住被哪一块取代。
+ *
+ *  ⭐ **新块一个字不动。** v13 起取代占的是新块那一格（`ref_block_id` + `ref_kind='supersedes'`），
+ *  一块只有一格 ⇒ 一块新的只能取代一块，而且取代了就不能再更正别的（Flux #20 那一摊）。
+ *  记在旧块上，一块新的能取代任意多块，它原来的更正 / 引用照旧。
+ *  一句 UPDATE，两列一起落 —— v13 那条「两条 SQL 中间断了留下半成品」的路在这里不存在。
+ *  `stale_at` 已经有就不挪（用户自己定的退役时间不改）。 */
+export const replaceBlock = async (oldId: string, byId: string, now: number): Promise<void> => {
+  const db = await getDb();
+  await db.execute(
+    'UPDATE blocks SET stale_at = COALESCE(stale_at, $1), replaced_by_block_id = $2 WHERE id = $3',
+    [now, byId, oldId],
+  );
 };
 
 // ---------------------------------------------------------------------------------------
@@ -887,7 +907,11 @@ export const restoreBlockOriginal = async (id: string): Promise<boolean> => {
  *  things at once: a duplicate (the very disease this plan treats), an identity laundering
  *  (📖 Reference re-entering the library as 💭 Personal), and a price nobody would pay.
  *
- *  Passing null for `kind` clears the relation back to a plain citation. */
+ *  Passing null for `kind` clears the relation back to a plain citation.
+ *
+ *  ⛔ v32 (P7-3): nothing writes `'supersedes'` through here any more — a replacement is
+ *  `replaceBlock`, recorded on the OLD block. The value stays legal because every replacement
+ *  made before v32 is stored this way (no backfill), and the tests build those rows with it. */
 export const setBlockSupersession = async (
   id: string,
   targetBlockId: string | null,
@@ -1131,8 +1155,9 @@ export interface PendingRefReview {
  *  两处是同一条规则的两种写法，⛔ 改一处必须改另一处；
  *  `provenance.test.ts` 用真库那 5 条边把它们钉在一起。
  *
- *  引用方仍有效 AND 被引块已退役 AND 关系不是 supersedes AND 用户尚未确认。
- *  ⛔ `supersedes → retired` 不进队列 —— 那正是**正常**状态，不是异常。
+ *  引用方仍有效 AND 被引块已退役 AND 关系不是 supersedes AND 被引块不是被引用方自己取代的（v32）
+ *  AND 用户尚未确认。
+ *  ⛔ `supersedes → retired` 不进队列 —— 那正是**正常**状态，不是异常；v32 的记法同理。
  *
  *  `threadId` 给了就只看那个项目**引出去**的边（⚠️ 筛的是**引用方**的项目 ——
  *  要动手的是引用方那一行）；不给就是全库。 */
@@ -1155,6 +1180,7 @@ export const listPendingRefReviews = async (
       WHERE c.stale_at IS NULL
         AND d.stale_at IS NOT NULL
         AND COALESCE(c.ref_kind, 'cites') <> 'supersedes'
+        AND (d.replaced_by_block_id IS NULL OR d.replaced_by_block_id <> c.id)
         AND (c.ref_reviewed_stale_at IS NULL OR c.ref_reviewed_stale_at <> d.stale_at)
         ${threadId ? 'AND c.thread_id = $1' : ''}
       ORDER BY c.created_at ASC`,

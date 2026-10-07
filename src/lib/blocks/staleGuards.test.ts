@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   alreadyCorrects,
+  alreadyReplaced,
   relationAlreadySettled,
   supersedeProposalSettled,
   wouldOverwriteRelation,
@@ -9,12 +10,12 @@ import type { Block } from '@/lib/db/blocks';
 
 /** 只造这两道闸看得见的那几个字段。 */
 const block = (id: string, refBlockId: string | null = null, refKind: Block['refKind'] = null,
-               staleAt: number | null = null): Block =>
+               staleAt: number | null = null, replacedByBlockId: string | null = null): Block =>
   ({ id, seq: 1, refBlockId, refKind, threadId: 't', kind: 'text', content: '', annotation: null,
      annotationBy: null, refThreadId: null, source: null, pinned: false, createdAt: 0,
      staleAt, sourceUrl: null, retrievedAt: null, recheckAfter: null,
      correctedQuote: null, gist: null, refNote: null, gistBy: null,
-     refReviewedStaleAt: null, replacedByBlockId: null,
+     refReviewedStaleAt: null, replacedByBlockId,
      originalContent: null, compressedAt: null });
 
 const OLD = block('old');
@@ -115,9 +116,9 @@ describe('supersedeProposalSettled —— AI 提的「整条取代」问过没�
     expect(supersedeProposalSettled(OLD_RETIRED, block('new', 'old', 'corrects'))).toBe(false);
   });
 
-  // ⚠️ T2 那条判断不动：cites 是用户自己连的引用线。
-  it('库里是 cites（refKind 是 null）—— 照旧算已经决定过，摘走', () => {
-    expect(supersedeProposalSettled(OLD, block('new', 'old', null))).toBe(true);
+  // ⛔ v32（P7-3）改了：藏它的理由是「取代会冲掉那条引用」，而取代从此记在旧块上、不碰新块那一格。
+  it('库里是 cites（refKind 是 null）—— v32 起照样问（取代冲不掉那条引用了）', () => {
+    expect(supersedeProposalSettled(OLD, block('new', 'old', null))).toBe(false);
   });
 
   it('指着别的块 / 谁也没指 —— 都该问', () => {
@@ -130,18 +131,37 @@ describe('supersedeProposalSettled —— AI 提的「整条取代」问过没�
     expect(supersedeProposalSettled(OLD, undefined)).toBe(false);
   });
 
-  // ⭐ 两把尺子只在**没做完**的那两格上不同 —— ⛔ 扫描那把（`relationAlreadySettled`）一个字没改。
-  // 它问「有没有关系」，这把问「提案要的那件事做完没有」。
-  it('⭐ 差别恰好是 corrects、以及 supersedes 只写了一半那两格', () => {
+  // ⭐ 两把尺子只在**没做完**的那几格上不同：扫描那把（`relationAlreadySettled`）问「有没有关系」，
+  // 这把问「提案要的那件事做完没有」。v32 起 `cites` 也在不同的那一边。
+  it('⭐ 差别恰好是 corrects、cites、以及老记法 supersedes 只写了一半那几格', () => {
     for (const older of [OLD, OLD_RETIRED]) {
       for (const kind of ['corrects', 'supersedes', null] as const) {
         const newer = block('new', 'old', kind);
         const differ =
           relationAlreadySettled(older, newer) !== supersedeProposalSettled(older, newer);
         const halfDone = kind === 'supersedes' && older.staleAt === null;
-        expect(differ).toBe(kind === 'corrects' || halfDone);
+        expect(differ).toBe(kind === 'corrects' || kind === null || halfDone);
       }
     }
+  });
+
+  // ⭐⭐ P7-3：v32 起取代记在**旧块**上。Flux #20 的形状：新块已经在更正别的块（#3），
+  // 又取代了这一块 —— 新块那一格指着别处，取代照样算做完。
+  it('⭐ v32 记法：旧块退役且记着被新块取代 ⇒ 做完了，不管新块那一格指着谁', () => {
+    const replaced = block('old', null, null, 111, 'new');
+    expect(supersedeProposalSettled(replaced, block('new', 'b3', 'corrects'))).toBe(true);
+    expect(supersedeProposalSettled(replaced, block('new'))).toBe(true);
+    expect(relationAlreadySettled(replaced, block('new', 'b3', 'corrects'))).toBe(true);
+    // 被别的块取代的，不算这一条做完。
+    expect(supersedeProposalSettled(block('old', null, null, 111, 'other'), block('new'))).toBe(false);
+  });
+
+  // P7-4 / P7-5：AI 也可以建议「更正」。新块已经更正着它 = 做完了；被它取代了 = 他选了更重的那个。
+  it('AI 建议的是更正：已经更正着 / 已经被它取代 ⇒ 做完了；只是引用 ⇒ 照样问', () => {
+    expect(supersedeProposalSettled(OLD, block('new', 'old', 'corrects'), 'corrects')).toBe(true);
+    expect(supersedeProposalSettled(block('old', null, null, 111, 'new'), block('new'), 'corrects')).toBe(true);
+    expect(supersedeProposalSettled(OLD, block('new', 'old', null), 'corrects')).toBe(false);
+    expect(supersedeProposalSettled(OLD, block('new'), 'corrects')).toBe(false);
   });
 
   // ⚠️ 这把尺子放行的那几条，`decideStale` 那道闸必须**不**拦 —— 否则用户点了没反应。
@@ -154,6 +174,20 @@ describe('supersedeProposalSettled —— AI 提的「整条取代」问过没�
         expect(wouldOverwriteRelation(older, newer)).toBe(false);
       }
     }
+  });
+});
+
+describe('alreadyReplaced —— v32 前后两种记法都认', () => {
+  it('v32：旧块退役 + 记着被这一块取代', () => {
+    expect(alreadyReplaced(block('old', null, null, 111, 'new'), block('new'))).toBe(true);
+  });
+  it('v32 以前：新块 supersedes 指着它 + 旧块已退役', () => {
+    expect(alreadyReplaced(OLD_RETIRED, block('new', 'old', 'supersedes'))).toBe(true);
+  });
+  it('只成一半（旧块还 live）、或者被别的块取代 ⇒ 不算', () => {
+    expect(alreadyReplaced(OLD, block('new', 'old', 'supersedes'))).toBe(false);
+    expect(alreadyReplaced(block('old', null, null, null, 'new'), block('new'))).toBe(false);
+    expect(alreadyReplaced(block('old', null, null, 111, 'x'), block('new'))).toBe(false);
   });
 });
 

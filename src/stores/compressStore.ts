@@ -33,6 +33,7 @@ import {
 import {
   applyCompression,
   setCorrectedQuote,
+  replaceBlock,
   setBlockSupersession,
   type Block,
 } from '@/lib/db/blocks';
@@ -231,8 +232,8 @@ interface CompressState {
  *    做的事是：新块标成「更正了旧块」，
  *    ⛔ **旧块不退、正文一个字不改**。用的是库里已经有的那套关系（v13 的 `corrects`），
  *    ⚠️ 代价说清楚：pack 不会因此变短。
- *  - `retire` = **只退旧的**：旧块写 `stale_at` + 新块写 `ref_kind='supersedes'`。
- *    ⛔ **两个一起写**，只写一半是负收益（+212 字符，第四轮量过）。
+ *  - `retire` = **只退旧的**：旧块写 `stale_at` + 记住被哪一块取代（v32 `replaceBlock`，
+ *    一句 UPDATE 两列一起落）。⛔ v32 起新块一个字不动（v13 起原来写新块的 `ref_kind='supersedes'`）。
  *  - `keep`   = **不动**：什么都不写，这一条从单子上划掉。 */
 export type StaleAction = 'merge' | 'retire' | 'keep';
 
@@ -977,10 +978,10 @@ export const useCompressStore = create<CompressState>((set, get) => ({
     // ⛔⛔ T2（2026-08-23）：`setBlockSupersession` 是**覆盖式**写入 —— 一块只存得下
     // 一条关系。新块要是已经指着**别的**块，写下去等于把那条悄悄删了。
     // ⚠️ 扫描提的那几条里，指着同一块的在扫描时就摘走了（`settled`）。
-    // ⚠️ 2026-08-29 起 AI 提的**可以**指着同一块走到这里（库里是 `corrects`、
-    // 提案要的是整条退掉）—— 那一种这道闸放行，`setBlockSupersession` 把关系升级成
-    // `supersedes` 并清掉只属于 `corrects` 的 `corrected_quote`。**这就是提案要的事。**
-    if (action !== 'keep' && wouldOverwriteRelation(oldBlock, newBlock)) {
+    // ⛔⛔ v32（P7-3）：**只有「更正一处」还写新块那一格**，所以这道闸只拦它。
+    // 「只退旧的」记在旧块上（`replaceBlock`），新块一个字不动 —— 08-23 起这道闸连它一起拦，
+    // Flux #20（已经在更正 #3）就是这么连「取代 #4 / #14」都点不动的。
+    if (action === 'merge' && wouldOverwriteRelation(oldBlock, newBlock)) {
       toast.error(
         t('第 {n} 块已经指着另一块了，一块只记得住一条这样的关系。要改的话先在那一块上撤掉原来那条。', {
           n: p.bySeq,
@@ -998,9 +999,10 @@ export const useCompressStore = create<CompressState>((set, get) => ({
         // 它过了逐字闸，所以「存进去的必然逐字出现在那一块里」这条不变量成立。
         await setCorrectedQuote(newBlock.id, p.quoteStale);
       } else if (action === 'retire' && oldBlock && newBlock) {
-        // ⛔ `stale_at` + `ref_kind` **一起写**，只写一半是负收益（+212 字符，量过）。
-        // `setBlockSupersession` 在 supersedes 这一档里两样都写。
-        await setBlockSupersession(newBlock.id, oldBlock.id, 'supersedes', Date.now());
+        // v32（P7-3，Ocean 2026-10-07 第 41 条）：旧块退役 + 记住被哪一块取代，一句 UPDATE。
+        // ⛔ 新块一个字不动 —— 它原来的更正 / 引用照旧（一块新的能取代好几块）。
+        // 接受的代价：pack 里新块下面不再写「取代了哪一块」那一行（旧块本来就不进 pack）。
+        await replaceBlock(oldBlock.id, newBlock.id, Date.now());
       }
       if (action !== 'keep') await useBlocksStore.getState().load(threadId);
       // ⭐ S2：AI 提的那一条，活干完了就把库里那一行删掉。

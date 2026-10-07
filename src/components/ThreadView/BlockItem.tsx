@@ -34,6 +34,7 @@ import CitationLine from './CitationLine';
 import CorrectedByLine from './CorrectedByLine';
 import CorrectionNote from './CorrectionNote';
 import ProvenanceLine from './ProvenanceLine';
+import { ReplacedByLine, ReplacesLine } from './ReplacementLine';
 import RefBlockItem from './RefBlockItem';
 import SeqBadge from './SeqBadge';
 import SourceBadge from './SourceBadge';
@@ -1093,6 +1094,8 @@ function TextBlockItem({
           )}
         </button>
       )}
+      {/* P7-3（v32）：被哪一块整条取代了 —— 挨着「不作数」那一行，折起来也看得见（它就是退役的原因）。 */}
+      {block.staleAt != null && block.replacedByBlockId && <ReplacedByLine block={block} />}
 
       <div className="mb-1 flex items-center gap-2 text-[10px] text-muted">
         {/* v2.8 §20.1 selection checkbox: visible on hover, and on every block once any
@@ -1397,6 +1400,9 @@ function TextBlockItem({
           citing={block}
         />
       )}
+
+      {/* P7-3（v32）：这一块整条取代了哪几块。⛔ 只在界面上（入向边，不进 pack）。 */}
+      <ReplacesLine block={block} />
 
       {/* F2 §3.2 ① 的后半句 —— 「**谁引用了我**」。⛔ 这一半在这之前完全看不见，
           而真库 58 条边里 30 条跨项目，也就是过半的关系在被引的那一头是隐形的。
