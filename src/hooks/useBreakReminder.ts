@@ -3,6 +3,7 @@ import { useEffect, useRef } from 'react';
 import {
   BREAK_MS,
   initialBreakState,
+  isWorking,
   keepDay,
   msForMinutes,
   tickBreakState,
@@ -126,7 +127,7 @@ export const useBreakReminder = (): void => {
             }
           }
 
-          const { state, due } = tickBreakState(stateRef.current, {
+          const input = {
             now: Date.now(),
             workMs,
             // ⚠️ `document.hasFocus()` and not a focus/blur flag of our own: the answer has to
@@ -135,9 +136,12 @@ export const useBreakReminder = (): void => {
             focused: document.hasFocus(),
             systemIdleMs,
             lastCaptureAt: useCaptureStore.getState().lastCaptureAt,
-          });
+          };
+          const { state, due } = tickBreakState(stateRef.current, input);
           stateRef.current = state;
-          store.publish(state.activeMs, state.totalMs);
+          // P6-5: plus when this tick ran and whether it counted — the sidebar clock draws ahead
+          // of it every second. ⛔ The tick itself, and what it credits, are unchanged.
+          store.publish(state.activeMs, state.totalMs, { at: input.now, working: isWorking(input) });
 
           // 写盘。⚠️ 只有 `dayKey` 齐了才写；⛔ 没变就不写（避免每 30 秒动一次文件）。
           if (state.dayKey !== null && state.lastActiveAt !== null) {

@@ -24,7 +24,12 @@ interface BreakStoreState {
    *  remaining-ms counter: the lock's own display ticks once a second, and a counter would
    *  drift against the wall clock every time the timer was throttled. */
   lockUntil: number | null;
-  publish: (activeMs: number, totalMs: number) => void;
+  /** P6-5: when the last tick ran, and whether it counted as working — what lets the sidebar
+   *  clock move every second between ticks (lib/focusClock.ts). Null / false until the first tick,
+   *  and again while locked: nothing to draw ahead of. */
+  tickAt: number | null;
+  tickWorking: boolean;
+  publish: (activeMs: number, totalMs: number, tick?: { at: number; working: boolean }) => void;
   lock: (until: number) => void;
   unlock: () => void;
 }
@@ -33,12 +38,15 @@ export const useBreakStore = create<BreakStoreState>((set) => ({
   activeMs: 0,
   totalMs: 0,
   lockUntil: null,
-  publish: (activeMs, totalMs) => set({ activeMs, totalMs }),
+  tickAt: null,
+  tickWorking: false,
+  publish: (activeMs, totalMs, tick) =>
+    set({ activeMs, totalMs, tickAt: tick?.at ?? null, tickWorking: tick?.working ?? false }),
   // The streak is already zeroed by the reducer on the tick that fired, so the sidebar clock
   // reads 0 for the length of the break — which is true, and is what makes the count-up start
   // from the moment the user comes back rather than from the moment they were interrupted.
   // ⚠️ 这两条只把**这一坐**归零。⛔ `totalMs` 不动 —— 那正是 Ocean 要的「还在往上加」
   // 的那个数，休息一次就抹掉它等于这件事没做。
-  lock: (until) => set({ lockUntil: until, activeMs: 0 }),
-  unlock: () => set({ lockUntil: null, activeMs: 0 }),
+  lock: (until) => set({ lockUntil: until, activeMs: 0, tickAt: null, tickWorking: false }),
+  unlock: () => set({ lockUntil: null, activeMs: 0, tickAt: null, tickWorking: false }),
 }));

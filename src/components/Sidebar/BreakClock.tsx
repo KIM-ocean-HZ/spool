@@ -1,4 +1,6 @@
+import { useEffect, useState } from 'react';
 import { msForMinutes } from '@/lib/breakReminder';
+import { secondHandFraction, shownActiveMs } from '@/lib/focusClock';
 import { useT } from '@/lib/i18n';
 import { useBreakStore } from '@/stores/breakStore';
 import { useSettingsStore } from '@/stores/settingsStore';
@@ -46,6 +48,24 @@ const TICK_INNER_QUARTER = 9.0;
 /** The hand stops short of the ticks — a hand that touched them would look like a thirteenth. */
 const R_HAND = 8.2;
 
+/** P6-5 (Ocean 2026-10-06): the second hand. Longer than the hand and much thinner, so the two
+ *  are never mistaken for each other: it runs out through the tick band to just inside the arc
+ *  (whose inner edge sits at R_RING − 1.125), which is also what keeps it from reading as a
+ *  thirteenth tick — a tick never starts at the pin. Muted ink, not the accent: the accent is
+ *  「this sitting」, and the second hand is only the clock being visibly alive. */
+const R_SECOND = 12.4;
+
+/** P6-5: is the window on screen? The clock only needs to move while someone could see it. */
+const usePageVisible = (): boolean => {
+  const [visible, setVisible] = useState(() => document.visibilityState === 'visible');
+  useEffect(() => {
+    const onChange = (): void => setVisible(document.visibilityState === 'visible');
+    document.addEventListener('visibilitychange', onChange);
+    return () => document.removeEventListener('visibilitychange', onChange);
+  }, []);
+  return visible;
+};
+
 /** Twelve o'clock is -90°; angles run clockwise from there, like a clock. */
 const angleAt = (fraction: number): number => -Math.PI / 2 + fraction * 2 * Math.PI;
 const pointAt = (fraction: number, r: number): [number, number] => {
@@ -72,9 +92,28 @@ export default function BreakClock() {
   // 一直到用户睡觉再断」）。规则在 lib/breakReminder.ts 的 shouldRollDay。
   const totalMs = useBreakStore((s) => s.totalMs);
   const workMinutes = useSettingsStore((s) => s.breakWorkMinutes);
+  // P6-5 (Ocean 2026-10-06:「指针……每秒转动更新，并且倒计时转盘也每秒刷新」) — the reducer still
+  // ticks every 30 seconds; between ticks this draws ahead of the last one, once a second
+  // (lib/focusClock.ts has the rule and its price). ⚠️ The timer runs only while it could be seen
+  // and something is moving: this face is mounted only while the card shows it, the window has
+  // to be on screen, and the last tick has to have counted as working — away or locked, the
+  // clock is still, so there is nothing to redraw.
+  const tickAt = useBreakStore((s) => s.tickAt);
+  const tickWorking = useBreakStore((s) => s.tickWorking);
+  const lockUntil = useBreakStore((s) => s.lockUntil);
+  const visible = usePageVisible();
+  const [now, setNow] = useState(() => Date.now());
+  const running = visible && tickWorking && tickAt !== null && lockUntil === null;
+  useEffect(() => {
+    if (!running) return;
+    setNow(Date.now());
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [running, tickAt]);
+  const shownMs = shownActiveMs({ activeMs, tickAt, working: tickWorking, lockUntil }, now);
 
   const workMs = msForMinutes(workMinutes);
-  const fraction = Math.min(Math.max(activeMs / workMs, 0), 1);
+  const fraction = Math.min(Math.max(shownMs / workMs, 0), 1);
   // Floor going up, ceil coming down — so 「已专注 N」 never claims a minute that has not
   // finished, and 「还有 N 分钟」 never promises one that has already gone.
   const workedMin = Math.floor(totalMs / 60_000);
@@ -82,6 +121,7 @@ export default function BreakClock() {
 
   const label = t('今天已专注 {n} 分钟', { n: workedMin });
   const [handX, handY] = pointAt(fraction, R_HAND);
+  const [secX, secY] = pointAt(secondHandFraction(shownMs), R_SECOND);
 
   return (
     <>
@@ -141,6 +181,18 @@ export default function BreakClock() {
           strokeWidth={1.3}
           strokeLinecap="round"
           style={{ transition: 'all 450ms ease-out' }}
+        />
+        {/* P6-5: the second hand — one mark a second, once round a minute. ⚠️ No transition: it
+            jumps, like a quartz second hand, and an eased move from :59 to :00 would cut across
+            the dial. Drawn under the pin so the pin still caps both hands. */}
+        <line
+          x1={CX}
+          y1={CY}
+          x2={secX}
+          y2={secY}
+          stroke="var(--muted)"
+          strokeWidth={0.6}
+          strokeLinecap="round"
         />
         <circle cx={CX} cy={CY} r={1.5} fill="var(--accent)" />
       </svg>
