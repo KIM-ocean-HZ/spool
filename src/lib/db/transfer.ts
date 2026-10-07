@@ -21,6 +21,9 @@ const MERGE_TABLES = [
   'workspaces',
   'threads',
   'blocks',
+  // v32 (P7-2): the images go with the library — Ocean 2026-10-07 chose to keep them inside
+  // the library file for exactly this. After `blocks`, their parent.
+  'block_images',
   'attachments',
   'follow_up_items',
   'proposal_batches',
@@ -39,6 +42,14 @@ export type MergeReport = {
   /** Every `attachments.target` the import carried, for the missing-file count (§3.4). */
   attachmentTargets: string[];
 };
+
+// P7-2: the columns that hold bytes. tauri-plugin-sql hands a BLOB back as a JSON array of
+// numbers and binds anything that is not a string or a number as JSON text — copied the
+// generic way, an image would land as the TEXT "[137,80,78,…]" and the test (node:sqlite,
+// which does pass bytes) would stay green. So these cross as hex, `hex()` out and `unhex()`
+// in, and one row per statement: a library full of screenshots must not become one IPC
+// message several hundred megabytes long.
+const BLOB_COLUMNS: Partial<Record<MergeTable, readonly string[]>> = { block_images: ['bytes'] };
 
 const emptyAdded = (): Record<MergeTable, number> =>
   Object.fromEntries(MERGE_TABLES.map((t) => [t, 0])) as Record<MergeTable, number>;
@@ -89,6 +100,24 @@ export const mergeLibrary = async (source: Database, target: Database): Promise<
     if (cols.length === 0) continue;
 
     const quoted = cols.join(', ');
+    const blobCols = BLOB_COLUMNS[table];
+    if (blobCols) {
+      const outCols = cols.map((c) => (blobCols.includes(c) ? `hex(${c}) AS ${c}` : c)).join(', ');
+      const slots = cols.map((c, i) => (blobCols.includes(c) ? `unhex($${i + 1})` : `$${i + 1}`));
+      const ids = await source.select<{ id: string }[]>(`SELECT id FROM ${table}`);
+      for (const { id } of ids) {
+        const [row] = await source.select<Row[]>(`SELECT ${outCols} FROM ${table} WHERE id = $1`, [id]);
+        if (!row) continue;
+        const result = await target.execute(
+          `INSERT OR IGNORE INTO ${table} (${quoted}) VALUES (${slots.join(', ')})`,
+          cols.map((c) => row[c] ?? null),
+        );
+        added[table] += result.rowsAffected;
+        skipped += 1 - result.rowsAffected;
+      }
+      continue;
+    }
+
     const rows = await source.select<Row[]>(`SELECT ${quoted} FROM ${table}`);
     if (rows.length === 0) continue;
 

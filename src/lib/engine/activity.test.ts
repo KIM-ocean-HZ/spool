@@ -25,6 +25,7 @@ const block = (id: string, createdAt: number, source: string | null): Block => (
   refNote: null,
   gistBy: null,
   refReviewedStaleAt: null,
+  replacedByBlockId: null,
   originalContent: null,
   compressedAt: null,
 });

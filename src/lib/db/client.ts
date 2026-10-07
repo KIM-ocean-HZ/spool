@@ -38,7 +38,7 @@ export const setSeedLanguage = (lang: SeedLanguage): void => {
 // carries a database from the previous version to the new one. On startup the
 // database's PRAGMA user_version is compared against this and every applicable step
 // runs in sequence, each stamping user_version as its own checkpoint (§19.3).
-const SCHEMA_VERSION = 31;
+const SCHEMA_VERSION = 32;
 
 // Things a migration did to the user's data that the user is entitled to hear about.
 // v15 is the first migration that removes anything (the retired `url` attachments), and
@@ -1012,6 +1012,53 @@ const MIGRATIONS: Migration[] = [
       )`);
       await db.execute(`CREATE INDEX IF NOT EXISTS idx_file_proposals_thread
         ON file_proposals(thread_id, created_at ASC)`);
+    },
+  },
+  {
+    // v32 (P7 任务书 P7-2, Ocean 2026-10-07 批准这一次动库，HANDOFF §9.2 第 40–44 条)：三样，
+    // ⚠️⚠️ **只有两句 `ADD COLUMN` + 一张新表和它自己的索引**，⛔ 已有的列一个不改、没有回填、
+    // ⛔ 没有 rebuild 分支（2026-05-29 抹库是**重建表**那条分支干的）。`schema.sql` 写了每一列的意思。
+    //   * `blocks.replaced_by_block_id`（P7-3）：旧块记住被哪一块整条取代 —— 「取代」不再占
+    //     新块那一格，一块新的能取代好几块。
+    //   * `supersede_proposals.suggested_kind`（P7-4）：AI 建议的是「取代」还是「更正」。
+    //   * `block_images`（P7-6）：块里的图片，原图存进库文件。
+    //   * 往前：老库两列都是 NULL = 没被取代过（或是 v32 以前、记在新块 `ref_kind` 上的取代）/
+    //     建议的是取代（v31 时这张表只装取代）；没有图片表 = 没有图片。也就是 v31 的行为。
+    //   * 往回：`ALTER TABLE blocks DROP COLUMN replaced_by_block_id`、
+    //     `ALTER TABLE supersede_proposals DROP COLUMN suggested_kind`、`DROP TABLE block_images`
+    //     三句退回 v31，⛔ 不丢任何 v31 就有的数据 —— 丢的只是 v32 以后的取代记在哪（那些旧块
+    //     仍是退役的，只是不再写「被第 n 块取代」）、建议的种类和图片。
+    //
+    // ⚠️ 半跑一次和跑完一次分不出来，而这正是安全的那一类：`ADD COLUMN` 撞上已存在的列会抛、
+    // catch 掉（v30 逐字同一个写法），`IF NOT EXISTS` 再跑一遍什么都不会发生。
+    from: 31,
+    to: 32,
+    name: 'add-block-replacement-suggested-kind-and-images',
+    run: async (db) => {
+      const cols: Array<[string, string, string]> = [
+        ['blocks', 'replaced_by_block_id', 'TEXT'],
+        ['supersede_proposals', 'suggested_kind', 'TEXT'],
+      ];
+      for (const [table, col, type] of cols) {
+        try {
+          await db.execute(`ALTER TABLE ${table} ADD COLUMN ${col} ${type}`);
+        } catch (e) {
+          console.info(`[db] ${table}.${col}: not added (likely exists)`, e);
+        }
+      }
+      await db.execute(`CREATE TABLE IF NOT EXISTS block_images (
+        id          TEXT PRIMARY KEY,
+        block_id    TEXT NOT NULL REFERENCES blocks(id) ON DELETE CASCADE,
+        position    INTEGER NOT NULL,
+        bytes       BLOB NOT NULL,
+        format      TEXT NOT NULL,
+        width       INTEGER NOT NULL,
+        height      INTEGER NOT NULL,
+        size_bytes  INTEGER NOT NULL,
+        created_at  INTEGER NOT NULL
+      )`);
+      await db.execute(`CREATE INDEX IF NOT EXISTS idx_block_images_block
+        ON block_images(block_id, position ASC)`);
     },
   },
 ];

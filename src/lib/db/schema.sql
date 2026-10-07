@@ -309,7 +309,19 @@ CREATE TABLE IF NOT EXISTS blocks (
   -- ⛔ `proposals` **不加这一列**:待审的提案从来没有被审过,那一列在那边恒为 NULL。
   --
   -- NULL = 这条引用没被审过(v29 之前的每一行,以及每一条新写的引用)。
-  ref_reviewed_stale_at INTEGER
+  ref_reviewed_stale_at INTEGER,
+  -- v32 (P7-3, Ocean 2026-10-07 HANDOFF §9.2 第 41 条)：**这一块被第几块整条取代了** —— 记在
+  -- **旧块**身上的块 id，和 `stale_at` 一起写（取代 = 退役 + 记住被谁取代）。
+  --
+  -- 为什么挪到旧块上：v13 起「取代」占的是**新块**那一格（`ref_block_id` + `ref_kind='supersedes'`），
+  -- 一块只有一格 ⇒ 一块新的只能取代一块旧的，而且取代了就不能再更正别的块（Flux #20 那一摊）。
+  -- 记在旧块上，一块新的可以取代任意多块，新块原来的更正 / 引用一个字不动。
+  -- ⚠️ 只有这一种入向关系存在旧块上；「更正」仍在新块那一格（一块只更正一块）。
+  -- ⛔ 不叫 `superseded_by`：`attachments` 上那一列装的是**文件** id，同名会看错。
+  --
+  -- NULL = 没被取代 / 用户手动退役 / v32 以前的取代（那些仍记在新块的
+  -- `ref_kind='supersedes'` 上，⛔ 没有回填）。手动「取回来」时和 `stale_at` 一起清。
+  replaced_by_block_id TEXT
 );
 
 -- v9 (DESIGN_SCHEMA_V9 H-1): `seq` is the number a human sees and says out loud — "#12"
@@ -617,7 +629,11 @@ CREATE TABLE IF NOT EXISTS supersede_proposals (
   quote_new      TEXT NOT NULL,             -- 新块里取代它的那一句，⚠️ 逐字
   retyped        INTEGER NOT NULL DEFAULT 0, -- 两句里至少一句是「只差标点的重打」
   created_at     INTEGER NOT NULL,
-  expires_at     INTEGER NOT NULL           -- 和提案批次同一个 7 天
+  expires_at     INTEGER NOT NULL,          -- 和提案批次同一个 7 天
+  -- v32 (P7-4, Ocean 2026-10-07 第 40、42 条)：AI 建议的是哪一种 —— 'supersedes'（整条取代）/
+  -- 'corrects'（只更正一处）。只是建议：卡片上标出来，用户在「更正 / 取代 / 不动」里自己选。
+  -- NULL = v32 以前的行 = 'supersedes'（那时这张表只装取代）。
+  suggested_kind TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_supersede_proposals_thread
@@ -658,6 +674,32 @@ CREATE TABLE IF NOT EXISTS file_proposals (
 
 CREATE INDEX IF NOT EXISTS idx_file_proposals_thread
   ON file_proposals(thread_id, created_at ASC);
+
+-- v32 (P7-6, Ocean 2026-09-30 §9.2 第 11 条 + 10-07 第 43、44 条) —— 块里的图片。
+--
+-- **存进库文件里**（Ocean 10-07 选的）：导出是 `VACUUM INTO` 一个文件，图片跟着走，导出不用改；
+-- 导入走 `transfer.ts` 的 `MERGE_TABLES`（这张表排在 `blocks` 后面）。代价是库文件变大。
+-- 一块可以有好几张（`position` 从 0 起，按它排）；块里文字、图片、批注同时在。
+--
+-- ⚠️ `bytes` 是原图，一个字节不改；预览由 Rust 现缩现转 `data:`（界面安全策略只认 `data:` 图片）。
+-- ⚠️ tauri-plugin-sql 只会把 JSON 的字符串 / 数字绑成参数，BLOB 读出来是一长串数字 ——
+-- 所以 GUI 这一侧**只在 SQL 里**搬字节（`INSERT … SELECT`、`hex()` / `unhex()`），⛔ 不把 `bytes` 当参数传。
+-- 外键指 `blocks`，但这个连接不开 `PRAGMA foreign_keys`，级联不会发生 ——
+-- 删块 / 合并 / 移块 / 复制时图片怎么走，写在 `blocks.ts` 最底层（和 P5-3 的文件同一个做法）。
+CREATE TABLE IF NOT EXISTS block_images (
+  id          TEXT PRIMARY KEY,
+  block_id    TEXT NOT NULL REFERENCES blocks(id) ON DELETE CASCADE,
+  position    INTEGER NOT NULL,               -- order inside the block, from 0
+  bytes       BLOB NOT NULL,                  -- the original file, untouched
+  format      TEXT NOT NULL,                  -- 'png' | 'jpeg' | 'gif' | 'webp'
+  width       INTEGER NOT NULL,
+  height      INTEGER NOT NULL,
+  size_bytes  INTEGER NOT NULL,               -- length(bytes), kept so a list never reads the bytes
+  created_at  INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_block_images_block
+  ON block_images(block_id, position ASC);
 
 -- v27 (WORKPLAN §2.V1, Ocean 2026-08-25) —— 上次读到哪儿，按项目分开记，存 30 天。
 --

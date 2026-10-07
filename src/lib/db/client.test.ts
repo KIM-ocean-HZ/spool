@@ -48,7 +48,7 @@ const blocksSansV13 = (handle: Sqlite): Record<string, unknown>[] =>
     void stale_at;
     void ref_kind;
     void annotation_by;
-    return stripV29(stripV28(stripGist(stripCompression(stripProvenance(stripCorrectedQuote(rest))))));
+    return stripV32(stripV29(stripV28(stripGist(stripCompression(stripProvenance(stripCorrectedQuote(rest)))))));
   });
 
 // v20's three columns, off a `blocks` row. Same job as stripBriefSuggestion below: a test
@@ -121,6 +121,29 @@ const V31_FILE_PROPOSAL_COLS = [
   'expires_at',
 ];
 
+const V32_BLOCK_IMAGE_COLS = [
+  'id',
+  'block_id',
+  'position',
+  'bytes',
+  'format',
+  'width',
+  'height',
+  'size_bytes',
+  'created_at',
+];
+// v32's two columns, off a `blocks` / `supersede_proposals` row.
+const stripV32 = (r: Record<string, unknown>): Record<string, unknown> =>
+  Object.fromEntries(
+    Object.entries(r).filter(([k]) => k !== 'replaced_by_block_id' && k !== 'suggested_kind'),
+  );
+
+// …and the text those two ADD COLUMNs append to their tables' CREATE statements.
+const sansV32Sql = (r: { name: string; sql: string | null }) => ({
+  name: r.name,
+  sql: r.sql?.replace(/, replaced_by_block_id TEXT|, suggested_kind TEXT/g, '') ?? null,
+});
+
 // v19's three columns, off a `threads` row — the same job blocksSansV13 does for blocks:
 // a test that rewinds below v19 compares rows across a migration that legitimately added
 // them, and only these three may differ.
@@ -161,11 +184,26 @@ const downgradeToV13 = (handle: Sqlite): void => {
   `);
 };
 
+// Rewind past v32: a replacement still sat in the new block's one relation slot, nothing
+// recorded which kind an AI had suggested, and a block could not hold an image.
+// ⚠️ 这三句就是 v32 的「能回滚」——`add-block-replacement-suggested-kind-and-images` 只加了两个
+// 可空列和一张新表，⛔ 一个字的既有数据都没动；退回来丢的只是 v32 以后的取代记在哪、建议的种类和图片。
+// ⚠️ 必须先于更老的降级跑：`block_images.block_id` 指着 `blocks`，老的降级会重建 / 丢 `blocks` 的列。
+const downgradeToV31 = (handle: Sqlite): void => {
+  handle.exec(`
+    DROP TABLE IF EXISTS block_images;
+    ALTER TABLE blocks DROP COLUMN replaced_by_block_id;
+    ALTER TABLE supersede_proposals DROP COLUMN suggested_kind;
+    PRAGMA user_version = 31;
+  `);
+};
+
 // Rewind past v31: an AI had no way to put a path in front of the user.
 // ⚠️ 这一句 DROP 就是 v31 的「能回滚」——`add-file-proposals` 只加了一张新表，
 // ⛔ 一个字的既有数据都没动，所以退回来丢的只是还没点头的提议。
 // ⚠️ 必须先于 downgradeToV29 跑：`file_proposals.supersedes_id` 指着 `attachments`。
 const downgradeToV30 = (handle: Sqlite): void => {
+  downgradeToV31(handle);
   handle.exec(`
     DROP TABLE IF EXISTS file_proposals;
     PRAGMA user_version = 30;
@@ -803,7 +841,7 @@ describe('migrateSchema registry (§19.3)', () => {
       (handle.prepare('SELECT * FROM blocks').all() as Record<string, unknown>[]).map((r) => {
         const { annotation_by, ...rest } = r;
         void annotation_by;
-        return stripV29(stripV28(stripGist(stripCompression(stripProvenance(stripCorrectedQuote(rest))))));
+        return stripV32(stripV29(stripV28(stripGist(stripCompression(stripProvenance(stripCorrectedQuote(rest)))))));
       }),
     ).toEqual(blocksBefore);
   });
@@ -889,7 +927,7 @@ describe('migrateSchema registry (§19.3)', () => {
     expect(
       (handle.prepare('SELECT * FROM blocks').all() as Record<string, unknown>[]).map(
         (r: Record<string, unknown>) =>
-          stripV29(stripV28(stripGist(stripCompression(stripProvenance(stripCorrectedQuote(r)))))),
+          stripV32(stripV29(stripV28(stripGist(stripCompression(stripProvenance(stripCorrectedQuote(r))))))),
       ),
     ).toEqual(blocksBefore);
   });
@@ -924,7 +962,7 @@ describe('migrateSchema registry (§19.3)', () => {
     // first open after an upgrade, with nothing having been read.
     expect(handle.prepare('SELECT COUNT(*) AS c FROM read_positions').get()).toEqual({ c: 0 });
     expect(
-      (handle.prepare('SELECT * FROM blocks').all() as Record<string, unknown>[]).map((r) => stripV29(stripV28(r))),
+      (handle.prepare('SELECT * FROM blocks').all() as Record<string, unknown>[]).map((r) => stripV32(stripV29(stripV28(r)))),
     ).toEqual(blocksBefore);
     expect(handle.prepare('SELECT * FROM threads').all()).toEqual(threadsBefore);
   });
@@ -953,7 +991,7 @@ describe('migrateSchema registry (§19.3)', () => {
     expect(columnNames(handle, 'proposals')).not.toContain('gist_by');
     // 三列全 NULL，其余一个字节都没动。
     expect(
-      (handle.prepare('SELECT * FROM blocks').all() as Record<string, unknown>[]).map((r) => stripV29(stripV28(r))),
+      (handle.prepare('SELECT * FROM blocks').all() as Record<string, unknown>[]).map((r) => stripV32(stripV29(stripV28(r)))),
     ).toEqual(blocksBefore);
     expect(
       handle.prepare('SELECT COUNT(*) AS c FROM blocks WHERE ref_note IS NOT NULL').get(),
@@ -987,7 +1025,7 @@ describe('migrateSchema registry (§19.3)', () => {
     // 那一列全 NULL，其余一个字节都没动 —— ⛔ 老库的每一条引用都按「没审过」读，
     // 也就是 §3.2 ② 那几条待审边照旧全部出现（v28 的行为）。
     expect(
-      (handle.prepare('SELECT * FROM blocks').all() as Record<string, unknown>[]).map(stripV29),
+      (handle.prepare('SELECT * FROM blocks').all() as Record<string, unknown>[]).map((r) => stripV32(stripV29(r))),
     ).toEqual(blocksBefore);
     expect(
       handle
@@ -1028,7 +1066,7 @@ describe('migrateSchema registry (§19.3)', () => {
         .prepare('SELECT anchor_block_id, added_by, superseded_by, superseded_at FROM attachments ORDER BY id')
         .all(),
     ).toEqual([unwritten, unwritten]);
-    expect(handle.prepare('SELECT * FROM blocks').all()).toEqual(blocksBefore);
+    expect(handle.prepare('SELECT * FROM blocks').all().map(stripV32)).toEqual(blocksBefore);
   });
 
   // ⚠️ 真库的 `attachments` 不是 schema.sql 那个形状：`thread_id` 是 v15 用 ALTER 加的（可空、
@@ -1090,19 +1128,82 @@ describe('migrateSchema registry (§19.3)', () => {
         .get(),
     ).toEqual({ c: 1 });
     for (const t of tables) {
-      expect(handle.prepare(`SELECT * FROM ${t} ORDER BY rowid`).all(), t).toEqual(before[t]);
+      expect(handle.prepare(`SELECT * FROM ${t} ORDER BY rowid`).all().map(stripV32), t).toEqual(before[t]);
     }
-    // 别的表的建表语句一个字没变（⛔ 只许 CREATE TABLE + 它自己的索引）。
+    // 别的表的建表语句一个字没变（⛔ 只许 CREATE TABLE + 它自己的索引）。v32 接着走过去，
+    // 它加的那两列和那张表另有一条测试盯着，这里先抹掉。
     expect(
-      handle
-        .prepare("SELECT name, sql FROM sqlite_master WHERE name NOT LIKE '%file_proposals%' ORDER BY name")
-        .all(),
+      (
+        handle
+          .prepare(
+            "SELECT name, sql FROM sqlite_master WHERE name NOT LIKE '%file_proposals%' AND name NOT LIKE '%block_images%' ORDER BY name",
+          )
+          .all() as { name: string; sql: string | null }[]
+      ).map(sansV32Sql),
     ).toEqual(schemaBefore);
   });
 
   it('a fresh install builds file_proposals straight from schema.sql', () => {
     applySchema(handle);
     expect(columnNames(handle, 'file_proposals')).toEqual(V31_FILE_PROPOSAL_COLS);
+  });
+
+  // P7-2 (Ocean 2026-10-07). 两句 ADD COLUMN + 一张新表，⛔ 已有的列一个不改、不回填：
+  // 迁移之后两列全空（一块没被「新记法」取代过，一条建议都没被说成「更正」），图片表是空的。
+  it('v31 → v32 adds two empty columns and an empty block_images, and leaves every row as it was', async () => {
+    applySchema(handle);
+    downgradeToV31(handle);
+    seedUserData(handle);
+    handle.exec(`
+      INSERT INTO blocks (id, thread_id, content, created_at, seq, stale_at, ref_block_id, ref_kind)
+        VALUES ('b2', 't1', 'old', ${NOW}, 2, ${NOW}, NULL, NULL),
+               ('b3', 't1', 'new', ${NOW}, 3, NULL, 'b2', 'supersedes');
+      INSERT INTO supersede_proposals (id, thread_id, stale_block_id, by_block_id, client, why,
+                                       quote_stale, quote_new, created_at, expires_at)
+        VALUES ('sp1', 't1', 'b1', 'b3', 'Claude · MCP', 'why', 'hello', 'new', ${NOW}, ${NOW + 1});
+    `);
+    const tables = (
+      handle
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE '%fts%' ORDER BY name")
+        .all() as { name: string }[]
+    ).map((r) => r.name);
+    const before = Object.fromEntries(
+      tables.map((t) => [t, handle.prepare(`SELECT * FROM ${t} ORDER BY rowid`).all()]),
+    );
+    const untouched = "name NOT IN ('blocks', 'supersede_proposals') AND name NOT LIKE '%block_images%'";
+    const schemaBefore = handle
+      .prepare(`SELECT name, sql FROM sqlite_master WHERE ${untouched} ORDER BY name`)
+      .all();
+
+    await __migrateSchemaForTest(db);
+
+    expect(userVersion(handle)).toBe(CURRENT_SCHEMA_VERSION);
+    expect(columnNames(handle, 'blocks')).toContain('replaced_by_block_id');
+    expect(columnNames(handle, 'supersede_proposals')).toContain('suggested_kind');
+    expect(handle.prepare('SELECT COUNT(*) AS c FROM blocks WHERE replaced_by_block_id IS NOT NULL').get()).toEqual({ c: 0 });
+    expect(handle.prepare('SELECT COUNT(*) AS c FROM supersede_proposals WHERE suggested_kind IS NOT NULL').get()).toEqual({ c: 0 });
+    expect(columnNames(handle, 'block_images')).toEqual(V32_BLOCK_IMAGE_COLS);
+    expect(handle.prepare('SELECT COUNT(*) AS c FROM block_images').get()).toEqual({ c: 0 });
+    expect(
+      handle
+        .prepare("SELECT COUNT(*) AS c FROM sqlite_master WHERE type='index' AND name='idx_block_images_block'")
+        .get(),
+    ).toEqual({ c: 1 });
+    // 每张表逐行相等（两张加了列的表去掉新列再比）；v32 以前那条 `supersedes` 一个字没动。
+    for (const t of tables) {
+      expect(handle.prepare(`SELECT * FROM ${t} ORDER BY rowid`).all().map(stripV32), t).toEqual(before[t]);
+    }
+    // 别的表的建表语句一个字没变（⛔ 只许两句 ADD COLUMN + 一张新表和它的索引）。
+    expect(handle.prepare(`SELECT name, sql FROM sqlite_master WHERE ${untouched} ORDER BY name`).all()).toEqual(
+      schemaBefore,
+    );
+  });
+
+  it('a fresh install builds the two v32 columns and block_images straight from schema.sql', () => {
+    applySchema(handle);
+    expect(columnNames(handle, 'blocks')).toContain('replaced_by_block_id');
+    expect(columnNames(handle, 'supersede_proposals')).toContain('suggested_kind');
+    expect(columnNames(handle, 'block_images')).toEqual(V32_BLOCK_IMAGE_COLS);
   });
 
   // DESIGN_PROJECT_FILES §3.4 (phase three). The queue starts empty and grants nothing: a
@@ -1189,7 +1290,7 @@ describe('migrateSchema registry (§19.3)', () => {
     expect(handle.prepare('SELECT * FROM threads').all()).toEqual(threadsBefore);
     expect(
       (handle.prepare('SELECT * FROM blocks').all() as Record<string, unknown>[]).map(
-        (r: Record<string, unknown>) => stripV29(stripV28(stripGist(stripCompression(r)))),
+        (r: Record<string, unknown>) => stripV32(stripV29(stripV28(stripGist(stripCompression(r))))),
       ),
     ).toEqual(blocksBefore);
   });

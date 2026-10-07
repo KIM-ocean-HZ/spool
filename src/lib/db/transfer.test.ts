@@ -27,6 +27,30 @@ const makeAdapter = (handle: Sqlite): Database =>
       handle.prepare(toNumbered(sql)).all(...(params as SqlValue[])),
   }) as unknown as Database;
 
+// P7-2: tauri-plugin-sql as it really behaves with bytes (plugin 2.4 `decode/sqlite.rs` and
+// `wrapper.rs`): a BLOB comes back as a JSON array of numbers, and a parameter that is not
+// null, a string or a number is bound as its JSON text. The plain adapter above passes
+// Uint8Array straight through, which is exactly how a copy that corrupts every image in the
+// real app would still pass here.
+const asPluginSql = (handle: Sqlite): Database => {
+  const bind = (params: unknown[]): SqlValue[] =>
+    params.map((v) =>
+      v == null || typeof v === 'string' || typeof v === 'number' ? (v as SqlValue) : JSON.stringify(v),
+    );
+  const out = (row: Record<string, unknown>) =>
+    Object.fromEntries(
+      Object.entries(row).map(([k, v]) => [k, v instanceof Uint8Array ? Array.from(v) : v]),
+    );
+  return {
+    execute: async (sql: string, params: unknown[] = []) => {
+      const r = handle.prepare(toNumbered(sql)).run(...bind(params));
+      return { rowsAffected: Number(r.changes), lastInsertId: Number(r.lastInsertRowid) };
+    },
+    select: async (sql: string, params: unknown[] = []) =>
+      (handle.prepare(toNumbered(sql)).all(...bind(params)) as Record<string, unknown>[]).map(out),
+  } as unknown as Database;
+};
+
 const freshDb = (): { handle: Sqlite; db: Database } => {
   const handle = new DatabaseSync(':memory:');
   handle.exec(schemaSql.replace(/--.*$/gm, ''));
@@ -274,6 +298,39 @@ describe('库的导出与导入 (DESIGN_LIBRARY_TRANSFER)', () => {
     });
   });
 
+  // P7-2 (Ocean 2026-10-07 #5: 图片存进库文件里，导出 / 搬到新电脑照旧一个文件全带走).
+  it('带图片的块导出再导入，图片字节原样回来（走 tauri-plugin-sql 真实的收发方式）', async () => {
+    __setTestDb(src.db);
+    const ws = await createWorkspace('截图');
+    const thread = await createThread(ws.id, '设计');
+    const block = await createBlock({ threadId: thread.id, content: '两张图' });
+    __setTestDb(null);
+    // Every byte value, a NUL early on, and a PNG signature — the cases a text round-trip loses.
+    const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, ...Array.from({ length: 256 }, (_, i) => i)]);
+    const jpg = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0xff, 0xd9]);
+    const insert = src.handle.prepare(
+      `INSERT INTO block_images (id, block_id, position, bytes, format, width, height, size_bytes, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    );
+    insert.run('img1', block.id, 0, png, 'png', 1240, 800, png.length, 1700000000001);
+    insert.run('img2', block.id, 1, jpg, 'jpeg', 640, 480, jpg.length, 1700000000002);
+    const rows = "SELECT id, block_id, position, typeof(bytes) AS t, hex(bytes) AS h, format, width, height, size_bytes, created_at FROM block_images ORDER BY position";
+    const before = src.handle.prepare(rows).all();
+
+    const report = await mergeLibrary(asPluginSql(src.handle), asPluginSql(dst.handle));
+
+    expect(report.added.block_images).toBe(2);
+    expect(dst.handle.prepare(rows).all()).toEqual(before);
+    expect(before.map((r) => (r as { t: string }).t)).toEqual(['blob', 'blob']);
+    const back = dst.handle.prepare("SELECT bytes FROM block_images WHERE id = 'img1'").get() as { bytes: Uint8Array };
+    expect(Buffer.from(back.bytes).equals(Buffer.from(png))).toBe(true);
+
+    // 再导一次：已经有了，一张都不多。
+    const again = await mergeLibrary(asPluginSql(src.handle), asPluginSql(dst.handle));
+    expect(again.added.block_images).toBe(0);
+    expect(count(dst.handle, 'SELECT COUNT(*) AS c FROM block_images')).toBe(2);
+  });
+
   // ⚠️⚠️ There is no transaction around a merge — tauri-plugin-sql's pool cannot hold one
   // (threads.ts:204). What makes a half-finished merge survivable is this order: a parent
   // is always inserted before its children, so whatever landed is a prefix in which every
@@ -285,6 +342,7 @@ describe('库的导出与导入 (DESIGN_LIBRARY_TRANSFER)', () => {
     for (const child of ['blocks', 'attachments', 'follow_up_items'] as const) {
       expect(order.indexOf('threads')).toBeLessThan(order.indexOf(child));
     }
+    expect(order.indexOf('blocks')).toBeLessThan(order.indexOf('block_images'));
     expect(order.indexOf('proposal_batches')).toBeLessThan(order.indexOf('proposals'));
   });
 

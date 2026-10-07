@@ -14,7 +14,7 @@ const block = (id: string, refBlockId: string | null = null, refKind: Block['ref
      annotationBy: null, refThreadId: null, source: null, pinned: false, createdAt: 0,
      staleAt, sourceUrl: null, retrievedAt: null, recheckAfter: null,
      correctedQuote: null, gist: null, refNote: null, gistBy: null,
-     refReviewedStaleAt: null,
+     refReviewedStaleAt: null, replacedByBlockId: null,
      originalContent: null, compressedAt: null });
 
 const OLD = block('old');

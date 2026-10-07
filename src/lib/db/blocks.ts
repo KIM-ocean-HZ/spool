@@ -71,6 +71,10 @@ export interface Block {
    *  ⛔ 不是布尔 —— 它同时要答三件事，见 `schema.sql` 那一列的注释和 `refNeedsReview()`。
    *  ⚠️ 只在 `refBlockId` 非空时才有意义；`setBlockSupersession` 改写目标时会清掉它。 */
   refReviewedStaleAt: number | null;
+  /** v32（P7-3，Ocean 2026-10-07）：这一块被哪一块**整条取代**了 —— 记在旧块上，和 `staleAt`
+   *  一起写。null = 没被取代 / 用户手动退役 / v32 以前的取代（那些记在新块的
+   *  `refKind === 'supersedes'` 上，没有回填）。⛔ 只在界面上用：入向关系不进 pack（F2 红线）。 */
+  replacedByBlockId: string | null;
   /** v24（R2 §1a）：这一块**压缩之前**的正文。null 有两种意思，⚠️ 两种都不是「有原文」：
    *  从来没压过，或者压过但用户把「备份原文」关了（那一次不可逆）。
    *  分辨看 `compressedAt` —— 它非空而这个是 null，就是第二种。 */
@@ -130,6 +134,7 @@ interface Row {
   ref_note: string | null;
   gist_by: AnnotationAuthor | null;
   ref_reviewed_stale_at: number | null;
+  replaced_by_block_id: string | null;
   original_content: string | null;
   compressed_at: number | null;
 }
@@ -157,12 +162,13 @@ const fromRow = (r: Row): Block => ({
   refNote: r.ref_note ?? null,
   gistBy: r.gist_by ?? null,
   refReviewedStaleAt: r.ref_reviewed_stale_at ?? null,
+  replacedByBlockId: r.replaced_by_block_id ?? null,
   originalContent: r.original_content ?? null,
   compressedAt: r.compressed_at ?? null,
 });
 
 const SELECT_COLS =
-  'id, thread_id, kind, content, annotation, annotation_by, ref_thread_id, ref_block_id, source, pinned, seq, created_at, stale_at, ref_kind, source_url, retrieved_at, recheck_after, corrected_quote, original_content, compressed_at, gist, ref_note, gist_by, ref_reviewed_stale_at';
+  'id, thread_id, kind, content, annotation, annotation_by, ref_thread_id, ref_block_id, source, pinned, seq, created_at, stale_at, ref_kind, source_url, retrieved_at, recheck_after, corrected_quote, original_content, compressed_at, gist, ref_note, gist_by, ref_reviewed_stale_at, replaced_by_block_id';
 
 export const getBlockById = async (id: string): Promise<Block | null> => {
   const db = await getDb();
@@ -450,6 +456,8 @@ export const createBlock = async (args: CreateBlockArgs): Promise<Block> => {
     // v29（F2 §3.2 ④）：新块的引用从来没被审过。⛔ 就算它一出生就指着一块已经退役的块，
     // 也要走一遍待审 —— 「审过」记的是**用户看过**，不是「系统知道」。
     refReviewedStaleAt: null,
+    // v32（P7-3）：新块没被任何块取代过。
+    replacedByBlockId: null,
     // v24：新块从来没被压过。⛔ 这两列只有压缩写回和一键还原碰得到。
     originalContent: null,
     compressedAt: null,
@@ -514,7 +522,7 @@ export const insertBlocks = async (blocks: Block[]): Promise<void> => {
     );
     base.set(threadId, rows[0]?.next ?? 0);
   }
-  const COLS = 22;
+  const COLS = 23;
   const tuples = blocks
     .map((_, i) => {
       const o = i * COLS;
@@ -549,10 +557,12 @@ export const insertBlocks = async (blocks: Block[]): Promise<void> => {
       // v29（F2 §3.2 ④）：原样带过来。⚠️ **复制那条路自己传 null**（见 blocksStore），
       // 这里照抄传进来的值 —— 导入别人的库时，那条边审没审过是那个库的事实。
       b.refReviewedStaleAt,
+      // v32（P7-3）：照抄传进来的值（复制那条路自己传 null，见 blocksStore）。
+      b.replacedByBlockId,
     ];
   });
   await db.execute(
-    `INSERT INTO blocks (id, thread_id, kind, content, annotation, annotation_by, ref_thread_id, ref_block_id, source, pinned, seq, created_at, stale_at, ref_kind, source_url, retrieved_at, recheck_after, corrected_quote, gist, ref_note, gist_by, ref_reviewed_stale_at) VALUES ${tuples}`,
+    `INSERT INTO blocks (id, thread_id, kind, content, annotation, annotation_by, ref_thread_id, ref_block_id, source, pinned, seq, created_at, stale_at, ref_kind, source_url, retrieved_at, recheck_after, corrected_quote, gist, ref_note, gist_by, ref_reviewed_stale_at, replaced_by_block_id) VALUES ${tuples}`,
     params,
   );
 };
@@ -667,8 +677,8 @@ export const deleteBlock = async (id: string): Promise<void> => {
 export const restoreBlock = async (block: Block): Promise<void> => {
   const db = await getDb();
   await db.execute(
-    `INSERT INTO blocks (id, thread_id, kind, content, annotation, annotation_by, ref_thread_id, ref_block_id, source, pinned, seq, created_at, stale_at, ref_kind, source_url, retrieved_at, recheck_after, corrected_quote, gist, ref_note, gist_by, ref_reviewed_stale_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)`,
+    `INSERT INTO blocks (id, thread_id, kind, content, annotation, annotation_by, ref_thread_id, ref_block_id, source, pinned, seq, created_at, stale_at, ref_kind, source_url, retrieved_at, recheck_after, corrected_quote, gist, ref_note, gist_by, ref_reviewed_stale_at, replaced_by_block_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)`,
     [
       block.id,
       block.threadId,
@@ -703,6 +713,8 @@ export const restoreBlock = async (block: Block): Promise<void> => {
       // v29（F2 §3.2 ④）：⌘Z 还回来的必须是**当时那一行** —— 丢了「审过」，撤销一次删除
       // 就会让一条已经审过的引用重新排队问一遍，同 `staleAt` / `gistBy` 那两条理由。
       block.refReviewedStaleAt,
+      // v32（P7-3）：撤销一次删除，「被第 n 块取代」要跟着回来，同 `staleAt` 那条理由。
+      block.replacedByBlockId,
     ],
   );
 };
