@@ -3,6 +3,7 @@ import type { Block } from '@/lib/db/blocks';
 import type { Thread } from '@/lib/db/threads';
 import {
   assemble,
+  blockSeqMap,
   filterBlocksForRange,
   formatPackDate,
   formatPackTime,
@@ -290,6 +291,8 @@ export function buildPackFolder({
             thread: project.thread,
             blocks: packedAll,
             attachments: project.attachments,
+            // P6-4: the whole project's numbers — a file on a block outside the range still says which.
+            fileAnchorSeqs: blockSeqMap(project.blocks),
             refTitles,
             refBlocks,
             scope: { range, total: project.blocks.length },

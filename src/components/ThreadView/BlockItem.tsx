@@ -159,9 +159,10 @@ function TextBlockItem({
   const addCorrection = useBlocksStore((s) => s.addCorrection);
   const siblings = useBlocksStore((s) => s.byThread[block.threadId]);
   // P5: the project files hung off THIS block, in the order they joined the project.
+  // P6-4: only the version in use — a replaced file stays in the right rail, folded under the new one.
   const projectFiles = useBlocksStore((s) => s.attachmentsByThread[block.threadId] ?? EMPTY_FILES);
   const blockFiles = useMemo(
-    () => projectFiles.filter((a) => a.anchorBlockId === block.id),
+    () => projectFiles.filter((a) => a.anchorBlockId === block.id && a.supersededBy == null),
     [projectFiles, block.id],
   );
   // v13's warning, seen from the corrected block — the half the feed never had. Derived

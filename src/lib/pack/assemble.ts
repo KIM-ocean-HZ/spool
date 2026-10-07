@@ -66,6 +66,11 @@ export interface AssembleArgs {
   // Every attachment belonging to this thread's blocks. The caller supplies them;
   // an empty array is fine. Grouped by blockId internally.
   attachments?: Attachment[];
+  // P6-4: block id → its number, for the " · on #12" a file line ends with. Defaults to the
+  // `blocks` passed in — a caller that narrowed them to a range passes the WHOLE project's,
+  // or a file hanging off a block outside the slice would read as " · on project".
+  // (mcp.rs gets the same number from a JOIN.)
+  fileAnchorSeqs?: ReadonlyMap<string, number>;
   // Map of referenced thread id → title; used to render `kind=ref` blocks. The caller
   // (Phase 9 @-mention) supplies this. Empty map is fine for Phase 4.
   refTitles?: Map<string, string>;
@@ -208,19 +213,29 @@ const renderExtractedText = (text: string): string => {
 // when the user opted that file in. A file whose text exists but was withheld says so
 // (`[extracted: yes, not inlined]`), because a receiving AI that knows the text exists can
 // ask for it, and one that does not know assumes there is nothing to ask for.
-const renderProjectFile = (a: Attachment): string[] => {
+/** P6-4: block id → its number, the shape `fileAnchorSeqs` takes. */
+export const blockSeqMap = (blocks: readonly Block[]): ReadonlyMap<string, number> =>
+  new Map(blocks.flatMap((b) => (b.seq == null ? [] : [[b.id, b.seq] as const])));
+
+// P6-4 (Ocean 2026-10-03, HANDOFF §9.2 第 25 条): where the file hangs, at the end of its
+// line — " · on #12" or " · on project". Mirrors mcp.rs file_anchor_marker.
+const fileAnchorMarker = (seq: number | undefined): string =>
+  seq === undefined ? ' · on project' : ` · on #${seq}`;
+
+const renderProjectFile = (a: Attachment, seq: number | undefined): string[] => {
   // §3.1-5: file name, not path. The " — target" half is dropped when it would only
   // repeat the label (the common case, since the label defaults to the file name).
   const label = attachmentLabel(a);
   const target = packTarget(a);
   const shown = target === label ? '' : ` — ${target}`;
+  const on = fileAnchorMarker(seq);
   if (a.kind === 'file' && a.extractedText != null) {
     if (a.includeInPack) {
-      return [`- ${label}${shown} (${a.extractionKind ?? 'text'})`, renderExtractedText(a.extractedText)];
+      return [`- ${label}${shown} (${a.extractionKind ?? 'text'})${on}`, renderExtractedText(a.extractedText)];
     }
-    return [`- ${label}${shown}  [extracted: yes, not inlined]`];
+    return [`- ${label}${shown}  [extracted: yes, not inlined]${on}`];
   }
-  return [`- ${label}${shown}`];
+  return [`- ${label}${shown}${on}`];
 };
 
 // v9 (DESIGN_SCHEMA_V9 H-1): the block's human-visible number, the same "#12" shown in
@@ -548,6 +563,7 @@ export function assemble({
   thread,
   blocks: allBlocks,
   attachments,
+  fileAnchorSeqs,
   refTitles,
   refBlocks,
   scope,
@@ -632,12 +648,18 @@ export function assemble({
   // ⚠️ The v13 filter that dropped an attachment whose block had been retired is gone with
   // the ownership it depended on: a file is no longer evidence for one conclusion, so
   // retiring a conclusion says nothing about whether the project still holds the file.
-  const files = attachments ?? [];
+  // P6-4: a file a newer version replaced does not go in (Ocean 2026-10-06 #4) — mirrors
+  // mcp.rs. It is still in the project and in the right rail, folded under the new one.
+  const files = (attachments ?? []).filter((a) => a.supersededBy == null);
   if (files.length > 0) {
+    const seqs = fileAnchorSeqs ?? blockSeqMap(allBlocks);
     out.push('');
     out.push(SECTION_FILES);
     out.push('');
-    for (const a of files) out.push(...renderProjectFile(a));
+    for (const a of files) {
+      const seq = a.anchorBlockId == null ? undefined : seqs.get(a.anchorBlockId);
+      out.push(...renderProjectFile(a, seq));
+    }
   }
 
   // Output Language: the closing directive asking the AI to respond in the user's language.

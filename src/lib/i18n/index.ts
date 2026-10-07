@@ -978,6 +978,10 @@ const EN: Record<string, string> = {
     'Could not find “{name}” any more (moved, or on a drive that is not plugged in), so nothing was attached.',
   '这条提议说的东西已经不在了，清掉了。': 'What this proposal was about is no longer there, so it was cleared.',
   '没能挂上：{msg}': 'Could not attach it: {msg}',
+  // P6-4 — the right rail: a file an AI proposed and the user approved, and older versions.
+  '{name} 提议、你同意的': '{name} proposed it, you approved',
+  '以前的版本（{n} 个）': 'Earlier versions ({n})',
+  '被取代于 {time}': 'Replaced {time}',
 
   // DESIGN_FOLLOW_UP §8.4 — an AI proposing ONE line for a project's follow-up list. This is
   // approval of a line that will tell the NEXT conversation what to go looking for, so it is

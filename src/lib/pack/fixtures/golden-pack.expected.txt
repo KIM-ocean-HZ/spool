@@ -178,12 +178,12 @@ stands, what is still open, what changed most recently — and then stop and wai
 
 ## Related Files & Links
 
-- attention.pdf (pdf)
+- attention.pdf (pdf) · on project
       Attention Is All You Need
       第一行
       第二行
-- rubric.docx  [extracted: yes, not inlined]
-- baseline
+- rubric.docx  [extracted: yes, not inlined] · on #2
+- baseline · on project
 
 ---
 

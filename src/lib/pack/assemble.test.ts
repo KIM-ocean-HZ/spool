@@ -6,6 +6,7 @@ import type { Block } from '@/lib/db/blocks';
 import type { Thread } from '@/lib/db/threads';
 import {
   assemble,
+  blockSeqMap,
   correctionsBySource,
   filterBlocksForRange,
   foldedCorrectionIds,
@@ -239,7 +240,30 @@ describe('assemble', () => {
     const attachments = [attachment('a1', { target: '/x/y/spec.pdf', label: '' })];
     const out = assemble({ thread, blocks, attachments, now: NOW });
     // The " — target" half is dropped when it would only repeat the label.
-    expect(out).toContain('- spec.pdf\n');
+    expect(out).toContain('- spec.pdf · on project\n');
+  });
+
+  // P6-4: a file line ends with where it hangs, and a replaced file is not in the pack. A pack
+  // narrowed to a range still names a block outside the slice — the caller hands over the whole
+  // project's numbers; without them the line would say 「on project」 and be wrong.
+  it('says which block a file hangs off, even outside a narrowed range; a replaced file is left out', () => {
+    const b1 = textBlock('b1', 'old note', { seq: 1 });
+    const b2 = textBlock('b2', 'new note', { seq: 2 });
+    const attachments = [
+      attachment('a1', { label: 'plan-v2.pdf', anchorBlockId: 'b1' }),
+      attachment('a0', { label: 'plan.pdf', anchorBlockId: 'b1', supersededBy: 'a1' }),
+      attachment('a2', { label: 'brief.pdf' }),
+    ];
+    const out = assemble({
+      thread,
+      blocks: [b2],
+      attachments,
+      fileAnchorSeqs: blockSeqMap([b1, b2]),
+      now: NOW,
+    });
+    expect(out).toContain('- plan-v2.pdf — paper.pdf · on #1\n');
+    expect(out).toContain('- brief.pdf — paper.pdf · on project\n');
+    expect(out).not.toContain('plan.pdf ');
   });
 
   // §3.1-5 (MCP review round 2): a pack is the artifact the user pastes elsewhere, so no

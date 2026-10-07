@@ -1,11 +1,13 @@
-import { File, Folder, Plus, Unlink, X } from 'lucide-react';
-import { useMemo } from 'react';
+import { Bot, ChevronDown, ChevronRight, File, Folder, Plus, Unlink, X } from 'lucide-react';
+import { useMemo, useState } from 'react';
 import RailSection from './RailSection';
 import { useT } from '@/lib/i18n';
+import { isMcpSource } from '@/lib/blocks/sourceIcon';
 import type { Attachment } from '@/lib/db/attachments';
 import type { Block } from '@/lib/db/blocks';
 import { addFilesFromPicker } from '@/lib/files/addFiles';
 import { fileLabel, openFile } from '@/lib/files/openFile';
+import { groupFileVersions } from '@/lib/files/versions';
 import { formatBlockTime } from '@/lib/utils/time';
 import { useBlocksStore } from '@/stores/blocksStore';
 import SeqBadge from '../ThreadView/SeqBadge';
@@ -42,6 +44,17 @@ import SeqBadge from '../ThreadView/SeqBadge';
 // number in the same ring the block itself wears — no words (「项目文件和块文件……不要用现在
 // 这种标记形式，设计一个更加简洁，尽量减少文字的方式」). Who added it is not shown: every file
 // is the user's until P6, and only an AI-added one will carry a mark.
+//
+// P6-4 (Ocean 2026-10-06 #3 / #4): that mark is the robot the AI's blocks wear, in place of the
+// file icon, naming the AI on hover — no words on the row. And a file a newer version replaced
+// has no row of its own: it folds under the new one, behind a small arrow, greyed when shown
+// (`lib/files/versions.ts` has what happens to a chain, and to one whose new version is gone).
+
+// `<client> · MCP` → the client's name; a bare `MCP` (the client sent no name) → 'AI'.
+const aiName = (addedBy: string): string => {
+  const name = addedBy.split(' · MCP')[0]!.trim();
+  return name === '' || name === 'MCP' || name.startsWith('MCP — ') ? 'AI' : name;
+};
 
 const EMPTY: readonly Attachment[] = [];
 const EMPTY_BLOCKS: readonly Block[] = [];
@@ -56,8 +69,31 @@ export default function ProjectFiles({ threadId }: { threadId: string }) {
   // A block's file shows that block's number, so the rail needs the project's blocks.
   const blocks = useBlocksStore((s) => s.byThread[threadId] ?? EMPTY_BLOCKS);
   const seqById = useMemo(() => new Map(blocks.map((b) => [b.id, b.seq])), [blocks]);
-  // Newest first. ⚠️ Only here: the store keeps join order, which is what packs are built in.
-  const newestFirst = useMemo(() => [...files].sort((a, b) => b.createdAt - a.createdAt), [files]);
+  // Newest first, older versions folded under their replacement. ⚠️ Only here: the store keeps
+  // join order, which is what packs are built in.
+  const groups = useMemo(() => groupFileVersions(files), [files]);
+  // Folded by default (Ocean 2026-10-06 #4); not remembered — it is a glance, not a setting.
+  const [unfolded, setUnfolded] = useState<ReadonlySet<string>>(() => new Set());
+  const toggle = (id: string): void =>
+    setUnfolded((cur) => {
+      const next = new Set(cur);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
+  // The icon at the head of a row: the robot when an AI proposed it and the user approved.
+  const iconFor = (a: Attachment) => {
+    if (isMcpSource(a.addedBy)) {
+      return (
+        <span title={t('{name} 提议、你同意的', { name: aiName(a.addedBy!) })} className="flex flex-none">
+          <Bot size={12} className="text-accent" />
+        </span>
+      );
+    }
+    const Icon = a.kind === 'folder' ? Folder : File;
+    return <Icon size={12} className="flex-none text-muted" />;
+  };
 
   return (
     <RailSection
@@ -74,109 +110,196 @@ export default function ProjectFiles({ threadId }: { threadId: string }) {
         </button>
       }
     >
-      {newestFirst.length === 0 ? (
+      {groups.length === 0 ? (
         <p className="px-3 text-[12px] leading-relaxed text-muted">
           {t('这个项目还没有文件。你加进来的文件，AI 默认能读到里面的文字，每个文件旁边的开关随时能关；打包时默认不带正文。')}
         </p>
       ) : (
         <ul>
-          {newestFirst.map((a) => {
-            const Icon = a.kind === 'folder' ? Folder : File;
+          {groups.map(({ file: a, replaced, older }) => {
             // v2.8 §20.2: the switches only mean anything once there is text, so they appear
             // only on a file that actually has some.
             const canInline = a.kind === 'file' && a.extractedText != null;
             // A file hangs off a block only while that block is in this project's feed.
             const seq = a.anchorBlockId != null ? seqById.get(a.anchorBlockId) : undefined;
             const onBlock = seq !== undefined;
+            const open = unfolded.has(a.id);
             return (
-              <li
-                key={a.id}
-                className="group/file flex items-center gap-1.5 rounded-md px-3 py-1 hover:bg-paper-2/60"
-              >
-                <Icon size={12} className="flex-none text-muted" />
-                <button
-                  type="button"
-                  onClick={() => void openFile(a.target)}
-                  title={a.target}
-                  className="min-w-0 flex-1 truncate text-left text-[12px] text-ink-2 transition-colors hover:text-accent"
-                >
-                  {fileLabel(a)}
-                </button>
-                {/* ⚠️ `flex`, not a bare span (Ocean 2026-10-05:「数字符号没有和文字对齐」): a plain
-                    span has no font size of its own, so it inherits the page's 16px, builds a line
-                    box for it and sits the ring on that baseline — 2.5px below the 11px time beside
-                    it, and the row 6px taller than a project file's. Measured in WKWebView
-                    (scripts/wk-snapshot.m): ring and time centres now land on the same pixel. */}
-                {onBlock && seq != null && (
-                  <span
-                    title={t('挂在第 {n} 块上', { n: seq })}
-                    className="flex flex-none items-center text-muted"
-                  >
-                    <SeqBadge seq={seq} />
-                  </span>
-                )}
-                {/* At rest: when it was added. On hover the two switches take this place, so the
-                    row never grows a second line and the list does not jump under the pointer.
-                    ⚠️ Fixed width, right-aligned, and the buttons after it sit in a fixed-width
-                    slot too — so every row's time ends at the same x whether or not the file is on
-                    a block (「当前的时间会受到 block 标号的影响导致不整齐」), and the block numbers
-                    line up in a column of their own. 66px holds the longest form, 「10/14 08:01」. */}
-                <span
-                  className={`w-[66px] flex-none whitespace-nowrap text-right text-[11px] tabular-nums text-muted ${
-                    canInline ? 'group-focus-within/file:hidden group-hover/file:hidden' : ''
+              <li key={a.id}>
+                <div
+                  className={`group/file flex items-center gap-1.5 rounded-md px-3 py-1 hover:bg-paper-2/60 ${
+                    replaced ? 'opacity-60' : ''
                   }`}
                 >
-                  {formatBlockTime(a.createdAt)}
-                </span>
-                {canInline && (
-                  <span className="hidden flex-none items-center gap-2 text-[11px] text-muted group-focus-within/file:flex group-hover/file:flex">
-                    <label className="flex cursor-pointer items-center gap-1">
-                      <input
-                        type="checkbox"
-                        checked={a.includeInPack}
-                        onChange={(e) => void setIncludeInPack(a.id, threadId, e.target.checked)}
-                        className="h-2.5 w-2.5 accent-[var(--accent)]"
-                      />
-                      {t('打包可读')}
-                    </label>
-                    {/* §5.1 ①: coloured when on, because a standing permission that looks exactly
-                        like one you never gave is the failure mode. */}
-                    <label
-                      className={`flex cursor-pointer items-center gap-1 ${a.aiAccess ? 'text-accent' : ''}`}
-                      title={t('关掉之后，AI 想再读它就得重新问你一次。')}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={a.aiAccess}
-                        onChange={(e) => void setAiAccess(a.id, threadId, e.target.checked)}
-                        className="h-2.5 w-2.5 accent-[var(--accent)]"
-                      />
-                      {t('AI 可读')}
-                    </label>
-                  </span>
-                )}
-                <span className="flex w-[34px] flex-none items-center justify-end gap-1">
-                  {onBlock && (
-                    <button
-                      type="button"
-                      onClick={() => void anchorAttachment(a.id, threadId, null)}
-                      title={t('移到项目（不再挂在这一块上，文件还在这个项目里）')}
-                      aria-label={t('移到项目（不再挂在这一块上，文件还在这个项目里）')}
-                      className="rounded p-0.5 text-muted opacity-0 transition-opacity hover:text-ink group-focus-within/file:opacity-100 group-hover/file:opacity-100"
-                    >
-                      <Unlink size={11} />
-                    </button>
-                  )}
+                  {iconFor(a)}
                   <button
                     type="button"
-                    onClick={() => void detach(a.id, threadId)}
-                    title={t('从这个项目里去掉（文件本身不动）')}
-                    aria-label={t('从这个项目里去掉（文件本身不动）')}
-                    className="rounded p-0.5 text-muted opacity-0 transition-opacity hover:text-ink group-focus-within/file:opacity-100 group-hover/file:opacity-100"
+                    onClick={() => void openFile(a.target)}
+                    title={a.target}
+                    className="min-w-0 flex-1 truncate text-left text-[12px] text-ink-2 transition-colors hover:text-accent"
                   >
-                    <X size={11} />
+                    {fileLabel(a)}
                   </button>
-                </span>
+                  {older.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => toggle(a.id)}
+                      title={t('以前的版本（{n} 个）', { n: older.length })}
+                      aria-label={t('以前的版本（{n} 个）', { n: older.length })}
+                      aria-expanded={open}
+                      className="flex flex-none items-center rounded p-0.5 text-muted transition-colors hover:text-ink"
+                    >
+                      {open ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
+                    </button>
+                  )}
+                  {/* ⚠️ `flex`, not a bare span (Ocean 2026-10-05:「数字符号没有和文字对齐」): a plain
+                      span has no font size of its own, so it inherits the page's 16px, builds a line
+                      box for it and sits the ring on that baseline — 2.5px below the 11px time beside
+                      it, and the row 6px taller than a project file's. Measured in WKWebView
+                      (scripts/wk-snapshot.m): ring and time centres now land on the same pixel. */}
+                  {onBlock && seq != null && (
+                    <span
+                      title={t('挂在第 {n} 块上', { n: seq })}
+                      className="flex flex-none items-center text-muted"
+                    >
+                      <SeqBadge seq={seq} />
+                    </span>
+                  )}
+                  {/* At rest: when it was added. On hover the two switches take this place, so the
+                      row never grows a second line and the list does not jump under the pointer.
+                      ⚠️ Fixed width, right-aligned, and the buttons after it sit in a fixed-width
+                      slot too — so every row's time ends at the same x whether or not the file is on
+                      a block (「当前的时间会受到 block 标号的影响导致不整齐」), and the block numbers
+                      line up in a column of their own. 66px holds the longest form, 「10/14 08:01」. */}
+                  <span
+                    title={
+                      replaced && a.supersededAt != null
+                        ? t('被取代于 {time}', { time: formatBlockTime(a.supersededAt) })
+                        : undefined
+                    }
+                    className={`w-[66px] flex-none whitespace-nowrap text-right text-[11px] tabular-nums text-muted ${
+                      canInline ? 'group-focus-within/file:hidden group-hover/file:hidden' : ''
+                    }`}
+                  >
+                    {formatBlockTime(a.createdAt)}
+                  </span>
+                  {canInline && (
+                    <span className="hidden flex-none items-center gap-2 text-[11px] text-muted group-focus-within/file:flex group-hover/file:flex">
+                      <label className="flex cursor-pointer items-center gap-1">
+                        <input
+                          type="checkbox"
+                          checked={a.includeInPack}
+                          onChange={(e) => void setIncludeInPack(a.id, threadId, e.target.checked)}
+                          className="h-2.5 w-2.5 accent-[var(--accent)]"
+                        />
+                        {t('打包可读')}
+                      </label>
+                      {/* §5.1 ①: coloured when on, because a standing permission that looks exactly
+                          like one you never gave is the failure mode. */}
+                      <label
+                        className={`flex cursor-pointer items-center gap-1 ${a.aiAccess ? 'text-accent' : ''}`}
+                        title={t('关掉之后，AI 想再读它就得重新问你一次。')}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={a.aiAccess}
+                          onChange={(e) => void setAiAccess(a.id, threadId, e.target.checked)}
+                          className="h-2.5 w-2.5 accent-[var(--accent)]"
+                        />
+                        {t('AI 可读')}
+                      </label>
+                    </span>
+                  )}
+                  <span className="flex w-[34px] flex-none items-center justify-end gap-1">
+                    {onBlock && (
+                      <button
+                        type="button"
+                        onClick={() => void anchorAttachment(a.id, threadId, null)}
+                        title={t('移到项目（不再挂在这一块上，文件还在这个项目里）')}
+                        aria-label={t('移到项目（不再挂在这一块上，文件还在这个项目里）')}
+                        className="rounded p-0.5 text-muted opacity-0 transition-opacity hover:text-ink group-focus-within/file:opacity-100 group-hover/file:opacity-100"
+                      >
+                        <Unlink size={11} />
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => void detach(a.id, threadId)}
+                      title={t('从这个项目里去掉（文件本身不动）')}
+                      aria-label={t('从这个项目里去掉（文件本身不动）')}
+                      className="rounded p-0.5 text-muted opacity-0 transition-opacity hover:text-ink group-focus-within/file:opacity-100 group-hover/file:opacity-100"
+                    >
+                      <X size={11} />
+                    </button>
+                  </span>
+                </div>
+                {/* P6-4: the older versions, greyed, each with its own added time — hover says when
+                    it was replaced. Still openable. Only 「AI 可读」 on hover: a replaced file is not
+                    in any pack, so 「打包可读」 would be a switch that does nothing; whether an AI
+                    may still read it is real (get_blocks lists it), so that one stays. No block
+                    number: the block shows only the version in use. */}
+                {open && (
+                  <ul>
+                    {older.map((o) => {
+                      const hasText = o.kind === 'file' && o.extractedText != null;
+                      return (
+                        <li
+                          key={o.id}
+                          className="group/file flex items-center gap-1.5 rounded-md py-1 pl-7 pr-3 opacity-60 hover:bg-paper-2/60"
+                        >
+                          {iconFor(o)}
+                          <button
+                            type="button"
+                            onClick={() => void openFile(o.target)}
+                            title={o.target}
+                            className="min-w-0 flex-1 truncate text-left text-[12px] text-ink-2 transition-colors hover:text-accent"
+                          >
+                            {fileLabel(o)}
+                          </button>
+                          <span
+                            title={
+                              o.supersededAt != null
+                                ? t('被取代于 {time}', { time: formatBlockTime(o.supersededAt) })
+                                : undefined
+                            }
+                            className={`w-[66px] flex-none whitespace-nowrap text-right text-[11px] tabular-nums text-muted ${
+                              hasText ? 'group-focus-within/file:hidden group-hover/file:hidden' : ''
+                            }`}
+                          >
+                            {formatBlockTime(o.createdAt)}
+                          </span>
+                          {hasText && (
+                            <label
+                              className={`hidden flex-none cursor-pointer items-center gap-1 text-[11px] text-muted group-focus-within/file:flex group-hover/file:flex ${
+                                o.aiAccess ? 'text-accent' : ''
+                              }`}
+                              title={t('关掉之后，AI 想再读它就得重新问你一次。')}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={o.aiAccess}
+                                onChange={(e) => void setAiAccess(o.id, threadId, e.target.checked)}
+                                className="h-2.5 w-2.5 accent-[var(--accent)]"
+                              />
+                              {t('AI 可读')}
+                            </label>
+                          )}
+                          <span className="flex w-[34px] flex-none items-center justify-end gap-1">
+                            <button
+                              type="button"
+                              onClick={() => void detach(o.id, threadId)}
+                              title={t('从这个项目里去掉（文件本身不动）')}
+                              aria-label={t('从这个项目里去掉（文件本身不动）')}
+                              className="rounded p-0.5 text-muted opacity-0 transition-opacity hover:text-ink group-focus-within/file:opacity-100 group-hover/file:opacity-100"
+                            >
+                              <X size={11} />
+                            </button>
+                          </span>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
               </li>
             );
           })}

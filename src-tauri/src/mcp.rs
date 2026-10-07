@@ -473,6 +473,11 @@ pub struct AttachmentRow {
     pub extracted_text: Option<String>,
     pub extraction_kind: Option<String>,
     pub include_in_pack: bool,
+    /// v30 / P6-4: the number of the block this file hangs off; None = the project.
+    pub anchor_seq: Option<i64>,
+    /// v30 / P6-4: a newer file replaced this one (`superseded_by` is set). It stays in the
+    /// project and in get_blocks, and leaves the pack (Ocean 2026-10-06 #4).
+    pub superseded: bool,
 }
 
 // ---------------------------------------------------------------------------------------
@@ -602,6 +607,15 @@ fn render_extracted_text(text: &str, cap: usize) -> String {
         .join("\n")
 }
 
+// P6-4 (Ocean 2026-10-03, HANDOFF §9.2 第 25 条): where the file hangs, at the end of its
+// line — " · on #12" or " · on project". Mirrors assemble.ts fileAnchorMarker.
+fn file_anchor_marker(a: &AttachmentRow) -> String {
+    match a.anchor_seq {
+        Some(n) => format!(" · on #{n}"),
+        None => " · on project".to_string(),
+    }
+}
+
 // One of the project's files, rendered in SECTION_FILES — the only place a file appears now.
 // ⚠️ Mirrors assemble.ts renderProjectFile line for line; the golden fixture is the check.
 fn render_project_file(a: &AttachmentRow, extract_cap: usize) -> Vec<String> {
@@ -610,18 +624,19 @@ fn render_project_file(a: &AttachmentRow, extract_cap: usize) -> Vec<String> {
     let label = attachment_label(a);
     let target = pack_target(a);
     let shown = if target == label { String::new() } else { format!(" — {target}") };
+    let on = file_anchor_marker(a);
     if a.kind == "file" && a.extracted_text.is_some() {
         let text = a.extracted_text.as_deref().unwrap_or("");
         if a.include_in_pack {
             let ext_kind = a.extraction_kind.as_deref().unwrap_or("text");
             return vec![
-                format!("- {label}{shown} ({ext_kind})"),
+                format!("- {label}{shown} ({ext_kind}){on}"),
                 render_extracted_text(text, extract_cap),
             ];
         }
-        return vec![format!("- {label}{shown}  [extracted: yes, not inlined]")];
+        return vec![format!("- {label}{shown}  [extracted: yes, not inlined]{on}")];
     }
-    vec![format!("- {label}{shown}")]
+    vec![format!("- {label}{shown}{on}")]
 }
 
 // The one block-header line (📌 star, time/source bracket, ref-title fallback) shared
@@ -1161,11 +1176,14 @@ fn assemble_pack_with(
     // ⚠️ The filter that dropped an omitted block's attachments is gone with the ownership
     // it depended on: a file is not evidence for one block any more, so which blocks the
     // budget kept says nothing about which files the project holds.
-    if !attachments.is_empty() {
+    // P6-4: a file a newer version replaced does not go in (Ocean 2026-10-06 #4) — mirrors
+    // assemble.ts. It is still in the project and in get_blocks, marked as replaced.
+    let files: Vec<&AttachmentRow> = attachments.iter().filter(|a| !a.superseded).collect();
+    if !files.is_empty() {
         out.push(String::new());
         out.push(SECTION_FILES.to_string());
         out.push(String::new());
-        for a in attachments {
+        for a in files {
             out.extend(render_project_file(a, extract_cap));
         }
     }
@@ -3157,11 +3175,21 @@ fn get_blocks_json(
     //   * `ai_access` — they answered a request_file_access card, or ticked the ✓ themselves.
     // Everything else comes back with its name, its size and `ai_readable: false`, which is
     // exactly what an AI needs to decide whether to ask — and none of its content.
+    //
+    // P6-4 (HANDOFF §9.2 第 25 条 + Ocean 2026-10-06 #4): every file also says where it hangs
+    // (`attached_to` "#12" / "project", plus the block's id), who added it (`added_by`: "user",
+    // or the AI's `<client> · MCP` label when the user approved its proposal), and — only when
+    // a newer file replaced it — `superseded_by` + `superseded_at`. ⚠️ A replaced file is
+    // still LISTED (it is still in the project, and the user can still open it); it is the
+    // pack it leaves. `ai_readable` is still `ai_access` and nothing else.
     let mut att_stmt = conn
         .prepare(
-            "SELECT id, kind, target, label, extraction_kind, include_in_pack, ai_access,
-                    extracted_text
-             FROM attachments WHERE thread_id = ?1 ORDER BY created_at ASC",
+            "SELECT a.id, a.kind, a.target, a.label, a.extraction_kind, a.include_in_pack,
+                    a.ai_access, a.extracted_text, a.anchor_block_id, b.seq, a.added_by,
+                    a.superseded_by, a.superseded_at
+             FROM attachments a
+             LEFT JOIN blocks b ON b.id = a.anchor_block_id AND b.thread_id = a.thread_id
+             WHERE a.thread_id = ?1 ORDER BY a.created_at ASC",
         )
         .map_err(|e| e.to_string())?;
     let files: Vec<Value> = att_stmt
@@ -3169,6 +3197,7 @@ fn get_blocks_json(
             let extracted: Option<String> = r.get(7)?;
             let inlined = r.get::<_, i64>(5)? == 1;
             let readable = r.get::<_, i64>(6)? == 1;
+            let anchor_seq: Option<i64> = r.get(9)?;
             let mut a = json!({
                 // The parameter request_file_access takes. Nothing else in the payload can
                 // name a file, so without this an AI could see a file and never ask for it.
@@ -3180,7 +3209,16 @@ fn get_blocks_json(
                 "inlined_in_pack": inlined,
                 "extracted_chars": extracted.as_deref().map(|t| t.chars().count()),
                 "ai_readable": readable,
+                "attached_to": anchor_seq.map_or_else(|| "project".to_string(), |n| format!("#{n}")),
+                "added_by": r.get::<_, Option<String>>(10)?.unwrap_or_else(|| "user".to_string()),
             });
+            if anchor_seq.is_some() {
+                a["anchor_block_id"] = json!(r.get::<_, Option<String>>(8)?);
+            }
+            if let Some(by) = r.get::<_, Option<String>>(11)? {
+                a["superseded_by"] = json!(by);
+                a["superseded_at"] = json!(r.get::<_, Option<i64>>(12)?.map(format_pack_time));
+            }
             if include_extracted_text {
                 a["extracted_text"] = match (&extracted, readable) {
                     (Some(t), true) => json!(t),
@@ -3328,10 +3366,12 @@ fn pack_locked_files(conn: &Connection, thread_id: &str) -> Result<Option<String
         .prepare(
             // Same "readable" test as get_blocks (§3.4 v18): ticked into the pack, or
             // granted through a request — either one means the user opened it up.
+            // P6-4: a replaced file is not in the pack, so it is not listed here either —
+            // get_blocks still shows it, marked as replaced.
             "SELECT id, label, target, extracted_text
              FROM attachments
              WHERE thread_id = ?1 AND ai_access = 0
-                   AND extracted_text IS NOT NULL
+                   AND extracted_text IS NOT NULL AND superseded_by IS NULL
              ORDER BY created_at ASC",
         )
         .map_err(|e| e.to_string())?;
@@ -3640,9 +3680,12 @@ fn build_pack(conn: &Connection, thread_id: &str, range: &str) -> Result<PackBui
             // ⚠️ 2026-08-19: `ai_access` rides along and gates the inlining below. `include_in_pack`
             // is the user ticking "put this file's text in the pack THEY copy"; it is not,
             // and after 2026-08-19 never was, permission for an AI to read the file here.
-            "SELECT thread_id, kind, target, label, extracted_text,
-                    extraction_kind, include_in_pack, ai_access
-             FROM attachments WHERE thread_id = ?1 ORDER BY created_at ASC",
+            // P6-4: plus the number of the block it hangs off, and whether it was replaced.
+            "SELECT a.thread_id, a.kind, a.target, a.label, a.extracted_text,
+                    a.extraction_kind, a.include_in_pack, a.ai_access, b.seq, a.superseded_by
+             FROM attachments a
+             LEFT JOIN blocks b ON b.id = a.anchor_block_id AND b.thread_id = a.thread_id
+             WHERE a.thread_id = ?1 ORDER BY a.created_at ASC",
         )
         .map_err(|e| e.to_string())?;
     let attachments: Vec<AttachmentRow> = stmt
@@ -3658,6 +3701,8 @@ fn build_pack(conn: &Connection, thread_id: &str, range: &str) -> Result<PackBui
                 // file renders as "[extracted: yes, not inlined]" and is listed under
                 // SECTION_LOCKED_FILES with its attachment_id, so the way in is to ask.
                 include_in_pack: r.get::<_, i64>(6)? == 1 && r.get::<_, i64>(7)? == 1,
+                anchor_seq: r.get(8)?,
+                superseded: r.get::<_, Option<String>>(9)?.is_some(),
             })
         })
         .map_err(|e| e.to_string())?
@@ -7068,7 +7113,7 @@ fn tools_descriptor() -> Value {
         },
         {
             "name": "get_blocks",
-            "description": "Page through one project's blocks in chronological order, as JSON (full content, annotation, source, pinned, timestamps, plus each block's attachments with the size of any extracted file text). The middle granularity between a search snippet and a full pack, and the way to read a project whose pack is over budget. To read around a search hit, pass its block_id as around_block_id (with optional context, default 3 each side) — this centers the page and returns anchor_position; offset/limit are ignored. Optional filters (pinned / has_annotation / source_contains / stale) AND-combine and narrow the page + total; they cannot be combined with around_block_id. Two v13 fields on every row: stale_at is set when the USER marked that block as no longer valid — packs and digests stop carrying it, this tool still returns it, and you must not relay it as a current fact; ref_kind says what the row's ref_block_id means — 'cites' (builds on it, the default and what null means), 'supersedes' (replaces it; that block is stale), 'corrects' (one point inside it is wrong, the rest of it still stands).",
+            "description": "Page through one project's blocks in chronological order, as JSON (full content, annotation, source, pinned, timestamps, plus each block's attachments with the size of any extracted file text). The middle granularity between a search snippet and a full pack, and the way to read a project whose pack is over budget. To read around a search hit, pass its block_id as around_block_id (with optional context, default 3 each side) — this centers the page and returns anchor_position; offset/limit are ignored. Optional filters (pinned / has_annotation / source_contains / stale) AND-combine and narrow the page + total; they cannot be combined with around_block_id. Two v13 fields on every row: stale_at is set when the USER marked that block as no longer valid — packs and digests stop carrying it, this tool still returns it, and you must not relay it as a current fact; ref_kind says what the row's ref_block_id means — 'cites' (builds on it, the default and what null means), 'supersedes' (replaces it; that block is stale), 'corrects' (one point inside it is wrong, the rest of it still stands). Each file in `files` also says where it hangs (attached_to: \"#12\" or \"project\"), who added it (added_by: \"user\", or the label of the AI whose proposal the user approved), and — only once a newer version replaced it — superseded_by and superseded_at: a replaced file is still listed here, but it is no longer in packs.",
             "annotations": { "readOnlyHint": true },
             "inputSchema": {
                 "type": "object",
@@ -10526,7 +10571,7 @@ mod tests {
         let v: Value = serde_json::from_str(FIXTURE).unwrap();
         let title = v["thread"]["title"].as_str().unwrap().to_string();
         let now = v["now"].as_i64().unwrap();
-        let blocks = v["blocks"]
+        let blocks: Vec<BlockRow> = v["blocks"]
             .as_array()
             .unwrap()
             .iter()
@@ -10566,6 +10611,12 @@ mod tests {
                 extracted_text: a["extractedText"].as_str().map(String::from),
                 extraction_kind: a["extractionKind"].as_str().map(String::from),
                 include_in_pack: a["includeInPack"].as_bool().unwrap(),
+                // P6-4: the same lookup the query does with its JOIN — and the same one
+                // assemble.ts does by default — over the fixture's own blocks.
+                anchor_seq: a["anchorBlockId"].as_str().and_then(|id| {
+                    blocks.iter().find(|b| b.id == id).and_then(|b| b.seq)
+                }),
+                superseded: a["supersededBy"].as_str().is_some(),
             })
             .collect();
         let ref_titles = v["refTitles"]
@@ -14557,6 +14608,8 @@ mod tests {
                 extracted_text: None,
                 extraction_kind: None,
                 include_in_pack: false,
+                anchor_seq: None,
+                superseded: false,
             },
             AttachmentRow {
                 thread_id: "t1".into(),
@@ -14566,6 +14619,8 @@ mod tests {
                 extracted_text: None,
                 extraction_kind: None,
                 include_in_pack: false,
+                anchor_seq: None,
+                superseded: false,
             },
         ];
         let built = PackBuilt {
@@ -14697,6 +14752,8 @@ mod tests {
             extracted_text: Some("讲义正文。".repeat(1560)), // 7800 chars
             extraction_kind: Some("pdf".into()),
             include_in_pack: true,
+            anchor_seq: None,
+            superseded: false,
         }];
         let built = PackBuilt {
             text: assemble_pack("机器学习课", &blocks, &attachments, &HashMap::new(), &RefBlocks::new(), now),
@@ -15228,5 +15285,67 @@ mod tests {
         assert_eq!(attachments(&conn), before);
         drop(conn);
         let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    // P6-4：AI 看得见文件挂在哪、谁加的、被谁取代；被取代的照样列出，但不进 pack。
+    #[test]
+    fn files_say_where_they_hang_and_a_replaced_one_leaves_the_pack() {
+        store_lang(Lang::En);
+        let raw_tmp = std::env::temp_dir().join(format!("spool-files-anchor-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&raw_tmp);
+        std::fs::create_dir_all(&raw_tmp).unwrap();
+        let conn = Connection::open(raw_tmp.join("spool.db")).unwrap();
+        conn.execute_batch(include_str!("../../src/lib/db/schema.sql")).unwrap();
+        conn.execute_batch(&format!(
+            "PRAGMA user_version = {EXPECTED_SCHEMA_VERSION};
+             INSERT INTO workspaces (id, title, sort_order, created_at, updated_at)
+               VALUES ('ws1', 'W', 0, 1, 1);
+             INSERT INTO threads (id, workspace_id, title, created_at, updated_at)
+               VALUES ('t1', 'ws1', 'Contract', 1, 1);
+             INSERT INTO blocks (id, thread_id, kind, content, seq, created_at)
+               VALUES ('b1', 't1', 'text', 'client feedback', 12, 1);
+             INSERT INTO attachments (id, thread_id, kind, target, label, extracted_text,
+                                      extraction_kind, include_in_pack, ai_access, created_at,
+                                      anchor_block_id, added_by, superseded_by, superseded_at)
+               VALUES ('a_new', 't1', 'file', '/x/plan-v2.pdf', 'plan-v2.pdf', 'v2 text', 'pdf',
+                       1, 1, 3, 'b1', 'Codex · MCP', NULL, NULL),
+                      ('a_old', 't1', 'file', '/x/plan.pdf', 'plan.pdf', 'v1 text', 'pdf',
+                       1, 0, 2, 'b1', 'user', 'a_new', 1750000000000),
+                      ('a_mine', 't1', 'file', '/x/notes.txt', 'notes.txt', NULL, NULL,
+                       0, 1, 1, NULL, NULL, NULL, NULL);"
+        ))
+        .unwrap();
+
+        let filters = BlockFilters { pinned: None, has_annotation: None, source_contains: None, stale: None };
+        let v: Value = serde_json::from_str(
+            &get_blocks_json(&conn, "t1", None, None, None, None, &filters, false).unwrap(),
+        )
+        .unwrap();
+        let file = |id: &str| v["files"].as_array().unwrap().iter().find(|f| f["attachment_id"] == id).unwrap().clone();
+        let new = file("a_new");
+        assert_eq!(new["attached_to"], json!("#12"));
+        assert_eq!(new["anchor_block_id"], json!("b1"));
+        assert_eq!(new["added_by"], json!("Codex · MCP"));
+        assert!(new.get("superseded_by").is_none(), "{new}");
+        // ⚠️ 被取代的照样列出，`ai_readable` 照旧只认 ai_access。
+        let old = file("a_old");
+        assert_eq!(old["superseded_by"], json!("a_new"));
+        assert!(old["superseded_at"].as_str().is_some(), "{old}");
+        assert_eq!(old["ai_readable"], json!(false));
+        // 老行（v30 之前）：挂在项目、用户加的。
+        let mine = file("a_mine");
+        assert_eq!(mine["attached_to"], json!("project"));
+        assert_eq!(mine["added_by"], json!("user"));
+        assert!(mine.get("anchor_block_id").is_none(), "{mine}");
+
+        // pack：新版带着「挂在哪」，旧版一个字都不出现（锁着的文件那一节也不列它）。
+        let pack = get_pack_text(&conn, "t1", "all").unwrap();
+        assert!(pack.contains("- plan-v2.pdf (pdf) · on #12"), "{pack}");
+        assert!(pack.contains("- notes.txt · on project"), "{pack}");
+        assert!(!pack.contains("plan.pdf"), "{pack}");
+        assert!(!pack.contains("v1 text"), "{pack}");
+        assert!(pack_locked_files(&conn, "t1").unwrap().is_none());
+        drop(conn);
+        let _ = std::fs::remove_dir_all(&raw_tmp);
     }
 }

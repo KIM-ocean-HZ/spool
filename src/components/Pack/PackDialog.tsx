@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { createBackdropClose } from '@/lib/utils/backdropClose';
 import {
   assemble,
+  blockSeqMap,
   filterBlocksForRange,
   formatPackDate,
   PACK_RANGE_KEYS,
@@ -89,6 +90,8 @@ export default function PackDialog({
         thread,
         blocks: packedBlocks,
         attachments,
+        // P6-4: the whole project's numbers — a file on a block outside the range still says which.
+        fileAnchorSeqs: blockSeqMap(blocks),
         refTitles,
         refBlocks,
         // B-3: a narrowed pack must say so in its header, or the AI it gets pasted to
