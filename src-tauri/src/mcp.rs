@@ -4711,46 +4711,48 @@ fn add_block_json(
     // ref_kind. The pack renderer keys on the column, not on the word, so every one of
     // those old blocks still renders as a live conclusion. Same rules as propose_blocks —
     // copied, not reinvented, so the two paths cannot drift.
+    //
+    // ⭐⭐ P7-4 (Ocean 2026-10-07, HANDOFF §9.2 第 40、42 条): what this block does to the old one
+    // is now only a SUGGESTION. 「MCP 端加入的 block 应该自动让 AI 选择整条取代或者更正……AI 给出
+    // 操作建议后，用户在待审中检查，选择最后的更正，取代还是不动。」 So the AI picks — "corrects"
+    // (one point) or "supersedes" (the whole block) — the block itself is stored as always, and
+    // the relation goes into `supersede_proposals` for the user to settle. The reason
+    // "supersedes" used to be refused here (「整条作废只有用户能定」) is now kept by the review
+    // queue instead: nothing an AI says retires anything until the user clicks.
+    // ⛔ Relations already written before this change (Flux #17–#23) stay as they are.
     let ref_kind = ref_kind.map(str::trim).filter(|s| !s.is_empty());
     match ref_kind {
-        None | Some("corrects") => {}
-        Some("supersedes") => {
-            return Err(t!(
-                "ref_kind=\"supersedes\" 这里给不了。整条作废只有用户能定 —— 那会让旧块从今后每一份 \
-                 pack 里消失,判断错了就等于悄悄删掉一条正确的结论。你能写的只有 \"corrects\":\
-                 指出旧块里的某一处不成立,旧块原文照常保留。",
-                "ref_kind=\"supersedes\" is not available here. Retiring a block whole is the \
-                 user's call alone — it drops the old block out of every future pack, so a wrong \
-                 guess silently deletes a correct conclusion. What you may write is \"corrects\": \
-                 one point in the older block is wrong, and it keeps rendering in full."
-            ))
-        }
+        None | Some("corrects") | Some("supersedes") => {}
         Some(other) => {
             return Err(t!(
-                "ref_kind 是 \"{other}\",不认识。这里只接受 \"corrects\"。",
-                "ref_kind \"{other}\" is not a thing. Only \"corrects\" is accepted here."
+                "ref_kind 是 \"{other}\",不认识。这里只接受 \"corrects\"(更正一处)或 \"supersedes\"(整条取代)。",
+                "ref_kind \"{other}\" is not a thing. Only \"corrects\" (one point) or \"supersedes\" \
+                 (the whole block) is accepted here."
             ))
         }
     }
-    if ref_kind == Some("corrects") && ref_block_id.is_none() {
+    if ref_kind.is_some() && ref_block_id.is_none() {
         return Err(t!(
-            "写了 ref_kind=\"corrects\" 却没给 ref_block_id —— 更正总得说清更正的是哪一块。",
-            "ref_kind=\"corrects\" with no ref_block_id — a correction has to name the block it \
-             corrects."
+            "写了 ref_kind 却没给 ref_block_id —— 更正或取代总得说清是哪一块。",
+            "ref_kind with no ref_block_id — a correction or a replacement has to name the block \
+             it is about."
         ));
     }
     // v21: the aim only means anything on a correction. Refused rather than dropped — a
     // caller that filled this in believed it was doing something.
     let corrected_quote = corrected_quote.map(str::trim).filter(|s| !s.is_empty());
     if let Some(q) = corrected_quote {
-        let Some(rid) = ref_block_id.filter(|_| ref_kind == Some("corrects")) else {
+        let Some(rid) = ref_block_id.filter(|_| ref_kind.is_some()) else {
             return Err(t!(
-                "corrected_quote 只在更正时有意义 —— 要一起给 ref_kind=\"corrects\" 和 \
-                 ref_block_id,说清你更正的是哪一块里的哪一句。",
-                "corrected_quote only means something on a correction — pass it together with \
-                 ref_kind=\"corrects\" and ref_block_id, so it says which sentence in which block."
+                "corrected_quote 只在更正或取代时有意义 —— 要一起给 ref_kind 和 \
+                 ref_block_id,说清是哪一块里的哪一句不成立了。",
+                "corrected_quote only means something on a correction or a replacement — pass it \
+                 together with ref_kind and ref_block_id, so it says which sentence in which block."
             ));
         };
+        // P7-4: the same gate as before, for both kinds — the one this parameter has always
+        // gone through (exact, in the old block's text or note). The 「更正」 button later
+        // writes this exact string as the correction's aim, so it has to be drawable.
         check_quote_occurs(conn, rid, q)?;
     }
     // ⭐⭐ 2026-08-25 (Ocean, reading a real correction in his library): 「AI 更正并不能落实到
@@ -4765,17 +4767,60 @@ fn add_block_json(
         return Err(t!(
             "ref_kind=\"corrects\" 要一起给 corrected_quote —— 更正得说清是那一块里的**哪一句**\
              不对了(照抄原话,正文或批注里的都行)。用户看到的是那一句上的记号,只给块号的话\
-             他要自己把两块对着读。整块都不作数了的话,那是另一回事:用 propose_supersede。",
+             他要自己把两块对着读。整块都不作数了的话,那是另一回事:用 ref_kind=\"supersedes\"。",
             "ref_kind=\"corrects\" needs a corrected_quote — a correction has to say WHICH \
              sentence in that block no longer holds (copy it verbatim, from its text or its \
              annotation). The user sees a mark on that sentence; a bare block number makes them \
              diff two blocks by eye. If the WHOLE block is superseded, that is a different \
-             claim — use propose_supersede."
+             claim — use ref_kind=\"supersedes\"."
         ));
     }
+    // P7-4: a replacement quotes the old block too — the review card shows the user which
+    // sentence no longer holds, and they judge by it (same as propose_supersede's quote_stale).
+    if ref_kind == Some("supersedes") && corrected_quote.is_none() {
+        return Err(t!(
+            "ref_kind=\"supersedes\" 也要给 corrected_quote —— 照抄旧块里不再成立的那一句(正文或\
+             批注里的都行)。用户在待审里就凭这一句判断要不要整条取代。",
+            "ref_kind=\"supersedes\" needs a corrected_quote too — copy, word for word, the \
+             sentence in the old block that no longer holds (from its text or its annotation). It \
+             is what the user judges the replacement by in Spool's review."
+        ));
+    }
+    // P7-4: replacing is something that happens inside one project (propose_supersede's
+    // rule, and the review card has to put both blocks side by side). A correction may still
+    // point across projects, as it always could.
+    let suggested_old = match (ref_kind, ref_block_id) {
+        (Some(kind), Some(rid)) => {
+            let (old_thread, old_seq): (String, Option<i64>) = conn
+                .query_row("SELECT thread_id, seq FROM blocks WHERE id = ?1", [rid], |r| {
+                    Ok((r.get(0)?, r.get(1)?))
+                })
+                .map_err(|e| e.to_string())?;
+            if kind == "supersedes" && old_thread != thread_id {
+                return Err(t!(
+                    "ref_kind=\"supersedes\" 只能指同一个项目里的块 —— 「整条取代」是项目内部的事。\
+                     跨项目的话用 ref_kind=\"corrects\"。",
+                    "ref_kind=\"supersedes\" can only name a block in the same project — replacing \
+                     one block with another happens inside one project. Across projects, use \
+                     ref_kind=\"corrects\"."
+                ));
+            }
+            Some((kind, rid, old_thread, old_seq))
+        }
+        _ => None,
+    };
     // v28 (§2.Q1)：⛔ 和 propose_blocks 共用 `gate_ref_note` —— 两条路不许 drift。
     let ref_note = ref_note.map(str::trim).filter(|s| !s.is_empty());
     gate_ref_note(ref_note, ref_block_id, ref_kind)?;
+    // P7-4: with a suggestion, the new block carries NO relation — ref_block_id / ref_kind /
+    // corrected_quote / ref_note all go into the queued row instead (ref_note becomes its
+    // `why`), and land on the block only if the user picks 「更正」. A plain citation is
+    // written as before: it does not change how the old block reads in a pack.
+    let (block_ref_id, block_ref_kind, block_quote, block_ref_note) = if suggested_old.is_some() {
+        (None, None, None, None)
+    } else {
+        (ref_block_id, ref_kind, corrected_quote, ref_note)
+    };
     let now = now_ms();
     // §20.13 v2.1 (P0-1, field report A4): the client label is an invariant, not a
     // default. A caller-supplied source used to replace it wholesale — letting AI
@@ -4842,15 +4887,20 @@ fn add_block_json(
             "content": content,
             "annotation": annotation,
             "source": source,
-            "ref_block_id": ref_block_id,
-            "ref_kind": ref_kind,
+            "ref_block_id": block_ref_id,
+            "ref_kind": block_ref_kind,
             // v20: echoed back as the dates they will be, not as the integers they are
             // stored as — dry_run's job is to show the caller exactly what would land.
             "source_url": prov.source_url,
             "retrieved_at": prov.retrieved_at.map(format_utc_date),
             "recheck_after": prov.recheck_after.map(format_utc_date),
-            "corrected_quote": corrected_quote,
-            "ref_note": ref_note,
+            "corrected_quote": block_quote,
+            "ref_note": block_ref_note,
+            // P7-4: what would wait for the user, separate from what would be stored.
+            "would_suggest": suggested_old.as_ref().map(|(kind, _, _, seq)| json!({
+                "kind": kind,
+                "old_block_seq": seq,
+            })),
         })
         .to_string());
     }
@@ -4875,19 +4925,43 @@ fn add_block_json(
             thread_id,
             content,
             annotation,
-            ref_block_id,
-            ref_kind,
+            block_ref_id,
+            block_ref_kind,
             source,
             now,
             prov.source_url,
             prov.retrieved_at,
             prov.recheck_after,
-            corrected_quote,
+            block_quote,
             gist,
-            ref_note
+            block_ref_note
         ],
     )
     .map_err(|e| t!("写入失败: {e}", "Write failed: {e}"))?;
+    // P7-4: the relation, queued — same table and same 7 days as propose_supersede, with the
+    // kind the AI chose. `quote_new` is empty: the new block IS what is being said, and the
+    // card shows its opening line.
+    if let Some((kind, rid, old_thread, _)) = &suggested_old {
+        tx.execute(
+            "INSERT INTO supersede_proposals (id, thread_id, stale_block_id, by_block_id, client,
+                                              why, quote_stale, quote_new, retyped,
+                                              created_at, expires_at, suggested_kind)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, '', 0, ?8, ?9, ?10)",
+            rusqlite::params![
+                new_id()?,
+                old_thread,
+                rid,
+                id,
+                mcp_source_label(),
+                ref_note.unwrap_or(""),
+                corrected_quote.unwrap_or(""),
+                now,
+                now + PROPOSAL_TTL_MS,
+                kind
+            ],
+        )
+        .map_err(|e| t!("写入失败: {e}", "Write failed: {e}"))?;
+    }
     tx.execute(
         "UPDATE threads SET updated_at = ?1 WHERE id = ?2",
         rusqlite::params![now, thread_id],
@@ -4899,14 +4973,23 @@ fn add_block_json(
     let seq: Option<i64> = conn
         .query_row("SELECT seq FROM blocks WHERE id = ?1", [&id], |r| r.get(0))
         .unwrap_or(None);
-    Ok(json!({
+    let mut out = json!({
         "block_id": id,
         "thread_id": thread_id,
         "thread_title": title,
         "source": source,
         "seq": seq
-    })
-    .to_string())
+    });
+    // P7-4: the block is stored; the correction / replacement is NOT — it waits for the user.
+    if let Some((kind, _, _, old_seq)) = &suggested_old {
+        out["suggestion"] = json!({
+            "kind": kind,
+            "old_block_seq": old_seq,
+            "applied": false,
+            "waiting_for": "the user, in Spool's review",
+        });
+    }
+    Ok(out.to_string())
 }
 
 // ---------------------------------------------------------------------------------------
@@ -5098,8 +5181,8 @@ fn propose_supersede_json(
     conn.execute(
         "INSERT INTO supersede_proposals (id, thread_id, stale_block_id, by_block_id, client,
                                           why, quote_stale, quote_new, retyped,
-                                          created_at, expires_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+                                          created_at, expires_at, suggested_kind)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, 'supersedes')",
         rusqlite::params![
             new_id()?,
             stale_thread,
@@ -7222,10 +7305,10 @@ fn tools_descriptor() -> Value {
                     "retrieved_at": { "type": "string", "description": "The date you read that source, written YYYY-MM-DD. Pass it whenever you looked something up: it is what lets a reader six months from now tell a current fact from a stale one, and nothing else in Spool records it." },
                     "recheck_after": { "type": "string", "description": "The date after which this should be checked again, YYYY-MM-DD — for facts with a shelf life (a deadline, a fee, a programme requirement). Once that date passes, packs mark this block as possibly out of date and get_project_overview counts it under needs_attention.due_for_recheck. It never retires or hides the block: that is the user's call alone. Omit for anything that does not go off." },
                     "ref_block_id": { "type": "string", "description": "Optional citation: the block_id (from search_blocks / get_blocks) this finding builds on. Renders in packs as an '↩ cites:' line with the cited block's preview. Use this instead of ever writing ids into content. Pass ref_note alongside it saying WHY — required unless this is a correction." },
-                    "ref_kind": { "type": "string", "enum": ["corrects"], "description": "Set to \"corrects\" when this block says that ONE point inside the block named by ref_block_id is wrong (ref_block_id is then required). The old block is never edited and keeps rendering in full; Spool hangs a line under it pointing here, and marks this one as the correction. ⚠️ A block whose text merely opens with '更正' or 'Correction' does nothing at all — Spool keys on this field, not on your wording, and without it the old block goes on being read as a live conclusion in every future briefing. Omit for an ordinary citation. Retiring a block WHOLE is not this field and never will be — but it is no longer closed to you either: propose_supersede queues that question for the user, who answers it in one click." },
-                    "corrected_quote": { "type": "string", "description": "REQUIRED with ref_kind=\"corrects\": the ONE sentence inside the corrected block that no longer holds, copied out of it word for word — out of its text or out of its annotation, either counts. Spool finds it by exact substring and marks it in place, so the user can see WHICH sentence changed instead of re-reading a long block hunting for it — a single character off and nothing is marked, so copy, do not paraphrase or re-punctuate. Quote the sentence, not the block (200 chars max). If you cannot point at one sentence because the WHOLE block is wrong, that is a different claim — use propose_supersede instead." },
+                    "ref_kind": { "type": "string", "enum": ["corrects", "supersedes"], "description": "When this block overturns the block named by ref_block_id (then required), YOU choose how: \"corrects\" = ONE point inside it is wrong and the rest still holds; \"supersedes\" = this block replaces it WHOLESALE (same project only). Either way it is only a suggestion: this block is stored now, and the relation waits in Spool's review, where the user picks correct / replace / leave it — tell them it is waiting for them, never that you corrected or retired anything. Getting it wrong costs more in one direction — a wrongly accepted replacement takes a still-valid conclusion out of every future briefing — so when the two readings are close, choose \"corrects\". ⚠️ A block whose text merely opens with '更正' or 'Correction' does nothing at all — Spool keys on this field, not on your wording, and without it the user is never asked and the old block goes on being read as a live conclusion. Omit for an ordinary citation." },
+                    "corrected_quote": { "type": "string", "description": "REQUIRED with either ref_kind: the ONE sentence inside the old block that no longer holds, copied out of it word for word — out of its text or out of its annotation, either counts. It is checked by exact substring (a single character off and nothing is queued), shown to the user in the review, and — if they choose to correct — marked in place inside the old block, so copy, do not paraphrase or re-punctuate. Quote the sentence, not the block (200 chars max)." },
                     "gist": { "type": "string", "description": "One line saying what this block is AS A WHOLE — 50\u{2013}100 characters, in the user's language. It is shown beside this block in search results, where a long block otherwise returns one matching fragment and nothing about the rest of it; across a library of dozens of projects that hit list is the only way in. Write it the way you would answer \u{201c}what is this one about?\u{201d} — not a summary of the conclusion, and not a repeat of the first sentence. It never appears in packs and carries no authority of its own; the user can edit it.", "maxLength": 200 },
-                    "ref_note": { "type": "string", "description": "REQUIRED whenever you pass ref_block_id without ref_kind=\"corrects\": ONE sentence saying why THIS block points at that one, in the user's language. It is what the user reads on the citation line, and it goes into packs on the same line. ⚠️ Do NOT describe what the cited block is — that is the cited block's own gist, and Spool already shows it. Say what you are pointing at it FOR: \u{201c}the professor replied, the project is back on\u{201d}, \u{201c}this is the fee the new quote contradicts\u{201d}. Without it the citation line is a block number and a timestamp, and the user has to click through to find out what you meant. Not needed on a correction — corrected_quote and the correction's own text already say why. Max 200 chars.", "maxLength": 200 },
+                    "ref_note": { "type": "string", "description": "REQUIRED whenever you pass ref_block_id without ref_kind=\"corrects\": ONE sentence saying why THIS block points at that one, in the user's language. It is what the user reads on the citation line, and it goes into packs on the same line. ⚠️ Do NOT describe what the cited block is — that is the cited block's own gist, and Spool already shows it. Say what you are pointing at it FOR: \u{201c}the professor replied, the project is back on\u{201d}, \u{201c}this is the fee the new quote contradicts\u{201d}. Without it the citation line is a block number and a timestamp, and the user has to click through to find out what you meant. Not needed on a correction — corrected_quote and the correction's own text already say why. With ref_kind=\"supersedes\" it is the line the user judges the replacement by in Spool's review. Max 200 chars.", "maxLength": 200 },
                     "dry_run": { "type": "boolean", "description": "Validate and preview without writing: returns the exact content, annotation, source label and block number (#n) this call WOULD store, plus written=false. Nothing lands in the library. Use it whenever the content was assembled from parameters you are not certain about — a written block cannot be edited or taken back. Default false." }
                 },
                 "required": ["thread_id", "content"],
@@ -7271,7 +7354,7 @@ fn tools_descriptor() -> Value {
         },
         {
             "name": "propose_supersede",
-            "description": "Queue ONE proposal for the user: an older block in a project has been replaced OUTRIGHT by a newer one there, so the older should stop appearing in future briefings. This does NOT change anything — it puts the question on that project's review screen, where the user answers it in one click, and it expires unheard after 7 days. Say they have something waiting for them in Spool; never say you retired anything. Use this ONLY for wholesale replacement: the newer block covers everything the older one said and states it differently — a re-done shortlist, a re-planned schedule, a superseded set of criteria. When only ONE point inside a block is wrong and the rest still holds, that is not this: propose a block with ref_kind=\"corrects\" instead, which leaves the old block rendering in full. Getting it wrong is expensive in one direction only — a wrong \"corrects\" adds a visible line, a wrong replacement takes a still-valid conclusion out of every future briefing — so when the two readings are close, propose the correction. Both quotes are checked character for character against the blocks you name, and a proposal whose quote does not occur is refused outright rather than shown to the user; copy the sentences, never paraphrase or re-punctuate them. Requires MCP writes enabled in Spool's settings.",
+            "description": "Queue ONE proposal for the user: an older block in a project has been replaced OUTRIGHT by a newer one there, so the older should stop appearing in future briefings. This does NOT change anything — it puts the question in Spool's review, where the user chooses correct / replace / leave it (whichever you suggested, all three are theirs to pick), and it expires unheard after 7 days. Say they have something waiting for them in Spool's review; never say you retired anything. When you are writing the newer block right now, you do not need this tool: add_block with ref_kind=\"supersedes\" stores the block and queues the same question in one call. Use this ONLY for wholesale replacement: the newer block covers everything the older one said and states it differently — a re-done shortlist, a re-planned schedule, a superseded set of criteria. When only ONE point inside a block is wrong and the rest still holds, that is not this: propose a block with ref_kind=\"corrects\" instead, which leaves the old block rendering in full. Getting it wrong is expensive in one direction only — a wrong \"corrects\" adds a visible line, a wrong replacement takes a still-valid conclusion out of every future briefing — so when the two readings are close, propose the correction. Both quotes are checked character for character against the blocks you name, and a proposal whose quote does not occur is refused outright rather than shown to the user; copy the sentences, never paraphrase or re-punctuate them. Requires MCP writes enabled in Spool's settings.",
             "annotations": { "readOnlyHint": false, "destructiveHint": false, "idempotentHint": true },
             "inputSchema": {
                 "type": "object",
@@ -7972,10 +8055,30 @@ fn human_headline(name: &str, args: &Value, result: &str) -> Option<String> {
                     n("would_be_seq")
                 ));
             }
-            Some(match v.get("seq").and_then(Value::as_i64) {
+            let stored = match v.get("seq").and_then(Value::as_i64) {
                 // The number is the point: it is what the user can find in the app.
                 Some(seq) => t!("存进 Spool 了,是〈{title}〉的 #{seq} 块。", "Stored in Spool as block #{seq} of \u{2039}{title}\u{203a}."),
                 None => t!("存进 Spool 了。", "Stored in Spool."),
+            };
+            // P7-4: the block is stored, the relation is not. ⛔ This line must never read as
+            // 「已更正」 — it is the sentence most likely to be repeated to the user.
+            let Some(sug) = v.get("suggestion") else { return Some(stored) };
+            let replaces = sug.get("kind").and_then(Value::as_str) == Some("supersedes");
+            let old = sug
+                .get("old_block_seq")
+                .and_then(Value::as_i64)
+                .map(|n| t!("第 {n} 块", "block #{n}"))
+                .unwrap_or_else(|| ts!("那一块", "that block").to_string());
+            Some(if replaces {
+                t!(
+                    "{stored} 用它整条取代{old}的建议在 Spool 的待审里等用户点 —— 还没生效。",
+                    "{stored} Replacing {old} with it is a suggestion waiting for the user in Spool's review — nothing has changed yet."
+                )
+            } else {
+                t!(
+                    "{stored} 对{old}的更正在 Spool 的待审里等用户点 —— 还没生效。",
+                    "{stored} The correction to {old} is waiting for the user in Spool's review — nothing has changed yet."
+                )
             })
         }
         // §4.2-1, and the reason this headline exists at all: the accident this design is
@@ -10231,7 +10334,7 @@ fn thread_health_report(
 // ⚠️ Lifted out of the json! literal on 2026-08-09 (DESIGN_MCP_INTENT_ROUTING §4.2 B-2)
 // so that a test can read it. Nothing about the text changed in the move; what changed
 // is that `every_tool_is_reachable_from_the_routing_text` can now see it.
-const INSTRUCTION_BODY: &str = "Spool (思簿) is the user's local context hub. HARD RULE first — naming: talk to the user in project/block titles only; raw ids (sbC2zgTo…) are tool parameters — never say them, never write them into content/annotations (add_block REFUSES such a write outright — nothing is stored; cite blocks via ref_block_id instead). APPLICABILITY BEFORE AUTHORITY: a block is usable only where its scope, time and preconditions still match the task at hand — an approach that worked earlier is not the default now, and something ruled out earlier is a historical fact, not a standing ban; 📖's weight holds only inside the scope and period it was verified for. AUTHORITY (each pack opens with the full rules — this is the digest-sized version): 📖 Reference (institutional sources) = ground truth; 🧩 Synthesis (AI-written essays) = framing, not facts; 🔄 Process (chat traces) = read for the user's evolving questions; 💭 Personal (sourceless entries + note: lines) = the user's own intent, highest signal; ==spans== are user-highlighted. WORKFLOW: cross-project questions (\"最近在忙什么\") → get_digest first; its 📌 anchor lines are capped at 160 chars (a shorter pin is shown whole) — full pinned text via get_blocks(pinned=true) or get_pack(range=pinned). Pick projects with list_threads (watch approx_pack_chars; title_contains resolves a title to its id); locate topics with search_blocks, then read around a hit with get_blocks(around_block_id=…) or filter pages (pinned / has_annotation / source_contains). find_similar_blocks only reports duplicates — merging is the user's curation. get_pack is one project's full briefing; over budget it keeps the header + pinned + newest blocks and says what it omitted; pass include_ids=true when you will cite or jump from what you read. WRITING (needs the user's consent toggles in Spool settings): you are the one who answers, not a librarian — writing back is for what this conversation produced and the library lacks, not for tidying it up. ONE finding per add_block, with an annotation saying why it matters, and a `gist` \u{2014} one line, 50\u{2013}100 characters, saying what the block is AS A WHOLE. That line is what search hits show beside a block: a long block otherwise comes back as one matching fragment with nothing about the rest of it, and across dozens of projects the hit list is the only way in. It is cheap to write while you are already there and impossible to reconstruct later. Cite the block it builds on via ref_block_id, and say WHY in ref_note \u{2014} one sentence, required on every citation that is not a correction. That sentence is the citation line the user reads; without it the line is a block number and a timestamp. It is not a description of the block you are citing (that block has its own gist) \u{2014} it is what you are pointing at it FOR: \u{201c}the professor replied, the project is back on\u{201d}. create_thread only for a genuinely new topic; set_thread_summary refreshes the catalogue card — if refused (user-written), tell the user your suggestion instead of retrying. One case is not a write at all: when a passage the user handed you belongs in several DIFFERENT projects, propose_blocks queues the split for them to approve inside Spool, and saves nothing — pass source_text so the pieces cite the passage they came from, and tell the user \\\"N items are waiting for you in Spool\\\", never that you saved them. Splitting a few findings across projects is that same one case — two add_block calls into two projects is the wrong shape for it, however small it looks. What a project WATCHES is not a block either: it lives in that project's follow-up list, one line per thing, and a block titled 当前跟进 / current follow-up is wrong twice over — it is permanent, and nothing reads it when a follow-up actually runs. Add to that list with suggest_follow_up_item, one call per line, and it waits for the user rather than taking effect. That is also what to do with a question this conversation could not close: an open question you file is read by the NEXT conversation, whereas one you leave in the chat is gone. When a project's lines come back on a read (get_follow_up_brief, get_project_overview, or the counts on list_threads), say what is on them before going further — but not the ones marked raised_today, which the user has already heard about today. Answering one is only half of it: retire it with close_follow_up_item, naming what you found, or it is asked again in the next conversation and by every follow-up run — and say which line you retired, since nobody was asked first. The lines marked standing:true are the ones you may not close at all; they are watches that never complete, so if one looks finished to you, that is something to tell the user, not something to do. When what you are storing came from OUT THERE rather than out of this conversation, say so in the write itself: source_url is the page, retrieved_at (YYYY-MM-DD) is the day you read it, and recheck_after is the day it stops being safe to trust — a deadline, a fee, an entry requirement. Spool then prints that under the block and, once the recheck date passes, marks it as possibly out of date and counts it in get_project_overview's needs_attention.due_for_recheck. Without those dates a page you read today reads as timeless a year from now, and neither you nor the user can tell which of the two it is. Correcting ONE point inside a block already in the library is ref_kind:\"corrects\" naming that block, in add_block or propose_blocks — a block whose text merely opens with 更正 / Correction does nothing at all: only ref_kind makes Spool hang the correction under the old block, and without it the old one keeps rendering as a live conclusion in every future briefing. When you can point at the sentence that went wrong, copy it verbatim into corrected_quote: Spool marks that sentence in place inside the old block, and without it the user is told one point in a long block is wrong and left to hunt for which. Correcting a block leaves one thing behind that nothing else will fix: its `gist` was written when the block was created, so it now describes the version you just corrected \u{2014} and that frozen line is exactly what the next search hit shows. Finish the job with set_block_gist on the corrected block: write what actually holds, or pass an empty gist to clear it, because a gist that has gone wrong is read as current and is worse than none. The same tool is how a block written before gists existed gets one at all. If it refuses, the user wrote that line themselves \u{2014} tell them what you would have written instead of retrying. And a yes covers the one thing you asked for and nothing else: being let into a file is not permission to write blocks. A file you cannot read is a request you have not made yet — never tell the user to send it another way, Spool already has it; ask for it with request_file_access(attachment_id). A path is never something you store: propose_attach_file / propose_replace_file only put a file in front of the user, who approves it inside Spool — until then nothing is attached or replaced, so say it is waiting for them. If you ever compress a pack: keep the skeleton, every note: line, sourceless entry and ==span== verbatim; dedupe only the Full Record; store via add_block, never as a replacement.";
+const INSTRUCTION_BODY: &str = "Spool (思簿) is the user's local context hub. HARD RULE first — naming: talk to the user in project/block titles only; raw ids (sbC2zgTo…) are tool parameters — never say them, never write them into content/annotations (add_block REFUSES such a write outright — nothing is stored; cite blocks via ref_block_id instead). APPLICABILITY BEFORE AUTHORITY: a block is usable only where its scope, time and preconditions still match the task at hand — an approach that worked earlier is not the default now, and something ruled out earlier is a historical fact, not a standing ban; 📖's weight holds only inside the scope and period it was verified for. AUTHORITY (each pack opens with the full rules — this is the digest-sized version): 📖 Reference (institutional sources) = ground truth; 🧩 Synthesis (AI-written essays) = framing, not facts; 🔄 Process (chat traces) = read for the user's evolving questions; 💭 Personal (sourceless entries + note: lines) = the user's own intent, highest signal; ==spans== are user-highlighted. WORKFLOW: cross-project questions (\"最近在忙什么\") → get_digest first; its 📌 anchor lines are capped at 160 chars (a shorter pin is shown whole) — full pinned text via get_blocks(pinned=true) or get_pack(range=pinned). Pick projects with list_threads (watch approx_pack_chars; title_contains resolves a title to its id); locate topics with search_blocks, then read around a hit with get_blocks(around_block_id=…) or filter pages (pinned / has_annotation / source_contains). find_similar_blocks only reports duplicates — merging is the user's curation. get_pack is one project's full briefing; over budget it keeps the header + pinned + newest blocks and says what it omitted; pass include_ids=true when you will cite or jump from what you read. WRITING (needs the user's consent toggles in Spool settings): you are the one who answers, not a librarian — writing back is for what this conversation produced and the library lacks, not for tidying it up. ONE finding per add_block, with an annotation saying why it matters, and a `gist` \u{2014} one line, 50\u{2013}100 characters, saying what the block is AS A WHOLE. That line is what search hits show beside a block: a long block otherwise comes back as one matching fragment with nothing about the rest of it, and across dozens of projects the hit list is the only way in. It is cheap to write while you are already there and impossible to reconstruct later. Cite the block it builds on via ref_block_id, and say WHY in ref_note \u{2014} one sentence, required on every citation that is not a correction. That sentence is the citation line the user reads; without it the line is a block number and a timestamp. It is not a description of the block you are citing (that block has its own gist) \u{2014} it is what you are pointing at it FOR: \u{201c}the professor replied, the project is back on\u{201d}. create_thread only for a genuinely new topic; set_thread_summary refreshes the catalogue card — if refused (user-written), tell the user your suggestion instead of retrying. One case is not a write at all: when a passage the user handed you belongs in several DIFFERENT projects, propose_blocks queues the split for them to approve inside Spool, and saves nothing — pass source_text so the pieces cite the passage they came from, and tell the user \\\"N items are waiting for you in Spool\\\", never that you saved them. Splitting a few findings across projects is that same one case — two add_block calls into two projects is the wrong shape for it, however small it looks. What a project WATCHES is not a block either: it lives in that project's follow-up list, one line per thing, and a block titled 当前跟进 / current follow-up is wrong twice over — it is permanent, and nothing reads it when a follow-up actually runs. Add to that list with suggest_follow_up_item, one call per line, and it waits for the user rather than taking effect. That is also what to do with a question this conversation could not close: an open question you file is read by the NEXT conversation, whereas one you leave in the chat is gone. When a project's lines come back on a read (get_follow_up_brief, get_project_overview, or the counts on list_threads), say what is on them before going further — but not the ones marked raised_today, which the user has already heard about today. Answering one is only half of it: retire it with close_follow_up_item, naming what you found, or it is asked again in the next conversation and by every follow-up run — and say which line you retired, since nobody was asked first. The lines marked standing:true are the ones you may not close at all; they are watches that never complete, so if one looks finished to you, that is something to tell the user, not something to do. When what you are storing came from OUT THERE rather than out of this conversation, say so in the write itself: source_url is the page, retrieved_at (YYYY-MM-DD) is the day you read it, and recheck_after is the day it stops being safe to trust — a deadline, a fee, an entry requirement. Spool then prints that under the block and, once the recheck date passes, marks it as possibly out of date and counts it in get_project_overview's needs_attention.due_for_recheck. Without those dates a page you read today reads as timeless a year from now, and neither you nor the user can tell which of the two it is. When what you write overturns a block already in the library, YOU choose how, and either way it is only a suggestion: in add_block, ref_block_id naming that block plus ref_kind:\"corrects\" when ONE point inside it is wrong and the rest still holds, or ref_kind:\"supersedes\" when your block replaces it WHOLESALE (same project; when the two readings are close, choose corrects), and corrected_quote holding the sentence in it that no longer holds, copied verbatim. Your block is stored at once; the relation waits in Spool's review, where the user picks correct / replace / leave it \u{2014} so say it is waiting for them, never that you corrected or retired anything. A block whose text merely opens with 更正 / Correction does nothing at all: without ref_kind the user is never asked, and the old block keeps rendering as a live conclusion in every future briefing. (propose_blocks items may still carry ref_kind:\"corrects\"; propose_supersede asks the replace question about two blocks that already exist.) A correction the user has accepted leaves one thing behind that nothing else will fix: the old block's `gist` was written when it was created, so it now describes the version that was corrected \u{2014} and that frozen line is exactly what the next search hit shows. Once get_blocks shows the correction (the newer block carries ref_kind corrects), finish the job with set_block_gist on the corrected block: write what actually holds, or pass an empty gist to clear it, because a gist that has gone wrong is read as current and is worse than none. The same tool is how a block written before gists existed gets one at all. If it refuses, the user wrote that line themselves \u{2014} tell them what you would have written instead of retrying. And a yes covers the one thing you asked for and nothing else: being let into a file is not permission to write blocks. A file you cannot read is a request you have not made yet — never tell the user to send it another way, Spool already has it; ask for it with request_file_access(attachment_id). A path is never something you store: propose_attach_file / propose_replace_file only put a file in front of the user, who approves it inside Spool — until then nothing is attached or replaced, so say it is waiting for them. If you ever compress a pack: keep the skeleton, every note: line, sourceless entry and ==span== verbatim; dedupe only the Full Record; store via add_block, never as a replacement.";
 
 const OPENERS: &str = "The user speaks plain language, not tool names. Typical openers, \
 and what to call:\n\
@@ -10279,9 +10382,9 @@ Removing a line is the user's own doing, in Spool\n\
 \"这些还准吗\" / \"有没有过时的\" / \"what might be out of date\" \u{2192} get_project_overview \
 (needs_attention.due_for_recheck), then get_blocks to see which ones \u{2014} and when you go \
 and re-check one, write the new answer back with retrieved_at and a fresh recheck_after\n\
-\"这条结论不对了\" / \"更正一下\" / \"that conclusion is wrong now\" \u{2192} add_block with ref_kind:\"corrects\" + ref_block_id naming the old block, and corrected_quote holding the sentence in it that no longer holds, copied word for word \u{2014} find that block first (search_blocks / get_blocks), never just open the new block's text with 更正. \u{2b50} Then look at the corrected block's `gist`: it was written before the correction and still speaks for the old version of the story, and that is the line the next search hit shows \u{2014} fix it with set_block_gist, or clear it\n\
+\"这条结论不对了\" / \"更正一下\" / \"that conclusion is wrong now\" \u{2192} add_block with ref_block_id naming the old block and ref_kind \u{2014} your choice: \"corrects\" (one point in it is wrong) or \"supersedes\" (your block replaces it wholesale) \u{2014} plus corrected_quote holding the sentence in it that no longer holds, copied word for word. Find that block first (search_blocks / get_blocks), never just open the new block's text with 更正. It is only a suggestion: the block is stored, and the user decides correct / replace / leave it in Spool's review \u{2014} say it is waiting for them there, never that it is done\n\
 \"这一块的摘要不对了\" / \"给这些块补一句说明\" / \"that one-line summary is out of date\" \u{2192} set_block_gist(block_id, gist) \u{2014} it is the only way to touch a gist after the block exists; an empty gist clears the line, which beats leaving a wrong one up\n\
-\"这个名单/计划整个重做了\" / \"新的那版把旧的整个换掉了\" / \"that whole list has been redone\" \u{2192} propose_supersede naming the two blocks \u{2014} it asks the user, it does not retire anything. ONLY when the newer block replaces the older one WHOLESALE; if just one point inside is wrong, it is the ref_kind:\"corrects\" line above, and when the two readings are close, choose that one\n\
+\"这个名单/计划整个重做了\" / \"新的那版把旧的整个换掉了\" / \"that whole list has been redone\" \u{2192} writing the new version now: add_block with ref_kind:\"supersedes\" (the line above); both blocks already there: propose_supersede naming the two. Either way it asks the user in Spool's review \u{2014} correct / replace / leave it \u{2014} and retires nothing. Choose replace ONLY when the newer block covers the older one WHOLESALE; if just one point inside is wrong, or the two readings are close, choose corrects\n\
 \"is X getting messy\" / \"有没有重复\" \u{2192} thread_health\n\
 \"体检一下\" / \"check my library\" \u{2192} check_library\n\
 If this is your first turn with Spool connected and the user has not asked for anything \
@@ -10514,6 +10617,26 @@ mod tests {
 
     const FIXTURE: &str = include_str!("../../src/lib/pack/fixtures/golden-pack.json");
     const EXPECTED: &str = include_str!("../../src/lib/pack/fixtures/golden-pack.expected.txt");
+
+    /// P7-4: an AI's correction is only a suggestion until the user clicks 「更正」 in Spool's
+    /// review. This is what that click writes (the GUI side, `supersedeReview.ts`): the newer
+    /// block takes `corrects` + the quote, and the queued row goes. Tests that are about what
+    /// a correction LOOKS like once it exists go through here.
+    fn accept_correction_as_user(conn: &Connection, new_id: &str) {
+        let (old_id, quote): (String, String) = conn
+            .query_row(
+                "SELECT stale_block_id, quote_stale FROM supersede_proposals WHERE by_block_id = ?1",
+                [new_id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        conn.execute(
+            "UPDATE blocks SET ref_block_id = ?1, ref_kind = 'corrects', corrected_quote = ?2 WHERE id = ?3",
+            rusqlite::params![old_id, quote, new_id],
+        )
+        .unwrap();
+        conn.execute("DELETE FROM supersede_proposals WHERE by_block_id = ?1", [new_id]).unwrap();
+    }
 
     // §9.4 丙 — the heartbeat's only branching logic. Two of the six rows are separated by
     // one word ("claude" vs "claude code"), and a third ("Visual Studio Code") shares that
@@ -11372,9 +11495,17 @@ mod tests {
         assert_eq!(h["corrected"], false);
         assert_eq!(h["gist_predates_the_correction"], false);
 
-        // 更正落下 —— 两个旗子一起立起来。
-        add_block_json(&mut conn, &tid, "那组超参后来换了", None, None, Some(&bid), Some("corrects"), &Provenance::default(), Some("量子退火的调参结论如下"), None, None, false)
-            .unwrap();
+        // P7-4：AI 写进来的更正只是建议 —— 用户点之前，两个旗子都不立。
+        let fix: Value = serde_json::from_str(
+            &add_block_json(&mut conn, &tid, "那组超参后来换了", None, None, Some(&bid), Some("corrects"), &Provenance::default(), Some("量子退火的调参结论如下"), None, None, false)
+                .unwrap(),
+        )
+        .unwrap();
+        let h = hit_for(&conn, &bid);
+        assert_eq!(h["corrected"], false, "建议还在待审里,旧块还没被更正");
+
+        // 用户点了「更正」—— 两个旗子一起立起来。
+        accept_correction_as_user(&conn, fix["block_id"].as_str().unwrap());
         let h = hit_for(&conn, &bid);
         assert_eq!(h["corrected"], true);
         assert_eq!(h["gist_predates_the_correction"], true, "摘要还停在更正之前那句");
@@ -13283,7 +13414,11 @@ mod tests {
     // with the word 更正, carry ref_block_id and carry no ref_kind: the renderer keys on the
     // column, so every one of the blocks they correct still reads as a live conclusion.
     #[test]
-    fn add_block_can_hang_a_correction_but_never_retire_a_block() {
+    fn add_block_only_suggests_a_correction_or_a_replacement() {
+        // P7-4 (Ocean 2026-10-07, HANDOFF §9.2 第 40、42 条): 「AI 给出操作建议后，用户在待审中
+        // 检查，选择最后的更正，取代还是不动」—— the block is stored as always, the relation
+        // waits. Before this, `corrects` landed on the spot (Flux #17–#21 came in that way)
+        // and `supersedes` was refused.
         store_lang(Lang::Zh);
         let tmp = std::env::temp_dir().join(format!("spool-corrects-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&tmp);
@@ -13296,92 +13431,124 @@ mod tests {
                VALUES ('ws1', '升学', 0, 1, 1);
              INSERT INTO threads (id, workspace_id, title, status, is_capture_target,
                                   created_at, updated_at)
-               VALUES ('th1', 'ws1', '申请规划', 'active', 0, 1, 1);",
+               VALUES ('th1', 'ws1', '申请规划', 'active', 0, 1, 1),
+                      ('th2', 'ws1', '别的项目', 'active', 0, 1, 1);",
         )
         .unwrap();
         drop(conn);
         let mut conn = open_db_rw(&tmp).unwrap();
-        let old: Value = serde_json::from_str(
-            &add_block_json(&mut conn, "th1", "MIIAS 与 MSSM 重叠,不纳入", None, None, None, None, &Provenance::default(), None, None, None, false)
-                .unwrap(),
-        )
-        .unwrap();
+        let add = |conn: &mut Connection, thread: &str, text: &str, rid: Option<&str>, kind: Option<&str>, quote: Option<&str>, note: Option<&str>| {
+            add_block_json(conn, thread, text, None, None, rid, kind, &Provenance::default(), quote, None, note, false)
+        };
+        let old: Value = serde_json::from_str(&add(&mut conn, "th1", "MIIAS 与 MSSM 重叠,不纳入", None, None, None, None).unwrap()).unwrap();
         let old_id = old["block_id"].as_str().unwrap().to_string();
+        let count = |conn: &Connection, sql: &str| -> i64 { conn.query_row(sql, [], |r| r.get(0)).unwrap() };
+        let blocks = |conn: &Connection| count(conn, "SELECT COUNT(*) FROM blocks");
+        let queued = |conn: &Connection| count(conn, "SELECT COUNT(*) FROM supersede_proposals");
 
-        // Retiring a block whole stays the user's alone (交接 §4-1). The refusal names what
-        // the caller may do instead — a model told only "no" writes a plain block and the
-        // correction is lost in prose.
-        let err = add_block_json(
-            &mut conn,
-            "th1",
-            "旧结论不成立",
-            None,
-            None,
-            Some(&old_id),
-            Some("supersedes"),
-            &Provenance::default(),
-            None,
-            None,
-            None,
-            false,
-        )
-        .unwrap_err();
-        assert!(err.contains("corrects"), "{err}");
-        assert!(err.contains("只有用户能定"), "{err}");
-        let err = add_block_json(&mut conn, "th1", "x", None, None, Some(&old_id), Some("replaces"), &Provenance::default(), None, None, None, false)
-            .unwrap_err();
-        assert!(err.contains("replaces"), "{err}");
-        // A correction that names nothing is just a block with an opinion.
-        let err = add_block_json(&mut conn, "th1", "更正:其实要并行评估", None, None, None, Some("corrects"), &Provenance::default(), None, None, None, false)
-            .unwrap_err();
-        assert!(err.contains("ref_block_id"), "{err}");
-        // ⭐ 2026-08-25 (Ocean): and one that names a block but no sentence is refused too —
-        // 「AI 更正并不能落实到单独一个词上」. The refusal has to name the other relation, or a
-        // model that really does mean "the whole block is wrong" has nowhere to go.
-        let err = add_block_json(&mut conn, "th1", "更正:其实要并行评估", None, None, Some(&old_id), Some("corrects"), &Provenance::default(), None, None, None, false)
-            .unwrap_err();
-        assert!(err.contains("corrected_quote"), "{err}");
-        assert!(err.contains("propose_supersede"), "{err}");
-
-        // The one that works, end to end: the column is set, and the pack renderer (v14,
-        // untouched) hangs the correction under the old block from both sides.
-        let out = add_block_json(
-            &mut conn,
-            "th1",
-            "MIIAS 应与 MSSM 并行评估",
-            None,
-            None,
-            Some(&old_id),
-            Some("corrects"),
-            &Provenance::default(),
-            Some("不纳入"),
-            None,
-            None,
-            false,
-        )
-        .unwrap();
+        // ── 更正：块在，它身上一条关系都没有；建议表多一行 'corrects'。
+        let out = add(&mut conn, "th1", "MIIAS 应与 MSSM 并行评估", Some(&old_id), Some("corrects"), Some("不纳入"), None).unwrap();
         let v: Value = serde_json::from_str(&out).unwrap();
-        let new_id = v["block_id"].as_str().unwrap().to_string();
-        let stored: Option<String> = conn
-            .query_row("SELECT ref_kind FROM blocks WHERE id = ?1", [&new_id], |r| r.get(0))
+        let fix_id = v["block_id"].as_str().unwrap().to_string();
+        let (rid, kind, quote): (Option<String>, Option<String>, Option<String>) = conn
+            .query_row("SELECT ref_block_id, ref_kind, corrected_quote FROM blocks WHERE id = ?1", [&fix_id], |r| {
+                Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+            })
             .unwrap();
-        assert_eq!(stored.as_deref(), Some("corrects"));
+        assert_eq!((rid, kind, quote), (None, None, None));
+        let row: (String, String, String, String, String, Option<String>) = conn
+            .query_row(
+                "SELECT thread_id, stale_block_id, by_block_id, quote_stale, client, suggested_kind
+                   FROM supersede_proposals",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?)),
+            )
+            .unwrap();
+        assert_eq!(row.0, "th1");
+        assert_eq!(row.1, old_id);
+        assert_eq!(row.2, fix_id);
+        assert_eq!(row.3, "不纳入");
+        assert!(row.4.ends_with("MCP"), "{}", row.4);
+        assert_eq!(row.5.as_deref(), Some("corrects"));
+        assert_eq!(v["suggestion"]["kind"], "corrects");
+        assert_eq!(v["suggestion"]["old_block_seq"], 1);
+        assert_eq!(v["suggestion"]["applied"], false);
+        // ⛔ 头一句不许说「已更正」—— 那是最容易被念给用户听的一句。
+        let head = human_headline("add_block", &json!({}), &out).unwrap();
+        assert!(head.contains("待审") && head.contains("还没生效"), "{head}");
+        assert!(!head.contains("已更正"), "{head}");
+        // 点之前旧块在 pack 里照旧是有效结论（Ocean 接受的代价）。
         let pack = build_pack(&conn, "th1", "all").unwrap().text;
-        assert!(pack.contains(REF_BLOCK_CORRECTS), "the correction did not render: {pack}");
-        assert!(
-            pack.contains(CORRECTED_BY_PREFIX),
-            "the OLD block still reads as a live conclusion: {pack}"
-        );
+        assert!(!pack.contains(&format!("{CORRECTED_BY_PREFIX}#2")), "{pack}");
+        assert!(!pack.contains("↩ corrects one point in: ["), "{pack}");
 
-        // dry_run has to show it too — it is the one place a caller can check what would
-        // land, and a silently dropped ref_kind is exactly the failure this feature is for.
+        // ── 取代：同样只排一行，'supersedes'；理由就是 ref_note。
+        let out = add(&mut conn, "th1", "名单整份重做了", Some(&old_id), Some("supersedes"), Some("不纳入"), Some("新名单把旧的整个换掉了")).unwrap();
+        let v: Value = serde_json::from_str(&out).unwrap();
+        let rep_id = v["block_id"].as_str().unwrap().to_string();
+        let (k, why): (Option<String>, String) = conn
+            .query_row("SELECT suggested_kind, why FROM supersede_proposals WHERE by_block_id = ?1", [&rep_id], |r| {
+                Ok((r.get(0)?, r.get(1)?))
+            })
+            .unwrap();
+        assert_eq!(k.as_deref(), Some("supersedes"));
+        assert_eq!(why, "新名单把旧的整个换掉了");
+        let (stale, rk, rn): (Option<i64>, Option<String>, Option<String>) = conn
+            .query_row("SELECT (SELECT stale_at FROM blocks WHERE id = ?1), ref_kind, ref_note FROM blocks WHERE id = ?2", [&old_id, &rep_id], |r| {
+                Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+            })
+            .unwrap();
+        assert_eq!((stale, rk, rn), (None, None, None), "旧块没退役,新块不带关系");
+        let head = human_headline("add_block", &json!({}), &out).unwrap();
+        assert!(head.contains("整条取代") && head.contains("还没生效"), "{head}");
+
+        // ── 只带引用（没有 ref_kind）：照旧当场写。
+        let before = queued(&conn);
+        let out = add(&mut conn, "th1", "顺着它往下想", Some(&old_id), None, None, Some("接着它的结论")).unwrap();
+        let cite_id = serde_json::from_str::<Value>(&out).unwrap()["block_id"].as_str().unwrap().to_string();
+        let r: Option<String> = conn.query_row("SELECT ref_block_id FROM blocks WHERE id = ?1", [&cite_id], |r| r.get(0)).unwrap();
+        assert_eq!(r.as_deref(), Some(old_id.as_str()));
+        assert_eq!(queued(&conn), before);
+
+        // ── 拒的那几种：什么都不存（块数、建议数都不变）。
+        let (b0, q0) = (blocks(&conn), queued(&conn));
+        let refusals: Vec<String> = vec![
+            // 引文对不上
+            add(&mut conn, "th1", "x", Some(&old_id), Some("corrects"), Some("不 纳入"), None).unwrap_err(),
+            add(&mut conn, "th1", "x", Some(&old_id), Some("supersedes"), Some("纳入了"), Some("因为")).unwrap_err(),
+            // 没给引文
+            add(&mut conn, "th1", "x", Some(&old_id), Some("corrects"), None, None).unwrap_err(),
+            add(&mut conn, "th1", "x", Some(&old_id), Some("supersedes"), None, Some("因为")).unwrap_err(),
+            // 取代没说为什么
+            add(&mut conn, "th1", "x", Some(&old_id), Some("supersedes"), Some("不纳入"), None).unwrap_err(),
+            // 取代跨项目
+            add(&mut conn, "th2", "x", Some(&old_id), Some("supersedes"), Some("不纳入"), Some("因为")).unwrap_err(),
+            // 没说是哪一块
+            add(&mut conn, "th1", "x", None, Some("corrects"), None, None).unwrap_err(),
+            // 不认识的关系
+            add(&mut conn, "th1", "x", Some(&old_id), Some("replaces"), None, None).unwrap_err(),
+        ];
+        assert!(refusals[0].contains("corrected_quote"), "{}", refusals[0]);
+        assert!(refusals[3].contains("corrected_quote"), "{}", refusals[3]);
+        assert!(refusals[4].contains("ref_note"), "{}", refusals[4]);
+        assert!(refusals[5].contains("同一个项目"), "{}", refusals[5]);
+        assert!(refusals[6].contains("ref_block_id"), "{}", refusals[6]);
+        assert!(refusals[7].contains("replaces"), "{}", refusals[7]);
+        assert_eq!((blocks(&conn), queued(&conn)), (b0, q0));
+        // 更正可以跨项目（一直可以），一样只是建议，挂在旧块的项目下。
+        add(&mut conn, "th2", "那边的结论也影响这里", Some(&old_id), Some("corrects"), Some("不纳入"), None).unwrap();
+        assert_eq!(count(&conn, "SELECT COUNT(*) FROM supersede_proposals WHERE thread_id = 'th1'"), queued(&conn));
+
+        // dry_run：说清会排什么、块上不会带什么。
         let dry: Value = serde_json::from_str(
             &add_block_json(&mut conn, "th1", "预演", None, None, Some(&old_id), Some("corrects"), &Provenance::default(), Some("不纳入"), None, None, true)
                 .unwrap(),
         )
         .unwrap();
-        assert_eq!(dry["ref_kind"], "corrects");
         assert_eq!(dry["written"], false);
+        assert_eq!(dry["ref_kind"], Value::Null);
+        assert_eq!(dry["would_suggest"]["kind"], "corrects");
+        assert_eq!(dry["would_suggest"]["old_block_seq"], 1);
     }
 
     // v21 (Ocean 2026-08-10, 拍板「标到哪句话」) — a correction may now say WHICH sentence,
@@ -13455,22 +13622,31 @@ mod tests {
         )
         .is_err());
 
-        // The one that works, and the two places it has to come back out.
-        add_block_json(
-            &mut conn,
-            "th1",
-            "占分是 30% 不是 40%",
-            None,
-            None,
-            Some(&old_id),
-            Some("corrects"),
-            &Provenance::default(),
-            Some("占总分 40%"),
-            None,
-            None,
-            false,
+        // The one that works, and the two places it has to come back out — once the user
+        // has accepted it (P7-4: until then it waits in the review, quote and all).
+        let fix: Value = serde_json::from_str(
+            &add_block_json(
+                &mut conn,
+                "th1",
+                "占分是 30% 不是 40%",
+                None,
+                None,
+                Some(&old_id),
+                Some("corrects"),
+                &Provenance::default(),
+                Some("占总分 40%"),
+                None,
+                None,
+                false,
+            )
+            .unwrap(),
         )
         .unwrap();
+        let queued: String = conn
+            .query_row("SELECT quote_stale FROM supersede_proposals", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(queued, "占总分 40%");
+        accept_correction_as_user(&conn, fix["block_id"].as_str().unwrap());
 
         let pack = build_pack(&conn, "th1", "all").unwrap().text;
         assert!(
