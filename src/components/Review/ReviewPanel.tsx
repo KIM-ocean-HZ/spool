@@ -326,7 +326,9 @@ function FileProposalCard({
   return (
     <div className="mb-3 rounded-md border border-line-strong bg-paper-2/30 p-3">
       <div className="flex items-baseline justify-between gap-3">
-        <span className="min-w-0 truncate text-xs text-ink-2">
+        {/* Wraps instead of truncating (unlike the read-request card): the old file's name is
+            part of what the user is deciding on, and an ellipsis would cut exactly that. */}
+        <span className="min-w-0 break-words text-xs text-ink-2">
           {replacing
             ? t('{client} 提议用新版本取代〈{title}〉里的「{old}」', {
                 client,
