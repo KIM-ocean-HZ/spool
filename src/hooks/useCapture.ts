@@ -407,7 +407,7 @@ export function useCapture(): void {
             preview: buildPreview(shown),
             // 图文混排：a picture block's text is its picture lines — 改投 writes it again as is.
             fullContent: images.length > 0 ? result.block.content : text,
-            // 第 1、5 条：what was saved, and which picture the note captions.
+            // 第 1 条：what was saved, and which picture the card's 「+ 图片注释」 is for.
             ...(images.length > 0
               ? {
                   image: {

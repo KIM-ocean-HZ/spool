@@ -978,6 +978,20 @@ pub struct OverlayCapturePayload {
     /// 这个结构体是收进来再原样发给浮窗的。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub copy_id: Option<String>,
+    /// P7 验收第一轮（第 1 条、10-09）：捕到的是图片 —— 卡片上那张小图、几张、「+ 图片注释」写给哪一张。
+    /// ⚠️ 和 `copy_id` 同一个坑：不声明就在这里被丢掉，浮窗收到的就只剩原始的图片行
+    /// （Ocean 10-08 验收时就是这么看到 `![](spool-image:…)` 的）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub image: Option<OverlayCaptureImage>,
+}
+
+/// Mirrors `CaptureOverlayPayload.image` in overlayProtocol.ts.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct OverlayCaptureImage {
+    pub thumb: Option<String>,
+    pub count: u32,
+    pub caption_for: Option<String>,
 }
 
 // macOS app names are short, human-readable strings (e.g. "Google Chrome", "Visual
@@ -1804,5 +1818,27 @@ mod tests {
         #[cfg(not(target_os = "macos"))]
         let spec = "control+shift+KeyF";
         assert_eq!(parse_shortcut(spec).unwrap(), search_accelerator());
+    }
+
+    // P7 验收第一轮：这个结构体是「收进来、再原样发给浮窗」的，没声明的字段会被静默丢掉。
+    #[test]
+    fn the_overlay_payload_carries_every_field_the_card_reads() {
+        let sent = serde_json::json!({
+            "blockId": "b", "threadId": "t", "workspaceId": "w", "workspaceTitle": "W",
+            "threadTitle": "T", "preview": "一张图片（4×3）", "fullContent": "![](spool-image:i1)",
+            "source": null, "prevSourceApp": null, "copyId": "c1",
+            "image": { "thumb": "data:image/png;base64,AA==", "count": 1, "captionFor": "i1" }
+        });
+        let payload: OverlayCapturePayload = serde_json::from_value(sent.clone()).unwrap();
+        let back = serde_json::to_value(payload).unwrap();
+        assert_eq!(back["image"], sent["image"]);
+        assert_eq!(back["copyId"], sent["copyId"]);
+        // A text capture has no `image` and sends none.
+        let text: OverlayCapturePayload = serde_json::from_value(serde_json::json!({
+            "blockId": "b", "threadId": "t", "workspaceId": "w", "workspaceTitle": "W",
+            "threadTitle": "T", "preview": "p", "fullContent": "p", "source": null, "prevSourceApp": null
+        }))
+        .unwrap();
+        assert!(serde_json::to_value(text).unwrap().get("image").is_none());
     }
 }

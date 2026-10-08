@@ -1521,7 +1521,7 @@ const EN: Record<string, string> = {
   '在图前面写字…': 'Write above the image…',
   '在图后面写字…': 'Write below the image…',
   '在两张图中间写字…': 'Write between the images…',
-  '给这张图写一句注释…（Enter 保存，Esc 跳过）': 'Add a caption for this image… (Enter saves, Esc skips)',
+  '+ 图片注释': '+ Image caption',
   '这张图太大了（{n} MB），一张最多 {max} MB。': 'This image is too large ({n} MB). One image can be at most {max} MB.',
   '这不是能放进块里的图片（认 PNG、JPEG、GIF、WebP、TIFF）。': 'That is not an image a block can hold (PNG, JPEG, GIF, WebP or TIFF).',
   '那一块已经不在了，图片没有放进去。': 'That block is gone, so the image was not added.',

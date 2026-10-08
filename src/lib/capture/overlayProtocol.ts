@@ -139,9 +139,11 @@ export interface CaptureOverlayPayload {
    *  来源由主窗按这个号记着（它在长按那一刻就去查了），浮窗存完时把号带回来，主窗回填 ——
    *  和双击那一路「先存后补」同一个样子。⚠️ 正文被全删掉过，就不再带号（见 noteCopy.ts）。 */
   copyId?: string;
-  /** P7 验收第一轮（Ocean 2026-10-08 第 1、5 条）：a captured picture — a small preview so the
-   *  card shows WHAT was saved, and, when it is one picture, which one the note captions
-   *  (`captionFor`; null = several pictures, the note stays the block's annotation). */
+  /** P7 验收第一轮（Ocean 2026-10-08 第 1 条、10-09）：a captured picture — a small preview so
+   *  the card shows WHAT was saved, and, when it is one picture, which one the card's
+   *  「+ 图片注释」 writes (`captionFor`; null = several pictures, no caption box). The note box
+   *  is the block's annotation either way. ⚠️ capture.rs `OverlayCapturePayload` must declare
+   *  every field here, or Rust drops it on the way to the overlay. */
   image?: { thumb: string | null; count: number; captionFor: string | null };
 }
 
