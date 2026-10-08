@@ -9,9 +9,11 @@ import {
 import { ingestCapture, ingestImageCapture, type ImageSource } from '@/lib/capture/ingest';
 import type { BlockImage } from '@/lib/db/blockImages';
 import {
+  clipboardImageFiles,
   clipboardImageSize,
   findNewScreenshot,
   imageErrorMessage,
+  imageThumb,
   screenshotGoesToClipboard,
 } from '@/lib/images/blockImageIo';
 import { BREAK_MS } from '@/lib/breakReminder';
@@ -300,8 +302,11 @@ export function useCapture(): void {
             shot !== null &&
             (shot.kind === 'file' || (shot.kind === 'toolbar' && !(await screenshotGoesToClipboard())));
           const pictureFirst = shot !== null && !shotToFile;
-          let text = pictureFirst || shotToFile ? '' : await readClipboardWithRetry();
-          let image: ImageSource | null = null;
+          // ⭐ P7 验收第一轮（Ocean 2026-10-08 第 2 条）：在访达里 ⌘C 一个图片文件，剪贴板上是那个
+          // 文件的链接 + 文件名这段字 —— 以前先拿字，存下来的只有文件名。⇒ 有图片文件就先拿文件。
+          const copiedFiles = shotToFile ? [] : await clipboardImageFiles();
+          let text = pictureFirst || shotToFile || copiedFiles.length > 0 ? '' : await readClipboardWithRetry();
+          let image: ImageSource | null = copiedFiles.length > 0 ? { kind: 'paths', paths: copiedFiles } : null;
           if (shotToFile) {
             showNoticeInOverlay({ kind: 'shot-waiting' });
             let path: string | null;
@@ -319,7 +324,7 @@ export function useCapture(): void {
               return;
             }
             image = { kind: 'paths', paths: [path] };
-          } else if (!text) {
+          } else if (!text && !image) {
             if (await clipboardImageSize()) image = { kind: 'clipboard' };
             else if (pictureFirst) text = await readClipboardWithRetry();
           }
@@ -400,7 +405,18 @@ export function useCapture(): void {
             workspaceTitle: ws?.title.trim() || t('收件箱'),
             threadTitle: result.threadTitle.trim() || t('未命名'),
             preview: buildPreview(shown),
-            fullContent: text,
+            // 图文混排：a picture block's text is its picture lines — 改投 writes it again as is.
+            fullContent: images.length > 0 ? result.block.content : text,
+            // 第 1、5 条：what was saved, and which picture the note captions.
+            ...(images.length > 0
+              ? {
+                  image: {
+                    thumb: await imageThumb(images[0]!.id).catch(() => null),
+                    count: images.length,
+                    captionFor: images.length === 1 ? images[0]!.id : null,
+                  },
+                }
+              : {}),
             source: null,
             prevSourceApp,
           };

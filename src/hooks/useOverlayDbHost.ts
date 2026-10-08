@@ -10,9 +10,12 @@ import {
 import {
   createBlock,
   deleteBlock,
+  getBlockById,
   togglePin,
   updateBlockAnnotation,
+  updateBlockContent,
 } from '@/lib/db/blocks';
+import { withImageCaption } from '@/lib/blocks/imageLines';
 import { listBlockImagesOf, unparkImagesOf } from '@/lib/db/blockImages';
 import { listAllThreads } from '@/lib/db/threads';
 import { useBlocksStore } from '@/stores/blocksStore';
@@ -42,6 +45,26 @@ const run = async (req: OverlayDbRequest): Promise<unknown> => {
     }
     case 'createBlock':
       return await createBlock(req.args as OverlayDbOps['createBlock']['args']);
+    case 'setImageCaption': {
+      // P7 验收第一轮 第 5 条: rewrite that picture's line in the block's text, and show it.
+      const a = req.args as OverlayDbOps['setImageCaption']['args'];
+      const block = await getBlockById(a.blockId);
+      if (!block) return null;
+      const content = withImageCaption(block.content, a.imageId, a.caption);
+      if (content === block.content) return null;
+      await updateBlockContent(a.blockId, content);
+      useBlocksStore.setState((s) => {
+        const list = s.byThread[block.threadId];
+        if (!list) return s;
+        return {
+          byThread: {
+            ...s.byThread,
+            [block.threadId]: list.map((b) => (b.id === a.blockId ? { ...b, content } : b)),
+          },
+        };
+      });
+      return null;
+    }
     case 'carryImages': {
       // P7-7: the old block was just deleted here (its pictures parked in this window); put
       // them on the new one, and show them.

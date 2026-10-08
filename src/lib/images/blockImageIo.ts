@@ -109,3 +109,11 @@ export const cachedImagesOf = async (blockIds: readonly string[]): Promise<Map<s
   }
   return out;
 };
+
+/** P7 验收第一轮 第 2 条: image files copied in Finder (their paths), or none. */
+export const clipboardImageFiles = (): Promise<string[]> =>
+  invoke<string[]>('clipboard_image_files').catch(() => []);
+
+/** A small preview for the capture card (第 1 条). */
+export const imageThumb = (id: string, edge = 480): Promise<string> =>
+  invoke<string>('block_image_thumb', { id, edge });

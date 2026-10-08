@@ -44,6 +44,10 @@ toml_edit = "0.25.11"
 # ⛔ Neither crate brings any network code — `cargo tree` stays empty (HANDOFF §10.7).
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp", "tiff"] }
 base64 = "0.22"
+# P7 验收第一轮 (Ocean 2026-10-08 第 2 条): an image FILE copied in Finder is a file link on the
+# clipboard, not a picture — reading the link needs arboard's file_list, which the clipboard
+# plugin does not expose. Already in the graph through that plugin (same version); no network.
+arboard = "3"
 
 # macOS-only: a CGEventTap in ListenOnly mode watches FlagsChanged events to detect a
 # double-tap of ⌥ (Option) as the capture trigger. PLAN §4 deps list amended per user

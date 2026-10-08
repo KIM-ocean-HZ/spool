@@ -74,6 +74,10 @@ export const carryImages = async (fromBlockId: string, toBlockId: string): Promi
   await call('carryImages', { fromBlockId, toBlockId });
 };
 
+export const setImageCaption = async (blockId: string, imageId: string, caption: string): Promise<void> => {
+  await call('setImageCaption', { blockId, imageId, caption });
+};
+
 export const listWorkspaces = (): Promise<Workspace[]> => call('listWorkspaces', {});
 
 export const listAllThreads = (): Promise<Thread[]> => call('listAllThreads', {});

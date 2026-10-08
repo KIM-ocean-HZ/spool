@@ -178,16 +178,20 @@ pub fn full_data_url(format: &str, bytes: &[u8]) -> String {
 /// (a small GIF keeps moving); a larger one is scaled down and re-encoded — PNG when it has
 /// transparency, JPEG otherwise.
 pub fn preview_data_url(format: &str, bytes: &[u8]) -> Result<String, String> {
+    preview_data_url_at(format, bytes, PREVIEW_EDGE_PX)
+}
+
+fn preview_data_url_at(format: &str, bytes: &[u8], edge: u32) -> Result<String, String> {
     let mut reader = ImageReader::new(Cursor::new(bytes))
         .with_guessed_format()
         .map_err(|e| e.to_string())?;
     reader.limits(limits());
     let img = reader.decode().map_err(|e| e.to_string())?;
     let (w, h) = img.dimensions();
-    if w.max(h) <= PREVIEW_EDGE_PX {
+    if w.max(h) <= edge {
         return Ok(full_data_url(format, bytes));
     }
-    let small = img.thumbnail(PREVIEW_EDGE_PX, PREVIEW_EDGE_PX);
+    let small = img.thumbnail(edge, edge);
     let mut out = Vec::new();
     if small.color().has_alpha() {
         small
@@ -322,6 +326,28 @@ fn now_ms() -> i64 {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis() as i64)
         .unwrap_or(0)
+}
+
+/// P7 验收第一轮 (Ocean 2026-10-08 第 2 条): image files copied in Finder (⌘C on the file). The
+/// clipboard then holds a link to the file and its NAME as text — capturing the text saved only
+/// the name. Only image files count; anything else falls through to the text as before.
+#[tauri::command(async)]
+pub fn clipboard_image_files() -> Vec<String> {
+    let Ok(mut cb) = arboard::Clipboard::new() else { return Vec::new() };
+    let Ok(files) = cb.get().file_list() else { return Vec::new() };
+    files
+        .into_iter()
+        .filter(|p| p.is_file() && has_image_extension(p))
+        .map(|p| p.to_string_lossy().into_owned())
+        .collect()
+}
+
+/// A small preview for the capture card (第 1 条: 不知道存了什么图片) — its own size, not cached.
+#[tauri::command(async)]
+pub fn block_image_thumb(app: tauri::AppHandle, id: String, edge: u32) -> Result<String, String> {
+    let conn = open_library(&app)?;
+    let (format, bytes) = read_image(&conn, &id)?;
+    preview_data_url_at(&format, &bytes, edge.clamp(64, PREVIEW_EDGE_PX))
 }
 
 /// The preview of one stored image, as a `data:` URL.
@@ -635,7 +661,7 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let mark = |p: &std::path::Path| {
             let path = std::ffi::CString::new(p.as_os_str().as_bytes()).unwrap();
-            let v = b"bplist00	                            	";
+            let v = b"bplist00\x09\x08\x00\x00\x00\x00\x00\x00\x01\x01\x00\x00\x00\x00\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x09";
             let rc = unsafe {
                 libc::setxattr(path.as_ptr(), c"com.apple.metadata:kMDItemIsScreenCapture".as_ptr(), v.as_ptr().cast(), v.len(), 0, 0)
             };

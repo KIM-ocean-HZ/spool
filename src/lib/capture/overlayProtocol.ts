@@ -83,6 +83,8 @@ export interface OverlayDbOps {
   /** P7-7: 改投 deletes the captured block and writes it again elsewhere — its pictures go
    *  onto the new one. */
   carryImages: { args: { fromBlockId: string; toBlockId: string }; result: null };
+  /** P7 验收第一轮 第 5 条: the card's note is the captured picture's caption. */
+  setImageCaption: { args: { blockId: string; imageId: string; caption: string }; result: null };
   listWorkspaces: { args: Record<string, never>; result: Workspace[] };
   listAllThreads: { args: Record<string, never>; result: Thread[] };
 }
@@ -137,6 +139,10 @@ export interface CaptureOverlayPayload {
    *  来源由主窗按这个号记着（它在长按那一刻就去查了），浮窗存完时把号带回来，主窗回填 ——
    *  和双击那一路「先存后补」同一个样子。⚠️ 正文被全删掉过，就不再带号（见 noteCopy.ts）。 */
   copyId?: string;
+  /** P7 验收第一轮（Ocean 2026-10-08 第 1、5 条）：a captured picture — a small preview so the
+   *  card shows WHAT was saved, and, when it is one picture, which one the note captions
+   *  (`captionFor`; null = several pictures, the note stays the block's annotation). */
+  image?: { thumb: string | null; count: number; captionFor: string | null };
 }
 
 export interface OverlaySourceUpdate {

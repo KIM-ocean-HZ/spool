@@ -6,8 +6,10 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState, type MouseEv
 import type { Block } from '@/lib/db/blocks';
 // 🚨 Not @/lib/db — this process never opens SQLite (DESIGN_CAPTURE_HELPER_PROCESS §3.3).
 // These proxy to the main window's one connection; see src/overlay/db.ts.
+import { withImageCaption } from '@/lib/blocks/imageLines';
 import {
   carryImages,
+  setImageCaption,
   createBlock,
   deleteBlock,
   listAllThreads,
@@ -213,7 +215,8 @@ export default function CaptureOverlay() {
   // "点击外部保存"), Esc, and × all unmount the textarea via setContent(null), and React
   // never fires onBlur on unmount, so the note was silently lost. flushPendingNote reads
   // this ref (never a stale closure) and is called on every dismiss path + onBlur.
-  const pendingNoteRef = useRef<{ blockId: string; threadId: string; draft: string } | null>(null);
+  // P7 验收第一轮 第 5 条：`imageId` set = this card captured ONE picture, and the note is its caption.
+  const pendingNoteRef = useRef<{ blockId: string; threadId: string; draft: string; imageId?: string } | null>(null);
 
   // v2.8 §20.6: flush a pending toast note to the DB + main window. Stable (reads only the
   // ref + module-level fns) so the dismiss listeners can call it without a stale draft, and
@@ -253,6 +256,15 @@ export default function CaptureOverlay() {
     // 那条路的批注跟着正文一起由 finishNote 里的 createBlock 存下去。
     if (!p.blockId) return;
     const trimmed = p.draft.trim();
+    if (p.imageId) {
+      // 第 5 条（Ocean 2026-10-08）：「图片需要可选包含注释，注释就用双击 option 之后输入的字」。
+      if (trimmed) {
+        void setImageCaption(p.blockId, p.imageId, trimmed).catch((e) =>
+          console.error('[overlay] caption save failed', e),
+        );
+      }
+      return;
+    }
     const next: string | null = trimmed.length > 0 ? trimmed : null;
     void updateBlockAnnotation(p.blockId, next)
       .then(() => emitAction({ kind: 'annotate', blockId: p.blockId, threadId: p.threadId, annotation: next }))
@@ -757,6 +769,7 @@ export default function CaptureOverlay() {
       return;
     }
     const note = annotationDraft.trim();
+    const captionFor = toast.image?.captionFor ?? null;
     pendingNoteRef.current = null;
     let newBlock: Block;
     try {
@@ -764,9 +777,11 @@ export default function CaptureOverlay() {
       newBlock = await createBlock({
         threadId: targetThreadId,
         kind: 'text',
-        content: toast.fullContent,
+        // A captured picture's note is its caption, carried in the text (第 5 条).
+        content:
+          captionFor && note.length > 0 ? withImageCaption(toast.fullContent, captionFor, note) : toast.fullContent,
         source: toast.source,
-        annotation: note.length > 0 ? note : null,
+        annotation: !captionFor && note.length > 0 ? note : null,
         pinned,
       });
       // P7-7: a captured picture goes with the card to the project it was moved to.
@@ -974,6 +989,19 @@ export default function CaptureOverlay() {
             spellCheck={false}
             className="w-full resize-none rounded-md border border-line bg-paper px-2 py-1.5 font-ui text-[14px] leading-snug text-ink outline-none placeholder:text-muted/70 focus:border-line-strong"
           />
+        ) : toast.image ? (
+          // 第 1 条（Ocean 2026-10-08）：「双击 option 之后需要有图片预览，不知道存了什么图片」。
+          <div className="flex items-end gap-2">
+            {toast.image.thumb && (
+              <img
+                src={toast.image.thumb}
+                alt=""
+                draggable={false}
+                className="max-h-28 max-w-[220px] rounded border border-line object-contain"
+              />
+            )}
+            <span className="pb-0.5 font-ui text-[12px] text-ink-2">{toast.preview}</span>
+          </div>
         ) : (
           <div className="line-clamp-2 whitespace-pre-wrap break-words font-ui text-[14px] leading-snug text-ink">
             {toast.fullContent}
@@ -1008,6 +1036,7 @@ export default function CaptureOverlay() {
                 blockId: toast.blockId,
                 threadId: toast.threadId,
                 draft: e.target.value,
+                ...(toast.image?.captionFor ? { imageId: toast.image.captionFor } : {}),
               };
               // ⭐ 长按那一路：批注跟着正文一起存，所以也要跟着更新那一份。
               if (isNote && pendingBodyRef.current) {
@@ -1045,7 +1074,11 @@ export default function CaptureOverlay() {
                 cancelNote();
               }
             }}
-            placeholder={tr('留一句想法…（Enter 保存，Esc 跳过）')}
+            placeholder={
+              toast.image?.captionFor
+                ? tr('给这张图写一句注释…（Enter 保存，Esc 跳过）')
+                : tr('留一句想法…（Enter 保存，Esc 跳过）')
+            }
             rows={2}
             spellCheck={false}
             className="w-full resize-none rounded-md border border-line bg-paper-2/40 px-2 py-1.5 font-ui text-[12px] leading-[1.5] text-ink-2 placeholder:text-muted/70 outline-none focus:border-line-strong focus:bg-paper focus:text-ink"
