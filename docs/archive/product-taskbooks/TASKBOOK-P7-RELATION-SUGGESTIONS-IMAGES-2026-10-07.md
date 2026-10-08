@@ -1,6 +1,6 @@
 # 产品任务书 P7 —— AI 的「更正 / 取代」只算建议、一块能取代好几块 + 图片
 
-> **状态：COMPLETE —— 待 Ocean 验收。**（八步已提交、已换装，真库已迁到 v32；回执在 §7 末尾。10-08 验收第一轮第 1–6 条已改、已提交、已换装；第 7 条并进 P8。10-09 第二轮两条已改已提交，还没换装。）
+> **状态：COMPLETE —— 待 Ocean 验收。**（八步已提交、已换装，真库已迁到 v32；回执在 §7 末尾。10-08 验收第一轮第 1–6 条已改、已提交、已换装；第 7 条并进 P8。10-09 第二轮两条已改已提交、已换装。）
 >
 > **唯一交付：** 下面 §3 的八步（P7-1 – P7-8），按顺序做完、各自测试通过、各自一笔提交，并在 §7 写回执。
 >
@@ -450,4 +450,17 @@ Vitest 输出里的 `[db] pre-migration backup FAILED … window is not defined`
   - tsc 干净；vitest 80 / 946；cargo 170 · 4（新加 1 条）；i18n `(none missing)`，`--dead` 和开工时一样；`cargo tree` 网络那条是空的。
   - 按 isolated-verify §43 单独起了 debug 版 `spool --overlay`（加 vite，不开库），喂它一张带图的卡，截到卡片上有小图、「一张图片（128×128）」、批注框和「+ 图片注释」。
   - 展开之后的样子、Enter 存不存得进去，要真手指验。截图时真 Spool（6078 / 6089）没被碰过。
-- 换装：还没换。
+- 换装（Ocean 10-09 答「现在换装」）
+  - 构建：在 `b862b4e` 上构建，`src` / `src-tauri` / `site` / `scripts` 没有未提交改动，命令和上一轮一样。
+    - TSA 第一遍就过（主程序、`spool-ai` 都是 00:22:29），`--verify --deep --strict` 也过。
+    - 前端里有「+ 图片注释」，二进制里有 `captionFor`。
+  - 停：GUI 6078 和 `--overlay` 6089 按 pid `kill -TERM`，3 秒内都退了。`--mcp` 子进程 9 个一个没碰（前后都是 9）。
+  - 真库备份：`~/Desktop/spool.before-p7r2-install-20261009-002246.db`（`VACUUM INTO`）。和活库逐项一致：v32 · ok · 27 / 66 / 1082 / 12 · 图片 10 张。
+  - 旧包挪到 `~/Desktop/Spool/spool-pre-install/Spool-old-20261009-002253-pre-p7r2.app`，新包 `ditto` 进 `/Applications`，再 `open` 起来。
+  - 装后
+    - `--verify --deep --strict` 过，`spctl` = `Unnotarized Developer ID`。
+    - `spool` sha256 `e8eecf70…`，和构建产物一致。
+    - 主进程 96363（00:22:53）和 `--overlay` 96409（00:22:54）的 txt inode 都是 77548479，就是新文件。
+    - stderr 里只有 `helper started` 和 `double-tap installed` 两行，没有 error / panic。
+  - 真库：不改库结构，没有迁移。各项和装前逐项一致，快照仍是 24 个，`mcp-clients.json` 18 行。
+  - 没 push、没发版。
