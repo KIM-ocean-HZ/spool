@@ -188,4 +188,29 @@ describe('MarkdownContent, afterBlock', () => {
     expect(out.indexOf('A')).toBeLessThan(out.indexOf('第二段'));
     expect(out.indexOf('第二段')).toBeLessThan(out.indexOf('B'));
   });
+
+  // P7 验收第一轮（图文混排）：图片行在它那一行的位置画成图（由调用方给怎么画），注释在下面；
+  // ⛔ 读的那一面上一个记号、一个 id 都不露。
+  it('draws a picture line where it sits, with its caption, and shows no marker or id', () => {
+    const out = renderToStaticMarkup(
+      <MarkdownContent
+        content={'上面\n![左边是旧版](spool-image:i1)\n下面'}
+        renderImage={(id, caption) => (
+          <figure data-pic={id === 'i1' ? 'yes' : 'no'}>
+            <figcaption>{caption}</figcaption>
+          </figure>
+        )}
+      />,
+    );
+    expect(out).toContain('data-pic="yes"');
+    expect(out).toContain('<figcaption>左边是旧版</figcaption>');
+    expect(out.indexOf('上面')).toBeLessThan(out.indexOf('data-pic'));
+    expect(out.indexOf('data-pic')).toBeLessThan(out.indexOf('下面'));
+    expect(out).not.toContain('spool-image');
+    expect(out).not.toContain('![');
+    // Without a way to draw it (周回顾, the digest): an icon and the caption, still no id.
+    const bare = html('![曲线](spool-image:i1)');
+    expect(bare).toContain('曲线');
+    expect(bare).not.toContain('spool-image');
+  });
 });

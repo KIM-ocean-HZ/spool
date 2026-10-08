@@ -99,7 +99,10 @@ describe('图片从哪儿进来 (P7-7)', () => {
     const b = await store().appendWithImages(threadId, '两版界面', { bytes: [new Uint8Array([1]), new Uint8Array([2])] });
     expect(b).not.toBeNull();
     expect(store().imagesByBlock[b!.id]).toHaveLength(2);
-    expect((await listBlocksByThread(threadId)).map((x) => x.content)).toEqual(['两版界面']);
+    // 图文混排（Ocean 2026-10-08）：每张图是正文里的一行，排在打的字后面。
+    const lines = `两版界面\n![](spool-image:img-${b!.id}-0)\n![](spool-image:img-${b!.id}-1)`;
+    expect((await listBlocksByThread(threadId)).map((x) => x.content)).toEqual([lines]);
+    expect(store().byThread[threadId]!.map((x) => x.content)).toEqual([lines]);
     expect(useUndoStore.getState().entries.map((e) => e.kind)).toEqual(['create']);
 
     const dropped = await store().appendWithImages(threadId, '', { paths: ['/a/1.png', '/a/2.png', '/a/3.png'] });
@@ -120,7 +123,8 @@ describe('图片从哪儿进来 (P7-7)', () => {
   it('双击 ⌥ 捕图片：块进捕捉项目、没有字；存不进去 ⇒ 块撤掉、把原因抛出来', async () => {
     const r = await ingestImageCapture({ kind: 'clipboard' }, null);
     expect(r!.threadId).toBe(threadId);
-    expect(r!.block.content).toBe('');
+    // 没有字，只有那张图的那一行（注释等双击 ⌥ 之后在卡片上写）。
+    expect(r!.block.content).toBe(`![](spool-image:img-${r!.block.id}-0)`);
     expect(r!.images).toHaveLength(1);
 
     rust.fail = true;
@@ -128,6 +132,47 @@ describe('图片从哪儿进来 (P7-7)', () => {
       'unsupported',
     );
     expect((await listBlocksByThread(threadId)).map((x) => x.id)).toEqual([r!.block.id]);
+  });
+
+  // P7 验收第一轮（图文混排）：直接往库里放两行图（字节随便），看图跟着块走时正文那几行对不对。
+  const putImages = (blockId: string, ids: string[]): void => {
+    ids.forEach((id, i) =>
+      sqlite
+        .prepare(
+          `INSERT INTO block_images (id, block_id, position, bytes, format, width, height, size_bytes, created_at)
+           VALUES (?, ?, ?, x'00', 'png', 4, 3, 1, 1)`,
+        )
+        .run(id, blockId, i),
+    );
+  };
+
+  it('复制到别的项目：复制品的图换了新 id，正文里那几行跟着指向新的', async () => {
+    const b = (await store().append({ threadId, content: '左右对比\n![旧版](spool-image:i1)\n![](spool-image:i2)' }))!;
+    putImages(b.id, ['i1', 'i2']);
+    const ws = await createWorkspace('W2');
+    const other = (await createThread(ws.id, '别处')).id;
+    const [pair] = await store().forwardToThread([b.id], other);
+    const copied = (await listBlocksByThread(other)).find((x) => x.id === pair!.copyId)!;
+    const rows = sqlite
+      .prepare('SELECT id FROM block_images WHERE block_id = ? ORDER BY position')
+      .all(copied.id) as { id: string }[];
+    expect(rows).toHaveLength(2);
+    expect(rows.map((r) => r.id)).not.toContain('i1');
+    expect(copied.content).toBe(`左右对比\n![旧版](spool-image:${rows[0]!.id})\n![](spool-image:${rows[1]!.id})`);
+    // 原块一个字没动。
+    expect((await listBlocksByThread(threadId))[0]!.content).toBe(b.content);
+  });
+
+  it('编辑面板里删掉的图（× 再按完成）：出库、出 store，别的图留着', async () => {
+    const b = (await store().append({ threadId, content: '![](spool-image:i1)\n![](spool-image:i2)' }))!;
+    putImages(b.id, ['i1', 'i2']);
+    await store().load(threadId);
+    expect(store().imagesByBlock[b.id]!.map((i) => i.id)).toEqual(['i1', 'i2']);
+    await store().removeImages(b.id, ['i1']);
+    expect(store().imagesByBlock[b.id]!.map((i) => i.id)).toEqual(['i2']);
+    expect(sqlite.prepare('SELECT id FROM block_images').all()).toEqual([{ id: 'i2' }]);
+    await store().removeImages(b.id, ['i2']);
+    expect(store().imagesByBlock[b.id]).toBeUndefined();
   });
 
   it('输入框里的图跟着草稿走：切项目不丢，发出去才清', () => {

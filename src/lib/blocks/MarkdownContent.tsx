@@ -1,3 +1,4 @@
+import { Image as ImageIcon } from 'lucide-react';
 import { Fragment, type ReactNode } from 'react';
 import { ContentRuns, type HitRange } from './contentRuns';
 import { isPlainParagraph, parseMarkdown, type MdBlock, type MdDoc, type MdSpan } from './markdown';
@@ -29,6 +30,9 @@ interface Props {
    *  参数是这一段在 `content` 里的 `[start, end)`，⚠️ 和 `corrected` 用的是同一套坐标。
    *  返回 `null` 就什么都不插 —— 每一个不传这个 prop 的调用点都一个像素不差。 */
   afterBlock?: (start: number, end: number) => ReactNode;
+  /** P7 验收第一轮：how to draw a picture line — the block feed passes one (the picture, its
+   *  caption under it). Without it the line reads as an icon and the caption. */
+  renderImage?: (id: string, caption: ReactNode | null) => ReactNode;
 }
 
 // Ocean 2026-08-12, after reading real blocks in the first version of this renderer:
@@ -70,6 +74,7 @@ export function MarkdownContent({
   onCorrectedClick,
   withOffsets,
   afterBlock,
+  renderImage,
 }: Props): ReactNode {
   const doc: MdDoc = parseMarkdown(content);
   // Nothing structural in this block: render exactly what the old path rendered, down to
@@ -129,6 +134,16 @@ export function MarkdownContent({
         <div className={`flex gap-[0.5em] ${gap}`} style={{ paddingLeft: `${b.indent * 1.2}em` }}>
           <span className="flex-none select-none text-muted">{b.marker}</span>
           <span className="min-w-0 flex-1 whitespace-pre-wrap break-words">{runsFor(b)}</span>
+        </div>
+      );
+    }
+    if (b.kind === 'image') {
+      const caption = b.text.end > b.text.start ? runsFor(b) : null;
+      if (renderImage) return <div className={gap}>{renderImage(b.id, caption)}</div>;
+      return (
+        <div className={`flex items-baseline gap-[0.4em] text-ink-2 ${gap}`}>
+          <ImageIcon size={12} className="flex-none translate-y-[1px] text-muted" />
+          <span className="min-w-0 whitespace-pre-wrap break-words">{caption}</span>
         </div>
       );
     }

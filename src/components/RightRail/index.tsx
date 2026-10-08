@@ -11,6 +11,7 @@ import { createBlock } from "@/lib/db/blocks";
 import type { EngineRun } from "@/lib/db/engineRuns";
 import { groupAiActivity, visibleRuns } from "@/lib/engine/activity";
 import { canShowEngineActions, engineActionsDisabled } from "@/lib/engine/gate";
+import { imageLinesAsText } from "@/lib/blocks/imageLines";
 import { dateLocale, useT } from "@/lib/i18n";
 import type { Thread } from "@/lib/db/threads";
 import { useBlocksStore } from "@/stores/blocksStore";
@@ -441,7 +442,7 @@ export default function RightRail({ thread, onCollapse, onEditBrief }: Props) {
                                 </span>
                               )}
                               <span className="min-w-0 flex-1 truncate text-[12px] text-ink-2">
-                                {b.content}
+                                {imageLinesAsText(b.content, t("图片"))}
                               </span>
                             </button>
                           </li>

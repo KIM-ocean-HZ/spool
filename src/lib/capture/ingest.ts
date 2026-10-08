@@ -1,6 +1,7 @@
 import type { BlockImage } from '@/lib/db/blockImages';
 import type { Block } from '@/lib/db/blocks';
-import { createBlock, deleteBlock } from '@/lib/db/blocks';
+import { createBlock, deleteBlock, updateBlockContent } from '@/lib/db/blocks';
+import { appendImageLines } from '@/lib/blocks/imageLines';
 import { addImageFromClipboard, addImagesFromPaths } from '@/lib/images/blockImageIo';
 import { getCaptureTargetThread } from '@/lib/db/threads';
 
@@ -66,5 +67,9 @@ export const ingestImageCapture = async (
     await deleteBlock(block.id);
     throw e;
   }
+  // 图文混排（Ocean 2026-10-08）：the pictures are lines of the block's text; the card's note
+  // becomes the (first) picture's caption when it is saved.
+  block.content = appendImageLines('', images.map((i) => i.id));
+  await updateBlockContent(block.id, block.content);
   return { block, threadId: target.id, workspaceId: target.workspaceId, threadTitle: target.title, images };
 };

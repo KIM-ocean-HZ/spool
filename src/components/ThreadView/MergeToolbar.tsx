@@ -1,6 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { Copy, Merge, Trash2, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
+import { imageLinesAsText } from '@/lib/blocks/imageLines';
 import { useT } from '@/lib/i18n';
 import { useBlocksStore } from '@/stores/blocksStore';
 import { askBeforeDeletingBlocks } from '@/stores/deleteFilesPromptStore';
@@ -327,10 +328,10 @@ export default function MergeToolbar({ threadId }: Props) {
                   }`;
                 return (
                   <li key={h.blockId} className="rounded-md border border-line px-2 py-1.5 text-[11px]">
-                    <div className="truncate text-ink-2">{oneLine(mine?.content ?? '')}</div>
+                    <div className="truncate text-ink-2">{oneLine(imageLinesAsText(mine?.content ?? '', t('图片')))}</div>
                     <div className="mt-0.5 truncate text-muted">
                       {t('像那里的 #{seq}：', { seq: h.matchSeq ?? '?' })}
-                      {oneLine(h.matchContent)}
+                      {oneLine(imageLinesAsText(h.matchContent, t('图片')))}
                     </div>
                     <div className="mt-1 flex gap-1">
                       <button type="button" onClick={() => choose(true)} className={pill(skipping)}>

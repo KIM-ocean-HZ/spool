@@ -99,6 +99,18 @@ describe('buildSnippet', () => {
     expect(snippet).toHaveLength(3);
     expect(snippet.every((l) => !l.isHit)).toBe(true);
   });
+
+  // P7 验收第一轮（图文混排）：图片行在结果里读作「[图片] 注释」，⛔ 不露内部 id。
+  it('shows a picture line as [image] caption, the match kept inside the caption', () => {
+    const text = '两版界面\n![左边是 旧版 的样子](spool-image:abc)\n后面';
+    const { snippet } = buildSnippet(text, null, '旧版');
+    expect(snippet.map((l) => l.text)).toEqual(['两版界面', '[image] 左边是 旧版 的样子', '后面']);
+    expect(snippet[1]!.match).toEqual({ start: 12, end: 14 });
+    // 搜到的是那一行看不见的部分：照样算命中，但不画高亮，也不露 id。
+    const hidden = buildSnippet(text, null, 'spool-image');
+    expect(hidden.snippet[1]).toEqual({ text: '[image] 左边是 旧版 的样子', isHit: true });
+    expect(buildSnippet('看\n![](spool-image:abc)', null, '看').snippet.map((l) => l.text)).toEqual(['看', '[image]']);
+  });
 });
 
 // PLAN_EN.md §19.5: Phase 6 added inline content + annotation editing. The FTS5 sync

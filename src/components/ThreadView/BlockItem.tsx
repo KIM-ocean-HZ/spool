@@ -1,5 +1,5 @@
 import { File, Folder } from 'lucide-react';
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { flushSync } from 'react-dom';
 import { annotationEdited, annotationIsAi } from '@/lib/blocks/annotationAuthor';
@@ -8,6 +8,7 @@ import { applyBlockFormat, formatAt, type BlockFormat } from '@/lib/blocks/forma
 import { MarkdownContent } from '@/lib/blocks/MarkdownContent';
 import { isHighlightable, rangeIsHighlighted, toggleHighlightRange } from '@/lib/blocks/highlight';
 import { locateQuote } from '@/lib/blocks/quoteFold';
+import { appendImageLines, parseImageLines, referencedImageIds } from '@/lib/blocks/imageLines';
 import { hasSegmentAnnotations } from '@/lib/blocks/segments';
 import { rawRangeFromSelection } from '@/lib/blocks/selectionRange';
 import { SegmentedContent } from '@/lib/blocks/SegmentedContent';
@@ -33,7 +34,8 @@ import BlockActions from './BlockActions';
 import CitationLine from './CitationLine';
 import CorrectedByLine from './CorrectedByLine';
 import CorrectionNote from './CorrectionNote';
-import BlockImages from './BlockImages';
+import BlockImages, { PictureThumb, PictureViewer, useBlockPictures } from './BlockImages';
+import { PictureEditor, segmentText, withSegmentText } from './PictureEditor';
 import ProvenanceLine from './ProvenanceLine';
 import { ReplacedByLine, ReplacesLine } from './ReplacementLine';
 import RefBlockItem from './RefBlockItem';
@@ -150,6 +152,7 @@ function TextBlockItem({
   const restoreOriginal = useBlocksStore((s) => s.restoreOriginal);
   const compressThread = useThreadsStore(selectThreadById(block.threadId));
   const setContent = useBlocksStore((s) => s.setContent);
+  const removeImages = useBlocksStore((s) => s.removeImages);
   const setAnnotation = useBlocksStore((s) => s.setAnnotation);
   const setStale = useBlocksStore((s) => s.setStale);
   const removeBlock = useBlocksStore((s) => s.remove);
@@ -163,6 +166,18 @@ function TextBlockItem({
   // P5: the project files hung off THIS block, in the order they joined the project.
   // P6-4: only the version in use — a replaced file stays in the right rail, folded under the new one.
   const projectFiles = useBlocksStore((s) => s.attachmentsByThread[block.threadId] ?? EMPTY_FILES);
+  // P7 验收第一轮（Ocean 2026-10-08）：this block's pictures in reading order, and which one the
+  // viewer is on (null = closed). Pictures placed by the text are drawn inline; the rest after it.
+  const { pictures, unplaced } = useBlockPictures(block.id, block.content);
+  const [viewerAt, setViewerAt] = useState<number | null>(null);
+  const pictureById = useMemo(() => new Map(pictures.map((p) => [p.image.id, p.image])), [pictures]);
+  const renderImage = (id: string, caption: ReactNode | null): ReactNode => {
+    const i = pictures.findIndex((p) => p.image.id === id);
+    if (i < 0) {
+      return <span className="font-ui text-[11px] italic text-muted">{t('这张图已经不在了')}</span>;
+    }
+    return <PictureThumb image={pictures[i]!.image} caption={caption} onOpen={() => setViewerAt(i)} />;
+  };
   const blockFiles = useMemo(
     () => projectFiles.filter((a) => a.anchorBlockId === block.id && a.supersededBy == null),
     [projectFiles, block.id],
@@ -324,7 +339,15 @@ function TextBlockItem({
   /** ⭐ 2026-08-23（Ocean 第 5 条）：压缩前的原文摊开着没有。⚠️ **纯界面状态，不进库** ——
    *  「看一眼」不该改任何东西，这正是他说旧按钮不对的地方。 */
   const [showingOriginal, setShowingOriginal] = useState(false);
-  const contentRef = useRef<HTMLTextAreaElement>(null);
+  // ⚠️ Mutable: with pictures in the block the content field is several text boxes
+  // (PictureEditor), and this points at the one holding the cursor.
+  const contentRef = useRef<HTMLTextAreaElement | null>(null);
+  /** P7 验收第一轮（第 4 条）：this edit session uses the picture editor — decided when the panel
+   *  opens, so taking the last picture out does not swap the field under the cursor. */
+  const [pictureMode, setPictureMode] = useState(false);
+  /** The draft the panel opened with, and the pictures it named: closing without a change saves
+   *  nothing, and a picture named then and not on 完成 was taken out (×). */
+  const openedWith = useRef<{ draft: string; imageIds: string[] }>({ draft: '', imageIds: [] });
 
   // DESIGN_CONTEXT_HYGIENE §3.1: whether the "which one does this correct" picker is open
   // on this block. Local, because only one block can be answering that question at a time
@@ -699,7 +722,16 @@ function TextBlockItem({
   const openEditor = (field: 'content' | 'annotation'): void => {
     setActive(block.id);
     setFocusField(field);
+    // P7 验收第一轮：pictures the text does not place yet (blocks from before 图文混排) come in
+    // as lines at the end, so every picture of the block is in the editor and can be taken out.
+    const withPictures = pictures.length > 0 || parseImageLines(block.content).length > 0;
+    const draft = withPictures
+      ? appendImageLines(block.content, unplaced.map((i) => i.id))
+      : block.content;
+    openedWith.current = { draft, imageIds: referencedImageIds(draft) };
     enterEditMode(() => {
+      setPictureMode(withPictures);
+      setContentDraft(draft);
       setEditingContent(true);
       setEditingAnnotation(true);
     });
@@ -708,9 +740,16 @@ function TextBlockItem({
   const commitContent = async (): Promise<void> => {
     const next = contentDraft;
     setEditingContent(false);
-    if (next === block.content) return;
+    if (next === block.content || next === openedWith.current.draft) return;
     try {
       await setContent(block.id, next);
+      if (pictureMode) {
+        const kept = new Set(referencedImageIds(next));
+        await removeImages(
+          block.id,
+          openedWith.current.imageIds.filter((id) => !kept.has(id)),
+        );
+      }
     } catch (e) {
       console.error('[block] content save failed', e);
     }
@@ -790,9 +829,11 @@ function TextBlockItem({
   // ⚠️ 改完把选区**还回去**，不然浏览器把光标扔到末尾，用户刚划中的那句话就找不着了。
   // ⚠️ 走 `contentDraft`，⛔ 不直接写库：和面板里所有别的修改一样，按「完成」才落库，
   // Esc 一起放弃。
+  // P7 验收第一轮：with pictures in the block, 「正文框」 is the text box holding the cursor, and
+  // its offsets are into that piece (`segmentText`), which is what gets rewritten.
   const currentFormat = editorOpen
     ? formatAt(
-        contentDraft,
+        contentRef.current ? segmentText(contentDraft, contentRef.current) : contentDraft,
         contentRef.current?.selectionStart ?? 0,
         contentRef.current?.selectionEnd ?? 0,
       )
@@ -801,9 +842,10 @@ function TextBlockItem({
   const applyFormat = (f: BlockFormat): void => {
     const ta = contentRef.current;
     if (!ta) return;
-    const r = applyBlockFormat(contentDraft, ta.selectionStart, ta.selectionEnd, f);
-    if (r.text === contentDraft) return;
-    setContentDraft(r.text);
+    const text = segmentText(contentDraft, ta);
+    const r = applyBlockFormat(text, ta.selectionStart, ta.selectionEnd, f);
+    if (r.text === text) return;
+    setContentDraft(withSegmentText(contentDraft, ta, r.text));
     setTimeout(() => {
       ta.focus();
       ta.setSelectionRange(r.selectionStart, r.selectionEnd);
@@ -829,11 +871,11 @@ function TextBlockItem({
     const onNote = range.field === 'annotation';
     if (editorOpen) {
       const ta = onNote ? annotationRef.current : contentRef.current;
-      const draft = onNote ? annotationDraft : contentDraft;
+      const draft = onNote ? annotationDraft : ta ? segmentText(contentDraft, ta) : contentDraft;
       const { content: next, changed } = toggleHighlightRange(draft, range.start, range.end);
       if (!changed) return;
       if (onNote) setAnnotationDraft(next);
-      else setContentDraft(next);
+      else setContentDraft(ta ? withSegmentText(contentDraft, ta, next) : next);
       // Put the caret after what was just wrapped, so typing continues where they were.
       const caret = next.length - (draft.length - range.end);
       setTimeout(() => {
@@ -1267,6 +1309,7 @@ function TextBlockItem({
                    测试还引着它），但**产品里已经没有人传它了**。 */
                 corrected={correctedSpans}
                 withOffsets
+                renderImage={renderImage}
                 onCorrectedClick={
                   correctionBlocks.length > 0
                     ? (id) =>
@@ -1369,7 +1412,15 @@ function TextBlockItem({
       </div>
 
       {/* P7-6: the block's images, under its text. ⛔ A block with none draws nothing here. */}
-      <BlockImages blockId={block.id} />
+      <BlockImages
+        unplaced={unplaced}
+        pictures={pictures}
+        onOpen={setViewerAt}
+        onEdit={readOnly ? undefined : () => openEditor('content')}
+      />
+      {viewerAt !== null && (
+        <PictureViewer pictures={pictures} start={viewerAt} onClose={() => setViewerAt(null)} />
+      )}
 
       {/* P5: the files hung off this block (added with its own 「加文件」), one name each,
           opened the way the right rail opens them. ⛔ A block with none draws nothing here. */}
@@ -1600,22 +1651,32 @@ function TextBlockItem({
             </div>
 
             <div className="flex min-h-0 flex-1 flex-col gap-3 px-6 py-4">
-              <textarea
-                ref={contentRef}
-                value={contentDraft}
-                onChange={(e) => setContentDraft(e.target.value)}
-                onKeyDown={(e) => {
-                  if (isImeComposing(e.nativeEvent)) return;
-                  if (e.key === 'Escape') {
-                    e.preventDefault();
-                    cancelAll();
-                  }
-                }}
-                // `flex-1` + `min-h-0`: the content field takes whatever the note leaves,
-                // so the panel is full at any window size without a hardcoded height.
-                className="min-h-0 flex-1 resize-none rounded-md border border-line-strong bg-paper px-3.5 py-3 font-ui text-[length:var(--block-text)] leading-[1.65] text-ink outline-none focus:border-accent"
-                spellCheck={false}
-              />
+              {pictureMode ? (
+                <PictureEditor
+                  value={contentDraft}
+                  onChange={setContentDraft}
+                  images={pictureById}
+                  onCancel={cancelAll}
+                  textRef={contentRef}
+                />
+              ) : (
+                <textarea
+                  ref={contentRef}
+                  value={contentDraft}
+                  onChange={(e) => setContentDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (isImeComposing(e.nativeEvent)) return;
+                    if (e.key === 'Escape') {
+                      e.preventDefault();
+                      cancelAll();
+                    }
+                  }}
+                  // `flex-1` + `min-h-0`: the content field takes whatever the note leaves,
+                  // so the panel is full at any window size without a hardcoded height.
+                  className="min-h-0 flex-1 resize-none rounded-md border border-line-strong bg-paper px-3.5 py-3 font-ui text-[length:var(--block-text)] leading-[1.65] text-ink outline-none focus:border-accent"
+                  spellCheck={false}
+                />
+              )}
 
               <div className="shrink-0">
                 <div className="mb-1 flex items-center gap-1.5">

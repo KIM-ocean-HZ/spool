@@ -1,4 +1,6 @@
+import { IMAGE_LINE_RE, imageLinesAsText } from '@/lib/blocks/imageLines';
 import { getDb } from '@/lib/db/client';
+import { t } from '@/lib/i18n';
 
 // Full-text search over blocks (PLAN_EN.md §9.10 / Phase 7). Purely local — this
 // module only ever touches SQLite, never the network.
@@ -134,10 +136,27 @@ const windowHitLine = (line: string, matchStart: number, matchLen: number): Sear
   };
 };
 
-const contextLine = (line: string): SearchSnippetLine => ({
-  text: line.length <= LINE_CAP ? line : line.slice(0, LINE_CAP) + '…',
-  isHit: false,
-});
+const contextLine = (raw: string): SearchSnippetLine => {
+  // P7 验收第一轮（图文混排）: a picture line reads `[图片] caption` in a result, never its id.
+  const line = imageLinesAsText(raw, t('图片'));
+  return { text: line.length <= LINE_CAP ? line : line.slice(0, LINE_CAP) + '…', isHit: false };
+};
+
+/** The hit line when it is a picture line: `[图片] caption`, the match kept when it falls in the
+ *  caption (and dropped when the query hit the line's hidden part). */
+const pictureHitLine = (line: string, matchStart: number, matchLen: number): SearchSnippetLine | null => {
+  const m = IMAGE_LINE_RE.exec(line);
+  if (!m) return null;
+  const caption = m[1]!;
+  const lead = caption.length - caption.trimStart().length;
+  const inCaption = matchStart - 2 - lead; // `![` comes first
+  const shown = imageLinesAsText(line, t('图片'));
+  const prefix = shown.length - caption.trim().length;
+  if (inCaption >= 0 && inCaption + matchLen <= caption.trim().length) {
+    return windowHitLine(shown, prefix + inCaption, matchLen);
+  }
+  return { ...contextLine(line), isHit: true };
+};
 
 // Pure: given a matched block's text fields and the raw keyword, locate the keyword
 // and return the hit line plus one line of context above and below (PLAN_EN.md
@@ -207,7 +226,10 @@ export const buildSnippet = (
   const snippet: SearchSnippetLine[] = [];
   const above = neighbour(hitLine, -1);
   if (above) snippet.push(above);
-  snippet.push(windowHitLine(lines[hitLine]!, hitIndex - lineStart, query.length));
+  snippet.push(
+    pictureHitLine(lines[hitLine]!, hitIndex - lineStart, query.length) ??
+      windowHitLine(lines[hitLine]!, hitIndex - lineStart, query.length),
+  );
   const below = neighbour(hitLine, 1);
   if (below) snippet.push(below);
   return { field, snippet };

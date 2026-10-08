@@ -175,15 +175,29 @@ export const restoreImagePlaces = async (places: ImagePlace[]): Promise<void> =>
 };
 
 /** Copy to another project: the copy gets its own rows (new ids, same bytes, same order) —
- *  copied inside SQL, so not a byte crosses into this process. */
-export const copyImages = async (fromId: string, toId: string): Promise<void> => {
+ *  copied inside SQL, so not a byte crosses into this process. Returns old id → new id, for
+ *  the copy's picture lines (`remapImageIds`). */
+export const copyImages = async (fromId: string, toId: string): Promise<Map<string, string>> => {
   const db = await getDb();
+  const ids = new Map<string, string>();
   for (const img of await listBlockImagesOf([fromId])) {
+    const id = nanoid();
     await db.execute(
       `INSERT INTO block_images (id, block_id, position, bytes, format, width, height, size_bytes, created_at)
        SELECT $1, $2, position, bytes, format, width, height, size_bytes, created_at
          FROM block_images WHERE id = $3`,
-      [nanoid(), toId, img.id],
+      [id, toId, img.id],
     );
+    ids.set(img.id, id);
   }
+  return ids;
+};
+
+/** P7 验收第一轮：pictures the user took out of a block in the edit panel (× then 完成). Gone
+ *  for good, like the rest of that edit — a content edit has no undo either (§9.13). */
+export const deleteImages = async (ids: readonly string[]): Promise<void> => {
+  if (ids.length === 0) return;
+  const db = await getDb();
+  const ph = ids.map((_, i) => `$${i + 1}`).join(', ');
+  await db.execute(`DELETE FROM block_images WHERE id IN (${ph})`, [...ids]);
 };

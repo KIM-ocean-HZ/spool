@@ -68,4 +68,16 @@ describe('parseMarkdown', () => {
     expect(doc.blocks.map((b) => b.kind)).toEqual(['para']);
     expect(textOf(content, doc.blocks[0]!.text)).toBe(content);
   });
+
+  // P7 验收第一轮（图文混排）：一张图是一行；注释是正文（能搜、能划），其余是结构。
+  it('parses a picture line: its caption is text, the rest of the line is hidden', () => {
+    const content = '上面\n![左边是旧版](spool-image:i1)\n下面';
+    const doc = parseMarkdown(content);
+    expect(doc.blocks.map((b) => b.kind)).toEqual(['para', 'image', 'para']);
+    const pic = doc.blocks[1]!;
+    expect(pic.kind === 'image' && pic.id).toBe('i1');
+    expect(textOf(content, pic.text)).toBe('左边是旧版');
+    expect(doc.hidden.map((h) => textOf(content, h))).toEqual(['![', '](spool-image:i1)']);
+    expect(isPlainParagraph(doc, content)).toBe(false);
+  });
 });

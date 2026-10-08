@@ -7,6 +7,8 @@ import {
   setAttachmentSuperseded,
 } from '@/lib/db/attachments';
 import { restoreImagePlaces } from '@/lib/db/blockImages';
+import { imageLinesAsText } from '@/lib/blocks/imageLines';
+import { t } from '@/lib/i18n';
 import {
   computeMergedFields,
   deleteBlock,
@@ -222,7 +224,8 @@ export const threadIdForEntry = (entry: UndoEntry): string => {
 
 const PREVIEW_MAX = 12;
 const previewText = (raw: string): string => {
-  const oneLine = raw.replace(/\s+/g, ' ').trim();
+  // P7 验收第一轮（图文混排）: a picture line reads `[图片] caption`, never its id.
+  const oneLine = imageLinesAsText(raw, t('图片')).replace(/\s+/g, ' ').trim();
   return oneLine.length <= PREVIEW_MAX ? oneLine : `${oneLine.slice(0, PREVIEW_MAX)}…`;
 };
 

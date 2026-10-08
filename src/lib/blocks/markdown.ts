@@ -26,7 +26,11 @@ export type MdBlock =
   | { kind: 'heading'; level: number; text: MdSpan }
   /** A list row. `marker` is what to draw in the gutter — a bullet, or the user's own "3." */
   | { kind: 'item'; marker: string; indent: number; text: MdSpan }
-  | { kind: 'code'; text: MdSpan };
+  | { kind: 'code'; text: MdSpan }
+  /** P7 验收第一轮（Ocean 2026-10-08）：a picture line `![caption](spool-image:<id>)`. `text`
+   *  is the caption — ordinary text with offsets, searchable and selectable; the rest of the
+   *  line is hidden structure. See `imageLines.ts`. */
+  | { kind: 'image'; id: string; text: MdSpan };
 
 export interface MdDoc {
   blocks: MdBlock[];
@@ -40,6 +44,8 @@ const HEADING = /^(#{1,6})[ \t]+(.*)$/;
 const BULLET = /^([ \t]*)([-*])[ \t]+(.*)$/;
 const ORDERED = /^([ \t]*)(\d{1,3}[.)])[ \t]+(.*)$/;
 const FENCE = /^[ \t]*```/;
+// ⚠️ The same pattern as imageLines.ts IMAGE_LINE_RE — one line, one picture.
+const IMAGE = /^!\[(.*)\]\(spool-image:([A-Za-z0-9_-]+)\)[ \t]*$/;
 
 /** One indent step. Two spaces or one tab — the shapes an AI-written list actually uses. */
 const indentOf = (ws: string): number =>
@@ -87,6 +93,14 @@ export function parseMarkdown(content: string): MdDoc {
         hidden.push({ start: textEnd, end: lineEnd });
         fenceTextStart = -1;
       }
+    } else if (IMAGE.test(line)) {
+      flushPara();
+      const m = IMAGE.exec(line)!;
+      const capStart = pos + 2;
+      const capEnd = capStart + m[1]!.length;
+      hidden.push({ start: pos, end: capStart });
+      hidden.push({ start: capEnd, end: lineEnd });
+      blocks.push({ kind: 'image', id: m[2]!, text: { start: capStart, end: capEnd } });
     } else if (FENCE.test(line)) {
       flushPara();
       // The fence line itself (and its newline) is structure.

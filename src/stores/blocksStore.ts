@@ -8,8 +8,15 @@ import type {
   CreateAttachmentArgs,
 } from '@/lib/db/attachments';
 import * as db from '@/lib/db/blocks';
-import { copyImages, listBlockImagesByThread, type BlockImage, type ImagePlace } from '@/lib/db/blockImages';
+import {
+  copyImages,
+  deleteImages,
+  listBlockImagesByThread,
+  type BlockImage,
+  type ImagePlace,
+} from '@/lib/db/blockImages';
 import { addImageBytes, addImagesFromPaths, imageErrorMessage } from '@/lib/images/blockImageIo';
+import { appendImageLines, remapImageIds } from '@/lib/blocks/imageLines';
 import type { Block, CreateBlockArgs, IncomingRef, RefKind } from '@/lib/db/blocks';
 import { quoteIsInBlock } from '@/lib/blocks/quoteFold';
 import { computeMergedFields } from '@/lib/db/blocks';
@@ -96,6 +103,8 @@ interface BlocksState {
    *  correction in the library and the pack needs no new case. */
   addCorrection: (target: Block, quote: string, text: string) => Promise<void>;
   setContent: (id: string, content: string) => Promise<void>;
+  /** P7 验收第一轮：pictures taken out of a block in the edit panel — out of the library. */
+  removeImages: (blockId: string, imageIds: readonly string[]) => Promise<void>;
   setAnnotation: (id: string, annotation: string | null) => Promise<void>;
   /** Q4（§2.Q4）：用户自己改这一块的摘要（`gist`）。传空 = 清掉。
    *  ⚠️ 写下去的同时盖上 `gistBy = 'user'`，从此 `set_block_gist` 不许再动它。 */
@@ -321,10 +330,15 @@ export const useBlocksStore = create<BlocksState>((set, get) => {
         await db.deleteBlock(b.id);
         return null;
       }
+      // 图文混排（Ocean 2026-10-08）：each picture is a line of the block's text, after what was typed.
+      if (added.length > 0) {
+        b.content = appendImageLines(content, added.map((i) => i.id));
+        await db.updateBlockContent(b.id, b.content);
+      }
       // Same as `append`: the user's own new block, so ⌘Z takes it back (pictures and all —
       // `deleteBlock` parks them, the redo puts them back).
-      const shown = b.content.trim()
-        ? b.content
+      const shown = content.trim()
+        ? content
         : t('一张图片（{w}×{h}）', { w: added[0]!.width, h: added[0]!.height });
       useUndoStore
         .getState()
@@ -590,6 +604,19 @@ export const useBlocksStore = create<BlocksState>((set, get) => {
         next[tId] = list.map((b) => (b.id === id ? { ...b, content } : b));
       }
       set({ byThread: next });
+    },
+
+    removeImages: async (blockId, imageIds) => {
+      if (imageIds.length === 0) return;
+      await deleteImages(imageIds);
+      const gone = new Set(imageIds);
+      set((s) => {
+        const left = (s.imagesByBlock[blockId] ?? []).filter((i) => !gone.has(i.id));
+        const imagesByBlock = { ...s.imagesByBlock };
+        if (left.length > 0) imagesByBlock[blockId] = left;
+        else delete imagesByBlock[blockId];
+        return { imagesByBlock };
+      });
     },
 
     setAnnotation: async (id, annotation) => {
@@ -883,8 +910,17 @@ export const useBlocksStore = create<BlocksState>((set, get) => {
       // undo) — never a touched original.
       try {
         await db.insertBlocks(copyBlocks);
-        // P7-6: a copy carries its images (Ocean 10-07: 图跟着复制) — copied inside SQL.
-        for (let i = 0; i < sources.length; i++) await copyImages(sources[i]!.id, copyBlocks[i]!.id);
+        // P7-6: a copy carries its images (Ocean 10-07: 图跟着复制) — copied inside SQL. The
+        // copies have new ids, so the copy's picture lines are pointed at them (图文混排).
+        for (let i = 0; i < sources.length; i++) {
+          const copy = copyBlocks[i]!;
+          const ids = await copyImages(sources[i]!.id, copy.id);
+          if (ids.size === 0) continue;
+          const content = remapImageIds(copy.content, ids);
+          if (content === copy.content) continue;
+          copy.content = content;
+          await db.updateBlockContent(copy.id, content);
+        }
       } catch (e) {
         console.error('[forward] copy failed', e);
         toast.error(t('复制失败：{msg}', { msg: e instanceof Error ? e.message : String(e) }));
