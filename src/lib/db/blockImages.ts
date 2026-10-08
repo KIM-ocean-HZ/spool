@@ -110,8 +110,10 @@ export const parkImagesOf = async (blockId: string): Promise<void> => {
   await db.execute('DELETE FROM block_images WHERE block_id = $1', [blockId]);
 };
 
-/** Called by `restoreBlock` after the block row is back. */
-export const unparkImagesOf = async (blockId: string): Promise<void> => {
+/** Called by `restoreBlock` after the block row is back. `onto` is for the capture card's
+ *  改投 (P7-7), which deletes the captured block and writes it again in another project: the
+ *  picture goes onto the block that replaced it. */
+export const unparkImagesOf = async (blockId: string, onto: string = blockId): Promise<void> => {
   const rows = parked.get(blockId);
   if (!rows) return;
   parked.delete(blockId);
@@ -121,7 +123,7 @@ export const unparkImagesOf = async (blockId: string): Promise<void> => {
       `INSERT OR IGNORE INTO block_images (id, block_id, position, bytes, format, width, height,
                                            size_bytes, created_at)
        VALUES ($1, $2, $3, unhex($4), $5, $6, $7, $8, $9)`,
-      [r.id, r.block_id, r.position, r.hex, r.format, r.width, r.height, r.size_bytes, r.created_at],
+      [r.id, onto, r.position, r.hex, r.format, r.width, r.height, r.size_bytes, r.created_at],
     );
   }
 };

@@ -47,3 +47,41 @@ export const previewIfReady = (id: string): string | null => ready.get(id) ?? nu
 
 /** The original, for 「点开看原图」. Not cached — it can be large, and it is one click. */
 export const imageFull = (id: string): Promise<string> => invoke<string>('block_image_full', { id });
+
+// ---------------------------------------------------------------------------------------
+// P7-7 — where images come in from (`images.rs`): a screenshot that was just taken, files
+// dragged onto the window, the clipboard.
+// ---------------------------------------------------------------------------------------
+
+/** Files a block takes as images when dragged in (Ocean 2026-10-08: 图片变块，别的照旧). HEIC is
+ *  in the list so it is told why it cannot go in, rather than silently becoming a project file. */
+const IMAGE_EXT = /\.(png|jpe?g|gif|webp|tiff?|heic)$/i;
+export const isImagePath = (path: string): boolean => IMAGE_EXT.test(path);
+
+/** How long a capture waits for a ⌘⇧4 screenshot to be written (the floating thumbnail holds
+ *  it back about five seconds). */
+export const SHOT_WAIT_MS = 8_000;
+
+/** The screenshot taken at `sinceMs`, once it is a file; null = none came in time.
+ *  Rejects with 'denied' when the Desktop permission was refused. */
+export const findNewScreenshot = (sinceMs: number, timeoutMs = SHOT_WAIT_MS): Promise<string | null> =>
+  invoke<string | null>('find_new_screenshot', { sinceMs, timeoutMs });
+
+export const screenshotGoesToClipboard = (): Promise<boolean> =>
+  invoke<boolean>('screenshot_goes_to_clipboard').catch(() => false);
+
+export interface AddReport {
+  added: BlockImage[];
+  /** One code per file that did not go in. */
+  errors: string[];
+}
+
+export const addImagesFromPaths = (blockId: string, paths: string[]): Promise<AddReport> =>
+  invoke<AddReport>('add_block_images_from_paths', { blockId, paths });
+
+/** `[width, height]` of the clipboard's picture, or null when it holds none. */
+export const clipboardImageSize = (): Promise<[number, number] | null> =>
+  invoke<[number, number] | null>('clipboard_image_size').catch(() => null);
+
+export const addImageFromClipboard = (blockId: string): Promise<BlockImage> =>
+  invoke<BlockImage>('add_block_image_from_clipboard', { blockId });

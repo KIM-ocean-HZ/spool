@@ -17,26 +17,52 @@ import { create } from 'zustand';
 // 端出来，和 breakStore 那条「重启后还显示『你已经工作了 47 分钟』是在替用户撒谎」是同一
 // 类问题。真要跨重启留住，那是另一件事（要先决定它算不算库里的内容）。
 
+/** P7-7：粘贴进输入框、还没发出去的一张图。字节留在内存里，发出去时才存进库。 */
+export interface DraftImage {
+  id: string;
+  bytes: Uint8Array;
+  /** 输入框上那一小格的预览（`data:` —— 界面安全策略只认它）。 */
+  previewUrl: string;
+}
+
 interface DraftState {
   /** threadId → 还没发出去的那段字。没有这一格 = 这个项目没有草稿。 */
   byThread: Record<string, string>;
+  /** P7-7：threadId → 粘贴进来、还没发出去的图（同一个理由放在这里：切项目不能把它们扔了）。 */
+  images: Record<string, DraftImage[]>;
   setDraft: (threadId: string, value: string) => void;
-  /** 发出去之后清掉。⚠️ 只清这一个项目的，别的项目的草稿一个字都不动。 */
+  addDraftImages: (threadId: string, images: DraftImage[]) => void;
+  removeDraftImage: (threadId: string, id: string) => void;
+  /** 发出去之后清掉（字和图一起）。⚠️ 只清这一个项目的，别的项目的草稿一个字都不动。 */
   clearDraft: (threadId: string) => void;
 }
 
 export const useDraftStore = create<DraftState>((set) => ({
   byThread: {},
+  images: {},
   setDraft: (threadId, value) =>
     set((s) => (s.byThread[threadId] === value ? s : { byThread: { ...s.byThread, [threadId]: value } })),
+  addDraftImages: (threadId, images) =>
+    set((s) => ({ images: { ...s.images, [threadId]: [...(s.images[threadId] ?? []), ...images] } })),
+  removeDraftImage: (threadId, id) =>
+    set((s) => ({ images: { ...s.images, [threadId]: (s.images[threadId] ?? []).filter((i) => i.id !== id) } })),
   clearDraft: (threadId) =>
     set((s) => {
-      if (!(threadId in s.byThread)) return s;
-      const next = { ...s.byThread };
-      delete next[threadId];
-      return { byThread: next };
+      if (!(threadId in s.byThread) && !(threadId in s.images)) return s;
+      const byThread = { ...s.byThread };
+      const images = { ...s.images };
+      delete byThread[threadId];
+      delete images[threadId];
+      return { byThread, images };
     }),
 }));
+
+const NO_IMAGES: DraftImage[] = [];
+/** 这个项目输入框里的图。 */
+export const selectDraftImages =
+  (threadId: string) =>
+  (s: DraftState): DraftImage[] =>
+    s.images[threadId] ?? NO_IMAGES;
 
 /** 这个项目现在的草稿。⚠️ 抽出来是为了 Composer 的选择器和测试读的是同一句话。 */
 export const selectDraft =

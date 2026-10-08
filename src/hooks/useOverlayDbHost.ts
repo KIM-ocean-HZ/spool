@@ -13,7 +13,9 @@ import {
   togglePin,
   updateBlockAnnotation,
 } from '@/lib/db/blocks';
+import { listBlockImagesOf, unparkImagesOf } from '@/lib/db/blockImages';
 import { listAllThreads } from '@/lib/db/threads';
+import { useBlocksStore } from '@/stores/blocksStore';
 import { listWorkspaces } from '@/lib/db/workspaces';
 
 // Serves the capture toast's database calls (2026-08-01, DESIGN_CAPTURE_HELPER_PROCESS
@@ -40,6 +42,17 @@ const run = async (req: OverlayDbRequest): Promise<unknown> => {
     }
     case 'createBlock':
       return await createBlock(req.args as OverlayDbOps['createBlock']['args']);
+    case 'carryImages': {
+      // P7-7: the old block was just deleted here (its pictures parked in this window); put
+      // them on the new one, and show them.
+      const a = req.args as OverlayDbOps['carryImages']['args'];
+      await unparkImagesOf(a.fromBlockId, a.toBlockId);
+      const images = await listBlockImagesOf([a.toBlockId]);
+      if (images.length > 0) {
+        useBlocksStore.setState((s) => ({ imagesByBlock: { ...s.imagesByBlock, [a.toBlockId]: images } }));
+      }
+      return null;
+    }
     case 'listWorkspaces':
       return await listWorkspaces();
     case 'listAllThreads':

@@ -1514,6 +1514,11 @@ const EN: Record<string, string> = {
   '这不是能放进块里的图片（认 PNG、JPEG、GIF、WebP、TIFF）。': 'That is not an image a block can hold (PNG, JPEG, GIF, WebP or TIFF).',
   '那一块已经不在了，图片没有放进去。': 'That block is gone, so the image was not added.',
   '图片没能存进去：{msg}': 'The image could not be stored: {msg}',
+  '不要这张': 'Remove this one',
+  '一张图片（{w}×{h}）': 'An image ({w}×{h})',
+  '等截图存好… 右下角的小图消失之后就有了': 'Waiting for the screenshot to be saved… it appears once the thumbnail in the corner goes away',
+  '没等到这张截图 — 等右下角的小图消失后再双击 ⌥；或者在 ⌘⇧5 的「选项」里关掉「显示浮动缩略图」': 'The screenshot did not arrive — wait for the thumbnail in the corner to go away, then double-tap ⌥ again; or turn off “Show Floating Thumbnail” under Options in ⌘⇧5',
+  '读不到桌面上的截图 — 到「系统设置 → 隐私与安全性 → 文件和文件夹」里给 Spool 打开「桌面」': 'Spool cannot read screenshots on the Desktop — turn on “Desktop Folder” for Spool in System Settings → Privacy & Security → Files and Folders',
   '这一份丢了数字或日期，不能进库 —— 先用上面那个「加回去」。':
     'This version has dropped a number or a date, so it may not enter your library \u2014 use \u201cAdd back\u201d above first.',
   '{n} 块换成了压缩稿。压缩前的原文留在每一块上，块的工具条上有个入口能打开看，也能换回去。':

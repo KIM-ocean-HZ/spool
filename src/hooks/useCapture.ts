@@ -6,7 +6,14 @@ import {
   readForegroundApp,
   type ForegroundApp,
 } from '@/lib/capture/clipboard';
-import { ingestCapture } from '@/lib/capture/ingest';
+import { ingestCapture, ingestImageCapture, type ImageSource } from '@/lib/capture/ingest';
+import type { BlockImage } from '@/lib/db/blockImages';
+import {
+  clipboardImageSize,
+  findNewScreenshot,
+  imageErrorMessage,
+  screenshotGoesToClipboard,
+} from '@/lib/images/blockImageIo';
 import { BREAK_MS } from '@/lib/breakReminder';
 import {
   OVERLAY_ACTION_EVENT,
@@ -42,6 +49,17 @@ const CLIPBOARD_RETRY_DELAYS_MS = [120, 240]; // up to 3 attempts total
 
 const sleep = (ms: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, ms));
+
+/** P7-7 — set by double_tap.rs when a screenshot chord (not a ⌘C) opened the copy gate. */
+interface Shot {
+  /** Wall clock of the chord — the screenshot file is written after it. */
+  atMs: number;
+  kind: 'file' | 'clipboard' | 'toolbar';
+}
+const shotOf = (payload: unknown): Shot | null => {
+  const shot = (payload as { shot?: Shot } | null)?.shot;
+  return shot && typeof shot.atMs === 'number' ? shot : null;
+};
 
 const readClipboardWithRetry = async (): Promise<string> => {
   const first = await readClipboardText();
@@ -273,25 +291,75 @@ export function useCapture(): void {
         // for source backfill), so we only spawn osascript once per capture.
         const frontmostPromise: Promise<ForegroundApp | null> = readForegroundApp();
         try {
-          const text = await readClipboardWithRetry();
-          tlog('clipboard read', t0, `len=${text.length}`);
-          if (!text) {
+          // ⭐ P7-7（Ocean 2026-09-30 §9.2 第 11 条：截完图直接双击 ⌥ 就能捕到）—— 一张图片也能捕。
+          //   · ⌘⇧4 / ⌘⇧3（存成文件）：等那张截图写出来（右下角缩略图挂着时大约 5 秒），读它。
+          //   · ⌃⌘⇧4 这类进剪贴板的截图：先拿剪贴板里的图 —— 剪贴板上要是还有字，那是更早的事。
+          //   · 别的（⌘C 打开的闸）：照旧先拿字；没有字、剪贴板里是图片，才捕这张图。
+          const shot = shotOf(e.payload);
+          const shotToFile =
+            shot !== null &&
+            (shot.kind === 'file' || (shot.kind === 'toolbar' && !(await screenshotGoesToClipboard())));
+          const pictureFirst = shot !== null && !shotToFile;
+          let text = pictureFirst || shotToFile ? '' : await readClipboardWithRetry();
+          let image: ImageSource | null = null;
+          if (shotToFile) {
+            showNoticeInOverlay({ kind: 'shot-waiting' });
+            let path: string | null;
+            try {
+              path = await findNewScreenshot(shot.atMs);
+            } catch (err) {
+              const denied = String(err) === 'denied';
+              showNoticeInOverlay(
+                denied ? { kind: 'shot-denied' } : { kind: 'error', msg: t('捕捉失败：{msg}', { msg: String(err) }) },
+              );
+              return;
+            }
+            if (!path) {
+              showNoticeInOverlay({ kind: 'shot-missing' });
+              return;
+            }
+            image = { kind: 'paths', paths: [path] };
+          } else if (!text) {
+            if (await clipboardImageSize()) image = { kind: 'clipboard' };
+            else if (pictureFirst) text = await readClipboardWithRetry();
+          }
+          tlog('clipboard read', t0, image ? `image=${image.kind}` : `len=${text.length}`);
+          if (!image && !text) {
             showNoticeInOverlay({ kind: 'empty' });
             return;
           }
 
-          const result = await ingestCapture(text, null);
+          let images: BlockImage[] = [];
+          let result: Awaited<ReturnType<typeof ingestCapture>>;
+          if (image) {
+            try {
+              const r = await ingestImageCapture(image, null);
+              result = r;
+              images = r?.images ?? [];
+            } catch (err) {
+              showNoticeInOverlay({ kind: 'error', msg: imageErrorMessage(err) });
+              return;
+            }
+          } else {
+            result = await ingestCapture(text, null);
+          }
           tlog('block insert', t0);
           if (!result) {
             showNoticeInOverlay({ kind: 'no-target' });
             return;
           }
+          // What the card and the undo card say about it: the text, or — for a picture — its size.
+          const shown =
+            images.length > 0
+              ? t('一张图片（{w}×{h}）', { w: images[0]!.width, h: images[0]!.height })
+              : text;
 
           useBlocksStore.setState((s) => ({
             byThread: {
               ...s.byThread,
               [result.threadId]: [...(s.byThread[result.threadId] ?? []), result.block],
             },
+            imagesByBlock: images.length > 0 ? { ...s.imagesByBlock, [result.block.id]: images } : s.imagesByBlock,
           }));
 
           // §9.13: record the capture so Cmd+Z (and the toast's Undo, which now routes
@@ -301,7 +369,7 @@ export function useCapture(): void {
             buildCaptureUndo({
               blockId: result.block.id,
               threadId: result.threadId,
-              content: result.block.content,
+              content: shown,
             }),
           );
 
@@ -331,7 +399,7 @@ export function useCapture(): void {
             workspaceId: result.workspaceId,
             workspaceTitle: ws?.title.trim() || t('收件箱'),
             threadTitle: result.threadTitle.trim() || t('未命名'),
-            preview: buildPreview(text),
+            preview: buildPreview(shown),
             fullContent: text,
             source: null,
             prevSourceApp,

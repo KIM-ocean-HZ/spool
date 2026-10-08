@@ -9,7 +9,7 @@ import type {
 } from '@/lib/db/attachments';
 import * as db from '@/lib/db/blocks';
 import { copyImages, listBlockImagesByThread, type BlockImage, type ImagePlace } from '@/lib/db/blockImages';
-import { addImageBytes, imageErrorMessage } from '@/lib/images/blockImageIo';
+import { addImageBytes, addImagesFromPaths, imageErrorMessage } from '@/lib/images/blockImageIo';
 import type { Block, CreateBlockArgs, IncomingRef, RefKind } from '@/lib/db/blocks';
 import { quoteIsInBlock } from '@/lib/blocks/quoteFold';
 import { computeMergedFields } from '@/lib/db/blocks';
@@ -36,8 +36,14 @@ interface BlocksState {
   /** P7-6: each block's images (no bytes), in order — keyed by block, filled by `load`.
    *  A block with none has no entry. */
   imagesByBlock: Record<string, BlockImage[]>;
-  /** P7-6: store images into a block, in the order given; each that cannot go in says why. */
-  addImages: (blockId: string, images: Uint8Array[]) => Promise<void>;
+  /** P7-7: a new block in this project holding these pictures — pasted into the composer
+   *  (bytes, with whatever was typed) or dragged in from Finder (paths). Each picture that
+   *  cannot go in says why; a block left with neither text nor a picture is not kept. */
+  appendWithImages: (
+    threadId: string,
+    content: string,
+    images: { bytes?: Uint8Array[]; paths?: string[] },
+  ) => Promise<Block | null>;
   // v2.8 §20.1: multi-select state for the merge action. Global (single set), cleared
   // on thread switch so a stale selection from a previous thread can't survive.
   selectedBlockIds: Set<string>;
@@ -293,17 +299,41 @@ export const useBlocksStore = create<BlocksState>((set, get) => {
       });
     },
 
-    addImages: async (blockId, images) => {
-      for (const bytes of images) {
+    appendWithImages: async (threadId, content, { bytes = [], paths = [] }) => {
+      const b = await db.createBlock({ threadId, kind: 'text', content });
+      const added: BlockImage[] = [];
+      const errors: unknown[] = [];
+      if (paths.length > 0) {
+        const report = await addImagesFromPaths(b.id, paths).catch((e: unknown) => ({ added: [], errors: [e] }));
+        added.push(...report.added);
+        errors.push(...report.errors);
+      }
+      for (const one of bytes) {
         try {
-          const img = await addImageBytes(blockId, bytes);
-          set((s) => ({
-            imagesByBlock: { ...s.imagesByBlock, [blockId]: [...(s.imagesByBlock[blockId] ?? []), img] },
-          }));
+          added.push(await addImageBytes(b.id, one));
         } catch (e) {
-          toast.error(imageErrorMessage(e));
+          errors.push(e);
         }
       }
+      for (const e of errors) toast.error(imageErrorMessage(e));
+      if (added.length === 0 && !content.trim()) {
+        // Nothing went in: an empty block is not something the user made.
+        await db.deleteBlock(b.id);
+        return null;
+      }
+      // Same as `append`: the user's own new block, so ⌘Z takes it back (pictures and all —
+      // `deleteBlock` parks them, the redo puts them back).
+      const shown = b.content.trim()
+        ? b.content
+        : t('一张图片（{w}×{h}）', { w: added[0]!.width, h: added[0]!.height });
+      useUndoStore
+        .getState()
+        .pushUndo(buildCreateUndo({ blockId: b.id, threadId: b.threadId, content: shown }));
+      set((s) => ({
+        byThread: { ...s.byThread, [b.threadId]: [...(s.byThread[b.threadId] ?? []), b] },
+        imagesByBlock: added.length > 0 ? { ...s.imagesByBlock, [b.id]: added } : s.imagesByBlock,
+      }));
+      return b;
     },
 
     /** 改完一条关系之后，把**受影响的那几块**所在的项目重刷一遍入向边。

@@ -69,7 +69,7 @@ use core_graphics::event::{CGEvent, CGEventFlags, EventField};
 use foreign_types::ForeignType;
 use std::mem::ManuallyDrop;
 use std::os::raw::c_void;
-use std::sync::atomic::{AtomicBool, AtomicPtr, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicPtr, AtomicU64, AtomicU8, Ordering};
 use std::sync::{Mutex, OnceLock};
 use std::thread;
 use std::time::Duration;
@@ -129,6 +129,68 @@ const KEYCODE_OPT_RIGHT: i64 = 61;
 // acceptable: the product's mental model is literally "⌘C 然后双击 ⌥" (§10.2).
 const KEYCODE_C: i64 = 8;
 const KEYCODE_X: i64 = 7;
+// kVK_ANSI_3 / 4 / 5 — the macOS screenshot chords (⌘⇧3 whole screen, ⌘⇧4 a selection,
+// ⌘⇧5 the screenshot toolbar; with ⌃ the first two go to the clipboard instead of a file).
+const KEYCODE_3: i64 = 20;
+const KEYCODE_4: i64 = 21;
+const KEYCODE_5: i64 = 23;
+
+/// P7-7 (Ocean 2026-09-30 §9.2 第 11 条: 截完图直接双击 ⌥ 就能捕到) — what a screenshot chord
+/// says about where the picture is going. 0 is reserved for "none".
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ShotKind {
+    /// ⌘⇧3 / ⌘⇧4 — written to a file in the screenshot folder (after the floating thumbnail).
+    File = 1,
+    /// ⌃⌘⇧3 / ⌃⌘⇧4 — put on the clipboard.
+    Clipboard = 2,
+    /// ⌘⇧5 — the toolbar; where it goes is the toolbar's own setting, read at capture time.
+    Toolbar = 3,
+}
+
+impl ShotKind {
+    fn name(self) -> &'static str {
+        match self {
+            ShotKind::File => "file",
+            ShotKind::Clipboard => "clipboard",
+            ShotKind::Toolbar => "toolbar",
+        }
+    }
+    fn from_u8(v: u8) -> Option<Self> {
+        match v {
+            1 => Some(ShotKind::File),
+            2 => Some(ShotKind::Clipboard),
+            3 => Some(ShotKind::Toolbar),
+            _ => None,
+        }
+    }
+}
+
+/// Is this key-down one of the screenshot chords? ⌘ and ⇧ are both required (⌘3 alone is a
+/// tab switch in half the apps on the machine).
+fn screenshot_chord(keycode: i64, cmd: bool, shift: bool, ctrl: bool) -> Option<ShotKind> {
+    if !cmd || !shift {
+        return None;
+    }
+    match keycode {
+        KEYCODE_3 | KEYCODE_4 if ctrl => Some(ShotKind::Clipboard),
+        KEYCODE_3 | KEYCODE_4 => Some(ShotKind::File),
+        KEYCODE_5 => Some(ShotKind::Toolbar),
+        _ => None,
+    }
+}
+
+/// The copy-gate's question, with a screenshot counted like a ⌘C (P7-7): did one of them
+/// happen within `window_ms` before this double-tap? Returns what opened it — the more recent
+/// of the two — so the capture knows whether to look for a picture first.
+#[derive(Debug, PartialEq, Eq)]
+enum Opener {
+    Copy,
+    Shot,
+}
+fn gate_opener(copy_ns: u64, shot_ns: u64, now_ns: u64, window_ms: u64) -> Option<Opener> {
+    let (at, who) = if shot_ns > copy_ns { (shot_ns, Opener::Shot) } else { (copy_ns, Opener::Copy) };
+    (at != 0 && at <= now_ns && (now_ns - at) / NANOS_PER_MS <= window_ms).then_some(who)
+}
 
 // Copy-gate (2026-07-08): Claude Desktop's quick-entry popup ALSO triggers on a
 // double-tap of ⌥, so a bare double-tap is ambiguous on machines running both. The
@@ -157,6 +219,12 @@ fn fresh_copy_within(copy_ns: u64, used_ns: u64, press_ns: u64, window_ms: u64) 
 
 // CGEventGetTimestamp (ns) of the last observed ⌘C/⌘X keydown; 0 = never.
 static LAST_COPY_CHORD_NS: AtomicU64 = AtomicU64::new(0);
+
+// P7-7: the last screenshot chord — when (event clock, for the gate; wall clock, to find the
+// file it writes) and which kind (`ShotKind as u8`, 0 = never).
+static LAST_SHOT_NS: AtomicU64 = AtomicU64::new(0);
+static LAST_SHOT_WALL_MS: AtomicU64 = AtomicU64::new(0);
+static LAST_SHOT_KIND: AtomicU8 = AtomicU8::new(0);
 
 // ⭐ P3 验收（Ocean 2026-10-02「复制后的内容已经被存了，或者说被 discard 了之后就不应该出现在
 // 第二次的操作中，也就是说这个快捷方式只能是单次操作」）：已经用掉的那一下 ⌘C 的时刻。
@@ -248,7 +316,9 @@ static NOTIFIED_DISABLED: AtomicBool = AtomicBool::new(false);
 // The tap callback is a plain extern "C" fn (raw CGEventTapCreate, see module doc),
 // so app-event emission goes through boxed closures installed once by install().
 struct Emitters {
-    capture_trigger: Box<dyn Fn() + Send + Sync>,
+    /// P7-7: `Some` when a screenshot chord (not a ⌘C) opened the gate — the capture looks for
+    /// the picture first.
+    capture_trigger: Box<dyn Fn(Option<serde_json::Value>) + Send + Sync>,
     /// 长按 ⌥ —— 弹一个空的浮窗让人直接写（2026-08-27）。参数 = 按下之前 2 秒内按过 ⌘C 没有（P3-4）。
     note_trigger: Box<dyn Fn(bool) + Send + Sync>,
     capture_disabled: Box<dyn Fn(&'static str) + Send + Sync>,
@@ -361,8 +431,13 @@ pub fn install<R: Runtime>(app: AppHandle<R>) {
     let a3 = app.clone();
     let a2 = app;
     let _ = EMITTERS.set(Emitters {
-        capture_trigger: Box::new(move || {
-            let _ = a1.emit("capture-trigger", ());
+        capture_trigger: Box::new(move |shot| match shot {
+            Some(shot) => {
+                let _ = a1.emit("capture-trigger", serde_json::json!({ "shot": shot }));
+            }
+            None => {
+                let _ = a1.emit("capture-trigger", ());
+            }
         }),
         note_trigger: Box::new(move |copied| {
             let _ = a3.emit("note-trigger", serde_json::json!({ "copied": copied }));
@@ -464,11 +539,29 @@ fn on_event(etype: u32, event_ptr: *mut c_void) -> bool {
             // Repeats (key held) refresh the stamp harmlessly.
             let event = ManuallyDrop::new(unsafe { CGEvent::from_ptr(event_ptr as *mut _) });
             let keycode = event.get_integer_value_field(EventField::KEYBOARD_EVENT_KEYCODE);
+            let flags = event.get_flags();
             if (keycode == KEYCODE_C || keycode == KEYCODE_X)
-                && event.get_flags().contains(CGEventFlags::CGEventFlagCommand)
+                && flags.contains(CGEventFlags::CGEventFlagCommand)
             {
                 let now = unsafe { CGEventGetTimestamp(event_ptr as *const c_void) };
                 LAST_COPY_CHORD_NS.store(now, Ordering::Relaxed);
+            } else if let Some(kind) = screenshot_chord(
+                keycode,
+                flags.contains(CGEventFlags::CGEventFlagCommand),
+                flags.contains(CGEventFlags::CGEventFlagShift),
+                flags.contains(CGEventFlags::CGEventFlagControl),
+            ) {
+                // P7-7: a screenshot opens the gate the way ⌘C does (same window). Only
+                // observed, never consumed — the system still takes the screenshot.
+                let now = unsafe { CGEventGetTimestamp(event_ptr as *const c_void) };
+                let wall = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_millis() as u64)
+                    .unwrap_or(0);
+                LAST_SHOT_NS.store(now, Ordering::Relaxed);
+                LAST_SHOT_WALL_MS.store(wall, Ordering::Relaxed);
+                LAST_SHOT_KIND.store(kind as u8, Ordering::Relaxed);
+                eprintln!("[double-tap] screenshot chord seen ({})", kind.name());
             }
             true
         }
@@ -598,18 +691,28 @@ fn on_event(etype: u32, event_ptr: *mut c_void) -> bool {
                     // Claude Desktop's identical quick-entry gesture.
                     let copied = LAST_COPY_CHORD_NS.load(Ordering::Relaxed);
                     let copy_gap_ms = now.saturating_sub(copied) / NANOS_PER_MS;
-                    if !COPY_GATE_ACTIVE.load(Ordering::Relaxed)
-                        || (copied != 0 && copy_gap_ms <= COPY_GATE_WINDOW_MS)
-                    {
+                    // P7-7: a screenshot chord counts like ⌘C; whichever came last opened it.
+                    let shot_ns = LAST_SHOT_NS.load(Ordering::Relaxed);
+                    let opener = gate_opener(copied, shot_ns, now, COPY_GATE_WINDOW_MS);
+                    if !COPY_GATE_ACTIVE.load(Ordering::Relaxed) || opener.is_some() {
                         eprintln!(
-                            "[double-tap] TRIGGER gap={gap}ms (⌘C {copy_gap_ms}ms ago)"
+                            "[double-tap] TRIGGER gap={gap}ms (⌘C {copy_gap_ms}ms ago, opener {opener:?})"
                         );
+                        let shot = (opener == Some(Opener::Shot))
+                            .then(|| ShotKind::from_u8(LAST_SHOT_KIND.load(Ordering::Relaxed)))
+                            .flatten()
+                            .map(|kind| {
+                                serde_json::json!({
+                                    "atMs": LAST_SHOT_WALL_MS.load(Ordering::Relaxed),
+                                    "kind": kind.name(),
+                                })
+                            });
                         // ⛔ 这一下已经是双击了 —— 把还在等的那个长按作废，
                         // 「不许两条都触发」就是靠这一行。
                         cancel_long_press();
                         // 这下 ⌘C 被捕捉走了 ⇒ 长按那边也算用掉了（只记账，⛔ 不改这里的判定）。
                         LONG_PRESS_COPY_USED_NS.store(copied, Ordering::Relaxed);
-                        (emitters.capture_trigger)();
+                        (emitters.capture_trigger)(shot);
                         // Suppression: Spool consumed this double-tap — delete the
                         // 2nd press (and, via the flag, its release) so Claude
                         // Desktop's identical gesture never completes.
@@ -620,7 +723,7 @@ fn on_event(etype: u32, event_ptr: *mut c_void) -> bool {
                         }
                     } else {
                         eprintln!(
-                            "[double-tap] double-tap IGNORED — no ⌘C/⌘X within \
+                            "[double-tap] double-tap IGNORED — no ⌘C/⌘X or screenshot within \
                              {COPY_GATE_WINDOW_MS}ms (copy-gate)"
                         );
                     }
@@ -790,6 +893,35 @@ mod tests {
         assert!(fresh_copy_within(press - 2_000 * MS, 0, press, w), "edge is in");
         assert!(!fresh_copy_within(press - 2_001 * MS, 0, press, w));
         assert!(!fresh_copy_within(press + MS, 0, press, w), "after the press");
+    }
+
+    // P7-7: the screenshot chords, and only those.
+    #[test]
+    fn screenshot_chords_are_cmd_shift_three_four_five() {
+        assert_eq!(screenshot_chord(KEYCODE_4, true, true, false), Some(ShotKind::File));
+        assert_eq!(screenshot_chord(KEYCODE_3, true, true, false), Some(ShotKind::File));
+        assert_eq!(screenshot_chord(KEYCODE_4, true, true, true), Some(ShotKind::Clipboard));
+        assert_eq!(screenshot_chord(KEYCODE_3, true, true, true), Some(ShotKind::Clipboard));
+        assert_eq!(screenshot_chord(KEYCODE_5, true, true, false), Some(ShotKind::Toolbar));
+        assert_eq!(screenshot_chord(KEYCODE_4, true, false, false), None, "⌘4 is a tab switch");
+        assert_eq!(screenshot_chord(KEYCODE_4, false, true, false), None);
+        assert_eq!(screenshot_chord(KEYCODE_C, true, true, false), None);
+    }
+
+    // P7-7: a screenshot opens the gate like ⌘C, same window; the more recent one is the opener.
+    #[test]
+    fn a_screenshot_opens_the_copy_gate_like_cmd_c() {
+        let now = 100_000 * MS;
+        let w = COPY_GATE_WINDOW_MS;
+        assert_eq!(gate_opener(0, 0, now, w), None, "neither");
+        assert_eq!(gate_opener(now - 3_000 * MS, 0, now, w), Some(Opener::Copy));
+        assert_eq!(gate_opener(0, now - 3_000 * MS, now, w), Some(Opener::Shot));
+        assert_eq!(gate_opener(now - 9_000 * MS, now - 1_000 * MS, now, w), Some(Opener::Shot));
+        assert_eq!(gate_opener(now - 1_000 * MS, now - 9_000 * MS, now, w), Some(Opener::Copy));
+        assert_eq!(gate_opener(0, now - 10_000 * MS, now, w), Some(Opener::Shot), "edge is in");
+        assert_eq!(gate_opener(0, now - 10_001 * MS, now, w), None);
+        // Both older than the window: closed.
+        assert_eq!(gate_opener(now - 30_000 * MS, now - 11_000 * MS, now, w), None);
     }
 
     // P3 验收 (Ocean 10-02): one ⌘C fills one card. Once it is used, the same copy never

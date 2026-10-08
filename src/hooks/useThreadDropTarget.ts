@@ -8,6 +8,7 @@ import { toast } from '@/stores/toastStore';
 import { basename, pathIsDir } from '@/lib/utils/openTarget';
 import type { AttachmentKind } from '@/lib/db/attachments';
 import { t } from '@/lib/i18n';
+import { isImagePath } from '@/lib/images/blockImageIo';
 
 interface UseThreadDropTargetArgs {
   // Root DOM node the drop bridge is scoped to. We only react to drags whose position
@@ -33,6 +34,7 @@ const DRAG_IDLE_MS = 900;
 // anywhere in the timeline adds them to THIS PROJECT's files. There is no longer a
 // distinction between dropping on a block and dropping in empty space — a file does not
 // belong to a block any more, so both meant the same thing.
+// P7-7 (Ocean 2026-10-08): except pictures — those become a new block holding them (below).
 //
 // ⚠️ The old empty-space behaviour (invent a text block named after the file, hang the
 // attachment off it) is gone with it. That block existed only to give an attachment
@@ -126,17 +128,32 @@ export function useThreadDropTarget({ rootRef, threadId }: UseThreadDropTargetAr
       if (DEV) console.info('[drop] at', pt, '-> inside:', inside);
       if (!inside) return; // outside our pane → not our event
 
+      // P7-7 (Ocean 2026-10-08: 图片变块，别的照旧) — the pictures in a drop become ONE new block
+      // holding all of them (10-07 #6: 拖进来好几张 ⇒ 进同一块); every other file is a project
+      // file, as it has been since v15.
+      const pictures = paths.filter(isImagePath);
+      const files = paths.filter((p) => !isImagePath(p));
+      if (pictures.length > 0) {
+        try {
+          await useBlocksStore.getState().appendWithImages(threadIdRef.current, '', { paths: pictures });
+        } catch (e) {
+          console.error('[drop] pictures failed', e);
+          toast.error(t('图片没能存进去：{msg}', { msg: e instanceof Error ? e.message : String(e) }));
+        }
+      }
+      if (files.length === 0) return;
+
       // Classify every path once (filesystem stat is cheap; parallelizing keeps the
       // drop responsive even when 20+ files land at once).
       const kinds = await Promise.all(
-        paths.map(
+        files.map(
           async (p): Promise<AttachmentKind> => ((await pathIsDir(p)) ? 'folder' : 'file'),
         ),
       );
 
       try {
-        for (let i = 0; i < paths.length; i++) {
-          const target = paths[i]!;
+        for (let i = 0; i < files.length; i++) {
+          const target = files[i]!;
           await attach({
             threadId: threadIdRef.current,
             kind: kinds[i]!,

@@ -70,6 +70,10 @@ export const togglePin = (blockId: string): Promise<boolean> => call('togglePin'
 
 export const createBlock = (args: CreateBlockArgs): Promise<Block> => call('createBlock', args);
 
+export const carryImages = async (fromBlockId: string, toBlockId: string): Promise<void> => {
+  await call('carryImages', { fromBlockId, toBlockId });
+};
+
 export const listWorkspaces = (): Promise<Workspace[]> => call('listWorkspaces', {});
 
 export const listAllThreads = (): Promise<Thread[]> => call('listAllThreads', {});

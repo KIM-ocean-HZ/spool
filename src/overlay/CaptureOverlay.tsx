@@ -7,6 +7,7 @@ import type { Block } from '@/lib/db/blocks';
 // 🚨 Not @/lib/db — this process never opens SQLite (DESIGN_CAPTURE_HELPER_PROCESS §3.3).
 // These proxy to the main window's one connection; see src/overlay/db.ts.
 import {
+  carryImages,
   createBlock,
   deleteBlock,
   listAllThreads,
@@ -146,6 +147,13 @@ const noticeText = (n: OverlayNotice): string => {
       ? t('剪贴板为空 — 先按 ⌘C 复制要捕捉的内容，再双击 ⌥')
       : t('剪贴板为空 — 先按 Ctrl+C 复制要捕捉的内容，再双击 Ctrl');
   if (n.kind === 'no-target') return t('没有捕捉目标 — 打开 Spool 在项目顶栏点「捕捉到此」');
+  // P7-7 — a screenshot saved as a file (⌘⇧4) is written only once the thumbnail in the corner
+  // goes away; the capture card takes this notice's place when it arrives.
+  if (n.kind === 'shot-waiting') return t('等截图存好… 右下角的小图消失之后就有了');
+  if (n.kind === 'shot-missing')
+    return t('没等到这张截图 — 等右下角的小图消失后再双击 ⌥；或者在 ⌘⇧5 的「选项」里关掉「显示浮动缩略图」');
+  if (n.kind === 'shot-denied')
+    return t('读不到桌面上的截图 — 到「系统设置 → 隐私与安全性 → 文件和文件夹」里给 Spool 打开「桌面」');
   return n.msg ?? t('捕捉失败');
 };
 
@@ -761,6 +769,8 @@ export default function CaptureOverlay() {
         annotation: note.length > 0 ? note : null,
         pinned,
       });
+      // P7-7: a captured picture goes with the card to the project it was moved to.
+      await carryImages(toast.blockId, newBlock.id);
     } catch (e) {
       console.error('[overlay] redirect failed', e);
       return;

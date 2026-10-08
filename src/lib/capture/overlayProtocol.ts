@@ -80,6 +80,9 @@ export interface OverlayDbOps {
   deleteBlock: { args: { blockId: string }; result: null };
   togglePin: { args: { blockId: string }; result: boolean };
   createBlock: { args: CreateBlockArgs; result: Block };
+  /** P7-7: 改投 deletes the captured block and writes it again elsewhere — its pictures go
+   *  onto the new one. */
+  carryImages: { args: { fromBlockId: string; toBlockId: string }; result: null };
   listWorkspaces: { args: Record<string, never>; result: Workspace[] };
   listAllThreads: { args: Record<string, never>; result: Thread[] };
 }
@@ -150,8 +153,11 @@ export interface OverlayBreak {
   workMinutes: number;
 }
 
+// P7-7: 'shot-waiting' = a ⌘⇧4 screenshot is not written yet (the floating thumbnail holds
+// it back); the capture card replaces this notice when it arrives. 'shot-missing' = it never
+// came; 'shot-denied' = the Desktop permission was refused.
 export interface OverlayNotice {
-  kind: 'empty' | 'no-target' | 'error';
+  kind: 'empty' | 'no-target' | 'error' | 'shot-waiting' | 'shot-missing' | 'shot-denied';
   msg?: string;
 }
 

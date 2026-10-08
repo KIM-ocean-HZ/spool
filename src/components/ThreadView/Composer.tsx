@@ -1,9 +1,11 @@
-import { useEffect, useMemo, useState } from 'react';
-import type { KeyboardEvent } from 'react';
+import { X } from 'lucide-react';
+import { nanoid } from 'nanoid';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import type { ClipboardEvent, KeyboardEvent } from 'react';
 import { isImeComposing } from '@/lib/utils/ime';
 import { useT } from '@/lib/i18n';
 import { useBlocksStore } from '@/stores/blocksStore';
-import { selectDraft, useDraftStore } from '@/stores/draftStore';
+import { selectDraft, selectDraftImages, useDraftStore, type DraftImage } from '@/stores/draftStore';
 import { selectThreadById, useThreadsStore } from '@/stores/threadsStore';
 
 interface Props {
@@ -21,6 +23,24 @@ const MENTION_RE = /(?:^|\s)@([^\s@]*)$/;
 
 const MENTION_LIMIT = 8;
 
+/** P7-7: the pictures in a paste, read into memory with a `data:` preview each. */
+const picturesIn = (data: DataTransfer | null): File[] =>
+  Array.from(data?.files ?? []).filter((f) => f.type.startsWith('image/'));
+const toDraftImage = async (f: File): Promise<DraftImage> => {
+  const bytes = new Uint8Array(await f.arrayBuffer());
+  const previewUrl = await new Promise<string>((resolve) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result));
+    r.onerror = () => resolve('');
+    r.readAsDataURL(f);
+  });
+  return { id: nanoid(), bytes, previewUrl };
+};
+/** Typing somewhere — a paste there is the field's, not the composer's. */
+const isEditable = (el: EventTarget | null): boolean =>
+  el instanceof HTMLElement &&
+  (el.isContentEditable || el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT');
+
 export default function Composer({ threadId, onSubmitted }: Props) {
   const t = useT();
   // ⚠️⚠️ 草稿存在 store 里，**不是** useState —— LogView 是 `key={thread.id}` 挂的，
@@ -30,6 +50,36 @@ export default function Composer({ threadId, onSubmitted }: Props) {
   const [activeIdx, setActiveIdx] = useState(0);
 
   const append = useBlocksStore((s) => s.append);
+  const appendWithImages = useBlocksStore((s) => s.appendWithImages);
+  // P7-7 (Ocean 2026-10-07 #6): pictures pasted into the box ride with the block it sends —
+  // several at once go into the same block, next to whatever was typed.
+  const images = useDraftStore(selectDraftImages(threadId));
+  const boxRef = useRef<HTMLTextAreaElement>(null);
+  const addPictures = async (files: File[]): Promise<void> => {
+    const imgs = await Promise.all(files.map(toDraftImage));
+    useDraftStore.getState().addDraftImages(threadId, imgs);
+  };
+  const onPaste = (e: ClipboardEvent<HTMLTextAreaElement>): void => {
+    const files = picturesIn(e.clipboardData);
+    if (files.length === 0) return;
+    // ⚠️ The pictures only: a copied file also carries its name as text, which is not what
+    // the user meant to paste.
+    e.preventDefault();
+    void addPictures(files);
+  };
+  // A paste with nothing being typed into (the feed has the focus) lands here too.
+  useEffect(() => {
+    const onWindowPaste = (e: globalThis.ClipboardEvent): void => {
+      if (isEditable(e.target) || isEditable(document.activeElement)) return;
+      const files = picturesIn(e.clipboardData);
+      if (files.length === 0) return;
+      e.preventDefault();
+      void addPictures(files).then(() => boxRef.current?.focus());
+    };
+    window.addEventListener('paste', onWindowPaste);
+    return () => window.removeEventListener('paste', onWindowPaste);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [threadId]);
   const thread = useThreadsStore(selectThreadById(threadId));
   const threadsByWs = useThreadsStore((s) => s.threadsByWorkspace);
 
@@ -64,6 +114,13 @@ export default function Composer({ threadId, onSubmitted }: Props) {
 
   const submit = async (): Promise<void> => {
     const content = value.trim();
+    if (images.length > 0) {
+      const bytes = images.map((i) => i.bytes);
+      useDraftStore.getState().clearDraft(threadId);
+      const block = await appendWithImages(threadId, content, { bytes });
+      if (block) onSubmitted?.(block.id);
+      return;
+    }
     if (!content) return;
     useDraftStore.getState().clearDraft(threadId);
     const block = await append({ threadId, kind: 'text', content });
@@ -140,10 +197,30 @@ export default function Composer({ threadId, onSubmitted }: Props) {
           ))}
         </div>
       )}
+      {images.length > 0 && (
+        <div className="mb-2 flex flex-wrap gap-2">
+          {images.map((img) => (
+            <div key={img.id} className="relative h-14 overflow-hidden rounded border border-line bg-paper">
+              {img.previewUrl && <img src={img.previewUrl} alt="" className="h-full w-auto object-contain" />}
+              <button
+                type="button"
+                onClick={() => useDraftStore.getState().removeDraftImage(threadId, img.id)}
+                title={t('不要这张')}
+                aria-label={t('不要这张')}
+                className="absolute right-0.5 top-0.5 rounded bg-paper/90 p-0.5 text-muted hover:text-ink"
+              >
+                <X size={10} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
       <textarea
+        ref={boxRef}
         value={value}
         onChange={(e) => setValue(e.target.value)}
         onKeyDown={handleKeyDown}
+        onPaste={onPaste}
         placeholder={t('写一条草稿…（Enter 发送，Shift+Enter 换行，@ 引用项目）')}
         rows={2}
         className="w-full resize-none rounded-md border border-line bg-paper px-3 py-2 text-[15px] leading-[1.6] text-ink outline-none focus:border-line-strong"

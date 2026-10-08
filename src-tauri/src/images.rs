@@ -263,6 +263,186 @@ pub async fn add_block_image(
     .map_err(|e| e.to_string())?
 }
 
+// ---------------------------------------------------------------------------------------
+// P7-7 — where images come in from: a screenshot that was just taken, files dragged onto the
+// window, the clipboard.
+// ---------------------------------------------------------------------------------------
+
+/// Images a block can take, by extension, when they arrive as files (drag, screenshot). The
+/// content decides in `prepare`; this only sorts a dropped batch before anything is read.
+pub const IMAGE_EXTENSIONS: [&str; 7] = ["png", "jpg", "jpeg", "gif", "webp", "tif", "tiff"];
+
+fn has_image_extension(p: &std::path::Path) -> bool {
+    p.extension()
+        .and_then(|e| e.to_str())
+        .map(|e| IMAGE_EXTENSIONS.contains(&e.to_ascii_lowercase().as_str()) || e.eq_ignore_ascii_case("heic"))
+        .unwrap_or(false)
+}
+
+/// The system marks every screenshot it writes with this attribute (names are localised —
+/// 「Screenshot …」, 「截屏…」 — the attribute is not).
+#[cfg(target_os = "macos")]
+fn is_marked_screenshot(p: &std::path::Path) -> bool {
+    use std::os::unix::ffi::OsStrExt;
+    let Ok(path) = std::ffi::CString::new(p.as_os_str().as_bytes()) else { return false };
+    let name = c"com.apple.metadata:kMDItemIsScreenCapture";
+    // size query only (null buffer): ≥ 0 means the attribute is there.
+    unsafe { libc::getxattr(path.as_ptr(), name.as_ptr(), std::ptr::null_mut(), 0, 0, 0) >= 0 }
+}
+#[cfg(not(target_os = "macos"))]
+fn is_marked_screenshot(_p: &std::path::Path) -> bool {
+    false
+}
+
+fn modified_ms(m: &std::fs::Metadata) -> u64 {
+    m.modified()
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+/// How far before the chord a file may be dated and still count (clock granularity, and the
+/// key-down being observed a beat after the system started writing).
+const SHOT_SLACK_MS: u64 = 2_000;
+
+/// 「刚截的那张」: in `dir`, the newest image file marked as a screenshot and written no
+/// earlier than the chord. `Err` only when the folder cannot be read at all — on macOS that
+/// is the Desktop permission being refused ("denied").
+pub fn pick_new_screenshot(dir: &std::path::Path, since_ms: u64) -> Result<Option<std::path::PathBuf>, String> {
+    let entries = std::fs::read_dir(dir).map_err(|e| {
+        if e.kind() == std::io::ErrorKind::PermissionDenied { "denied".to_string() } else { e.to_string() }
+    })?;
+    let mut best: Option<(u64, std::path::PathBuf)> = None;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let Ok(meta) = entry.metadata() else { continue };
+        if !meta.is_file() || !has_image_extension(&path) {
+            continue;
+        }
+        let at = modified_ms(&meta);
+        if at + SHOT_SLACK_MS < since_ms || !is_marked_screenshot(&path) {
+            continue;
+        }
+        if best.as_ref().is_none_or(|(b, _)| at > *b) {
+            best = Some((at, path));
+        }
+    }
+    Ok(best.map(|(_, p)| p))
+}
+
+/// `defaults read com.apple.screencapture <key>`, or None when unset.
+fn screencapture_pref(key: &str) -> Option<String> {
+    let out = std::process::Command::new("defaults")
+        .args(["read", "com.apple.screencapture", key])
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let v = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    (!v.is_empty()).then_some(v)
+}
+
+/// Where ⌘⇧3/4/5 write their files: the user's setting, else the Desktop (the system default).
+fn screenshot_dir() -> Option<std::path::PathBuf> {
+    let home = std::env::var_os("HOME").map(std::path::PathBuf::from)?;
+    Some(match screencapture_pref("location") {
+        Some(loc) if loc == "~" => home,
+        Some(loc) if loc.starts_with("~/") => home.join(&loc[2..]),
+        Some(loc) => std::path::PathBuf::from(loc),
+        None => home.join("Desktop"),
+    })
+}
+
+/// ⌘⇧5's toolbar can be set to put the picture on the clipboard instead of in a file.
+#[tauri::command(async)]
+pub fn screenshot_goes_to_clipboard() -> bool {
+    screencapture_pref("target").as_deref() == Some("clipboard")
+}
+
+/// Wait for the screenshot taken at `since_ms` to land as a file. While the floating
+/// thumbnail is up (the system default, about five seconds) the file is not written yet, so
+/// this looks again every 150 ms until `timeout_ms`. `Ok(None)` = nothing came.
+/// ⚠️ Reading the Desktop is what makes macOS ask once 「“Spool”想访问“桌面”文件夹中的文件」
+/// (Ocean 2026-10-08: 弹一次就弹一次). A refusal comes back as `Err("denied")`.
+#[tauri::command(async)]
+pub fn find_new_screenshot(since_ms: u64, timeout_ms: u64) -> Result<Option<String>, String> {
+    let dir = screenshot_dir().ok_or_else(|| "no_dir".to_string())?;
+    let deadline = std::time::Instant::now() + std::time::Duration::from_millis(timeout_ms);
+    loop {
+        if let Some(p) = pick_new_screenshot(&dir, since_ms)? {
+            return Ok(Some(p.to_string_lossy().into_owned()));
+        }
+        if std::time::Instant::now() >= deadline {
+            return Ok(None);
+        }
+        std::thread::sleep(std::time::Duration::from_millis(150));
+    }
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AddReport {
+    pub added: Vec<ImageMeta>,
+    /// One code per file that did not go in (same codes as `prepare`, plus `unreadable`).
+    pub errors: Vec<String>,
+}
+
+/// Store image files into a block, in the order given (drag from Finder; a screenshot file).
+#[tauri::command(async)]
+pub fn add_block_images_from_paths(
+    app: tauri::AppHandle,
+    block_id: String,
+    paths: Vec<String>,
+) -> Result<AddReport, String> {
+    let conn = open_library(&app)?;
+    let mut report = AddReport { added: Vec::new(), errors: Vec::new() };
+    for p in paths {
+        let prepared = std::fs::read(&p)
+            .map_err(|e| {
+                if e.kind() == std::io::ErrorKind::PermissionDenied { "denied".to_string() } else { "unreadable".to_string() }
+            })
+            .and_then(prepare);
+        match prepared.and_then(|img| insert_images(&conn, &block_id, &[img], now_ms())) {
+            Ok(mut metas) => report.added.append(&mut metas),
+            Err(code) => report.errors.push(code),
+        }
+    }
+    Ok(report)
+}
+
+/// The clipboard's picture as PNG bytes, if it holds one.
+fn clipboard_png(app: &tauri::AppHandle) -> Option<Vec<u8>> {
+    use tauri_plugin_clipboard_manager::ClipboardExt;
+    let img = app.clipboard().read_image().ok()?;
+    let rgba = image::RgbaImage::from_raw(img.width(), img.height(), img.rgba().to_vec())?;
+    let mut png = Vec::new();
+    image::DynamicImage::ImageRgba8(rgba)
+        .write_to(&mut Cursor::new(&mut png), ImageFormat::Png)
+        .ok()?;
+    Some(png)
+}
+
+/// Does the clipboard hold a picture? `[width, height]` when it does — asked before a block is
+/// made for it, so a capture that finds nothing leaves no empty block (and no spent #n) behind.
+#[tauri::command(async)]
+pub fn clipboard_image_size(app: tauri::AppHandle) -> Option<[u32; 2]> {
+    use tauri_plugin_clipboard_manager::ClipboardExt;
+    let img = app.clipboard().read_image().ok()?;
+    (img.width() > 0 && img.height() > 0).then(|| [img.width(), img.height()])
+}
+
+/// Store the clipboard's picture into a block (双击 ⌥ with an image copied, or ⌃⌘⇧4).
+#[tauri::command(async)]
+pub fn add_block_image_from_clipboard(app: tauri::AppHandle, block_id: String) -> Result<ImageMeta, String> {
+    let png = clipboard_png(&app).ok_or_else(|| "no_image".to_string())?;
+    let prepared = prepare(png)?;
+    let conn = open_library(&app)?;
+    let mut metas = insert_images(&conn, &block_id, &[prepared], now_ms())?;
+    Ok(metas.remove(0))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -337,6 +517,49 @@ mod tests {
             .unwrap();
         assert_eq!(stored, ("blob".to_string(), a_bytes.len() as i64));
         assert_eq!(insert_images(&conn, "gone", &[], 1).unwrap_err(), "no_block");
+    }
+
+    // P7-7: 「刚截的那张」 = newest marked screenshot written since the chord.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn the_new_screenshot_is_the_newest_marked_one_since_the_chord() {
+        use std::os::unix::ffi::OsStrExt;
+        let dir = std::env::temp_dir().join(format!("spool-shots-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let mark = |p: &std::path::Path| {
+            let path = std::ffi::CString::new(p.as_os_str().as_bytes()).unwrap();
+            let v = b"bplist00	                            	";
+            let rc = unsafe {
+                libc::setxattr(path.as_ptr(), c"com.apple.metadata:kMDItemIsScreenCapture".as_ptr(), v.as_ptr().cast(), v.len(), 0, 0)
+            };
+            assert_eq!(rc, 0);
+        };
+        let png = encode(&rgba(4, 4), ImageFormat::Png);
+        let write = |name: &str| {
+            let p = dir.join(name);
+            std::fs::write(&p, &png).unwrap();
+            p
+        };
+        let since = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as u64;
+        assert_eq!(pick_new_screenshot(&dir, since).unwrap(), None, "empty folder");
+        write("Screenshot not marked.png"); // a png that is not a screenshot
+        let txt = write("notes.txt");
+        mark(&txt); // marked, but not an image
+        assert_eq!(pick_new_screenshot(&dir, since).unwrap(), None);
+        let first = write("截屏 1.png");
+        mark(&first);
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        let second = write("Screenshot 2.png");
+        mark(&second);
+        assert_eq!(pick_new_screenshot(&dir, since).unwrap(), Some(second.clone()), "newest wins");
+        // Written long before the chord: not this screenshot.
+        assert_eq!(pick_new_screenshot(&dir, since + 60_000).unwrap(), None);
+        assert!(pick_new_screenshot(&dir.join("missing"), since).is_err());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
