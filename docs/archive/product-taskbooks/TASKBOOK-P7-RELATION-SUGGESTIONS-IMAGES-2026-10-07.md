@@ -1,6 +1,6 @@
 # 产品任务书 P7 —— AI 的「更正 / 取代」只算建议、一块能取代好几块 + 图片
 
-> **状态：COMPLETE —— 待 Ocean 验收。**（八步已提交、已换装，真库已迁到 v32；回执在 §7 末尾。10-08 验收第一轮第 1–6 条已改、已提交，**还没换装**；第 7 条并进 P8。）
+> **状态：COMPLETE —— 待 Ocean 验收。**（八步已提交、已换装，真库已迁到 v32；回执在 §7 末尾。10-08 验收第一轮第 1–6 条已改、已提交、已换装；第 7 条并进 P8。）
 >
 > **唯一交付：** 下面 §3 的八步（P7-1 – P7-8），按顺序做完、各自测试通过、各自一笔提交，并在 §7 写回执。
 >
@@ -410,4 +410,25 @@ Vitest 输出里的 `[db] pre-migration backup FAILED … window is not defined`
   - 三笔里每一笔都在单独导出的树里跑过 tsc 和 vitest，第二笔还加跑了 cargo。
   - 需要真手指的部分（编辑面板、大图左右划、访达 ⌘C、捕捉卡缩略图）只能换装后验。
 - 没做：第 7 条（并进 P8）。
-- 换装：**还没换**，等 Ocean 说。
+- 换装（Ocean 10-08 答「现在换装」）
+  - 构建：在 `32eff8e` 上构建，`src` / `src-tauri` / `site` / `scripts` 没有未提交改动。命令和 P7 那次一样，日志写进文件，日志里是「skipping app notarization」。
+    - TSA 第一遍就过（主程序 16:13:27，`spool-ai` 16:13:26），`--verify --deep --strict` 也过。
+    - 打出来的前端里有这一轮的新字（「在图后面写字」「给这张图写一句注释」「有 {n} 张图片没能放回原来的位置」）。
+  - 装前：`spool` sha256 `84004882…`（P7 那版）。真库 v32，工作区 / 项目 / 块 / 文件 = 27 / 66 / 1078 / 12，图片 7 张（共 2912959 字节），正文 321773、批注 13113。迁移快照 24 个，`mcp-clients.json` 18 行。
+  - 停：GUI 66334 和 `--overlay` 66377 按 pid `kill -TERM`，3 秒内都退了。`--mcp` 子进程 5 个一个没碰（前后都是 5）。
+  - 真库备份：`~/Desktop/spool.before-p7r1-install-20261008-161358.db`（`VACUUM INTO`，integrity ok，各项和活库一致）。
+  - 旧包挪到 `~/Desktop/Spool/spool-pre-install/Spool-old-20261008-161405-pre-p7r1.app`，新包 `ditto` 进 `/Applications`，再用 `open --stdout … --stderr …` 启动。
+  - 装后
+    - `--verify --deep --strict` 过，Developer ID，`spctl` = `Unnotarized Developer ID`，版本 0.6.2。
+    - `spool` sha256 `c9eec2d8…`，和构建产物一致。
+    - 主进程 6078（16:14:05）和 `--overlay` 6089（16:14:06）的 `lsof` txt inode 都是 77318759，就是新文件。
+    - stderr 里有 `[overlay] helper started` 和 `[double-tap] installed at HID/active`，没有 error / panic。
+  - 真库：这一轮不改库结构，没有迁移。`user_version` 仍是 32，`integrity_check ok`，各项计数和总长和装前逐项一致，迁移快照仍是 24 个。
+  - `--mcp` 探针：用新装的二进制，`SPOOL_DATA_DIR` 指向备份的 `VACUUM INTO` 副本（在 scratchpad 里）。在副本的 HAI-Lecture4 #27（6 张图）里写进两行图（第一行带注释），中间夹一行字。
+    - `get_pack` 那一块是 `![第一张的注释](<路径>)`、`中间的字`、`![](<路径>)`，没点名的 4 张跟在后面；#26（旧块，1 张）的图跟在 `sss` 后面。
+    - `get_pack`、`get_blocks`、`search_blocks` 三份回复里都没有 `spool-image`。
+    - 放出来的图片文件和库里存的字节逐字节一致。
+    - 真库目录的 `mcp-clients.json` 前后都是 18 行。
+    - （探针第一遍是脚本写错了：zsh 数组从 1 开始，第一行的 id 变成空的。那一行于是不算图片行，兜底那一道把 `spool-image:` 换成了 `image`，这正是设计好的行为。）
+  - 那 5 个 `--mcp` 子进程跑的还是旧二进制。库没变，所以不会报错，但它们打 pack 时会把图片行原样印出来。Ocean 重启 Claude / Codex 之后就是新版。
+  - commit、build、换装分开记在上面；没 push、没发版。
