@@ -37,7 +37,7 @@ import { PINNED_SEE_ABOVE } from '@/lib/pack/templates';
 import { stripInventedSkeleton } from '@/lib/pack/skeleton';
 import type { Thread } from '@/lib/db/threads';
 import { assemble } from '@/lib/pack/assemble';
-import { buildThreadPack } from '@/lib/pack/forThread';
+import { buildThreadPack, pictureLinesAsIs } from '@/lib/pack/forThread';
 import { t } from '@/lib/i18n';
 import { useBlocksStore } from './blocksStore';
 import { toast } from './toastStore';
@@ -301,6 +301,8 @@ const buildBlockPack = (thread: Thread, block: Block): string =>
     attachments: [],
     refTitles: new Map(),
     refBlocks: new Map(),
+    // P7 验收第一轮（图文混排）：图片行原样留着，shield 送出去之前整行摘掉（见 forThread.ts）。
+    images: pictureLinesAsIs([block]),
     instructions: useSettingsStore.getState().packInstructions,
     outputLanguage: useSettingsStore.getState().language === 'en' ? 'en' : 'zh',
   });

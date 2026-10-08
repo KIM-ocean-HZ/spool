@@ -27,7 +27,6 @@ import {
   RECHECK_PREFIX,
   RETRIEVED_PREFIX,
   REF_BLOCK_CORRECTS,
-  IMAGE_PREFIX,
   REF_BLOCK_MARKER,
   REF_BLOCK_FROM,
   REF_BLOCK_MISSING,
@@ -43,11 +42,15 @@ import {
   UNKNOWN_THREAD,
   truncationMarker,
 } from './templates';
+import { imageLinesAsText, renderImageLines } from '@/lib/blocks/imageLines';
 import { quoteIsInBlock } from '@/lib/blocks/quoteFold';
 
-/** What the renderer needs about a block someone else cites. */
-/** P7-8: one picture as the pack prints it — `image: <path> (W×H)`. */
+/** P7-8: one picture of a block, with the path of the copy Spool keeps beside the library
+ *  (`images.rs::cached_images_of`). P7 验收第一轮（图文混排）: printed where its line sits in
+ *  the text, `![caption](<path>)` — `renderImageLines`. ⚠️ The one place a pack carries a
+ *  local path; files still show their name only (§3.1-5). */
 export interface PackImage {
+  id: string;
   path: string;
   width: number;
   height: number;
@@ -319,18 +322,15 @@ const renderBlock = (
     // 「这几句不是原话」只在读全文的时候才要紧。⛔ 压缩前的原文**不进 pack**：那是他定的，
     // pack 里只放记号，让收件 AI 主动来问（`get_block_original`）。
     const squeezed = b.compressedAt != null ? COMPRESSED_PREFIX : '';
-    lines.push(`${star}${band}${squeezed}${n}[${bracket}] ${b.content.trim()}`);
+    // P7 验收第一轮（图文混排）: each picture where its line is, as a path. Mirrors mcp.rs
+    // block_head_line.
+    lines.push(`${star}${band}${squeezed}${n}[${bracket}] ${renderImageLines(b.content, images ?? []).trim()}`);
   }
 
   // v20: directly under the head line — where the block came from is part of what it IS,
   // and it has to be read before the sentences commenting on it.
   const provenance = provenanceLine(b, now);
   if (provenance) lines.push(provenance);
-  // P7-8: the block's pictures — part of what the block IS, so before anything said about
-  // it. Byte-for-byte with mcp.rs render_block. ⛔ The bytes never go into a pack.
-  for (const img of images ?? []) {
-    lines.push(`${NOTE_INDENT}${IMAGE_PREFIX}${img.path} (${img.width}×${img.height})`);
-  }
 
   if (b.annotation?.trim()) {
     // v14 (§9.3 拍板乙): which marker decides how much authority the next model gives this
@@ -501,7 +501,8 @@ export const foldedCorrectionIds = (blocks: Block[]): Set<string> => {
 // cited block — one truncation semantic across pack and GUI.
 const PLACEHOLDER_HEAD_CHARS = 40;
 export const headAnchor = (content: string): string => {
-  const one = oneLine(content);
+  // P7 验收第一轮: a picture line reads `[image] caption` here, never its id. Mirrors mcp.rs.
+  const one = oneLine(imageLinesAsText(content));
   const chars = [...one];
   if (chars.length <= PLACEHOLDER_HEAD_CHARS) return one;
   return chars.slice(0, PLACEHOLDER_HEAD_CHARS).join('') + '…';
@@ -542,7 +543,7 @@ export const blockLabel = (
 ): string => {
   const body = headAnchor(content);
   const note = noteIsAi ? undefined : annotation?.trim();
-  const bodyFitsWhole = body === oneLine(content);
+  const bodyFitsWhole = body === oneLine(imageLinesAsText(content));
   return note && note.length > 0 && !bodyFitsWhole ? headAnchor(note) : body;
 };
 

@@ -11,7 +11,8 @@ import { annotationIsAi } from '@/lib/blocks/annotationAuthor';
 import { listAttachmentsByThread } from '@/lib/db/attachments';
 import { listBlocksByIds, listBlocksByThread, type Block } from '@/lib/db/blocks';
 import type { Thread } from '@/lib/db/threads';
-import { assemble, filterBlocksForRange, type CitedBlock } from '@/lib/pack/assemble';
+import { referencedImageIds } from '@/lib/blocks/imageLines';
+import { assemble, filterBlocksForRange, type CitedBlock, type PackImage } from '@/lib/pack/assemble';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { useThreadsStore } from '@/stores/threadsStore';
 
@@ -22,6 +23,18 @@ export interface ThreadPack {
    *  ⚠️ 界面要说出这个数：pack 里少了几块，而用户没做任何选择。 */
   skippedCompressed: number;
 }
+
+/** P7 验收第一轮（图文混排）：压缩用的 pack 里，图片行原样留着 —— 「路径」就是它自己那个内部
+ *  地址，于是渲染出来的还是 `![注释](spool-image:<id>)` 那一行。送出去之前 shield 把它整行摘掉、
+ *  压完放回，写回库的正文里那一行还是原来那一行。⚠️ 只给正文里点了名的那几张：没点名的
+ *  会被渲染器补到块尾，写回去就平白多出几行。 */
+export const pictureLinesAsIs = (blocks: readonly Block[]): Map<string, PackImage[]> =>
+  new Map(
+    blocks.map((b) => [
+      b.id,
+      referencedImageIds(b.content).map((id) => ({ id, path: `spool-image:${id}`, width: 0, height: 0 })),
+    ]),
+  );
 
 /** 组一份和打包对话框逐字相同的 pack。
  *
@@ -36,7 +49,8 @@ export const buildThreadPack = async (
    *  一条规矩同时解决两件事：**不重复花钱**，以及**压过的不会被越压越短**
    *  （第二次压的是第一次的产物，而它已经不是用户的原话了）。
    *
-   *  ⛔ 默认 false：别的调用方（真的要粘贴出去那一份）必须拿到完整的 pack。 */
+   *  ⛔ 默认 false：别的调用方（真的要粘贴出去那一份）必须拿到完整的 pack。
+   *  ⚠️ 压缩用的这一份还带着原样的图片行（`pictureLinesAsIs`）。 */
   skipCompressed = false,
 ): Promise<ThreadPack> => {
   const all = await listBlocksByThread(thread.id);
@@ -74,6 +88,7 @@ export const buildThreadPack = async (
     refTitles,
     refBlocks,
     scope: { range: 'all', total: blocks.length },
+    images: skipCompressed ? pictureLinesAsIs(blocks) : undefined,
     instructions: s.packInstructions,
     outputLanguage: s.language === 'en' ? 'en' : 'zh',
   });

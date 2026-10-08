@@ -190,9 +190,11 @@ const REF_BLOCK_FROM: &str = " — in project: ";
 // instructions to the next reader, so they cannot share one marker.
 const REF_BLOCK_SUPERSEDES: &str = "↩ replaces (that block no longer holds): ";
 const REF_BLOCK_CORRECTS: &str = "↩ corrects one point in: ";
-// P7-8 (Ocean 2026-10-08): a picture in the block — `image: <path of the cached copy> (W×H)`.
-// Mirrors templates.ts IMAGE_PREFIX.
-const IMAGE_PREFIX: &str = "image: ";
+// P7 验收第一轮（Ocean 2026-10-08，图文混排）: a picture is a LINE of the block's own text,
+// `![caption](spool-image:<id>)` — mirrors lib/blocks/imageLines.ts. The id is internal: a
+// pack prints the line as `![caption](<path of the copy>)`, previews and labels as
+// `[image] caption`, and every tool reply goes through `hide_image_ids` last.
+const IMAGE_LINE_SCHEME: &str = "](spool-image:";
 // v28 (§2.Q1) — mirrors templates.ts REF_NOTE_PREFIX. Appended LAST on the ↩ line:
 // everything before it describes the CITED block, this is the one part spoken by the block
 // being read. Rendered only when a reason was written.
@@ -693,7 +695,10 @@ fn block_head_line(
         Some(src) => format!("{time}{SOURCE_MARKER}{src}"),
         None => time,
     };
-    let content = b.content.trim();
+    // P7 验收第一轮（图文混排）: the pack prints each picture where its line is, as a path; the
+    // digest's one-line preview says `[image] caption`. Mirrors assemble.ts renderBlock.
+    let shown = if band { render_image_lines(&b.content, &b.images) } else { image_lines_as_text(&b.content) };
+    let content = shown.trim();
     let body: String = match content_cap {
         Some(cap) if content.chars().count() > cap => {
             let head: String = content.chars().take(cap).collect();
@@ -811,6 +816,96 @@ fn provenance_line(b: &BlockRow, now: i64) -> Option<String> {
         .then(|| format!("{NOTE_INDENT}{PROVENANCE_PREFIX}{}", parts.join(PROVENANCE_SEP)))
 }
 
+/// The picture line `line` is, as (caption, id) — mirrors imageLines.ts IMAGE_LINE_RE
+/// `^!\[(.*)\]\(spool-image:([A-Za-z0-9_-]+)\)[ \t]*$`: the LAST `](spool-image:` wins (with
+/// anything after the `)` but spaces or tabs, no earlier one could match either), and the
+/// caption holds none of the characters JS `.` refuses.
+fn parse_image_line(line: &str) -> Option<(&str, &str)> {
+    let rest = line.strip_prefix("![")?;
+    let at = rest.rfind(IMAGE_LINE_SCHEME)?;
+    let caption = &rest[..at];
+    if caption.contains(['\r', '\u{2028}', '\u{2029}']) {
+        return None;
+    }
+    let tail = &rest[at + IMAGE_LINE_SCHEME.len()..];
+    let close = tail.find(')')?;
+    let id = &tail[..close];
+    let id_ok = !id.is_empty() && id.bytes().all(|c| c.is_ascii_alphanumeric() || c == b'_' || c == b'-');
+    let after_ok = tail[close + 1..].bytes().all(|c| c == b' ' || c == b'\t');
+    (id_ok && after_ok).then_some((caption, id))
+}
+
+/// Each picture line of `content` replaced by what `line_for(caption, id)` says.
+fn map_image_lines(content: &str, mut line_for: impl FnMut(&str, &str) -> String) -> String {
+    content
+        .split('\n')
+        .map(|line| match parse_image_line(line) {
+            Some((caption, id)) => line_for(caption, id),
+            None => line.to_string(),
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// A pack's view of the block text — mirrors imageLines.ts renderImageLines (the golden pins
+/// both): each picture line becomes `![caption](<path of the copy>)` (standard Markdown, and a
+/// file a local AI can open), a line whose picture is not among `images` becomes
+/// `![caption](image)`, and the block's pictures no line names follow at the end as `![](path)`.
+fn render_image_lines(content: &str, images: &[crate::images::CachedImage]) -> String {
+    let mut named: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let out = map_image_lines(content, |caption, id| {
+        named.insert(id.to_string());
+        let path = images.iter().find(|i| i.id == id).map_or("image", |i| i.path.as_str());
+        format!("![{caption}]({path})")
+    });
+    let rest: Vec<String> = images
+        .iter()
+        .filter(|i| !named.contains(&i.id))
+        .map(|i| format!("![]({})", i.path))
+        .collect();
+    if rest.is_empty() {
+        return out;
+    }
+    std::iter::once(out.trim_end().to_string())
+        .chain(rest)
+        .filter(|s| !s.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// For previews and labels — mirrors imageLines.ts imageLinesAsText: `[image] caption`.
+fn image_lines_as_text(content: &str) -> String {
+    map_image_lines(content, |caption, _| match caption.trim() {
+        "" => "[image]".to_string(),
+        c => format!("[image] {c}"),
+    })
+}
+
+/// The last pass over everything a tool, a prompt or a resource hands an AI: any
+/// `spool-image:<id>` still in it (a field some renderer printed raw) becomes `image`. The
+/// renderers above already turn picture lines into paths or `[image]`; this is the net under
+/// them, so an internal id cannot leave the library through a path nobody thought of.
+fn hide_image_ids(text: &str) -> String {
+    const SCHEME: &str = "spool-image:";
+    if !text.contains(SCHEME) {
+        return text.to_string();
+    }
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(at) = rest.find(SCHEME) {
+        out.push_str(&rest[..at]);
+        let after = &rest[at + SCHEME.len()..];
+        let id_len = after
+            .bytes()
+            .take_while(|c| c.is_ascii_alphanumeric() || *c == b'_' || *c == b'-')
+            .count();
+        out.push_str("image");
+        rest = &after[id_len..];
+    }
+    out.push_str(rest);
+    out
+}
+
 fn render_block(
     b: &BlockRow,
     ref_titles: &std::collections::HashMap<String, String>,
@@ -822,11 +917,6 @@ fn render_block(
     // v20: directly under the head line — mirrors assemble.ts, where the reasoning is.
     if let Some(line) = provenance_line(b, now) {
         lines.push(line);
-    }
-    // P7-8: the block's pictures — part of what the block IS, so before anything said about
-    // it. Byte-for-byte with assemble.ts renderBlock. ⛔ The bytes never go into a pack.
-    for img in &b.images {
-        lines.push(format!("{NOTE_INDENT}{IMAGE_PREFIX}{} ({}×{})", img.path, img.width, img.height));
     }
     if let Some(note) = block_note_line(b) {
         lines.push(note);
@@ -899,7 +989,8 @@ fn anchor_n(content: &str, n: usize) -> String {
 }
 
 fn head_anchor(content: &str) -> String {
-    anchor_n(content, PLACEHOLDER_HEAD_CHARS)
+    // P7 验收第一轮: a picture line reads `[image] caption` here — mirrors assemble.ts headAnchor.
+    anchor_n(&image_lines_as_text(content), PLACEHOLDER_HEAD_CHARS)
 }
 
 // DESIGN_CONTEXT_HYGIENE §3.2 — the label ladder; mirrors assemble.ts blockLabel.
@@ -928,7 +1019,7 @@ fn head_anchor(content: &str) -> String {
 // `ai note:`, it just never speaks for the block.
 fn block_label(content: &str, annotation: Option<&str>, note_is_ai: bool) -> String {
     let body = head_anchor(content);
-    let fits_whole = body == one_line(content);
+    let fits_whole = body == one_line(&image_lines_as_text(content));
     let note = if note_is_ai { None } else { annotation };
     match note.map(str::trim).filter(|n| !n.is_empty()) {
         Some(note) if !fits_whole => head_anchor(note),
@@ -3159,20 +3250,34 @@ fn get_blocks_json(
             .filter_map(|r| r["block_id"].as_str().map(String::from))
             .collect();
         let id_refs: Vec<&str> = ids.iter().map(String::as_str).collect();
-        let mut by_block: std::collections::HashMap<String, Vec<Value>> = std::collections::HashMap::new();
+        let mut by_block: std::collections::HashMap<String, Vec<crate::images::CachedImage>> =
+            std::collections::HashMap::new();
         for img in crate::images::cached_images_of(conn, &dir, &id_refs)? {
-            by_block.entry(img.block_id.clone()).or_default().push(json!({
-                "path": img.path,
-                "format": img.format,
-                "width": img.width,
-                "height": img.height,
-                "size_bytes": img.size_bytes,
-            }));
+            by_block.entry(img.block_id.clone()).or_default().push(img);
         }
         for row in rows.iter_mut() {
-            if let Some(imgs) = row["block_id"].as_str().and_then(|id| by_block.remove(id)) {
-                row["images"] = Value::Array(imgs);
+            let Some(imgs) = row["block_id"].as_str().and_then(|id| by_block.remove(id)) else { continue };
+            // 图文混排: the text names each picture where it sits — by the same path as `images`.
+            if let Some(content) = row["content"].as_str() {
+                let resolved = map_image_lines(content, |caption, id| {
+                    let path = imgs.iter().find(|i| i.id == id).map_or("image", |i| i.path.as_str());
+                    format!("![{caption}]({path})")
+                });
+                row["content"] = Value::String(resolved);
             }
+            row["images"] = Value::Array(
+                imgs.iter()
+                    .map(|img| {
+                        json!({
+                            "path": img.path,
+                            "format": img.format,
+                            "width": img.width,
+                            "height": img.height,
+                            "size_bytes": img.size_bytes,
+                        })
+                    })
+                    .collect(),
+            );
         }
     }
 
@@ -7262,7 +7367,7 @@ fn tools_descriptor() -> Value {
         },
         {
             "name": "get_blocks",
-            "description": "Page through one project's blocks in chronological order, as JSON (full content, annotation, source, pinned, timestamps, plus each block's attachments with the size of any extracted file text). The middle granularity between a search snippet and a full pack, and the way to read a project whose pack is over budget. To read around a search hit, pass its block_id as around_block_id (with optional context, default 3 each side) — this centers the page and returns anchor_position; offset/limit are ignored. Optional filters (pinned / has_annotation / source_contains / stale) AND-combine and narrow the page + total; they cannot be combined with around_block_id. Two v13 fields on every row: stale_at is set when the USER marked that block as no longer valid — packs and digests stop carrying it, this tool still returns it, and you must not relay it as a current fact; ref_kind says what the row's ref_block_id means — 'cites' (builds on it, the default and what null means), 'supersedes' (replaces it; that block is stale), 'corrects' (one point inside it is wrong, the rest of it still stands). A replacement the user approved is now recorded on the OLD block instead: a stale block a newer one replaced wholesale carries replaced_by {seq, block_id}, and the newer block keeps its own ref_kind (so one block can replace several and still correct another); 'supersedes' only remains on rows from before that change. A block holding pictures carries `images`: each one's path (a copy Spool keeps on this computer — open it if you can read local files), format, width, height and size_bytes; packs print the same as `image: <path> (W×H)` lines under the block. Each file in `files` also says where it hangs (attached_to: \"#12\" or \"project\"), who added it (added_by: \"user\", or the label of the AI whose proposal the user approved), and — only once a newer version replaced it — superseded_by and superseded_at: a replaced file is still listed here, but it is no longer in packs.",
+            "description": "Page through one project's blocks in chronological order, as JSON (full content, annotation, source, pinned, timestamps, plus each block's attachments with the size of any extracted file text). The middle granularity between a search snippet and a full pack, and the way to read a project whose pack is over budget. To read around a search hit, pass its block_id as around_block_id (with optional context, default 3 each side) — this centers the page and returns anchor_position; offset/limit are ignored. Optional filters (pinned / has_annotation / source_contains / stale) AND-combine and narrow the page + total; they cannot be combined with around_block_id. Two v13 fields on every row: stale_at is set when the USER marked that block as no longer valid — packs and digests stop carrying it, this tool still returns it, and you must not relay it as a current fact; ref_kind says what the row's ref_block_id means — 'cites' (builds on it, the default and what null means), 'supersedes' (replaces it; that block is stale), 'corrects' (one point inside it is wrong, the rest of it still stands). A replacement the user approved is now recorded on the OLD block instead: a stale block a newer one replaced wholesale carries replaced_by {seq, block_id}, and the newer block keeps its own ref_kind (so one block can replace several and still correct another); 'supersedes' only remains on rows from before that change. A block holding pictures carries `images`: each one's path (a copy Spool keeps on this computer — open it if you can read local files), format, width, height and size_bytes; its content, like a pack, shows each picture where it sits in the text as a Markdown image, `![caption](<path>)`. Each file in `files` also says where it hangs (attached_to: \"#12\" or \"project\"), who added it (added_by: \"user\", or the label of the AI whose proposal the user approved), and — only once a newer version replaced it — superseded_by and superseded_at: a replaced file is still listed here, but it is no longer in packs.",
             "annotations": { "readOnlyHint": true },
             "inputSchema": {
                 "type": "object",
@@ -7583,7 +7688,7 @@ fn tools_descriptor() -> Value {
 }
 
 fn tool_result_text(text: String, is_error: bool) -> Value {
-    json!({ "content": [{ "type": "text", "text": text }], "isError": is_error })
+    json!({ "content": [{ "type": "text", "text": hide_image_ids(&text) }], "isError": is_error })
 }
 
 fn handle_tool_call(params: &Value) -> Value {
@@ -10514,6 +10619,7 @@ fn handle_request(method: &str, params: &Value) -> Result<Value, (i64, String)> 
                 }
                 get_pack_text(&open_db(&dir)?, thread_id, "all")
             })()
+            .map(|t| hide_image_ids(&t))
             .map_err(|e| (-32603, e))?;
             Ok(json!({
                 "contents": [{ "uri": uri, "mimeType": "text/plain", "text": text }]
@@ -10589,7 +10695,7 @@ fn handle_request(method: &str, params: &Value) -> Result<Value, (i64, String)> 
                 "catch_up" => "Where one Spool project stands, and what may have gone out of date.",
                 _ => return Err((-32602, format!("unknown prompt: {name}"))),
             };
-            let text = guidance_text(name, &args).map_err(|e| (-32603, e))?;
+            let text = hide_image_ids(&guidance_text(name, &args).map_err(|e| (-32603, e))?);
             Ok(json!({
                 "description": description,
                 "messages": [{
@@ -10794,7 +10900,7 @@ mod tests {
                     .map(|a| {
                         a.iter()
                             .map(|i| crate::images::CachedImage {
-                                id: String::new(),
+                                id: i["id"].as_str().unwrap().to_string(),
                                 block_id: String::new(),
                                 path: i["path"].as_str().unwrap().to_string(),
                                 format: String::new(),
@@ -15613,7 +15719,8 @@ mod tests {
     }
 
     // P7-8（Ocean 2026-10-07 #5、10-08「写完整路径」）：块里的图片 —— get_blocks 给张数、尺寸、
-    // 大小和放出来的那份路径；pack 在块下面写 `image: <路径> (W×H)`；⛔ 字节一个都不进。
+    // 大小和放出来的那份路径；⛔ 字节一个都不进。P7 验收第一轮（图文混排）：图是正文里的一行，
+    // pack 和 get_blocks 的 content 都在那一行的位置写 `![注释](<路径>)`，⛔ 内部 id 不出库。
     #[test]
     fn pictures_reach_get_blocks_and_the_pack_as_paths() {
         store_lang(Lang::En);
@@ -15638,8 +15745,14 @@ mod tests {
             .unwrap();
         let prepared = crate::images::prepare(png.clone()).unwrap();
         let metas = crate::images::insert_images(&conn, "b1", &[prepared], 5).unwrap();
+        conn.execute(
+            "UPDATE blocks SET content = ?1 WHERE id = 'b1'",
+            [format!("two builds side by side\n![left is the old one](spool-image:{})\nthen the fix", metas[0].id)],
+        )
+        .unwrap();
         // sqlite reports the file's real path (symlinks resolved), and so does every pack line.
         let expected_path = std::fs::canonicalize(&tmp).unwrap().join("image-cache").join(format!("{}.png", metas[0].id));
+        let shown = format!("two builds side by side\n![left is the old one]({})\nthen the fix", expected_path.to_string_lossy());
 
         let filters = BlockFilters { pinned: None, has_annotation: None, source_contains: None, stale: None };
         let v: Value = serde_json::from_str(&get_blocks_json(&conn, "t1", None, None, None, None, &filters, false).unwrap()).unwrap();
@@ -15648,16 +15761,60 @@ mod tests {
             b1["images"],
             json!([{ "path": expected_path.to_string_lossy(), "format": "png", "width": 12, "height": 8, "size_bytes": png.len() }])
         );
+        assert_eq!(b1["content"], json!(shown), "the text names the picture by its path, where it sits");
         assert!(v["blocks"].as_array().unwrap().iter().find(|b| b["block_id"] == "b2").unwrap().get("images").is_none());
         assert_eq!(std::fs::read(&expected_path).unwrap(), png, "the copy is the picture, byte for byte");
 
         let pack = get_pack_text(&conn, "t1", "all").unwrap();
-        let line = format!("{NOTE_INDENT}image: {} (12×8)", expected_path.to_string_lossy());
-        assert!(pack.contains(&line), "{pack}");
-        assert_eq!(pack.matches("image: ").count(), 1, "{pack}");
+        assert!(pack.contains(&format!("] {shown}\n")), "{pack}");
+        assert!(!pack.contains("spool-image"), "{pack}");
         assert!(!pack.contains("base64") && !pack.contains("PNG\r\n"), "no bytes in a pack");
         drop(conn);
         let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    // P7 验收第一轮（图文混排）：图片行的解析和 imageLines.ts 的 IMAGE_LINE_RE 一致 ——
+    // 最后一个 `](spool-image:` 算数、`)` 后面只许空格和 tab、id 只许 [A-Za-z0-9_-]。
+    #[test]
+    fn picture_lines_parse_like_the_ts_pattern() {
+        assert_eq!(parse_image_line("![a cap](spool-image:Ab_9-)"), Some(("a cap", "Ab_9-")));
+        assert_eq!(parse_image_line("![](spool-image:x) \t"), Some(("", "x")));
+        assert_eq!(parse_image_line("![a](b](spool-image:x)"), Some(("a](b", "x")));
+        assert_eq!(parse_image_line("![a](spool-image:x) more"), None);
+        assert_eq!(parse_image_line(" ![a](spool-image:x)"), None);
+        assert_eq!(parse_image_line("![a](spool-image:)"), None);
+        assert_eq!(parse_image_line("![a](spool-image:x.y)"), None);
+        assert_eq!(parse_image_line("![a\rb](spool-image:x)"), None);
+        assert_eq!(parse_image_line("![a](spool-image:x)\r"), None);
+    }
+
+    #[test]
+    fn picture_lines_render_as_paths_labels_and_never_as_ids() {
+        let img = |id: &str, path: &str| crate::images::CachedImage {
+            id: id.into(),
+            block_id: "b".into(),
+            path: path.into(),
+            format: "png".into(),
+            width: 1,
+            height: 1,
+            size_bytes: 1,
+        };
+        let content = "before\n![cap](spool-image:i1)\nbetween\n![gone](spool-image:zz)\n";
+        assert_eq!(
+            render_image_lines(content, &[img("i1", "/c/i1.png"), img("i2", "/c/i2.png")]),
+            "before\n![cap](/c/i1.png)\nbetween\n![gone](image)\n![](/c/i2.png)"
+        );
+        assert_eq!(render_image_lines("plain", &[]), "plain");
+        assert_eq!(render_image_lines("", &[img("i2", "/c/i2.png")]), "![](/c/i2.png)");
+        assert_eq!(image_lines_as_text("a\n![ cap ](spool-image:i1)\n![](spool-image:i2)"), "a\n[image] cap\n[image]");
+        assert_eq!(head_anchor("![cap](spool-image:i1)"), "[image] cap");
+        assert_eq!(
+            hide_image_ids("x ![c](spool-image:abc_1) y \"![d](spool-image:Q)\""),
+            "x ![c](image) y \"![d](image)\""
+        );
+        assert_eq!(hide_image_ids("nothing here"), "nothing here");
+        let reply = tool_result_text("![c](spool-image:abc)".into(), false);
+        assert_eq!(reply["content"][0]["text"], json!("![c](image)"));
     }
 
     // P7-3（Ocean 2026-10-07 第 41 条）：取代记在旧块上。Flux #20 的形状 —— #3 已经在更正 #1，

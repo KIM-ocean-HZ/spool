@@ -284,22 +284,37 @@ describe('assemble', () => {
   // P7-8 (Ocean 2026-10-08: 写完整路径) — the one exception, and only for pictures: a picture
   // lives inside the library, so the pack can only name it by the copy Spool writes on disk,
   // and a local AI reading the pack opens it from there. Files keep the rule above.
-  it('pictures print the full path of their copy (Ocean 10-08); files still show their name only', () => {
-    const blocks = [textBlock('b1', 'two builds side by side'), textBlock('b2', 'no pictures')];
+  // P7 验收第一轮（图文混排）: each picture prints where its line sits in the text, as Markdown.
+  it('pictures print where they sit, by the full path of their copy (Ocean 10-08); files still show their name only', () => {
+    const blocks = [
+      textBlock('b1', 'two builds side by side\n![left is the old one](spool-image:i1)\nthen the fix'),
+      textBlock('b2', 'no pictures'),
+    ];
     const attachments = [attachment('a1', { label: '', target: '/Users/hzjin/Library/files/lecture-03.pdf' })];
     const img = '/Users/hzjin/Library/Application Support/com.oceanjin.spool/image-cache/i1.png';
     const out = assemble({
       thread,
       blocks,
       attachments,
-      images: new Map([['b1', [{ path: img, width: 1240, height: 800 }, { path: `${img}2`, width: 10, height: 20 }]]]),
+      images: new Map([
+        [
+          'b1',
+          [
+            { id: 'i1', path: img, width: 1240, height: 800 },
+            { id: 'i2', path: `${img}2`, width: 10, height: 20 },
+          ],
+        ],
+      ]),
       now: NOW,
     });
-    expect(out).toContain(`    image: ${img} (1240×800)\n    image: ${img}2 (10×20)\n`);
+    // i2 has no line (a block from before 图文混排): it follows the text.
+    expect(out).toContain(`two builds side by side\n![left is the old one](${img})\nthen the fix\n![](${img}2)\n`);
     expect(out).not.toContain('/Users/hzjin/Library/files');
-    expect(out.match(/image: /g)).toHaveLength(2);
-    // Without the map, no picture lines at all (every block before v32).
-    expect(assemble({ thread, blocks, attachments, now: NOW })).not.toContain('image: ');
+    expect(out).not.toContain('spool-image');
+    // Without the map the caption stays and the id still never leaves the library.
+    const bare = assemble({ thread, blocks, attachments, now: NOW });
+    expect(bare).toContain('![left is the old one](image)\nthen the fix');
+    expect(bare).not.toContain('spool-image');
   });
 
   // The same property on the other platform's separator. It gets its own test because

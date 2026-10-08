@@ -118,6 +118,31 @@ describe('摘掉不该给 AI 看的东西', () => {
   });
 });
 
+// P7 验收第一轮（图文混排）：图片行和高亮一样整行摘成占位符 —— 模型看不见内部 id，压完原样放回。
+describe('图片行不给 AI 看', () => {
+  const WITH_PICTURES = `# Project Context: 界面
+
+## Full Record (chronological)
+
+#3 [2026-10-08 09:00] ![左边是==旧版==](spool-image:i1)
+两张对着看
+![](spool-image:i2)`;
+
+  it('送出去的那份里没有 id；原样回来就原样放回', () => {
+    const { text, held } = shieldPack(WITH_PICTURES);
+    expect(text).not.toContain('spool-image');
+    expect(text).toContain('#3 [2026-10-08 09:00] ⟦H0⟧\n两张对着看\n⟦H1⟧');
+    expect(held.spans).toEqual(['![左边是==旧版==](spool-image:i1)', '![](spool-image:i2)']);
+    expect(unshieldPack(text, held).text).toBe(WITH_PICTURES);
+  });
+
+  it('模型把一张图的占位符弄丢了：照样报出来，认得出是图片行', () => {
+    const { text, held } = shieldPack(WITH_PICTURES);
+    const back = unshieldPack(text.replace('\n⟦H1⟧', ''), held);
+    expect(back.lostSpans).toEqual(['![](spool-image:i2)']);
+  });
+});
+
 // R1 · 写回库那一半（2026-08-22）。⚠️ 写进 `content` 的只能是**块自己的正文** ——
 // Spool 画在块下面的那几行是渲染出来的，写进去的话，下一次渲染会再画一遍，
 // 于是每压一次，块尾就多长出一份批注副本。

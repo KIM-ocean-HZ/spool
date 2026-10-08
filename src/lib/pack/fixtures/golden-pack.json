@@ -1,5 +1,5 @@
 {
-  "__readme": "Cross-language golden fixture (§20.12). assemble.ts (TS test in assemble.test.ts) and mcp.rs (Rust test golden_pack_matches_fixture) must both render this dataset to golden-pack.expected.txt (dates normalized to <DATE>). Covers: pinned+source+annotation, sourceless personal block, ==highlight==, multiline content, multiline annotation, ref via refTitles, ref fallback to content snapshot, url / folder / inlined-file / not-inlined-file attachments, empty label fallback, block-level citation via refBlocks (live + dangling). Also covers a cross-project citation (b8 → b-other, foreignTitle) vs the same-project one (b6 → b1). v13 (DESIGN_CONTEXT_HYGIENE): b9 is a PINNED block the user retired (staleAt) — it must leave both the Pinned Blocks section and the Full Record, taking its slot with it, and the closing [... 1 block ...] line must appear; b10 supersedes it (↩ replaces marker, preview resolved from refBlocks even though the citee is stale); b11 corrects b2, which stays in full and grows a ⚠️ line naming #11. The label ladder (§3.2 / W7) shows up twice: b1's pinned placeholder and b6's ↩ cites: line both name b1 by its ANNOTATION, not by its first 40 characters. v14 (§9.3 拍板乙): b6 is an MCP-written block with an annotation and NO annotationBy — the pre-v14 row, resolved through its source, so it must render `ai note:`. b12 and b13 pin the two directions the recorded column exists for, both on a `· MCP` source: b12 is annotationBy 'ai' (renders `ai note:`, and its pinned placeholder must name it by its BODY — an AI note never titles a block), b13 is annotationBy 'user' (renders `note:` and its placeholder DOES use the note, because the user wrote it on an AI-written block — the case the source-only proxy gets wrong). v20 (DESIGN_MCP_INTENT_ROUTING §4.6): b10 / b11 / b12 pin the provenance sub-line. b10 carries all three fields and its recheck date has PASSED (`now` is 2025-06-15), so it must render the ⚠️ may-be-out-of-date wording while staying in the pack in full — nothing is hidden or retired. b12 carries all three with a recheck date still ahead, so it renders the plain 'recheck after' wording; it is also pinned, which pins the other half of the rule — a pinned block's Full Record PLACEHOLDER carries no provenance line, only its full rendering above does. b11 carries retrieved_at alone: the three pieces are independent and any subset renders. ⚠️ Both dates are UTC midnight and are formatted through formatUtcDate / format_utc_date, NOT the local-time formatter every other timestamp here uses. v28 (WORKPLAN §2.Q1): b8 and b7 carry refNote — the citing block's own 「why I point at it」, appended LAST on the ↩ line, after the cited block's label and after — in project:. b7 pins the branch that matters most: the citee is GONE and the reason still prints, because it is this block's sentence, not the dead one's. b6 (same-project cites) and b11 (corrects) carry none — b6 pins that a NULL renders byte-identically to v27, b11 pins that a correction is never asked for one. P6-4 (HANDOFF §9.2 第 25 条 + Ocean 2026-10-06 #4): every file line ends with where it hangs — a3 hangs off b2 so it renders ` · on #2`, the rest ` · on project` — and a5 has been replaced by a newer file (supersededBy) so it must NOT appear at all.",
+  "__readme": "Cross-language golden fixture (§20.12). assemble.ts (TS test in assemble.test.ts) and mcp.rs (Rust test golden_pack_matches_fixture) must both render this dataset to golden-pack.expected.txt (dates normalized to <DATE>). Covers: pinned+source+annotation, sourceless personal block, ==highlight==, multiline content, multiline annotation, ref via refTitles, ref fallback to content snapshot, url / folder / inlined-file / not-inlined-file attachments, empty label fallback, block-level citation via refBlocks (live + dangling). Also covers a cross-project citation (b8 → b-other, foreignTitle) vs the same-project one (b6 → b1). v13 (DESIGN_CONTEXT_HYGIENE): b9 is a PINNED block the user retired (staleAt) — it must leave both the Pinned Blocks section and the Full Record, taking its slot with it, and the closing [... 1 block ...] line must appear; b10 supersedes it (↩ replaces marker, preview resolved from refBlocks even though the citee is stale); b11 corrects b2, which stays in full and grows a ⚠️ line naming #11. The label ladder (§3.2 / W7) shows up twice: b1's pinned placeholder and b6's ↩ cites: line both name b1 by its ANNOTATION, not by its first 40 characters. v14 (§9.3 拍板乙): b6 is an MCP-written block with an annotation and NO annotationBy — the pre-v14 row, resolved through its source, so it must render `ai note:`. b12 and b13 pin the two directions the recorded column exists for, both on a `· MCP` source: b12 is annotationBy 'ai' (renders `ai note:`, and its pinned placeholder must name it by its BODY — an AI note never titles a block), b13 is annotationBy 'user' (renders `note:` and its placeholder DOES use the note, because the user wrote it on an AI-written block — the case the source-only proxy gets wrong). v20 (DESIGN_MCP_INTENT_ROUTING §4.6): b10 / b11 / b12 pin the provenance sub-line. b10 carries all three fields and its recheck date has PASSED (`now` is 2025-06-15), so it must render the ⚠️ may-be-out-of-date wording while staying in the pack in full — nothing is hidden or retired. b12 carries all three with a recheck date still ahead, so it renders the plain 'recheck after' wording; it is also pinned, which pins the other half of the rule — a pinned block's Full Record PLACEHOLDER carries no provenance line, only its full rendering above does. b11 carries retrieved_at alone: the three pieces are independent and any subset renders. ⚠️ Both dates are UTC midnight and are formatted through formatUtcDate / format_utc_date, NOT the local-time formatter every other timestamp here uses. v28 (WORKPLAN §2.Q1): b8 and b7 carry refNote — the citing block's own 「why I point at it」, appended LAST on the ↩ line, after the cited block's label and after — in project:. b7 pins the branch that matters most: the citee is GONE and the reason still prints, because it is this block's sentence, not the dead one's. b6 (same-project cites) and b11 (corrects) carry none — b6 pins that a NULL renders byte-identically to v27, b11 pins that a correction is never asked for one. P6-4 (HANDOFF §9.2 第 25 条 + Ocean 2026-10-06 #4): every file line ends with where it hangs — a3 hangs off b2 so it renders ` · on #2`, the rest ` · on project` — and a5 has been replaced by a newer file (supersededBy) so it must NOT appear at all. P7 验收第一轮 (图文混排, Ocean 2026-10-08): a picture is a line of the block's text, `![caption](spool-image:<id>)`, and the pack prints it where it sits as `![caption](<path of the copy>)`. b5 places img-a (with a caption) and img-b (without) between its lines, and names img-gone, which the block no longer holds — it must print `![caption](image)`, never the id. b1 holds img-c with no line naming it (a block from before 图文混排), so it follows the text as `![](<path>)`. b-other's content opens with a picture line, so b8's ↩ cites: label reads `[image] caption …`, never the id.",
   "now": 1750000000000,
   "thread": {
     "id": "t1",
@@ -78,7 +78,7 @@
       "id": "b5",
       "threadId": "t1",
       "kind": "text",
-      "content": "我的想法:先复现 baseline 再谈改进,别一上来就魔改",
+      "content": "我的想法:先复现 baseline 再谈改进,别一上来就魔改\n![左边是 baseline,右边是改过的](spool-image:img-a)\n两张图对着看\n![](spool-image:img-b)\n![已经删掉的那张](spool-image:img-gone)",
       "annotation": null,
       "refThreadId": null,
       "source": null,
@@ -304,7 +304,7 @@
       "stale": true
     },
     "b-other": {
-      "content": "实验设计里的原始记录:baseline 复现用的是 seed=42",
+      "content": "![seed=42 那次的曲线](spool-image:img-x)\n实验设计里的原始记录:baseline 复现用的是 seed=42",
       "createdAt": 1746540000000,
       "foreignTitle": "实验设计"
     },
@@ -318,11 +318,13 @@
   "images": {
     "b5": [
       {
+        "id": "img-a",
         "path": "/Users/me/Library/Application Support/com.oceanjin.spool/image-cache/img-a.png",
         "width": 1240,
         "height": 800
       },
       {
+        "id": "img-b",
         "path": "/Users/me/Library/Application Support/com.oceanjin.spool/image-cache/img-b.jpg",
         "width": 640,
         "height": 480
@@ -330,6 +332,7 @@
     ],
     "b1": [
       {
+        "id": "img-c",
         "path": "/Users/me/Library/Application Support/com.oceanjin.spool/image-cache/img-c.png",
         "width": 900,
         "height": 300

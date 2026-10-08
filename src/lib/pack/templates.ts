@@ -73,10 +73,6 @@ export const REF_BLOCK_FROM = ' — in project: ';
 // not on the word "supersedes".
 export const REF_BLOCK_SUPERSEDES = '↩ replaces (that block no longer holds): ';
 export const REF_BLOCK_CORRECTS = '↩ corrects one point in: ';
-// P7-8 (Ocean 2026-10-08: 写完整路径) — a picture in the block: `image: <path> (W×H)`, the path
-// being the copy Spool keeps beside the library (`images.rs::cached_images_of`). ⚠️ The ONE
-// line of a pack that carries a local path — files still show their name only (§3.1-5).
-export const IMAGE_PREFIX = 'image: ';
 // v28 (WORKPLAN §2.Q1, Ocean 2026-08-25) — WHY this block points at that one, in the
 // citing block's own words. Appended to the ↩ line, LAST: everything before it describes
 // the cited block (its time, its label, whose project it is in), and this is the one part

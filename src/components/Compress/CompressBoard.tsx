@@ -187,6 +187,8 @@ export default function CompressBoard({ threadId }: { threadId: string }) {
       // R5：放回失败也算损失 —— 它和「丢了一条批注」对用户来说是同一件事。
       (session.shield !== null &&
         (session.shield.orphaned > 0 || session.shield.lostSpans.length > 0)));
+  const lostPictures = session.shield?.lostSpans.filter((s) => s.startsWith('![')).length ?? 0;
+  const lostHighlights = (session.shield?.lostSpans.length ?? 0) - lostPictures;
 
   // 夜里那一批里属于这个项目的那一份（下标）。-1 = 没有。
   // ⚠️ 它只画在「还没有压缩稿」那一支里：认领之后 `outcome` 就有了，那一支自己不再渲染。
@@ -395,9 +397,15 @@ export default function CompressBoard({ threadId }: { threadId: string }) {
                       t('有 {n} 条批注/关系行没能放回去 —— 它们原来那一块在压缩稿里找不到了。', {
                         n: session.shield.orphaned,
                       })}
-                    {session.shield.lostSpans.length > 0 &&
+                    {lostHighlights > 0 &&
                       t('有 {n} 处你划的重点没能放回去 —— 它所在那句话被改写了。', {
-                        n: session.shield.lostSpans.length,
+                        n: lostHighlights,
+                      })}
+                    {/* P7 验收第一轮（图文混排）：图片行和重点走同一套占位符，但丢了的后果不同 ——
+                        图还在这一块里，只是挪到了正文后面。 */}
+                    {lostPictures > 0 &&
+                      t('有 {n} 张图片没能放回原来的位置 —— 图还在这一块里，排到了正文后面。', {
+                        n: lostPictures,
                       })}
                   </div>
                 </div>

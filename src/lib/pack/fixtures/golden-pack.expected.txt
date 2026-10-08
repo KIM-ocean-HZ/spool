@@ -140,7 +140,7 @@ stands, what is still open, what changed most recently — and then stop and wai
 ## Pinned Blocks
 
 📌 #1 [2025-05-06 22:00 · from Claude] Transformer 注意力矩阵是 QK^T 除以 sqrt(d_k) 后做 ==softmax==
-    image: /Users/me/Library/Application Support/com.oceanjin.spool/image-cache/img-c.png (900×300)
+![](/Users/me/Library/Application Support/com.oceanjin.spool/image-cache/img-c.png)
     💭 note: 一直没懂为什么要除 sqrt(d_k) 查了三篇讲解还是模糊
 📌 #12 [2025-06-15 23:03 · from Codex · MCP] MCP 写回的一条长结论:课程页面把先修要求改成了两门,原先只写一门,报名前要先把第二门补上
     ↗ https://cs.example.edu/courses/6.7900/prereqs · retrieved 2025-06-12 · recheck after 2026-03-01
@@ -158,15 +158,17 @@ stands, what is still open, what changed most recently — and then stop and wai
 #3 [2025-06-06 16:53] → Referenced project: 实验设计
 #4 [2025-06-07 20:40] → Referenced project: 已删除脉络的标题快照
 💭 #5 [2025-06-15 22:06] 我的想法:先复现 baseline 再谈改进,别一上来就魔改
-    image: /Users/me/Library/Application Support/com.oceanjin.spool/image-cache/img-a.png (1240×800)
-    image: /Users/me/Library/Application Support/com.oceanjin.spool/image-cache/img-b.jpg (640×480)
+![左边是 baseline,右边是改过的](/Users/me/Library/Application Support/com.oceanjin.spool/image-cache/img-a.png)
+两张图对着看
+![](/Users/me/Library/Application Support/com.oceanjin.spool/image-cache/img-b.jpg)
+![已经删掉的那张](image)
 🗜 #6 [2025-06-15 22:16 · from Claude · MCP] 结论:除以 sqrt(d_k) 是为了控制点积方差,防止 softmax 梯度消失
     ai note: 归档自 2026-06 的一次答疑
     ↩ cites: [2025-05-06 22:00] 一直没懂为什么要除 sqrt(d_k) 查了三篇讲解还是模糊
 #7 [2025-06-15 22:33 · from Claude · MCP] 旧结论,它引用的块已被删除
     ↩ cites: (cited block no longer exists) — why: 当时是拿它的结论当前提的
 #8 [2025-06-15 22:50 · from Claude · MCP] 跨项目引用:这条结论的证据在另一个项目里
-    ↩ cites: [2025-05-06 22:00] 实验设计里的原始记录:baseline 复现用的是 seed=42 — in project: 实验设计 — why: 这条结论的抽样口径就是从那次记录里定下来的
+    ↩ cites: [2025-05-06 22:00] [image] seed=42 那次的曲线 实验设计里的原始记录:baselin… — in project: 实验设计 — why: 这条结论的抽样口径就是从那次记录里定下来的
 #10 [2025-06-15 23:00 · from Safari] 招生页面改版了,截止日期挪到 3 月 15 日
     ↗ https://admissions.example.edu/deadlines · retrieved 2025-06-10 · ⚠️ may be out of date — was to be rechecked after 2025-06-01
     ↩ replaces (that block no longer holds): [2025-06-15 22:51] 招生页面写着截止 4 月 30 日,按这个排进度

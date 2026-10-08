@@ -23,6 +23,7 @@
 // | `↗ 出处 · retrieved 日期` 整行 | 整行拿掉 | 同上 |
 // | `⚠️ 这一块有一点后来被更正了 — 见 #6` | 整行拿掉 | 同上 |
 // | `==划的重点==` | 换成 `⟦H3⟧` 这样的占位符 | 占位符换回**原文连 `==` 一起** |
+// | 图片行 `![注释](spool-image:<id>)`（P7 验收第一轮，图文混排） | 同上，整行一个占位符 | 原样换回 |
 //
 // ⚠️ 前两类是**整行**、而且明确属于某一块，所以「放回哪儿」没有歧义 —— 这是它们能被
 // 结构性护住的原因。高亮是**行内的**，位置由模型写的那句话决定，所以只能留一个占位符
@@ -130,12 +131,20 @@ export const shieldPack = (packText: string): Shielded => {
   };
 };
 
-/** 把这一行里的 `==…==` 换成占位符，原文（连 `==`）记进 `spans`。 */
-const hideSpans = (line: string, spans: string[]): string =>
-  line.replace(HIGHLIGHT_RE, (whole) => {
+/** P7 验收第一轮（图文混排）：一张图在正文里是一行 `![注释](spool-image:<id>)`。⚠️ 块的第一行
+ *  和头行同一行，所以不锚行首。整行摘成一个占位符（注释里的 `==…==` 跟着一起）：模型看不见
+ *  内部 id，也就改不坏它；压完原样放回。没放回来的那一张图还在这一块里（画在正文后面），
+ *  ⛔ 但照样报（`lostSpans` 里认得出它是图片行）。 */
+const PICTURE_RE = /!\[[^\n]*\]\(spool-image:[A-Za-z0-9_-]+\)/g;
+
+/** 把这一行里的图片行和 `==…==` 换成占位符，原文（连 `==`）记进 `spans`。 */
+const hideSpans = (line: string, spans: string[]): string => {
+  const hold = (whole: string): string => {
     spans.push(whole);
     return SPAN_TOKEN(spans.length - 1);
-  });
+  };
+  return line.replace(PICTURE_RE, hold).replace(HIGHLIGHT_RE, hold);
+};
 
 export interface Unshielded {
   text: string;
