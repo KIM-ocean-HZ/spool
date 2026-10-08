@@ -11,6 +11,7 @@ import {
   formatPackDate,
   PACK_RANGE_KEYS,
   type CitedBlock,
+  type PackImage,
   type PackRange,
 } from '@/lib/pack/assemble';
 import { sanitizeFolderName } from '@/lib/pack/folder';
@@ -45,6 +46,8 @@ interface Props {
   refTitles: Map<string, string>;
   // v2.4 (§20.13 D2): cited-block previews for blocks carrying refBlockId.
   refBlocks: Map<string, CitedBlock>;
+  /** P7-8: block id → its pictures (paths of the copies on disk) for the `image:` lines. */
+  images?: ReadonlyMap<string, readonly PackImage[]>;
   onClose: () => void;
 }
 
@@ -54,6 +57,7 @@ export default function PackDialog({
   attachments,
   refTitles,
   refBlocks,
+  images,
   onClose,
 }: Props) {
   const t = useT();
@@ -97,12 +101,13 @@ export default function PackDialog({
         // B-3: a narrowed pack must say so in its header, or the AI it gets pasted to
         // reads the slice as the whole project.
         scope: { range, total: blocks.length },
+        images,
         instructions,
         outputLanguage: language,
       }),
       packedCount: packedBlocks.length,
     };
-  }, [thread, blocks, attachments, refTitles, refBlocks, range, instructions, language]);
+  }, [thread, blocks, attachments, refTitles, refBlocks, images, range, instructions, language]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {

@@ -384,6 +384,7 @@ pub fn run() {
             images::clipboard_image_size,
             images::find_new_screenshot,
             images::screenshot_goes_to_clipboard,
+            images::cached_block_images,
             api_engine::compress_pack_via_api,
             api_engine::compress_cancel,
             api_engine::compress_sidecar_present,

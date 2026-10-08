@@ -314,5 +314,26 @@
       "createdAt": 1746550000000,
       "stale": true
     }
+  },
+  "images": {
+    "b5": [
+      {
+        "path": "/Users/me/Library/Application Support/com.oceanjin.spool/image-cache/img-a.png",
+        "width": 1240,
+        "height": 800
+      },
+      {
+        "path": "/Users/me/Library/Application Support/com.oceanjin.spool/image-cache/img-b.jpg",
+        "width": 640,
+        "height": 480
+      }
+    ],
+    "b1": [
+      {
+        "path": "/Users/me/Library/Application Support/com.oceanjin.spool/image-cache/img-c.png",
+        "width": 900,
+        "height": 300
+      }
+    ]
   }
 }

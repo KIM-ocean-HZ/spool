@@ -190,6 +190,9 @@ const REF_BLOCK_FROM: &str = " — in project: ";
 // instructions to the next reader, so they cannot share one marker.
 const REF_BLOCK_SUPERSEDES: &str = "↩ replaces (that block no longer holds): ";
 const REF_BLOCK_CORRECTS: &str = "↩ corrects one point in: ";
+// P7-8 (Ocean 2026-10-08): a picture in the block — `image: <path of the cached copy> (W×H)`.
+// Mirrors templates.ts IMAGE_PREFIX.
+const IMAGE_PREFIX: &str = "image: ";
 // v28 (§2.Q1) — mirrors templates.ts REF_NOTE_PREFIX. Appended LAST on the ↩ line:
 // everything before it describes the CITED block, this is the one part spoken by the block
 // being read. Rendered only when a reason was written.
@@ -438,6 +441,11 @@ pub struct BlockRow {
     // in its own words. None on every citation written before v28 and on every one the
     // user made by hand — the ↩ line then renders exactly as it did.
     pub ref_note: Option<String>,
+    // P7-8 (Ocean 2026-10-07 #5, 10-08): the block's pictures, in order, each with the path of
+    // the copy Spool keeps on disk (`images.rs::cached_images_of`). Empty on every block without
+    // one — and on every caller that does not load them (digest, tests) — and then the block
+    // renders exactly as it did before v32.
+    pub images: Vec<crate::images::CachedImage>,
 }
 
 // v2.4 (D2): cited block id → (content, created_at) — mirrors assemble.ts refBlocks.
@@ -814,6 +822,11 @@ fn render_block(
     // v20: directly under the head line — mirrors assemble.ts, where the reasoning is.
     if let Some(line) = provenance_line(b, now) {
         lines.push(line);
+    }
+    // P7-8: the block's pictures — part of what the block IS, so before anything said about
+    // it. Byte-for-byte with assemble.ts renderBlock. ⛔ The bytes never go into a pack.
+    for img in &b.images {
+        lines.push(format!("{NOTE_INDENT}{IMAGE_PREFIX}{} ({}×{})", img.path, img.width, img.height));
     }
     if let Some(note) = block_note_line(b) {
         lines.push(note);
@@ -2495,6 +2508,7 @@ fn get_digest_json(
                 // v28: 同上 —— digest 一块只印一行，引用的理由在那一行里没有位置，
                 // 但字段不许谎称「没人写过理由」。
                 ref_note: r.get(19)?,
+                images: Vec::new(),
             },
         })
     };
@@ -3136,6 +3150,32 @@ fn get_blocks_json(
         .collect::<Result<Vec<Value>, _>>()
         .map_err(|e| e.to_string())?;
 
+    // P7-8 (Ocean 2026-10-07 #5, 10-08): a block's pictures — how many, how big, and the path
+    // of the copy Spool keeps on disk (written now if missing), so an AI that can read local
+    // files can open them. Only on blocks that have any. ⛔ Never the bytes.
+    if let Some(dir) = crate::images::cache_dir_of(conn) {
+        let ids: Vec<String> = rows
+            .iter()
+            .filter_map(|r| r["block_id"].as_str().map(String::from))
+            .collect();
+        let id_refs: Vec<&str> = ids.iter().map(String::as_str).collect();
+        let mut by_block: std::collections::HashMap<String, Vec<Value>> = std::collections::HashMap::new();
+        for img in crate::images::cached_images_of(conn, &dir, &id_refs)? {
+            by_block.entry(img.block_id.clone()).or_default().push(json!({
+                "path": img.path,
+                "format": img.format,
+                "width": img.width,
+                "height": img.height,
+                "size_bytes": img.size_bytes,
+            }));
+        }
+        for row in rows.iter_mut() {
+            if let Some(imgs) = row["block_id"].as_str().and_then(|id| by_block.remove(id)) {
+                row["images"] = Value::Array(imgs);
+            }
+        }
+    }
+
     // R3 BUG-5: rows carrying a citation resolve it inline — thread handle + title +
     // preview — so a consumer needs no second query; a dangling citation (citee later
     // deleted) is an explicit null instead of an absent field.
@@ -3590,7 +3630,7 @@ fn build_pack(conn: &Connection, thread_id: &str, range: &str) -> Result<PackBui
     // v13: retired blocks are read, not filtered here — assemble_pack_with drops them and
     // counts them into its closing line, and the counts below have to include them so
     // «this project has no blocks» is not claimed about a project that has retired ones.
-    let blocks: Vec<BlockRow> = stmt
+    let mut blocks: Vec<BlockRow> = stmt
         .query_map([thread_id], |r| {
             Ok(BlockRow {
                 id: r.get(0)?,
@@ -3612,11 +3652,26 @@ fn build_pack(conn: &Connection, thread_id: &str, range: &str) -> Result<PackBui
                 corrected_quote: r.get(16)?,
                 compressed_at: r.get(17)?,
                 ref_note: r.get(18)?,
+                images: Vec::new(),
             })
         })
         .map_err(|e| e.to_string())?
         .collect::<Result<Vec<_>, _>>()
         .map_err(|e| e.to_string())?;
+    // P7-8: each block's pictures, with a copy on disk beside the library to point at.
+    if let Some(dir) = crate::images::cache_dir_of(conn) {
+        let ids: Vec<&str> = blocks.iter().map(|b| b.id.as_str()).collect();
+        let mut by_block: std::collections::HashMap<String, Vec<crate::images::CachedImage>> =
+            std::collections::HashMap::new();
+        for img in crate::images::cached_images_of(conn, &dir, &ids)? {
+            by_block.entry(img.block_id.clone()).or_default().push(img);
+        }
+        for b in &mut blocks {
+            if let Some(imgs) = by_block.remove(&b.id) {
+                b.images = imgs;
+            }
+        }
+    }
 
     // D2: resolve the cited blocks (any thread — citations cross thread lines). Missing
     // rows simply stay out of the map; the renderer marks those citations as gone.
@@ -7207,7 +7262,7 @@ fn tools_descriptor() -> Value {
         },
         {
             "name": "get_blocks",
-            "description": "Page through one project's blocks in chronological order, as JSON (full content, annotation, source, pinned, timestamps, plus each block's attachments with the size of any extracted file text). The middle granularity between a search snippet and a full pack, and the way to read a project whose pack is over budget. To read around a search hit, pass its block_id as around_block_id (with optional context, default 3 each side) — this centers the page and returns anchor_position; offset/limit are ignored. Optional filters (pinned / has_annotation / source_contains / stale) AND-combine and narrow the page + total; they cannot be combined with around_block_id. Two v13 fields on every row: stale_at is set when the USER marked that block as no longer valid — packs and digests stop carrying it, this tool still returns it, and you must not relay it as a current fact; ref_kind says what the row's ref_block_id means — 'cites' (builds on it, the default and what null means), 'supersedes' (replaces it; that block is stale), 'corrects' (one point inside it is wrong, the rest of it still stands). A replacement the user approved is now recorded on the OLD block instead: a stale block a newer one replaced wholesale carries replaced_by {seq, block_id}, and the newer block keeps its own ref_kind (so one block can replace several and still correct another); 'supersedes' only remains on rows from before that change. Each file in `files` also says where it hangs (attached_to: \"#12\" or \"project\"), who added it (added_by: \"user\", or the label of the AI whose proposal the user approved), and — only once a newer version replaced it — superseded_by and superseded_at: a replaced file is still listed here, but it is no longer in packs.",
+            "description": "Page through one project's blocks in chronological order, as JSON (full content, annotation, source, pinned, timestamps, plus each block's attachments with the size of any extracted file text). The middle granularity between a search snippet and a full pack, and the way to read a project whose pack is over budget. To read around a search hit, pass its block_id as around_block_id (with optional context, default 3 each side) — this centers the page and returns anchor_position; offset/limit are ignored. Optional filters (pinned / has_annotation / source_contains / stale) AND-combine and narrow the page + total; they cannot be combined with around_block_id. Two v13 fields on every row: stale_at is set when the USER marked that block as no longer valid — packs and digests stop carrying it, this tool still returns it, and you must not relay it as a current fact; ref_kind says what the row's ref_block_id means — 'cites' (builds on it, the default and what null means), 'supersedes' (replaces it; that block is stale), 'corrects' (one point inside it is wrong, the rest of it still stands). A replacement the user approved is now recorded on the OLD block instead: a stale block a newer one replaced wholesale carries replaced_by {seq, block_id}, and the newer block keeps its own ref_kind (so one block can replace several and still correct another); 'supersedes' only remains on rows from before that change. A block holding pictures carries `images`: each one's path (a copy Spool keeps on this computer — open it if you can read local files), format, width, height and size_bytes; packs print the same as `image: <path> (W×H)` lines under the block. Each file in `files` also says where it hangs (attached_to: \"#12\" or \"project\"), who added it (added_by: \"user\", or the label of the AI whose proposal the user approved), and — only once a newer version replaced it — superseded_by and superseded_at: a replaced file is still listed here, but it is no longer in packs.",
             "annotations": { "readOnlyHint": true },
             "inputSchema": {
                 "type": "object",
@@ -9101,6 +9156,7 @@ pub fn weekly_fresh_blocks_text(
                     corrected_quote: r.get(17)?,
                     compressed_at: r.get(18)?,
                     ref_note: r.get(19)?,
+                    images: Vec::new(),
                 },
             ))
         })
@@ -10731,6 +10787,24 @@ mod tests {
                 corrected_quote: b["correctedQuote"].as_str().map(String::from),
                 compressed_at: b["compressedAt"].as_i64(),
                 ref_note: b["refNote"].as_str().map(String::from),
+                // P7-8: `images` (block id → its pictures) sits beside `blocks` in the fixture, as
+                // the TS side passes it to assemble() — one shared shape for both renderers.
+                images: v["images"][b["id"].as_str().unwrap()]
+                    .as_array()
+                    .map(|a| {
+                        a.iter()
+                            .map(|i| crate::images::CachedImage {
+                                id: String::new(),
+                                block_id: String::new(),
+                                path: i["path"].as_str().unwrap().to_string(),
+                                format: String::new(),
+                                width: i["width"].as_i64().unwrap(),
+                                height: i["height"].as_i64().unwrap(),
+                                size_bytes: 0,
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default(),
             })
             .collect();
         let attachments = v["attachments"]
@@ -14783,6 +14857,7 @@ mod tests {
             corrected_quote: None,
             compressed_at: None,
             ref_note: None,
+            images: Vec::new(),
         };
         let blocks: Vec<BlockRow> =
             (0..20).map(|i| mk_block(i, i == 0)).collect(); // oldest block pinned
@@ -14920,6 +14995,7 @@ mod tests {
             corrected_quote: None,
             compressed_at: None,
             ref_note: None,
+            images: Vec::new(),
         };
         // ⚠️ The reported bug was filed at max_chars=8000 and this test used that number
         // until 2026-08-21. It is 9000 now, and the reason is worth keeping: v23 added
@@ -15534,6 +15610,54 @@ mod tests {
         assert!(pack_locked_files(&conn, "t1").unwrap().is_none());
         drop(conn);
         let _ = std::fs::remove_dir_all(&raw_tmp);
+    }
+
+    // P7-8（Ocean 2026-10-07 #5、10-08「写完整路径」）：块里的图片 —— get_blocks 给张数、尺寸、
+    // 大小和放出来的那份路径；pack 在块下面写 `image: <路径> (W×H)`；⛔ 字节一个都不进。
+    #[test]
+    fn pictures_reach_get_blocks_and_the_pack_as_paths() {
+        store_lang(Lang::En);
+        let tmp = std::env::temp_dir().join(format!("spool-pack-images-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+        let conn = Connection::open(tmp.join("spool.db")).unwrap();
+        conn.execute_batch(include_str!("../../src/lib/db/schema.sql")).unwrap();
+        conn.execute_batch(&format!(
+            "PRAGMA user_version = {EXPECTED_SCHEMA_VERSION};
+             INSERT INTO workspaces (id, title, sort_order, created_at, updated_at) VALUES ('w', 'W', 0, 1, 1);
+             INSERT INTO threads (id, workspace_id, title, created_at, updated_at) VALUES ('t1', 'w', 'Design', 1, 1);
+             INSERT INTO blocks (id, thread_id, kind, content, seq, created_at)
+               VALUES ('b1', 't1', 'text', 'two builds side by side', 1, 1),
+                      ('b2', 't1', 'text', 'no pictures here', 2, 2);"
+        ))
+        .unwrap();
+        // A real PNG (the copy on disk is the stored bytes, so it has to be one).
+        let mut png = Vec::new();
+        image::DynamicImage::ImageRgb8(image::RgbImage::new(12, 8))
+            .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
+            .unwrap();
+        let prepared = crate::images::prepare(png.clone()).unwrap();
+        let metas = crate::images::insert_images(&conn, "b1", &[prepared], 5).unwrap();
+        // sqlite reports the file's real path (symlinks resolved), and so does every pack line.
+        let expected_path = std::fs::canonicalize(&tmp).unwrap().join("image-cache").join(format!("{}.png", metas[0].id));
+
+        let filters = BlockFilters { pinned: None, has_annotation: None, source_contains: None, stale: None };
+        let v: Value = serde_json::from_str(&get_blocks_json(&conn, "t1", None, None, None, None, &filters, false).unwrap()).unwrap();
+        let b1 = v["blocks"].as_array().unwrap().iter().find(|b| b["block_id"] == "b1").unwrap().clone();
+        assert_eq!(
+            b1["images"],
+            json!([{ "path": expected_path.to_string_lossy(), "format": "png", "width": 12, "height": 8, "size_bytes": png.len() }])
+        );
+        assert!(v["blocks"].as_array().unwrap().iter().find(|b| b["block_id"] == "b2").unwrap().get("images").is_none());
+        assert_eq!(std::fs::read(&expected_path).unwrap(), png, "the copy is the picture, byte for byte");
+
+        let pack = get_pack_text(&conn, "t1", "all").unwrap();
+        let line = format!("{NOTE_INDENT}image: {} (12×8)", expected_path.to_string_lossy());
+        assert!(pack.contains(&line), "{pack}");
+        assert_eq!(pack.matches("image: ").count(), 1, "{pack}");
+        assert!(!pack.contains("base64") && !pack.contains("PNG\r\n"), "no bytes in a pack");
+        drop(conn);
+        let _ = std::fs::remove_dir_all(&tmp);
     }
 
     // P7-3（Ocean 2026-10-07 第 41 条）：取代记在旧块上。Flux #20 的形状 —— #3 已经在更正 #1，

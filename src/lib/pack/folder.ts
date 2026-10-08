@@ -9,6 +9,7 @@ import {
   formatPackTime,
   headAnchor,
   type CitedBlock,
+  type PackImage,
   type PackRange,
 } from './assemble';
 import { INSTRUCTION_HEADER } from './templates';
@@ -57,6 +58,8 @@ export interface BuildPackFolderArgs {
   refTitles: Map<string, string>;
   refBlocks: Map<string, CitedBlock>;
   outputLanguage: 'zh' | 'en';
+  /** P7-8: block id → its pictures, for the `image:` lines (any project in the tree). */
+  images?: ReadonlyMap<string, readonly PackImage[]>;
   now?: number;
 }
 
@@ -263,6 +266,7 @@ export function buildPackFolder({
   refTitles,
   refBlocks,
   outputLanguage,
+  images,
   now,
 }: BuildPackFolderArgs): PackFolder {
   const at = now ?? Date.now();
@@ -296,6 +300,7 @@ export function buildPackFolder({
             refTitles,
             refBlocks,
             scope: { range, total: project.blocks.length },
+            images,
             instructions: false,
             outputLanguage,
             now: at,

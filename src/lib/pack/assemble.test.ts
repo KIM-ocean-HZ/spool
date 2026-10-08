@@ -10,6 +10,7 @@ import {
   correctionsBySource,
   filterBlocksForRange,
   foldedCorrectionIds,
+  type PackImage,
 } from './assemble';
 import { INSTRUCTION_HEADER, PACK_BEGIN, PACK_END } from './templates';
 import goldenFixture from './fixtures/golden-pack.json';
@@ -278,6 +279,27 @@ describe('assemble', () => {
     expect(out).not.toContain('/Users/hzjin');
     expect(out).toContain('- lecture-03.pdf');
     expect(out).toContain('- baseline');
+  });
+
+  // P7-8 (Ocean 2026-10-08: 写完整路径) — the one exception, and only for pictures: a picture
+  // lives inside the library, so the pack can only name it by the copy Spool writes on disk,
+  // and a local AI reading the pack opens it from there. Files keep the rule above.
+  it('pictures print the full path of their copy (Ocean 10-08); files still show their name only', () => {
+    const blocks = [textBlock('b1', 'two builds side by side'), textBlock('b2', 'no pictures')];
+    const attachments = [attachment('a1', { label: '', target: '/Users/hzjin/Library/files/lecture-03.pdf' })];
+    const img = '/Users/hzjin/Library/Application Support/com.oceanjin.spool/image-cache/i1.png';
+    const out = assemble({
+      thread,
+      blocks,
+      attachments,
+      images: new Map([['b1', [{ path: img, width: 1240, height: 800 }, { path: `${img}2`, width: 10, height: 20 }]]]),
+      now: NOW,
+    });
+    expect(out).toContain(`    image: ${img} (1240×800)\n    image: ${img}2 (10×20)\n`);
+    expect(out).not.toContain('/Users/hzjin/Library/files');
+    expect(out.match(/image: /g)).toHaveLength(2);
+    // Without the map, no picture lines at all (every block before v32).
+    expect(assemble({ thread, blocks, attachments, now: NOW })).not.toContain('image: ');
   });
 
   // The same property on the other platform's separator. It gets its own test because
@@ -1027,6 +1049,8 @@ describe('assemble', () => {
         >;
         blocks: Block[];
         attachments: Attachment[];
+        /** P7-8: block id → its pictures (the Rust side reads the same key). */
+        images: Record<string, PackImage[]>;
       };
       const out = assemble({
         thread: fx.thread,
@@ -1034,6 +1058,7 @@ describe('assemble', () => {
         attachments: fx.attachments,
         refTitles: new Map(Object.entries(fx.refTitles)),
         refBlocks: new Map(Object.entries(fx.refBlocks)),
+        images: new Map(Object.entries(fx.images)),
         now: fx.now,
       });
       const expectedPath = join(__dirname, 'fixtures', 'golden-pack.expected.txt');

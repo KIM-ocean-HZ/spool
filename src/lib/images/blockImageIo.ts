@@ -1,5 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import type { BlockImage } from '@/lib/db/blockImages';
+import type { PackImage } from '@/lib/pack/assemble';
 import { t } from '@/lib/i18n';
 
 // P7-6 — talking to `src-tauri/src/images.rs`, the only place image bytes are handled. The
@@ -85,3 +86,26 @@ export const clipboardImageSize = (): Promise<[number, number] | null> =>
 
 export const addImageFromClipboard = (blockId: string): Promise<BlockImage> =>
   invoke<BlockImage>('add_block_image_from_clipboard', { blockId });
+
+// ---------------------------------------------------------------------------------------
+// P7-8 — the pack's `image: <path> (W×H)` lines. Rust writes a copy of each picture beside the
+// library (`image-cache/`) and says where; mcp.rs does the same for its own pack, so the two
+// print the same path (Ocean 2026-10-08: 写完整路径).
+// ---------------------------------------------------------------------------------------
+
+/** block id → its pictures, as `assemble` wants them. Blocks without one are absent. */
+export const cachedImagesOf = async (blockIds: readonly string[]): Promise<Map<string, PackImage[]>> => {
+  const out = new Map<string, PackImage[]>();
+  for (let i = 0; i < blockIds.length; i += 500) {
+    const rows = await invoke<{ blockId: string; path: string; width: number; height: number }[]>(
+      'cached_block_images',
+      { blockIds: blockIds.slice(i, i + 500) },
+    );
+    for (const r of rows) {
+      const list = out.get(r.blockId) ?? [];
+      list.push({ path: r.path, width: r.width, height: r.height });
+      out.set(r.blockId, list);
+    }
+  }
+  return out;
+};

@@ -1,6 +1,7 @@
 import { FolderDown, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
-import { PACK_RANGE_KEYS, type CitedBlock, type PackRange } from '@/lib/pack/assemble';
+import { PACK_RANGE_KEYS, type CitedBlock, type PackImage, type PackRange } from '@/lib/pack/assemble';
+import { cachedImagesOf } from '@/lib/images/blockImageIo';
 import {
   buildPackFolder,
   sanitizeFolderName,
@@ -102,6 +103,25 @@ export default function WorkspacePackDialog({
     });
   };
 
+  // P7-8: every block's pictures in the tree, with the paths of the copies on disk — read once
+  // when the dialog opens (the tree is fixed while it is open).
+  const [images, setImages] = useState<Map<string, PackImage[]>>(() => new Map());
+  useEffect(() => {
+    const ids: string[] = [];
+    const walk = (n: PackTreeNode): void => {
+      for (const p of n.projects) for (const b of p.blocks) ids.push(b.id);
+      n.children.forEach(walk);
+    };
+    walk(tree);
+    let stale = false;
+    void cachedImagesOf(ids)
+      .then((m) => !stale && setImages(m))
+      .catch((e) => console.warn('[pack] picture copies failed', e));
+    return () => {
+      stale = true;
+    };
+  }, [tree]);
+
   // The whole export, built on every change. It is what the footer counts and what the
   // button writes — one calculation, so the number on screen cannot disagree with the bytes.
   const built = useMemo(() => {
@@ -113,8 +133,9 @@ export default function WorkspacePackDialog({
       refTitles,
       refBlocks,
       outputLanguage: language,
+      images,
     });
-  }, [tree, selected, range, refTitles, refBlocks, language]);
+  }, [tree, selected, range, refTitles, refBlocks, language, images]);
 
   const totals = useMemo(() => {
     const chars = built?.files.reduce((sum, f) => sum + f.content.length, 0) ?? 0;

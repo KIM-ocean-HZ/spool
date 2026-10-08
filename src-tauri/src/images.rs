@@ -202,6 +202,112 @@ pub fn preview_data_url(format: &str, bytes: &[u8]) -> Result<String, String> {
     }
 }
 
+// ---------------------------------------------------------------------------------------
+// P7-8 — a file to point at. The bytes live in the library, so a pack (and get_blocks) can
+// only name a picture once a copy of it sits on disk: `image-cache/<id>.<ext>` beside
+// spool.db. It is a cache — deleting the folder loses nothing, the next pack writes it again.
+// Ocean 2026-10-08 chose the full path in the pack line (a local AI can open it).
+// ---------------------------------------------------------------------------------------
+
+pub const IMAGE_CACHE_DIR: &str = "image-cache";
+
+/// `image-cache/` beside the library file this connection has open — taken from the
+/// connection itself (sqlite's own, symlink-resolved path), on BOTH sides: the GUI's pack and
+/// the MCP server's must print the very same path. None for an in-memory library.
+pub fn cache_dir_of(conn: &Connection) -> Option<std::path::PathBuf> {
+    let db = conn.path().filter(|p| !p.is_empty())?;
+    Some(std::path::Path::new(db).parent()?.join(IMAGE_CACHE_DIR))
+}
+
+fn cache_ext(format: &str) -> &'static str {
+    match format {
+        "jpeg" => "jpg",
+        "gif" => "gif",
+        "webp" => "webp",
+        _ => "png",
+    }
+}
+
+/// One picture of a block, as the pack and get_blocks describe it.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CachedImage {
+    pub id: String,
+    pub block_id: String,
+    pub path: String,
+    pub format: String,
+    pub width: i64,
+    pub height: i64,
+    pub size_bytes: i64,
+}
+
+/// The pictures of these blocks, in order, each with a copy on disk under `cache_dir`
+/// (written now when missing). A copy that cannot be written still gets its path — the
+/// line says where it would be, and the next call tries again.
+pub fn cached_images_of(
+    conn: &Connection,
+    cache_dir: &std::path::Path,
+    block_ids: &[&str],
+) -> Result<Vec<CachedImage>, String> {
+    if block_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let marks = vec!["?"; block_ids.len()].join(", ");
+    let mut stmt = conn
+        .prepare(&format!(
+            "SELECT id, block_id, format, width, height, size_bytes FROM block_images
+              WHERE block_id IN ({marks}) ORDER BY block_id, position"
+        ))
+        .map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map(rusqlite::params_from_iter(block_ids.iter()), |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, String>(2)?,
+                r.get::<_, i64>(3)?,
+                r.get::<_, i64>(4)?,
+                r.get::<_, i64>(5)?,
+            ))
+        })
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+    let mut out = Vec::with_capacity(rows.len());
+    for (id, block_id, format, width, height, size_bytes) in rows {
+        let file = cache_dir.join(format!("{id}.{}", cache_ext(&format)));
+        if !file.exists() {
+            if let Ok((_, bytes)) = read_image(conn, &id) {
+                let _ = std::fs::create_dir_all(cache_dir);
+                let tmp = file.with_extension("partial");
+                if std::fs::write(&tmp, &bytes).is_ok() {
+                    let _ = std::fs::rename(&tmp, &file);
+                }
+            }
+        }
+        out.push(CachedImage {
+            id,
+            block_id,
+            path: file.to_string_lossy().into_owned(),
+            format,
+            width,
+            height,
+            size_bytes,
+        });
+    }
+    Ok(out)
+}
+
+/// The GUI's pack (PackDialog, a workspace export) asks for the same copies the MCP pack
+/// writes — same folder, same names, so both renderers print the same line.
+#[tauri::command(async)]
+pub fn cached_block_images(app: tauri::AppHandle, block_ids: Vec<String>) -> Result<Vec<CachedImage>, String> {
+    let conn = open_library(&app)?;
+    let dir = cache_dir_of(&conn).ok_or_else(|| "no_library".to_string())?;
+    let ids: Vec<&str> = block_ids.iter().map(String::as_str).collect();
+    cached_images_of(&conn, &dir, &ids)
+}
+
 fn open_library(app: &tauri::AppHandle) -> Result<Connection, String> {
     let path = crate::transfer::data_dir(app)?.join("spool.db");
     let conn = Connection::open(path).map_err(|e| e.to_string())?;
@@ -559,6 +665,38 @@ mod tests {
         // Written long before the chord: not this screenshot.
         assert_eq!(pick_new_screenshot(&dir, since + 60_000).unwrap(), None);
         assert!(pick_new_screenshot(&dir.join("missing"), since).is_err());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // P7-8: a copy on disk to point at, written once, under the block's own order.
+    #[test]
+    fn cached_copies_are_written_once_and_named_by_id() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(include_str!("../../src/lib/db/schema.sql")).unwrap();
+        conn.execute_batch(
+            "INSERT INTO workspaces (id, title, sort_order, created_at, updated_at) VALUES ('w', 'W', 0, 1, 1);
+             INSERT INTO threads (id, workspace_id, title, created_at, updated_at) VALUES ('t', 'w', 'T', 1, 1);
+             INSERT INTO blocks (id, thread_id, content, created_at) VALUES ('b', 't', 'x', 1);",
+        )
+        .unwrap();
+        let png = prepare(encode(&rgba(30, 20), ImageFormat::Png)).unwrap();
+        let jpg = prepare(encode(&rgb(10, 10), ImageFormat::Jpeg)).unwrap();
+        let png_bytes = png.bytes.clone();
+        let metas = insert_images(&conn, "b", &[png, jpg], 1).unwrap();
+        let dir = std::env::temp_dir().join(format!("spool-image-cache-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+
+        let got = cached_images_of(&conn, &dir, &["b"]).unwrap();
+        assert_eq!(got.iter().map(|c| c.id.clone()).collect::<Vec<_>>(), vec![metas[0].id.clone(), metas[1].id.clone()]);
+        assert!(got[0].path.ends_with(&format!("{}.png", metas[0].id)));
+        assert!(got[1].path.ends_with(&format!("{}.jpg", metas[1].id)));
+        assert_eq!(std::fs::read(&got[0].path).unwrap(), png_bytes);
+        assert_eq!((got[0].width, got[0].height), (30, 20));
+        // Written once: a second call does not rewrite it.
+        std::fs::write(&got[0].path, b"left alone").unwrap();
+        cached_images_of(&conn, &dir, &["b"]).unwrap();
+        assert_eq!(std::fs::read(&got[0].path).unwrap(), b"left alone");
+        assert!(cached_images_of(&conn, &dir, &[]).unwrap().is_empty());
         let _ = std::fs::remove_dir_all(&dir);
     }
 

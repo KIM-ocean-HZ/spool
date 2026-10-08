@@ -27,6 +27,7 @@ import {
   RECHECK_PREFIX,
   RETRIEVED_PREFIX,
   REF_BLOCK_CORRECTS,
+  IMAGE_PREFIX,
   REF_BLOCK_MARKER,
   REF_BLOCK_FROM,
   REF_BLOCK_MISSING,
@@ -45,6 +46,13 @@ import {
 import { quoteIsInBlock } from '@/lib/blocks/quoteFold';
 
 /** What the renderer needs about a block someone else cites. */
+/** P7-8: one picture as the pack prints it — `image: <path> (W×H)`. */
+export interface PackImage {
+  path: string;
+  width: number;
+  height: number;
+}
+
 export interface CitedBlock {
   content: string;
   annotation?: string | null;
@@ -84,6 +92,10 @@ export interface AssembleArgs {
   // filterBlocksForRange, pass the range and the project's UNFILTERED block count — the
   // header then says "N of TOTAL" instead of claiming N is everything. Omit for 'all'.
   scope?: { range: PackRange; total: number };
+  // P7-8: block id → its pictures, in order, each with the path of the copy Spool keeps on
+  // disk (the caller asks Rust for them: `cached_block_images`). mcp.rs carries the same on
+  // BlockRow. Omitted = no picture lines, which is every block before v32.
+  images?: ReadonlyMap<string, readonly PackImage[]>;
   // DESIGN_CONTEXT_HYGIENE §1.1 (Ocean 2026-08-06: 「直接去掉 pack 的分类,只留下纯上下文的
   // 格式」, then 拍板 that it be a switch rather than a deletion). false drops the
   // four-category reading instructions and leaves the content.
@@ -289,6 +301,7 @@ const renderBlock = (
   // the old block, which stays in the pack in full (§3.1.1).
   correctedBy: Map<string, Correction[]> | undefined,
   now: number,
+  images: readonly PackImage[] | undefined,
 ): string[] => {
   const time = formatPackTime(b.createdAt);
   const star = b.pinned ? PINNED_PREFIX : '';
@@ -313,6 +326,11 @@ const renderBlock = (
   // and it has to be read before the sentences commenting on it.
   const provenance = provenanceLine(b, now);
   if (provenance) lines.push(provenance);
+  // P7-8: the block's pictures — part of what the block IS, so before anything said about
+  // it. Byte-for-byte with mcp.rs render_block. ⛔ The bytes never go into a pack.
+  for (const img of images ?? []) {
+    lines.push(`${NOTE_INDENT}${IMAGE_PREFIX}${img.path} (${img.width}×${img.height})`);
+  }
 
   if (b.annotation?.trim()) {
     // v14 (§9.3 拍板乙): which marker decides how much authority the next model gives this
@@ -567,6 +585,7 @@ export function assemble({
   refTitles,
   refBlocks,
   scope,
+  images,
   instructions = true,
   outputLanguage,
   now,
@@ -620,7 +639,7 @@ export function assemble({
   if (pinned.length === 0) {
     out.push(EMPTY_PINNED_LINE);
   } else {
-    for (const b of pinned) out.push(...renderBlock(b, refTitles, refBlocks, correctedBy, at));
+    for (const b of pinned) out.push(...renderBlock(b, refTitles, refBlocks, correctedBy, at, images?.get(b.id)));
   }
 
   // Full Record: every block in chronological order. A block's annotation and its
@@ -634,7 +653,7 @@ export function assemble({
   } else {
     for (const b of blocks) {
       if (b.pinned) out.push(renderPinnedPlaceholder(b));
-      else out.push(...renderBlock(b, refTitles, refBlocks, correctedBy, at));
+      else out.push(...renderBlock(b, refTitles, refBlocks, correctedBy, at, images?.get(b.id)));
     }
   }
   // v13: the gap is declared, never silent (§2.3 — a store that drops a fact without

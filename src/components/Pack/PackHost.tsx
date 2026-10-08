@@ -6,7 +6,8 @@ import type { Attachment } from '@/lib/db/attachments';
 const EMPTY_ATTACHMENTS: Attachment[] = [];
 import { listBlocksByIds, type Block } from '@/lib/db/blocks';
 import { t } from '@/lib/i18n';
-import type { CitedBlock } from '@/lib/pack/assemble';
+import type { CitedBlock, PackImage } from '@/lib/pack/assemble';
+import { cachedImagesOf } from '@/lib/images/blockImageIo';
 import { useBlocksStore } from '@/stores/blocksStore';
 import { selectThreadById, useThreadsStore } from '@/stores/threadsStore';
 
@@ -100,6 +101,26 @@ export default function PackHost() {
     };
   }, [packingId, blocks]);
 
+  // P7-8: the blocks' pictures, each with the path of the copy Spool keeps on disk — what the
+  // pack's `image:` lines print. Asked only for blocks that have any.
+  const imagesByBlock = useBlocksStore((s) => s.imagesByBlock);
+  const [images, setImages] = useState<Map<string, PackImage[]>>(() => new Map());
+  useEffect(() => {
+    if (!packingId) return;
+    const ids = blocks.filter((b) => imagesByBlock[b.id]?.length).map((b) => b.id);
+    if (ids.length === 0) {
+      setImages(new Map());
+      return;
+    }
+    let stale = false;
+    void cachedImagesOf(ids)
+      .then((m) => !stale && setImages(m))
+      .catch((e) => console.warn('[pack] picture copies failed', e));
+    return () => {
+      stale = true;
+    };
+  }, [packingId, blocks, imagesByBlock]);
+
   if (!thread || loading) return null;
 
   return (
@@ -109,6 +130,7 @@ export default function PackHost() {
       attachments={attachments}
       refTitles={refTitles}
       refBlocks={refBlocks}
+      images={images}
       onClose={() => setPacking(null)}
     />
   );
