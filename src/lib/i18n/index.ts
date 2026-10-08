@@ -1453,8 +1453,6 @@ const EN: Record<string, string> = {
   // ⇒ 撞的正是 Ocean 自己定的 S1 规矩「屏幕上这件事只许有一个名字」。
   // ⚠️ `'合并': 'Merge'`（本文件上面那条）**留着不动** —— 那条现在只归内容页
   // `MergeToolbar.tsx` 用，它才是真的把块合成一块。
-  '{who} 提的': 'proposed by {who}',
-  '聊天里提的': 'proposed in a chat',
   '更正一处': 'Correct one point',
   '库里已经记着 #{n} 更正了 #{m}。再点「更正一处」只会把引文重写一遍；想让 #{m} 不再进打包，点「整条取代」。':
     'The library already records #{n} correcting #{m}. Clicking “Correct one point” again only rewrites the quote; to keep #{m} out of packs, click “Replace in full”.',
@@ -1498,6 +1496,18 @@ const EN: Record<string, string> = {
   '没有哪一块真的变短了 —— 库里什么都没改。':
     'No block actually got shorter — nothing in your library was changed.',
   '写不进去：{msg}': 'Could not write: {msg}',
+  '新的那一块已经指着另一块了，一块只能更正一块。': 'The newer block already points at another block, and a block can correct only one.',
+  '{client} 建议：用第 {n} 块整条取代〈{title}〉里的第 {m} 块': '{client} suggests: block {n} replaces block {m} of “{title}” in full',
+  '{client} 建议：用第 {n} 块更正〈{title}〉里第 {m} 块的一处': '{client} suggests: block {n} corrects one point in block {m} of “{title}”',
+  '旧的': 'Old',
+  '新的': 'New',
+  '不再成立的那一句：「{q}」': 'No longer holds: “{q}”',
+  '（AI 建议）': '(suggested)',
+  '第 {n} 块已经在更正第 {k} 块了，一块只能更正一块；要更正这一块，让 AI 另写一块。': 'Block {n} already corrects block {k}, and a block can correct only one. To correct this one, ask the AI for a new block.',
+  '第 {n} 块已经指着第 {k} 块了，一块只能指一块；要更正这一块，让 AI 另写一块。': 'Block {n} already points at block {k}, and a block can point at only one. To correct this one, ask the AI for a new block.',
+  '第 {n} 块已经指着另一块了，一块只能指一块；要更正这一块，让 AI 另写一块。': 'Block {n} already points at another block, and a block can point at only one. To correct this one, ask the AI for a new block.',
+  '更正一处：两块都留着，新的那块记下它更正了哪一句。整条取代：旧的那块不再进打包，还在库里，能取回。不动：这条建议划掉。': 'Correct one point: both blocks stay, and the new one records which sentence it corrects. Replace in full: the old block leaves your packs, but stays in the library and can be taken back. Leave alone: the suggestion is dropped.',
+  '这条建议说的两块里有一块已经不在了，清掉了。': 'One of the two blocks this suggestion was about is gone, so it was cleared.',
   '这一份丢了数字或日期，不能进库 —— 先用上面那个「加回去」。':
     'This version has dropped a number or a date, so it may not enter your library \u2014 use \u201cAdd back\u201d above first.',
   '{n} 块换成了压缩稿。压缩前的原文留在每一块上，块的工具条上有个入口能打开看，也能换回去。':

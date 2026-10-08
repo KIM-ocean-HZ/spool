@@ -58,7 +58,6 @@ export default function ThreadView() {
     return sess ? sess.proposals.filter((_, i) => sess.decided[i] === undefined).length : 0;
   });
   const engineOn = useSettingsStore((s) => s.apiEngineEnabled);
-  const loadProposedStale = useCompressStore((s) => s.loadProposedStale);
   /** 这个项目那张卡上一共有几条（**含已经决定过的**）。
    *  ⚠️ 用它而不是 `staleLeft` 决定页签条出不出：决定完最后一条的那一刻 `staleLeft` 归零，
    *  ⛔ 页签会在用户眼皮底下消失，而他刚刚才点了那一下、还想看到「已换 / 已更正一处」那句回执。
@@ -66,7 +65,8 @@ export default function ThreadView() {
   const staleAny = useCompressStore((s) =>
     activeId ? (s.stale[activeId]?.proposals.length ?? 0) : 0,
   );
-  /** 「压缩」和「过期检测」这两个出不出。⭐ S2：压缩没开、但 AI 提了东西在等，也要出。 */
+  /** 「压缩」和「过期检测」这两个出不出。引擎关了，但之前扫出来的还没点完，也要出。
+   *  ⛔ P7-5（Ocean 2026-10-07）：AI 提的不在这里了 —— 在待审里。 */
   const showTabs = engineOn || staleAny > 0;
   // ⭐⭐ Q4（2026-08-25）：**页签条从此永远画。**
   // 「摘要」是 AI 通过 MCP 写进来的，和本地引擎开没开**毫无关系** —— 一个从没开过引擎的
@@ -85,14 +85,6 @@ export default function ThreadView() {
   useEffect(() => {
     setViewOverride(null);
   }, [activeId]);
-
-  // ⭐ S2（2026-08-24）：AI 提的「整条取代」在**打开项目**的时候就读进来，
-  // ⛔ 不是等用户切到那个页签才读 —— 页签上那个数（`staleLeft`）是他唯一会注意到
-  // 「有东西在等」的地方，而它读的就是这一份。等切过去才读，等于**提案没人看得见**。
-  // ⚠️ 只读库，不花钱、不起 sidecar。
-  useEffect(() => {
-    if (activeId) void loadProposedStale(activeId);
-  }, [activeId, loadProposedStale]);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -141,11 +133,9 @@ export default function ThreadView() {
           ⭐ 2026-08-23（Ocean 第 3 条「把两个功能拆出来，变成内容，压缩，和一个新的」）：
           原来是两个页签，第二个叫「整理」，里面上下摞着压缩核对面和查旧块。
           ⛔ 别再摞回去 —— 两件事没关系，摞在一起的唯一后果是核对面只剩半屏。 */}
-      {/* ⭐⭐ S2（2026-08-24）：**压缩没开，也可能有东西在等。**
-          `propose_supersede` 归「允许 AI 写入」管，和「压缩引擎」是两个开关 ——
-          只按 `engineOn` 出页签的话，关着压缩的用户永远看不到 AI 提的那一条。
-          ⛔ 一条看不见的提案等于没提过。所以有东西等着的时候这一条照出，
-          ⚠️ 但「压缩」那个页签仍然只跟着 `engineOn` 走：那一个点进去确实只会说「你还没配」。 */}
+      {/* 「过期检测」在扫出来的还没点完时照出（哪怕引擎后来关了）；「压缩」只跟着 `engineOn` 走：
+          那一个点进去确实只会说「你还没配」。⛔ P7-5：AI 提的「更正 / 取代」不进这里，在待审里
+          （Ocean 2026-10-07「过期检测只适用于用户自主检测」，推翻 08-24 S2）。 */}
       <div className="flex flex-none items-center gap-4 border-b border-line px-5 text-[12px]">
           <Tab active={tab === 'content'} onClick={() => setTab(thread.id, 'content')}>
             {t('内容')}

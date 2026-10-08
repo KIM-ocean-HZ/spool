@@ -8,6 +8,13 @@ import * as db from '@/lib/db/proposals';
 import type { ProposalBatch } from '@/lib/db/proposals';
 import * as followUp from '@/lib/db/followUpItems';
 import type { FollowUpProposal } from '@/lib/db/followUpItems';
+import { purgeExpiredSupersedeProposals } from '@/lib/db/supersedeProposals';
+import {
+  decideSupersedeProposal,
+  listSupersedeReview,
+  type SupersedeChoice,
+  type SupersedeReviewItem,
+} from '@/lib/blocks/supersedeReview';
 import { t } from '@/lib/i18n';
 import { useBlocksStore } from './blocksStore';
 import { useThreadsStore } from './threadsStore';
@@ -37,6 +44,8 @@ interface ProposalsState {
   followUpProposals: FollowUpProposal[] | null;
   /** P6-3 — files an AI proposed attaching to a project, or proposed as a newer version. */
   fileProposals: FileProposal[] | null;
+  /** P7-5 — an AI's 「更正 / 取代」 suggestion about two blocks; the user picks one of three. */
+  supersedeProposals: SupersedeReviewItem[] | null;
   /** Everything waiting on the user, in one number: the sidebar badge. */
   pendingCount: number;
   /** Batches past their 7 days — one line on the screen, never approvable. */
@@ -55,6 +64,7 @@ interface ProposalsState {
   dismissFollowUp: (itemId: string) => Promise<void>;
   approveFileProposal: (id: string) => Promise<void>;
   rejectFileProposal: (id: string) => Promise<void>;
+  decideSupersede: (id: string, choice: SupersedeChoice) => Promise<void>;
 }
 
 // Everything the approved blocks touched has to be re-read: they landed through a path
@@ -68,16 +78,27 @@ const reloadLibrary = async (): Promise<void> => {
 // Load everything the screen shows, in one place, so the three kinds can never be read
 // from different moments in time.
 const loadAll = async (): Promise<
-  Pick<ProposalsState, 'batches' | 'fileRequests' | 'followUpProposals' | 'fileProposals'>
+  Pick<
+    ProposalsState,
+    'batches' | 'fileRequests' | 'followUpProposals' | 'fileProposals' | 'supersedeProposals'
+  >
 > => {
   const now = Date.now();
-  const [batches, fileRequests, followUpProposals, fileProposalList] = await Promise.all([
-    db.listPendingBatches(now),
-    files.listPendingFileRequests(now),
-    followUp.listFollowUpProposals(),
-    fileProposals.listPendingFileProposals(now),
-  ]);
-  return { batches, fileRequests, followUpProposals, fileProposals: fileProposalList };
+  const [batches, fileRequests, followUpProposals, fileProposalList, supersedeProposals] =
+    await Promise.all([
+      db.listPendingBatches(now),
+      files.listPendingFileRequests(now),
+      followUp.listFollowUpProposals(),
+      fileProposals.listPendingFileProposals(now),
+      listSupersedeReview(now),
+    ]);
+  return {
+    batches,
+    fileRequests,
+    followUpProposals,
+    fileProposals: fileProposalList,
+    supersedeProposals,
+  };
 };
 
 // What every act-on-something path does afterwards: re-count for the badge, re-read what
@@ -94,7 +115,8 @@ const settle = async (get: () => ProposalsState, set: Setter): Promise<void> => 
     state.batches!.length === 0 &&
     state.fileRequests!.length === 0 &&
     state.followUpProposals!.length === 0 &&
-    state.fileProposals!.length === 0;
+    state.fileProposals!.length === 0 &&
+    state.supersedeProposals!.length === 0;
   if (nothingLeft) get().close();
 };
 
@@ -103,6 +125,7 @@ export const useProposalsStore = create<ProposalsState>((set, get) => ({
   fileRequests: null,
   followUpProposals: null,
   fileProposals: null,
+  supersedeProposals: null,
   pendingCount: 0,
   expiredBatches: 0,
   panelOpen: false,
@@ -111,16 +134,23 @@ export const useProposalsStore = create<ProposalsState>((set, get) => ({
   refresh: async () => {
     try {
       const now = Date.now();
-      const [proposals, expiredBatches, fileRequests, followUpLines, fileProposalCount] =
+      // P7-5: what 过期检测 used to do each time it read these — a suggestion past its 7 days
+      // is a no, and leaves nothing behind.
+      await purgeExpiredSupersedeProposals(now);
+      const [proposals, expiredBatches, fileRequests, followUpLines, fileProposalCount, supersede] =
         await Promise.all([
           db.countPending(now),
           db.countExpiredBatches(now),
           files.countPendingFileRequests(now),
           followUp.countFollowUpProposals(),
           fileProposals.countPendingFileProposals(now),
+          // P7-5: read, not COUNTed — whether a row still needs the user depends on the two
+          // blocks (done elsewhere already = not waiting), and that rule lives in one place.
+          listSupersedeReview(now),
         ]);
       set({
-        pendingCount: proposals + fileRequests + followUpLines + fileProposalCount,
+        pendingCount:
+          proposals + fileRequests + followUpLines + fileProposalCount + supersede.length,
         expiredBatches,
       });
       // Keep an open screen honest: a second client could have queued more while the
@@ -140,7 +170,13 @@ export const useProposalsStore = create<ProposalsState>((set, get) => ({
       set(await loadAll());
     } catch (e) {
       console.warn('[proposals] load failed', e);
-      set({ batches: [], fileRequests: [], followUpProposals: [], fileProposals: [] });
+      set({
+        batches: [],
+        fileRequests: [],
+        followUpProposals: [],
+        fileProposals: [],
+        supersedeProposals: [],
+      });
     }
   },
 
@@ -151,6 +187,7 @@ export const useProposalsStore = create<ProposalsState>((set, get) => ({
       fileRequests: null,
       followUpProposals: null,
       fileProposals: null,
+      supersedeProposals: null,
     }),
 
   approve: async (batchId, keepIds) => {
@@ -294,11 +331,42 @@ export const useProposalsStore = create<ProposalsState>((set, get) => ({
     }
   },
 
+  // P7-5 — the user's pick on an AI's 「更正 / 取代」 suggestion. Both blocks' projects are
+  // re-read: the one that changed may not be the one on screen, and a correction can point
+  // across projects.
+  decideSupersede: async (id, choice) => {
+    if (get().busy) return;
+    set({ busy: true });
+    try {
+      const outcome = await decideSupersedeProposal(id, choice, Date.now());
+      if (outcome.kind === 'occupied') {
+        // The button is greyed out for this case; reaching here means the block changed
+        // after the card was drawn.
+        toast.error(t('新的那一块已经指着另一块了，一块只能更正一块。'));
+      } else if (outcome.kind === 'gone') {
+        toast.notice(t('这条建议说的两块里有一块已经不在了，清掉了。'));
+      } else {
+        const blocks = useBlocksStore.getState();
+        for (const threadId of outcome.threadIds) {
+          if (blocks.byThread[threadId]) await blocks.load(threadId);
+        }
+        await useThreadsStore.getState().loadAll();
+      }
+    } catch (e) {
+      console.error('[supersede] decide failed', e);
+      toast.error(t('写不进去：{msg}', { msg: e instanceof Error ? e.message : String(e) }));
+    } finally {
+      set({ busy: false });
+      await settle(get, set);
+    }
+  },
+
   clearExpired: async () => {
     try {
       await db.purgeExpired(Date.now());
       await files.purgeExpiredFileRequests(Date.now());
       await fileProposals.purgeExpiredFileProposals(Date.now());
+      await purgeExpiredSupersedeProposals(Date.now());
     } catch (e) {
       console.warn('[proposals] purge failed', e);
     }

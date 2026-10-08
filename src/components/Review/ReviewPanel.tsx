@@ -1,5 +1,9 @@
 import { Check, FileText, Globe, Trash2, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
+import SeqBadge from '@/components/ThreadView/SeqBadge';
+import { plainText } from '@/lib/blocks/contentRuns';
+import type { SupersedeChoice, SupersedeReviewItem } from '@/lib/blocks/supersedeReview';
+import type { Block } from '@/lib/db/blocks';
 import { useT } from '@/lib/i18n';
 import type { FileAccessRequest } from '@/lib/db/fileAccess';
 import type { FileProposal } from '@/lib/db/fileProposals';
@@ -33,6 +37,7 @@ export default function ReviewPanel() {
   const fileRequests = useProposalsStore((s) => s.fileRequests);
   const followUpProposals = useProposalsStore((s) => s.followUpProposals);
   const fileProposals = useProposalsStore((s) => s.fileProposals);
+  const supersedeProposals = useProposalsStore((s) => s.supersedeProposals);
   const expiredBatches = useProposalsStore((s) => s.expiredBatches);
   const busy = useProposalsStore((s) => s.busy);
   const close = useProposalsStore((s) => s.close);
@@ -44,6 +49,7 @@ export default function ReviewPanel() {
   const dismissFollowUp = useProposalsStore((s) => s.dismissFollowUp);
   const approveFileProposal = useProposalsStore((s) => s.approveFileProposal);
   const rejectFileProposal = useProposalsStore((s) => s.rejectFileProposal);
+  const decideSupersede = useProposalsStore((s) => s.decideSupersede);
   const clearExpired = useProposalsStore((s) => s.clearExpired);
   // Subscribe to the stored map, then flatten here. NOT useThreadsStore(selectAllThreadsFlat):
   // that selector builds a fresh array on every call, so zustand's useSyncExternalStore sees
@@ -102,7 +108,8 @@ export default function ReviewPanel() {
           ) : batches.length +
               (fileRequests?.length ?? 0) +
               (followUpProposals?.length ?? 0) +
-              (fileProposals?.length ?? 0) ===
+              (fileProposals?.length ?? 0) +
+              (supersedeProposals?.length ?? 0) ===
             0 ? (
             <p className="py-8 text-center text-xs text-muted">{t('没有待你过目的。')}</p>
           ) : (
@@ -131,6 +138,17 @@ export default function ReviewPanel() {
                   busy={busy}
                   onApprove={() => void approveFileProposal(p.id)}
                   onReject={() => void rejectFileProposal(p.id)}
+                />
+              ))}
+              {/* P7-5 — an AI's 「更正 / 取代」 suggestion about two blocks already in the library. */}
+              {(supersedeProposals ?? []).map((item) => (
+                <SupersedeCard
+                  key={item.proposal.id}
+                  item={item}
+                  titleOf={titleOf}
+                  daysLeft={dayCount(now, item.proposal.expiresAt)}
+                  busy={busy}
+                  onDecide={(choice) => void decideSupersede(item.proposal.id, choice)}
                 />
               ))}
               {(followUpProposals ?? []).map((p) => (
@@ -274,6 +292,120 @@ function FileRequestCard({
           {t('不给')}
         </button>
       </div>
+    </div>
+  );
+}
+
+/** The first line of a block, without its markdown — what the card shows next to its number. */
+const firstLine = (b: Block): string =>
+  plainText(b.content.split('\n').find((l) => l.trim() !== '') ?? '').trim();
+
+/**
+ * P7-5 (Ocean 2026-10-07, HANDOFF §9.2 第 40 条) — 「AI 给出操作建议后，用户在待审中检查，选择
+ * 最后的更正，取代还是不动」.
+ *
+ * The card names both blocks by number and first line, the sentence in the old one that no
+ * longer holds, and which of the two the AI suggested (the title says it, and that button is
+ * marked) — but all three buttons are the user's, whatever the AI said.
+ * 「更正」 is greyed out when the newer block already points at another block: a block corrects
+ * one block, and the sentence under the buttons says so in the user's terms.
+ */
+function SupersedeCard({
+  item,
+  titleOf,
+  daysLeft,
+  busy,
+  onDecide,
+}: {
+  item: SupersedeReviewItem;
+  titleOf: (threadId: string) => string;
+  daysLeft: number;
+  busy: boolean;
+  onDecide: (choice: SupersedeChoice) => void;
+}) {
+  const t = useT();
+  const { proposal, older, newer, occupied } = item;
+  const client = proposal.client || 'AI';
+  const replaces = proposal.suggestedKind === 'supersedes';
+  const n = newer.seq ?? '?';
+  const m = older.seq ?? '?';
+  const title = titleOf(older.threadId);
+  const occupiedNote = !occupied
+    ? null
+    : occupied.kind === 'corrects' && occupied.seq !== null
+      ? t('第 {n} 块已经在更正第 {k} 块了，一块只能更正一块；要更正这一块，让 AI 另写一块。', { n, k: occupied.seq })
+      : occupied.seq !== null
+        ? t('第 {n} 块已经指着第 {k} 块了，一块只能指一块；要更正这一块，让 AI 另写一块。', { n, k: occupied.seq })
+        : t('第 {n} 块已经指着另一块了，一块只能指一块；要更正这一块，让 AI 另写一块。', { n });
+  const choice = (key: SupersedeChoice, label: string, suggested: boolean, disabled = false) => (
+    <button
+      type="button"
+      disabled={busy || disabled}
+      onClick={() => onDecide(key)}
+      className={`flex flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded-md border px-3 py-1.5 text-xs transition-colors disabled:opacity-40 ${
+        suggested
+          ? 'border-accent/60 bg-accent-soft font-medium text-accent enabled:hover:border-accent enabled:hover:bg-accent/15'
+          : 'border-line bg-paper text-ink-2 enabled:hover:border-line-strong enabled:hover:text-ink'
+      }`}
+    >
+      {label}
+      {suggested && <span className="text-[10px] font-normal opacity-80">{t('（AI 建议）')}</span>}
+    </button>
+  );
+  const blockRow = (label: string, b: Block) => (
+    <div className="flex min-w-0 items-baseline gap-1.5">
+      <span className="flex-none text-[10px] text-muted">{label}</span>
+      {b.seq != null && <SeqBadge seq={b.seq} />}
+      <span className="min-w-0 flex-1 truncate text-xs text-ink">{firstLine(b)}</span>
+      {b.threadId !== older.threadId && (
+        <span className="max-w-[40%] flex-none truncate text-[10px] text-muted">
+          {t('在〈{title}〉', { title: titleOf(b.threadId) })}
+        </span>
+      )}
+    </div>
+  );
+  return (
+    <div className="mb-3 rounded-md border border-line-strong bg-paper-2/30 p-3">
+      <div className="flex items-baseline justify-between gap-3">
+        <span className="min-w-0 break-words text-xs text-ink-2">
+          {replaces
+            ? t('{client} 建议：用第 {n} 块整条取代〈{title}〉里的第 {m} 块', { client, n, m, title })
+            : t('{client} 建议：用第 {n} 块更正〈{title}〉里第 {m} 块的一处', { client, n, m, title })}
+        </span>
+        <span className="flex-none font-mono text-[10px] text-muted">
+          {t('{n} 天后作废', { n: daysLeft })}
+        </span>
+      </div>
+
+      <div className="mt-2 space-y-1">
+        {blockRow(t('旧的'), older)}
+        {proposal.quoteStale.trim() && (
+          <p className="pl-6 text-[11px] leading-relaxed text-ink-2">
+            {t('不再成立的那一句：「{q}」', { q: proposal.quoteStale })}
+          </p>
+        )}
+        {blockRow(t('新的'), newer)}
+      </div>
+
+      {proposal.why.trim() && (
+        <div className="mt-2 rounded border border-line bg-paper px-2.5 py-2">
+          <div className="text-[10px] uppercase tracking-wide text-muted">{t('它说为什么')}</div>
+          <p className="mt-1 whitespace-pre-wrap break-words text-xs leading-relaxed text-ink-2">
+            {proposal.why}
+          </p>
+        </div>
+      )}
+
+      <div className="mt-2.5 flex items-center gap-2">
+        {/* The same names the 过期检测 card gives these two actions — one name per thing on screen. */}
+        {choice('correct', t('更正一处'), !replaces, occupied !== null)}
+        {choice('replace', t('整条取代'), replaces)}
+        {choice('keep', t('不动'), false)}
+      </div>
+      {occupiedNote && <p className="mt-1.5 text-[10px] leading-relaxed text-muted">{occupiedNote}</p>}
+      <p className="mt-1.5 text-[10px] leading-relaxed text-muted">
+        {t('更正一处：两块都留着，新的那块记下它更正了哪一句。整条取代：旧的那块不再进打包，还在库里，能取回。不动：这条建议划掉。')}
+      </p>
     </div>
   );
 }

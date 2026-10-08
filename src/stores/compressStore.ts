@@ -18,11 +18,7 @@ import {
 } from '@/lib/ai/compress';
 import { auditCompression, numbersGateOpen } from '@/lib/ai/compress';
 import { addBackNumbers, compareByEntry, worthRetrying } from '@/lib/ai/compressBlocks';
-import {
-  relationAlreadySettled,
-  supersedeProposalSettled,
-  wouldOverwriteRelation,
-} from '@/lib/blocks/staleGuards';
+import { relationAlreadySettled, wouldOverwriteRelation } from '@/lib/blocks/staleGuards';
 import {
   contentFromEntryBody,
   isEmptyHeld,
@@ -38,12 +34,6 @@ import {
   type Block,
 } from '@/lib/db/blocks';
 import { PINNED_SEE_ABOVE } from '@/lib/pack/templates';
-import {
-  deleteSupersedeProposal,
-  listSupersedeProposals,
-  purgeExpiredSupersedeProposals,
-  type SupersedeProposal,
-} from '@/lib/db/supersedeProposals';
 import { stripInventedSkeleton } from '@/lib/pack/skeleton';
 import type { Thread } from '@/lib/db/threads';
 import { assemble } from '@/lib/pack/assemble';
@@ -215,9 +205,6 @@ interface CompressState {
   runStaleScan: (threadId: string) => Promise<void>;
   /** 对一条提议下决定。⛔ 三个动作的语义写在 `StaleAction` 上，别在界面里另解释一遍。 */
   decideStale: (threadId: string, index: number, action: StaleAction) => Promise<void>;
-  /** ⭐ S2：把 AI 提的「整条取代」读进这个项目的那张卡。
-   *  ⚠️ 它**不花钱、不起 sidecar** —— 只是读库，所以打开这一页就可以跑一次。 */
-  loadProposedStale: (threadId: string) => Promise<void>;
 }
 
 /** ⭐ 界面**不许叫「作废」**（WORKPLAN §2.E3 写死的）。理由是实测的失败形状：
@@ -237,15 +224,10 @@ interface CompressState {
  *  - `keep`   = **不动**：什么都不写，这一条从单子上划掉。 */
 export type StaleAction = 'merge' | 'retire' | 'keep';
 
-/** 卡片上的一条。⭐ S2：**同一张卡上有两个来路** —— 花钱扫出来的，和正在聊天的那个 AI
- *  顺手提的。⚠️ 判断是同一个判断，所以三个按钮、三条护栏完全一样；
- *  ⛔ 差别只在卡片上要说清楚「这条是谁提的」，别的一处都不许分叉。 */
-export interface StaleEntry extends StaleProposal {
-  origin: 'scan' | 'mcp';
-  /** `mcp` 才有：谁提的、以及它在 `supersede_proposals` 里那一行的 id（下完决定要删）。 */
-  client?: string;
-  rowId?: string;
-}
+/** 卡片上的一条 —— 用户自己点「查过期」扫出来的。
+ *  ⛔ P7-5（Ocean 2026-10-07）：08-24 S2「AI 提的也并进这张卡」作废 —— 「过期检测只适用于用户自主
+ *  检测」。AI 提的「更正 / 取代」在待审里（`lib/blocks/supersedeReview.ts`）。 */
+export type StaleEntry = StaleProposal;
 
 export interface StaleSession {
   /** 送出去的那份 pack。⚠️ 提议里的 `#N` 是照它数的。
@@ -918,33 +900,19 @@ export const useCompressStore = create<CompressState>((set, get) => ({
       for (const b of blocks) if (b.seq !== null) bySeq.set(b.seq, b);
       const settled = (p: (typeof scan.proposals)[number]): boolean =>
         relationAlreadySettled(bySeq.get(p.staleSeq), bySeq.get(p.bySeq));
-      // ⭐ AI 提的那几条走另一把尺子 —— 理由写在 `staleGuards.ts` 上。
-      const proposalSettled = (p: StaleProposal): boolean =>
-        supersedeProposalSettled(bySeq.get(p.staleSeq), bySeq.get(p.bySeq));
       // ⛔ 和压缩那一条同一个道理：按了停下就当没跑过，⛔ 不在这一页立一张红牌。
       if (scan.outcome.kind === 'cancelled') {
         toast.notice(t('已经停下了。已经跑出去的那一段，模型厂商那边可能照样算钱。'));
         return;
       }
-      const fresh: StaleEntry[] = scan.proposals
-        .filter((p) => !settled(p))
-        .map((p) => ({ ...p, origin: 'scan' as const }));
-      // ⭐ S2：AI 提的那几条**留在同一张卡上** —— 花钱扫一遍不该把它们冲掉。
-      // ⚠️ 排在扫描结果前面：它们等的时间更久（7 天就过期）。
-      // ⛔⛔ 2026-08-29：这里用的是 `supersedeProposalSettled`，**不是**扫描那把尺子 ——
-      // AI 提的这一条要的是「整条退掉」，库里记着 `corrects`（旧块留着）不等于问过它。
-      // ⚠️ 两个来路的尺子从这一天起**确实不同**：扫描提的是「这块是不是过期了」，
-      // 三个按钮都还没选；MCP 提的是一个**指名的**决定。⛔ 但卡片上一处都不许分叉。
-      const proposed = (await listSupersedeProposals(threadId, Date.now()))
-        .map(toStaleEntry)
-        .filter((p) => !proposalSettled(p));
+      const fresh: StaleEntry[] = scan.proposals.filter((p) => !settled(p));
       set((st) => ({
         stale: {
           ...st.stale,
           [threadId]: {
             source: text,
             blocks,
-            proposals: [...proposed, ...fresh],
+            proposals: fresh,
             dropped: scan.dropped,
             already: scan.proposals.length - fresh.length,
             outcome: scan.outcome,
@@ -1005,11 +973,6 @@ export const useCompressStore = create<CompressState>((set, get) => ({
         await replaceBlock(oldBlock.id, newBlock.id, Date.now());
       }
       if (action !== 'keep') await useBlocksStore.getState().load(threadId);
-      // ⭐ S2：AI 提的那一条，活干完了就把库里那一行删掉。
-      // ⚠️ 「不动」也删 —— **「不动」是一个决定，不是「还没决定」**；留着的话下次打开
-      // 又问一遍，正是 T2 那条「要求用户批准他已经批准过的事」。
-      // ⛔ 不留拒绝日志（和 `proposals` 同一条理由：拒绝日志会把队列变成垃圾堆）。
-      if (p.rowId) await deleteSupersedeProposal(p.rowId);
       set((st) => {
         const cur = st.stale[threadId];
         if (!cur) return {};
@@ -1024,107 +987,7 @@ export const useCompressStore = create<CompressState>((set, get) => ({
       toast.error(t('写不进去：{msg}', { msg: e instanceof Error ? e.message : String(e) }));
     }
   },
-
-  // ⭐ S2（2026-08-24，Ocean 拍板）：AI 提的「整条取代」读进这个项目那张卡。
-  //
-  // ⛔ **并进 E3 那张卡，不新开一张** —— 判断是同一个判断（这一块是不是被后面那块整条
-  // 取代了），只是发现它的人不同：E3 是花钱让 sidecar 扫一遍，这条是正在聊天的那个 AI
-  // 顺手提的。**并进去用户只学一套话；分开就是两套。**
-  //
-  // ⚠️ 这个函数**不花钱、不起 sidecar**，所以它不碰 `running` 那把锁，
-  // 也不写 `outcome` —— 那一行报账的格子只属于真花过钱的那一次。
-  loadProposedStale: async (threadId) => {
-    const now = Date.now();
-    try {
-      await purgeExpiredSupersedeProposals(now);
-      const rows = await listSupersedeProposals(threadId, now);
-      const blocks = useBlocksStore.getState().byThread[threadId] ?? [];
-      const bySeq = new Map<number, Block>();
-      for (const b of blocks) if (b.seq !== null) bySeq.set(b.seq, b);
-      // ⛔⛔ 2026-08-29：这里原来用 `relationAlreadySettled`，于是真库里那两条
-      // （`#21 ← #23`、`#23 ← #26`，两对都已经带着 `corrects`）**被静默吞掉，
-      // 页签根本不出现** —— 而 AI 已经跟用户说过「有两条在 Spool 等你」。
-      // ⭐ 换成 `supersedeProposalSettled`：只有库里**已经整条退掉**（`supersedes`）
-      // 才算问过；`corrects` 是另一个决定。理由写在 `staleGuards.ts` 上。
-      // ⚠️ 块还没读进来的时候（`blocks` 空）一条都摘不掉 —— 那是对的：
-      // 宁可多问一条，也不许因为读慢了就把一条真提议悄悄吞掉。
-      const fresh = rows
-        .map(toStaleEntry)
-        .filter(
-          (p) =>
-            blocks.length === 0 ||
-            !supersedeProposalSettled(bySeq.get(p.staleSeq), bySeq.get(p.bySeq)),
-        );
-      set((st) => {
-        const cur = st.stale[threadId];
-        const prev = cur?.proposals ?? [];
-        // ⭐ P4-1（2026-10-03）：这个函数不再只在切项目时跑 —— 窗口拿到焦点、引擎跑完、库被别处
-        // 动过都会跑（`stores/outsideWrites.ts`）。所以**下过决定的那几条留在单子上，决定跟着条目走**：
-        // 「这一条没动 / 已换」那句回执不能被一次重读冲掉（AI 提的那一行库里已经删了，照旧写法它会
-        // 跟着消失，页签可能在他眼皮底下没了）；扫描出来、已经点过的那条也不能又长出三个按钮。
-        // ⚠️ 决定按下标记，单子会重排 —— 先按条目记下，排好之后再翻回下标。
-        const decidedBy = new Map<StaleEntry, StaleAction>();
-        prev.forEach((p, i) => {
-          const action = cur?.decided[i];
-          if (action) decidedBy.set(p, action);
-        });
-        // AI 提的：原来就在单子上的按原顺序 —— 决定过的原样留着，没决定的换成刚读到的那一行
-        // （库是唯一的真相，库里没了就拿掉）；新来的接在后面。扫描出来的那几条整批留着。
-        const freshByRow = new Map(fresh.map((p) => [p.rowId, p]));
-        const prevMcp = prev.filter((p) => p.origin === 'mcp');
-        const prevRows = new Set(prevMcp.map((p) => p.rowId));
-        const next = [
-          ...prevMcp.flatMap((p) => {
-            if (decidedBy.has(p)) return [p];
-            const row = freshByRow.get(p.rowId);
-            return row ? [row] : [];
-          }),
-          ...fresh.filter((p) => !prevRows.has(p.rowId)),
-          ...prev.filter((p) => p.origin === 'scan'),
-        ];
-        if (next.length === 0 && !cur) return {};
-        const decided: Record<number, StaleAction> = {};
-        next.forEach((p, i) => {
-          const action = decidedBy.get(p);
-          if (action) decided[i] = action;
-        });
-        return {
-          stale: {
-            ...st.stale,
-            [threadId]: {
-              source: cur?.source ?? '',
-              // ⭐ P4-1：三个按钮按这一份找块（`decideStale`）。AI 先写的那块新的要在里面，
-              // 所以有刚读进来的块就用它；还没读进来（切项目那一刻）才留着原来那份。
-              blocks: blocks.length > 0 ? blocks : (cur?.blocks ?? []),
-              proposals: next,
-              dropped: cur?.dropped ?? [],
-              already: cur?.already ?? 0,
-              outcome: cur?.outcome ?? null,
-              decided,
-              startedAt: cur?.startedAt ?? now,
-            },
-          },
-        };
-      });
-    } catch (e) {
-      console.info('[stale] 读不到 AI 提的整条取代', e);
-    }
-  },
 }));
-
-/** 库里那一行 → 卡片上那一条。⚠️ 两个来路在卡片上共用同一个形状，
- *  ⛔ 除了「谁提的」以外一处都不许分叉。 */
-const toStaleEntry = (r: SupersedeProposal): StaleEntry => ({
-  staleSeq: r.staleSeq,
-  bySeq: r.bySeq,
-  why: r.why,
-  quoteStale: r.quoteStale,
-  quoteNew: r.quoteNew,
-  retyped: r.retyped,
-  origin: 'mcp',
-  client: r.client,
-  rowId: r.id,
-});
 
 // 子进程报回来的进度（在思考 / 在写 / 已经多少字）。⚠️ 这两个数字是「它还在正常干活」的
 // 唯一证据 —— 之前那次 180 秒超时，界面上分不出「在写」和「卡死」，就是因为没有它们。

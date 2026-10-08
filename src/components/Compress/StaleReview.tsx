@@ -58,7 +58,6 @@ export default function StaleReview({ threadId }: { threadId: string }) {
   const scan = useCompressStore((s) => s.runStaleScan);
   const cancel = useCompressStore((s) => s.cancel);
   const decide = useCompressStore((s) => s.decideStale);
-  const loadProposed = useCompressStore((s) => s.loadProposedStale);
   // P2 · B3：这个项目此刻的块，按 #n 找 —— 卡片要问「这一对是不是已经记着更正了」。
   const liveBlocks = useBlocksStore((s) => s.byThread[threadId]);
   const blockBySeq = useMemo(
@@ -79,15 +78,8 @@ export default function StaleReview({ threadId }: { threadId: string }) {
     return () => clearInterval(id);
   }, [running]);
 
-  // ⭐ S2：AI 提的那几条读进来。⚠️ **不花钱、不起 sidecar**，所以打开这一页就读一次；
-  // ⛔ 别把它挂在「查一遍」那个按钮上 —— 那个按钮是要花钱的，而这几条已经在库里等着了。
-  useEffect(() => {
-    void loadProposed(threadId);
-  }, [threadId, loadProposed]);
-
-  // ⭐⭐ S2：压缩引擎没开，但 AI 提的那几条照样要看得见 ——「允许 AI 写入」和
-  // 「压缩引擎」是两个开关，⛔ 一条看不见的提案等于没提过。
-  // ⚠️ 引擎没开的时候这一页**只有那几条提案**：查一遍是要花钱的，那个按钮跟着 `enabled` 走。
+  // 引擎没开：查一遍要花钱，这一页只剩之前扫出来、还没点完的那几条（开着的时候扫的）。
+  // ⛔ P7-5：AI 提的不在这里了（在待审里，Ocean 2026-10-07「过期检测只适用于用户自主检测」）。
   if (!enabled && (session?.proposals.length ?? 0) === 0) return null;
 
   const left = session
@@ -95,8 +87,8 @@ export default function StaleReview({ threadId }: { threadId: string }) {
     : 0;
   const cost = session?.outcome?.ok ? estimateCost(session.outcome) : null;
   // 「跑完了，什么都没找到」—— ⚠️ 这是一个结果，要占中间那一格，⛔ 不是一片空白。
-  // ⛔⛔ S2：判据是 `outcome`，**不是「有没有 session」** —— AI 提了一条就会有 session，
-  // 而那时候一遍都没查过。照旧写法会对着一个从没查过的项目说「查完了，没有旧块被取代」。
+  // ⛔ 判据是 `outcome`，**不是「有没有 session」** —— 停下的那一次不落 outcome，
+  // 照旧写法会对着一个没查完的项目说「查完了，没有旧块被取代」。
   const scanned = !!session?.outcome;
   const cleanRun =
     scanned && session!.proposals.length === 0 && session!.dropped.length === 0;
@@ -176,16 +168,6 @@ export default function StaleReview({ threadId }: { threadId: string }) {
                       <span className="font-mono text-muted">
                         #{p.staleSeq} → #{p.bySeq}
                       </span>
-                      {/* ⭐ S2（2026-08-24）：**同一张卡上有两个来路。** 判断是同一个判断，
-                          三个按钮、三条护栏一处不差 —— ⛔ 唯一要说清的是「这条是谁提的」：
-                          花钱扫出来的那一遍，和正在聊天的那个 AI 顺手提的，用户有权分得开。 */}
-                      {p.origin === 'mcp' && (
-                        <span className="flex-none rounded border border-line px-1 text-[10px] text-muted">
-                          {p.client?.trim()
-                            ? t('{who} 提的', { who: p.client })
-                            : t('聊天里提的')}
-                        </span>
-                      )}
                       <span className="min-w-0 flex-1 text-ink-2">{p.why}</span>
                       {/* ⚠️ 重打了标点要说出来：它确实破了「逐字」，只是没改内容。 */}
                       {p.retyped && (
@@ -312,7 +294,7 @@ export default function StaleReview({ threadId }: { threadId: string }) {
         {/* ⛔ 2026-08-23（Ocean:「过期检测跑起来无法取消」）：这一页原来**没有停下**。
             ⚠️ 它和压缩共用同一条 sidecar 的路，`cancel()` 本来就管得住它 ——
             少的只是这个按钮。⭐ 一个按钮两种身份，和压缩那一页逐字一样的写法。
-            ⚠️ S2：引擎没开就不出这个按钮 —— 它要花钱，而这一页此刻是靠 AI 提案撑起来的。 */}
+            ⚠️ 引擎没开就不出这个按钮 —— 它要花钱。 */}
         {enabled && (
         <button
           type="button"

@@ -98,31 +98,29 @@ const proposeBlocks = (id = 'batch-1') =>
   });
 
 describe('reloadOutsideWrites —— AI 从外面写进来的，一次重读全看得见', () => {
-  it('⭐ 先写新块、再提整条取代、再提一批块 —— 重读一次：数字、页签那一条都在，「整条取代」点得动', async () => {
+  // P7-5（Ocean 2026-10-07）：AI 提的「整条取代」进**待审**，⛔ 不再进「过期检测」那张卡。
+  it('⭐ 先写新块、再提整条取代、再提一批块 —— 重读一次：块在、待审数算上两样、过期检测不冒出来，「取代」点得动', async () => {
     const newer = await createBlock({ threadId, content: '08-21 那份 15 所。' });
     proposeSupersede(older.id, newer.id);
     await proposeBlocks();
     // ⚠️ 前提：重读之前这几个 store 确实什么都不知道，否则下面的断言什么都没证明。
     expect(useBlocksStore.getState().byThread[threadId]).toHaveLength(1);
-    expect(useCompressStore.getState().stale[threadId]).toBeUndefined();
     expect(useProposalsStore.getState().pendingCount).toBe(0);
 
     await reloadOutsideWrites();
 
     expect(useBlocksStore.getState().byThread[threadId]).toHaveLength(2);
-    expect(useProposalsStore.getState().pendingCount).toBe(1);
-    const sess = useCompressStore.getState().stale[threadId]!;
-    expect(sess.proposals.map((p) => [p.staleSeq, p.bySeq, p.origin])).toEqual([
-      [older.seq, newer.seq, 'mcp'],
-    ]);
-    // ⭐ 「排在块之后」的证据：三个按钮找块用的那一份里有 AI 刚写的那块。
-    // 反过来排（先读提议、后读块），这里只有 1 块，「整条取代」会报「有一块已经不在了」、什么都不写。
-    expect(sess.blocks.map((b) => b.id)).toContain(newer.id);
+    expect(useProposalsStore.getState().pendingCount).toBe(2);
+    expect(useCompressStore.getState().stale[threadId]).toBeUndefined();
 
-    await useCompressStore.getState().decideStale(threadId, 0, 'retire');
+    await useProposalsStore.getState().open();
+    const [card] = useProposalsStore.getState().supersedeProposals!;
+    await useProposalsStore.getState().decideSupersede(card!.proposal.id, 'replace');
 
     const rows = await listBlocksByThread(threadId);
+    expect(rows.find((b) => b.id === older.id)).toMatchObject({ replacedByBlockId: newer.id });
     expect(rows.find((b) => b.id === older.id)!.staleAt).not.toBeNull();
+    expect(useProposalsStore.getState().pendingCount).toBe(1);
   });
 
   it('外面什么都没写 —— 重读一次，单子不会凭空长出东西', async () => {

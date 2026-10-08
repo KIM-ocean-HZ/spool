@@ -1,6 +1,5 @@
 import { librarySignature } from '@/lib/db/librarySignature';
 import { useBlocksStore } from './blocksStore';
-import { useCompressStore } from './compressStore';
 import { useProposalsStore } from './proposalsStore';
 import { useThreadsStore } from './threadsStore';
 
@@ -19,10 +18,8 @@ export async function reloadOutsideWrites(): Promise<void> {
   await useThreadsStore.getState().loadAll();
   const active = useThreadsStore.getState().activeId;
   if (active) await useBlocksStore.getState().load(active);
+  // P7-5：AI 提的「更正 / 取代」也在待审里（过期检测页签只放用户自己跑的），这一句一起刷新。
   await useProposalsStore.getState().refresh();
-  // ⚠️ 必须排在重读块之后：AI 往往先写一块新的、再提「新的取代旧的」，而提议是按 store 里
-  // 这个项目的块（`#n`）对上号的 —— 块还没读进来，那一条就对不上。
-  if (active) await useCompressStore.getState().loadProposedStale(active);
 }
 
 // P4-2：Spool 一直开着、窗口却没有重新拿到焦点的时候（和 AI 客户端左右并排、人在那边打字；
