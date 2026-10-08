@@ -2,6 +2,7 @@ import { nanoid } from 'nanoid';
 import { type AnnotationAuthor, nextAnnotationAuthor } from '@/lib/blocks/annotationAuthor';
 import { relocateQuote } from '@/lib/blocks/quoteRelocate';
 import { joinSegments } from '@/lib/blocks/segments';
+import { moveImagesOnto, parkImagesOf, unparkImagesOf, type ImagePlace } from './blockImages';
 import { getDb, tutorialSourceLabels } from './client';
 
 export type BlockKind = 'text' | 'ref';
@@ -664,6 +665,9 @@ export const deleteBlock = async (id: string): Promise<void> => {
   // duplicates a move removes, the overlay's 改投, …); only the user's own delete may take the
   // files away too, and it does that explicitly BEFORE calling this (blocksStore.remove).
   await db.execute('UPDATE attachments SET anchor_block_id = NULL WHERE anchor_block_id = $1', [id]);
+  // P7-6: the images go with the block — out of the library, kept in this window's memory so
+  // an undo (`restoreBlock`) can put them back. Every block-deleting path passes through here.
+  await parkImagesOf(id);
   await db.execute('DELETE FROM blocks WHERE id = $1', [id]);
 };
 
@@ -717,6 +721,8 @@ export const restoreBlock = async (block: Block): Promise<void> => {
       block.replacedByBlockId,
     ],
   );
+  // P7-6: and the images `deleteBlock` took with it.
+  await unparkImagesOf(block.id);
 };
 
 /** DESIGN_CONTEXT_HYGIENE §3.1 — «这条不作数了», and taking it back.
@@ -1345,8 +1351,8 @@ export const mergeBlocks = async (
   pinned: boolean,
   source: string | null,
   nonSurvivorIds: string[],
-): Promise<void> => {
-  if (nonSurvivorIds.length === 0) return;
+): Promise<ImagePlace[]> => {
+  if (nonSurvivorIds.length === 0) return [];
   const db = await getDb();
 
   await db.execute(
@@ -1362,8 +1368,12 @@ export const mergeBlocks = async (
       WHERE anchor_block_id IN (${deletePlaceholders})`,
     [...nonSurvivorIds, survivorId],
   );
+  // P7-6: and so do their images — after the survivor's own, block by block, before the
+  // DELETE. Where each one was comes back for undo.
+  const images = await moveImagesOnto(nonSurvivorIds, survivorId);
   await db.execute(
     `DELETE FROM blocks WHERE id IN (${deletePlaceholders})`,
     [...nonSurvivorIds],
   );
+  return images;
 };

@@ -33,6 +33,7 @@ import BlockActions from './BlockActions';
 import CitationLine from './CitationLine';
 import CorrectedByLine from './CorrectedByLine';
 import CorrectionNote from './CorrectionNote';
+import BlockImages from './BlockImages';
 import ProvenanceLine from './ProvenanceLine';
 import { ReplacedByLine, ReplacesLine } from './ReplacementLine';
 import RefBlockItem from './RefBlockItem';
@@ -1366,6 +1367,9 @@ function TextBlockItem({
             </button>
           )}
       </div>
+
+      {/* P7-6: the block's images, under its text. ⛔ A block with none draws nothing here. */}
+      <BlockImages blockId={block.id} />
 
       {/* P5: the files hung off this block (added with its own 「加文件」), one name each,
           opened the way the right rail opens them. ⛔ A block with none draws nothing here. */}

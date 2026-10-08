@@ -1508,6 +1508,12 @@ const EN: Record<string, string> = {
   '第 {n} 块已经指着另一块了，一块只能指一块；要更正这一块，让 AI 另写一块。': 'Block {n} already points at another block, and a block can point at only one. To correct this one, ask the AI for a new block.',
   '更正一处：两块都留着，新的那块记下它更正了哪一句。整条取代：旧的那块不再进打包，还在库里，能取回。不动：这条建议划掉。': 'Correct one point: both blocks stay, and the new one records which sentence it corrects. Replace in full: the old block leaves your packs, but stays in the library and can be taken back. Leave alone: the suggestion is dropped.',
   '这条建议说的两块里有一块已经不在了，清掉了。': 'One of the two blocks this suggestion was about is gone, so it was cleared.',
+  '点开看原图（{w}×{h}）': 'Open the original ({w}×{h})',
+  '这张图读不出来': 'This image could not be read',
+  '这张图太大了（{n} MB），一张最多 {max} MB。': 'This image is too large ({n} MB). One image can be at most {max} MB.',
+  '这不是能放进块里的图片（认 PNG、JPEG、GIF、WebP、TIFF）。': 'That is not an image a block can hold (PNG, JPEG, GIF, WebP or TIFF).',
+  '那一块已经不在了，图片没有放进去。': 'That block is gone, so the image was not added.',
+  '图片没能存进去：{msg}': 'The image could not be stored: {msg}',
   '这一份丢了数字或日期，不能进库 —— 先用上面那个「加回去」。':
     'This version has dropped a number or a date, so it may not enter your library \u2014 use \u201cAdd back\u201d above first.',
   '{n} 块换成了压缩稿。压缩前的原文留在每一块上，块的工具条上有个入口能打开看，也能换回去。':

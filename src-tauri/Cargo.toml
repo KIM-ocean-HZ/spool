@@ -37,6 +37,13 @@ libc = "0.2"
 # ~/.codex/config.toml 一键接入。toml_edit 而非 toml:round-trip 保留用户文件的注释与
 # 格式,merge 一个表不重排整个文件。
 toml_edit = "0.25.11"
+# P7-6 (Ocean 2026-09-30 §9.2 第 11 条): images inside blocks. Decoding, scaling the preview
+# and handing it over as a data: URL happen in Rust (the CSP only allows data: images, and
+# tauri-plugin-sql cannot move a BLOB). `image` is already in the graph through the clipboard
+# plugin (arboard, TIFF only); these are the four formats a screenshot or photo arrives in.
+# ⛔ Neither crate brings any network code — `cargo tree` stays empty (HANDOFF §10.7).
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp", "tiff"] }
+base64 = "0.22"
 
 # macOS-only: a CGEventTap in ListenOnly mode watches FlagsChanged events to detect a
 # double-tap of ⌥ (Option) as the capture trigger. PLAN §4 deps list amended per user

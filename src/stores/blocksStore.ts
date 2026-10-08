@@ -8,6 +8,8 @@ import type {
   CreateAttachmentArgs,
 } from '@/lib/db/attachments';
 import * as db from '@/lib/db/blocks';
+import { copyImages, listBlockImagesByThread, type BlockImage, type ImagePlace } from '@/lib/db/blockImages';
+import { addImageBytes, imageErrorMessage } from '@/lib/images/blockImageIo';
 import type { Block, CreateBlockArgs, IncomingRef, RefKind } from '@/lib/db/blocks';
 import { quoteIsInBlock } from '@/lib/blocks/quoteFold';
 import { computeMergedFields } from '@/lib/db/blocks';
@@ -31,6 +33,11 @@ interface BlocksState {
   // block. Hydrated alongside the blocks on thread load, and read by the right rail's
   // 「项目文件」 panel — which is now the only place files are seen or added.
   attachmentsByThread: Record<string, Attachment[]>;
+  /** P7-6: each block's images (no bytes), in order — keyed by block, filled by `load`.
+   *  A block with none has no entry. */
+  imagesByBlock: Record<string, BlockImage[]>;
+  /** P7-6: store images into a block, in the order given; each that cannot go in says why. */
+  addImages: (blockId: string, images: Uint8Array[]) => Promise<void>;
   // v2.8 §20.1: multi-select state for the merge action. Global (single set), cleared
   // on thread switch so a stale selection from a previous thread can't survive.
   selectedBlockIds: Set<string>;
@@ -254,13 +261,15 @@ export const useBlocksStore = create<BlocksState>((set, get) => {
   return {
     byThread: {},
     attachmentsByThread: {},
+    imagesByBlock: {},
     incomingByBlock: {},
     selectedBlockIds: new Set<string>(),
 
     load: async (threadId) => {
-      const [list, attachments] = await Promise.all([
+      const [list, attachments, images] = await Promise.all([
         db.listBlocksByThread(threadId),
         adb.listAttachmentsByThread(threadId),
+        listBlockImagesByThread(threadId),
       ]);
       // F2 §3.2 ①：这个项目每一块的入向边，**一次查询**取回来。
       // ⚠️ 必须在 `list` 之后 —— 要拿它的 id 当参数，所以进不了上面那个 Promise.all。
@@ -268,12 +277,33 @@ export const useBlocksStore = create<BlocksState>((set, get) => {
       // v15: one project's files replace that project's entry wholesale. There is no
       // per-block bookkeeping left to reconcile — the query already returned exactly the
       // set that belongs here.
-      set((s) => ({
-        byThread: { ...s.byThread, [threadId]: list },
-        attachmentsByThread: { ...s.attachmentsByThread, [threadId]: attachments },
-        // ⚠️ 合并进去，⛔ 不整份替换：这个 map 是按**块**存的，里面还有别的项目那些块的边。
-        incomingByBlock: { ...s.incomingByBlock, ...incoming },
-      }));
+      set((s) => {
+        // P7-6: this project's blocks' images replace what was there for them — a block whose
+        // last image went has to lose its entry, so clear them all first.
+        const imagesByBlock = { ...s.imagesByBlock };
+        for (const b of list) delete imagesByBlock[b.id];
+        for (const img of images) (imagesByBlock[img.blockId] ??= []).push(img);
+        return {
+          byThread: { ...s.byThread, [threadId]: list },
+          attachmentsByThread: { ...s.attachmentsByThread, [threadId]: attachments },
+          imagesByBlock,
+          // ⚠️ 合并进去，⛔ 不整份替换：这个 map 是按**块**存的，里面还有别的项目那些块的边。
+          incomingByBlock: { ...s.incomingByBlock, ...incoming },
+        };
+      });
+    },
+
+    addImages: async (blockId, images) => {
+      for (const bytes of images) {
+        try {
+          const img = await addImageBytes(blockId, bytes);
+          set((s) => ({
+            imagesByBlock: { ...s.imagesByBlock, [blockId]: [...(s.imagesByBlock[blockId] ?? []), img] },
+          }));
+        } catch (e) {
+          toast.error(imageErrorMessage(e));
+        }
+      }
     },
 
     /** 改完一条关系之后，把**受影响的那几块**所在的项目重刷一遍入向边。
@@ -709,8 +739,9 @@ export const useBlocksStore = create<BlocksState>((set, get) => {
       const sourceBlocks = found.map((x) => x.block);
       const files = await adb.listAttachmentsAnchoredTo(merged.nonSurvivorIds);
 
+      let images: ImagePlace[] = [];
       try {
-        await db.mergeBlocks(
+        images = await db.mergeBlocks(
           merged.survivorId,
           merged.content,
           merged.annotation,
@@ -725,7 +756,7 @@ export const useBlocksStore = create<BlocksState>((set, get) => {
       }
 
       useUndoStore.getState().pushUndo(
-        buildMergeUndo({ survivorId: merged.survivorId, threadId, sourceBlocks, files }),
+        buildMergeUndo({ survivorId: merged.survivorId, threadId, sourceBlocks, files, images }),
       );
       // Clear selection and reload — simpler and safer than reconstructing the merged
       // block in-memory.
@@ -822,6 +853,8 @@ export const useBlocksStore = create<BlocksState>((set, get) => {
       // undo) — never a touched original.
       try {
         await db.insertBlocks(copyBlocks);
+        // P7-6: a copy carries its images (Ocean 10-07: 图跟着复制) — copied inside SQL.
+        for (let i = 0; i < sources.length; i++) await copyImages(sources[i]!.id, copyBlocks[i]!.id);
       } catch (e) {
         console.error('[forward] copy failed', e);
         toast.error(t('复制失败：{msg}', { msg: e instanceof Error ? e.message : String(e) }));

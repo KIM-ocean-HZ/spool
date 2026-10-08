@@ -6,6 +6,7 @@ import {
   setAttachmentAnchor,
   setAttachmentSuperseded,
 } from '@/lib/db/attachments';
+import { restoreImagePlaces } from '@/lib/db/blockImages';
 import {
   computeMergedFields,
   deleteBlock,
@@ -322,13 +323,15 @@ const reverseAndBuildRedo = async (
       };
     }
     case 'merge': {
-      const { survivorId, sourceBlocks, files = [] } = entry.payload;
+      const { survivorId, sourceBlocks, files = [], images = [] } = entry.payload;
       for (const b of sourceBlocks) {
         if (b.id !== survivorId) await restoreBlock(b);
       }
       // v30 (P5-3): the merge moved these onto the survivor; each goes back on its own block.
       // Redo needs nothing extra — mergeBlocks moves them onto the survivor again.
       for (const f of files) await setAttachmentAnchor(f.id, f.anchorBlockId);
+      // P7-6: the images too, each back on its own block and in its own place.
+      await restoreImagePlaces(images);
       const survivor = sourceBlocks.find((b) => b.id === survivorId);
       if (survivor) {
         await restoreBlockFields(

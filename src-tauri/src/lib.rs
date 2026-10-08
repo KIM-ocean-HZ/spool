@@ -10,6 +10,7 @@ mod compress_sweep;
 mod capture;
 #[cfg(target_os = "macos")]
 mod double_tap;
+mod images;
 // Windows peer of double_tap: the same double-tap-modifier gesture (Ctrl there, ⌥ on
 // macOS), built on Raw Input instead of a CGEventTap. Cfg'd out everywhere else.
 #[cfg(target_os = "windows")]
@@ -375,6 +376,9 @@ pub fn run() {
             transfer::stage_import_db,
             transfer::discard_import_staging,
             transfer::count_missing_targets,
+            images::block_image_preview,
+            images::block_image_full,
+            images::add_block_image,
             api_engine::compress_pack_via_api,
             api_engine::compress_cancel,
             api_engine::compress_sidecar_present,

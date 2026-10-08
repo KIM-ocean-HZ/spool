@@ -4,6 +4,7 @@
 // buffer mechanics (push / peek / pop / invalidate / clear) and the entry types.
 
 import type { Attachment, RevivedVersion } from '@/lib/db/attachments';
+import type { ImagePlace } from '@/lib/db/blockImages';
 import type { Block } from '@/lib/db/blocks';
 import type { ThreadStatus } from '@/lib/db/threads';
 
@@ -68,6 +69,8 @@ export interface MergePayload {
   // v30 (P5-3): files that hung off a non-survivor, as they were. The merge moves them onto
   // the survivor; undo hangs each back on its own block.
   files?: Attachment[];
+  /** P7-6: the same for images — where each one was before the merge moved it. */
+  images?: ImagePlace[];
 }
 
 // Step 6 §20.5: a select-to-highlight gesture mutated stored content. Reversal restores

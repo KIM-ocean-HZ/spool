@@ -3841,7 +3841,7 @@ fn now_ms() -> i64 {
 // nanoid-compatible 21-char id (same default url-safe alphabet as the GUI's nanoid).
 // /dev/urandom instead of a rand crate — no new dependency; the alphabet has exactly
 // 64 symbols so `byte & 0x3F` is bias-free.
-fn new_id() -> Result<String, String> {
+pub(crate) fn new_id() -> Result<String, String> {
     const ALPHABET: &[u8; 64] =
         b"useandom-26T198340PX75pxJACKVERYMINDBUSHWOLF_GQZbfghjklqvwyzrict";
     let mut bytes = [0u8; 21];
