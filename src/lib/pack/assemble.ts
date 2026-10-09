@@ -54,6 +54,8 @@ export interface PackImage {
   path: string;
   width: number;
   height: number;
+  /** P8: the stored size, for the export list (「图片 N 张，共 X MB」). Never printed. */
+  sizeBytes?: number;
 }
 
 export interface CitedBlock {
@@ -99,6 +101,11 @@ export interface AssembleArgs {
   // disk (the caller asks Rust for them: `cached_block_images`). mcp.rs carries the same on
   // BlockRow. Omitted = no picture lines, which is every block before v32.
   images?: ReadonlyMap<string, readonly PackImage[]>;
+  // P8 (Ocean 2026-10-08, HANDOFF §9.2 第 50 条) — EXPORT ONLY: attachment id → where that file
+  // sits in the exported folder, relative to this .md. Its name is printed as a Markdown link
+  // to it; the rest of the line is unchanged. Omitted = every line exactly as before, which is
+  // what the copy button, the golden and mcp.rs (which never exports) all get.
+  exportedFiles?: ReadonlyMap<string, string>;
   // DESIGN_CONTEXT_HYGIENE §1.1 (Ocean 2026-08-06: 「直接去掉 pack 的分类,只留下纯上下文的
   // 格式」, then 拍板 that it be a switch rather than a deletion). false drops the
   // four-category reading instructions and leaves the content.
@@ -194,7 +201,7 @@ const oneLine = (s: string): string => s.replace(/\s+/g, ' ').trim();
 // promise above silently stopped holding — the pack would carry the account name out the
 // door while the comment still said it did not. Mirrored in mcp.rs base_name; the same
 // two-separator rule already lives in utils/openTarget.ts basename.
-const baseName = (target: string): string => {
+export const baseName = (target: string): string => {
   const trimmed = target.replace(/[/\\]+$/, '');
   const cut = Math.max(trimmed.lastIndexOf('/'), trimmed.lastIndexOf('\\'));
   return trimmed.slice(cut + 1) || trimmed;
@@ -237,12 +244,13 @@ export const blockSeqMap = (blocks: readonly Block[]): ReadonlyMap<string, numbe
 const fileAnchorMarker = (seq: number | undefined): string =>
   seq === undefined ? ' · on project' : ` · on #${seq}`;
 
-const renderProjectFile = (a: Attachment, seq: number | undefined): string[] => {
+const renderProjectFile = (a: Attachment, seq: number | undefined, link: string | undefined): string[] => {
   // §3.1-5: file name, not path. The " — target" half is dropped when it would only
   // repeat the label (the common case, since the label defaults to the file name).
-  const label = attachmentLabel(a);
+  // P8: in an exported folder the name links to the copy beside the .md — a relative path.
   const target = packTarget(a);
-  const shown = target === label ? '' : ` — ${target}`;
+  const shown = target === attachmentLabel(a) ? '' : ` — ${target}`;
+  const label = link === undefined ? attachmentLabel(a) : `[${attachmentLabel(a)}](${link})`;
   const on = fileAnchorMarker(seq);
   if (a.kind === 'file' && a.extractedText != null) {
     if (a.includeInPack) {
@@ -587,6 +595,7 @@ export function assemble({
   refBlocks,
   scope,
   images,
+  exportedFiles,
   instructions = true,
   outputLanguage,
   now,
@@ -678,7 +687,7 @@ export function assemble({
     out.push('');
     for (const a of files) {
       const seq = a.anchorBlockId == null ? undefined : seqs.get(a.anchorBlockId);
-      out.push(...renderProjectFile(a, seq));
+      out.push(...renderProjectFile(a, seq, exportedFiles?.get(a.id)));
     }
   }
 

@@ -97,13 +97,12 @@ export const addImageFromClipboard = (blockId: string): Promise<BlockImage> =>
 export const cachedImagesOf = async (blockIds: readonly string[]): Promise<Map<string, PackImage[]>> => {
   const out = new Map<string, PackImage[]>();
   for (let i = 0; i < blockIds.length; i += 500) {
-    const rows = await invoke<{ id: string; blockId: string; path: string; width: number; height: number }[]>(
-      'cached_block_images',
-      { blockIds: blockIds.slice(i, i + 500) },
-    );
+    const rows = await invoke<
+      { id: string; blockId: string; path: string; width: number; height: number; sizeBytes: number }[]
+    >('cached_block_images', { blockIds: blockIds.slice(i, i + 500) });
     for (const r of rows) {
       const list = out.get(r.blockId) ?? [];
-      list.push({ id: r.id, path: r.path, width: r.width, height: r.height });
+      list.push({ id: r.id, path: r.path, width: r.width, height: r.height, sizeBytes: r.sizeBytes });
       out.set(r.blockId, list);
     }
   }

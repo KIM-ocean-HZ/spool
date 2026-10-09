@@ -133,7 +133,7 @@ fn write_pack_file_to(dest: &Path, content: &str, data_dir: &Path) -> Result<(),
 // P8-1 (Ocean 2026-09-30 §9.2 第 12 条, 10-08 第 50 条) — a pack exported WITH the project's
 // files and pictures: the .md, plus `files/` and `images/` beside it, so the whole folder can be
 // handed to a web AI and every link in the .md opens. The frontend decides what goes where
-// (lib/pack/export.ts); this checks every piece of it, then copies.
+// (lib/pack/folder.ts); this checks every piece of it, then copies.
 // ---------------------------------------------------------------------------------------
 
 /// What the export list shows for one of the project's paths. `kind` None = not on this

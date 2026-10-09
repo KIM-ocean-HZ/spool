@@ -3,6 +3,7 @@ import type { Block } from '@/lib/db/blocks';
 import type { Thread } from '@/lib/db/threads';
 import {
   assemble,
+  baseName,
   blockSeqMap,
   filterBlocksForRange,
   formatPackDate,
@@ -60,6 +61,8 @@ export interface BuildPackFolderArgs {
   outputLanguage: 'zh' | 'en';
   /** P7-8: block id → its pictures, for the `image:` lines (any project in the tree). */
   images?: ReadonlyMap<string, readonly PackImage[]>;
+  /** P8: what the user ticked in the export list. Omitted = the .md files only, exactly as before. */
+  choice?: ExportChoice;
   now?: number;
 }
 
@@ -67,6 +70,10 @@ export interface PackFolder {
   /** Name for the export folder itself. The caller picks the directory it goes in. */
   folderName: string;
   files: PackFile[];
+  /** P8: what goes beside the .md files — empty unless something was ticked. Paths are
+   *  relative to the export root, like `files`'. */
+  copies: PackCopy[];
+  pictures: PackPicture[];
 }
 
 /** Fallback name for a workspace or project with no title — never an empty path segment. */
@@ -130,6 +137,130 @@ const uniqueIn = (taken: Set<string>, name: string): string => {
       return candidate;
     }
   }
+};
+
+// ---------------------------------------------------------------------------------------
+// P8 (Ocean 2026-09-30 §9.2 第 12 条, 10-08 第 50 条, 10-10 第 52–53 条) — an export can carry the
+// project's files and pictures. The .md then links to them by RELATIVE path, always downward
+// (`files/…`, `images/…`, never `..`), so the folder works as a whole wherever it is handed — a
+// web AI included — and ⛔ no path of this computer is written into the .md, however it is ticked.
+// ---------------------------------------------------------------------------------------
+
+/** What the user ticked in the export list. */
+export interface ExportChoice {
+  /** Attachment ids, one by one (第 12 条). */
+  files: ReadonlySet<string>;
+  /** One switch for every picture in the export (第 53 条). Off ⇒ each picture line keeps its
+   *  caption only, `![caption](image)` (第 52 条). */
+  images: boolean;
+}
+
+/** A project file copied as it is — `write_pack_export`'s `copies`. */
+export interface PackCopy {
+  source: string;
+  path: string;
+}
+
+/** A picture written out of the library — `write_pack_export`'s `images`. */
+export interface PackPicture {
+  id: string;
+  path: string;
+}
+
+/** The files an export can carry: the ones its pack lists. A file a newer version replaced is in
+ *  neither (P6-4). */
+export const exportableFiles = (attachments: readonly Attachment[]): Attachment[] =>
+  attachments.filter((a) => a.supersededBy == null);
+
+/** The pictures this pack really prints: blocks inside the range, minus the retired ones
+ *  assemble drops. ⚠️ Not the project's files — those follow the project, not the range (v15). */
+export const packedPictures = (
+  blocks: Block[],
+  range: PackRange,
+  images: ReadonlyMap<string, readonly PackImage[]> | undefined,
+  now: number,
+): { block: Block; images: readonly PackImage[] }[] =>
+  filterBlocksForRange(blocks, range, now).flatMap((block) => {
+    const list = block.staleAt == null ? images?.get(block.id) : undefined;
+    return list && list.length > 0 ? [{ block, images: list }] : [];
+  });
+
+/** A file's name inside `files/`: its own name on disk, cleaned like a title, the extension kept
+ *  whole (sanitizeSegment stops at 60 characters and would take a `.pdf` with it). */
+export const exportFileName = (target: string): string => {
+  const name = baseName(target);
+  const dot = name.lastIndexOf('.');
+  if (dot <= 0 || dot === name.length - 1) return sanitizeSegment(name);
+  return `${sanitizeSegment(name.slice(0, dot))}.${sanitizeSegment(name.slice(dot + 1))}`;
+};
+
+/** Two files of one project with the same name: the second becomes `name-2.ext`. ⚠️ Compared
+ *  case-folded — a Mac disk is case-insensitive by default, so 「Report.pdf」 and 「report.pdf」
+ *  would be one file there. */
+const uniqueFileName = (taken: Set<string>, name: string): string => {
+  const dot = name.lastIndexOf('.');
+  const [stem, ext] = dot > 0 ? [name.slice(0, dot), name.slice(dot)] : [name, ''];
+  for (let i = 1; ; i++) {
+    const candidate = i === 1 ? name : `${stem}-${i}${ext}`;
+    if (!taken.has(candidate.toLowerCase())) {
+      taken.add(candidate.toLowerCase());
+      return candidate;
+    }
+  }
+};
+
+/** `.png` / `.jpg` / … of the cached copy — the extension Rust checks the picture against. */
+const extOf = (path: string): string => /\.[A-Za-z0-9]+$/.exec(path)?.[0] ?? '.png';
+
+interface ProjectPlan {
+  /** For assemble: attachment id → link, relative to the .md. */
+  exportedFiles: Map<string, string>;
+  /** For assemble: the pictures under their new names — undefined when they are not taken. */
+  images: Map<string, PackImage[]> | undefined;
+  /** For Rust, also relative to the .md; the caller adds the .md's own directory. */
+  copies: PackCopy[];
+  pictures: PackPicture[];
+}
+
+/** One project's share of an export. `dir` is the project's own folder as seen from its .md:
+ *  '' when `files/` and `images/` sit right beside it (one project), `01-项目` in a workspace. */
+const planProject = (
+  blocks: Block[],
+  attachments: readonly Attachment[],
+  range: PackRange,
+  images: ReadonlyMap<string, readonly PackImage[]> | undefined,
+  choice: ExportChoice,
+  dir: string,
+  now: number,
+): ProjectPlan => {
+  const under = (sub: string, name: string): string => (dir ? `${dir}/${sub}/${name}` : `${sub}/${name}`);
+  const exportedFiles = new Map<string, string>();
+  const copies: PackCopy[] = [];
+  const taken = new Set<string>();
+  for (const a of exportableFiles(attachments)) {
+    if (!choice.files.has(a.id)) continue;
+    const path = under('files', uniqueFileName(taken, exportFileName(a.target)));
+    exportedFiles.set(a.id, path);
+    copies.push({ source: a.target, path });
+  }
+  if (!choice.images) return { exportedFiles, images: undefined, copies, pictures: [] };
+
+  // Named after the block that holds them (`12-1.png` = #12's first picture), so a reader of
+  // the folder can tell where each one belongs without the .md.
+  const renamed = new Map<string, PackImage[]>();
+  const pictures: PackPicture[] = [];
+  for (const { block, images: list } of packedPictures(blocks, range, images, now)) {
+    renamed.set(
+      block.id,
+      list.map((img, i) => {
+        const stem = block.seq != null ? `${block.seq}-${i + 1}` : img.id;
+        const path = under('images', `${stem}${extOf(img.path)}`);
+        pictures.push({ id: img.id, path });
+        return { ...img, path };
+      }),
+    );
+  }
+  return { exportedFiles, images: renamed, copies, pictures };
 };
 
 /**
@@ -213,6 +344,7 @@ const renderIndex = (
   entries: IndexEntry[],
   range: PackRange,
   at: number,
+  withProjectFolders: boolean,
 ): string => {
   const out: string[] = [];
   out.push(`# ${workspaceTitle.trim() || UNTITLED} — Spool context export`);
@@ -249,6 +381,16 @@ const renderIndex = (
     const n = entry.blockCount;
     out.push(`${indent}- \`${entry.path}\` — ${n} block${n === 1 ? '' : 's'}${summary}`);
   }
+  // P8: those folders are not in the list above, and without this an AI listing the export
+  // could take one for a sub-workspace. Only when there is one, so an export of .md files alone
+  // is byte-for-byte what it was.
+  if (withProjectFolders) {
+    out.push('');
+    out.push(
+      "A folder named like a project file, without `.md`, holds that project's attached files and\n" +
+        'images; the links in the project file point into it.',
+    );
+  }
   out.push('');
   return out.join('\n');
 };
@@ -267,14 +409,18 @@ export function buildPackFolder({
   refBlocks,
   outputLanguage,
   images,
+  choice,
   now,
 }: BuildPackFolderArgs): PackFolder {
   const at = now ?? Date.now();
   const files: PackFile[] = [];
+  const copies: PackCopy[] = [];
+  const pictures: PackPicture[] = [];
   const entries: IndexEntry[] = [];
 
   const walk = (node: PackWorkspaceNode, dir: string, depth: number): void => {
     const takenHere = new Set<string>();
+    const fromRoot = (p: string): string => (dir ? `${dir}/${p}` : p);
     node.projects.forEach((project, i) => {
       const packedAll = filterBlocksForRange(project.blocks, range, at);
       // assemble() drops retired blocks itself; the count in INDEX.md has to match what the
@@ -285,6 +431,18 @@ export function buildPackFolder({
         `${pad2(i + 1)}-${sanitizeSegment(project.thread.title)}.md`,
       );
       const path = dir ? `${dir}/${name}` : name;
+      // P8: the project's files and pictures go in a folder beside its .md, named the same
+      // without `.md`. Projects are named before sub-workspaces and carry a unique `NN-`, so the
+      // name is free here; it is reserved only when something goes in it, which is what lets a
+      // sub-workspace called the same thing keep today's name when nothing does.
+      const plan = choice
+        ? planProject(project.blocks, project.attachments, range, images, choice, name.replace(/\.md$/, ''), at)
+        : null;
+      if (plan && (plan.copies.length > 0 || plan.pictures.length > 0)) {
+        takenHere.add(name.replace(/\.md$/, ''));
+        copies.push(...plan.copies.map((c) => ({ ...c, path: fromRoot(c.path) })));
+        pictures.push(...plan.pictures.map((p) => ({ ...p, path: fromRoot(p.path) })));
+      }
       files.push({
         path,
         threadId: project.thread.id,
@@ -300,7 +458,8 @@ export function buildPackFolder({
             refTitles,
             refBlocks,
             scope: { range, total: project.blocks.length },
-            images,
+            images: plan ? plan.images : images,
+            exportedFiles: plan?.exportedFiles,
             instructions: false,
             outputLanguage,
             now: at,
@@ -324,10 +483,75 @@ export function buildPackFolder({
   };
 
   walk(root, '', 0);
-  files.unshift({ path: 'INDEX.md', content: renderIndex(root.title, entries, range, at) });
+  const withProjectFolders = copies.length > 0 || pictures.length > 0;
+  files.unshift({ path: 'INDEX.md', content: renderIndex(root.title, entries, range, at, withProjectFolders) });
 
   return {
     folderName: `spool-${sanitizeSegment(root.title)}-${formatPackDate(at).replace(/-/g, '')}`,
     files,
+    copies,
+    pictures,
   };
+}
+
+/** The .md of a one-project export, with `files/` and `images/` beside it. */
+export const PROJECT_PACK_FILE = 'pack.md';
+
+export interface BuildProjectExportArgs {
+  thread: Thread;
+  /** ALL of the project's blocks — the range filter is applied here, not by the caller. */
+  blocks: Block[];
+  attachments: Attachment[];
+  range: PackRange;
+  refTitles: Map<string, string>;
+  refBlocks: Map<string, CitedBlock>;
+  images?: ReadonlyMap<string, readonly PackImage[]>;
+  choice: ExportChoice;
+  instructions: boolean;
+  outputLanguage: 'zh' | 'en';
+  now?: number;
+}
+
+export interface ProjectExport {
+  /** `pack.md`. Written alone (the single-.md route) when there is nothing to copy. */
+  file: PackFile;
+  copies: PackCopy[];
+  pictures: PackPicture[];
+}
+
+/**
+ * P8-3 — one project exported (PackDialog). The same assemble() the dialog previews and copies,
+ * plus the two export-only differences: ticked files' names link to `files/…`, and pictures are
+ * `images/…` when taken, `![caption](image)` when not.
+ */
+export function buildProjectExport({
+  thread,
+  blocks,
+  attachments,
+  range,
+  refTitles,
+  refBlocks,
+  images,
+  choice,
+  instructions,
+  outputLanguage,
+  now,
+}: BuildProjectExportArgs): ProjectExport {
+  const at = now ?? Date.now();
+  const plan = planProject(blocks, attachments, range, images, choice, '', at);
+  const content = assemble({
+    thread,
+    blocks: filterBlocksForRange(blocks, range, at),
+    attachments,
+    fileAnchorSeqs: blockSeqMap(blocks),
+    refTitles,
+    refBlocks,
+    scope: { range, total: blocks.length },
+    images: plan.images,
+    exportedFiles: plan.exportedFiles,
+    instructions,
+    outputLanguage,
+    now: at,
+  });
+  return { file: { path: PROJECT_PACK_FILE, content }, copies: plan.copies, pictures: plan.pictures };
 }
