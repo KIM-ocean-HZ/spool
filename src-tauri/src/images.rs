@@ -232,6 +232,14 @@ fn cache_ext(format: &str) -> &'static str {
     }
 }
 
+/// P8-1: the extension a copy of this stored picture takes — the cache's own, so a pack exported
+/// to a folder names its pictures the way the cache does. `no_image` when it is no longer stored.
+pub(crate) fn stored_ext(conn: &Connection, id: &str) -> Result<&'static str, String> {
+    conn.query_row("SELECT format FROM block_images WHERE id = ?1", [id], |r| r.get::<_, String>(0))
+        .map(|format| cache_ext(&format))
+        .map_err(|_| "no_image".to_string())
+}
+
 /// One picture of a block, as the pack and get_blocks describe it.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
