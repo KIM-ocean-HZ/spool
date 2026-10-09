@@ -139,5 +139,7 @@ describe('the export list (P8-3)', () => {
     expect(msg).not.toContain('/Users/');
     expect(exportErrorMessage('no_image')).toBe(t('有图片已经不在库里了，所以什么都没导出。关掉再打开一次试试。'));
     expect(exportErrorMessage('disk full')).toBe(t('没导出成，换个位置再试一次'));
+    // The workspace export keeps showing Rust's own words for everything else, as it always did.
+    expect(exportErrorMessage('目录不存在：/x', '目录不存在：/x')).toBe('目录不存在：/x');
   });
 });

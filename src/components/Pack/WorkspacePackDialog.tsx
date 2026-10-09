@@ -1,10 +1,21 @@
 import { FolderDown, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
-import { PACK_RANGE_KEYS, type CitedBlock, type PackImage, type PackRange } from '@/lib/pack/assemble';
+import PackCopyList, { useSourceSizes, type CopyGroup } from './PackCopyList';
+import {
+  blockSeqMap,
+  PACK_RANGE_KEYS,
+  type CitedBlock,
+  type PackImage,
+  type PackRange,
+} from '@/lib/pack/assemble';
 import { cachedImagesOf } from '@/lib/images/blockImageIo';
+import { exportErrorMessage, isFound, pickedFiles } from '@/lib/pack/exportList';
 import {
   buildPackFolder,
+  exportableFiles,
+  packedPictures,
   sanitizeFolderName,
+  type PackFolder,
   type PackProject,
   type PackWorkspaceNode,
 } from '@/lib/pack/folder';
@@ -40,8 +51,9 @@ interface Props {
   tree: PackTreeNode;
   refTitles: Map<string, string>;
   refBlocks: Map<string, CitedBlock>;
-  /** Resolves to the folder that was written, or null when the user cancelled the picker. */
-  onExport: (folderName: string, files: { path: string; content: string }[]) => Promise<void>;
+  /** Resolves once written, or when the user cancelled the picker. P8: the export carries the
+   *  ticked files and pictures (`copies` / `pictures`, empty when nothing is ticked). */
+  onExport: (folderName: string, built: PackFolder) => Promise<void>;
   onClose: () => void;
 }
 
@@ -122,6 +134,71 @@ export default function WorkspacePackDialog({
     };
   }, [tree]);
 
+  // P8-4 — the ticked projects' files and pictures, the same list as a single project's (P8-3),
+  // grouped by project. Sizes are asked once for every project in the tree (the tree is fixed
+  // while the dialog is open), so ticking a project does not make its rows flicker.
+  const allFiles = useMemo(() => {
+    const out: PackProject['attachments'] = [];
+    const walk = (n: PackTreeNode): void => {
+      for (const p of n.projects) out.push(...exportableFiles(p.attachments));
+      n.children.forEach(walk);
+    };
+    walk(tree);
+    return out;
+  }, [tree]);
+  const sizes = useSourceSizes(allFiles);
+  const [unticked, setUnticked] = useState<ReadonlySet<string>>(() => new Set());
+  const [picturesOn, setPicturesOn] = useState(true);
+  const tickedProjects = useMemo(() => {
+    const out: PackProject[] = [];
+    const walk = (n: PackTreeNode): void => {
+      for (const p of n.projects) if (selected.has(p.thread.id)) out.push(p);
+      n.children.forEach(walk);
+    };
+    walk(tree);
+    return out;
+  }, [tree, selected]);
+  const groups = useMemo(
+    (): CopyGroup[] =>
+      tickedProjects.map((p) => ({
+        key: p.thread.id,
+        title: p.thread.title.trim() || t('无标题'),
+        files: exportableFiles(p.attachments),
+      })),
+    [tickedProjects, t],
+  );
+  const listed = useMemo(() => groups.flatMap((g) => g.files), [groups]);
+  const picked = useMemo(() => pickedFiles(listed, sizes, unticked), [listed, sizes, unticked]);
+  const pictures = useMemo(() => {
+    const list = tickedProjects.flatMap((p) =>
+      packedPictures(p.blocks, range, images, Date.now()).flatMap((x) => x.images),
+    );
+    return { count: list.length, bytes: list.reduce((sum, i) => sum + (i.sizeBytes ?? 0), 0) };
+  }, [tickedProjects, range, images]);
+  const seqs = useMemo(
+    () => new Map(tickedProjects.flatMap((p) => [...blockSeqMap(p.blocks)])),
+    [tickedProjects],
+  );
+  const toggleFile = (id: string) =>
+    setUnticked((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  const toggleAllFiles = () => {
+    const found = listed.filter((a) => isFound(sizes, a));
+    setUnticked((prev) => {
+      const next = new Set(prev);
+      const allOn = found.every((a) => picked.has(a.id));
+      for (const a of listed) {
+        if (allOn) next.add(a.id);
+        else next.delete(a.id);
+      }
+      return next;
+    });
+  };
+
   // The whole export, built on every change. It is what the footer counts and what the
   // button writes — one calculation, so the number on screen cannot disagree with the bytes.
   const built = useMemo(() => {
@@ -134,8 +211,9 @@ export default function WorkspacePackDialog({
       refBlocks,
       outputLanguage: language,
       images,
+      choice: { files: picked, images: picturesOn },
     });
-  }, [tree, selected, range, refTitles, refBlocks, language, images]);
+  }, [tree, selected, range, refTitles, refBlocks, language, images, picked, picturesOn]);
 
   const totals = useMemo(() => {
     const chars = built?.files.reduce((sum, f) => sum + f.content.length, 0) ?? 0;
@@ -155,9 +233,11 @@ export default function WorkspacePackDialog({
     setBusy(true);
     setError(null);
     try {
-      await onExport(sanitizeFolderName(nameEdit ?? built.folderName, built.folderName), built.files);
+      await onExport(sanitizeFolderName(nameEdit ?? built.folderName, built.folderName), built);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      // The two codes write_pack_export answers with are said in the user's language; anything
+      // else is shown as it came, as it always was.
+      setError(exportErrorMessage(e, e instanceof Error ? e.message : String(e)));
     } finally {
       setBusy(false);
     }
@@ -243,6 +323,20 @@ export default function WorkspacePackDialog({
 
         <div className="flex-1 overflow-y-auto px-5 py-3">{renderNode(tree, 0)}</div>
 
+        {(listed.length > 0 || pictures.count > 0) && (
+          <PackCopyList
+            groups={groups}
+            seqs={seqs}
+            sizes={sizes}
+            picked={picked}
+            onToggle={toggleFile}
+            onToggleAll={toggleAllFiles}
+            pictures={pictures}
+            picturesOn={picturesOn}
+            onTogglePictures={() => setPicturesOn((on) => !on)}
+          />
+        )}
+
         {/* Ocean 2026-08-17: 「打包工作区变成文件夹需要让用户可以自主命名」. Pre-filled with the
             suggested name so doing nothing behaves exactly as before, and cleared-to-empty
             falls back to it — the box offers a name, it does not demand one. */}
@@ -289,7 +383,8 @@ export default function WorkspacePackDialog({
           </span>
           <button
             onClick={() => void doExport()}
-            disabled={!built || busy}
+            // The list's sizes decide which files can go; wait for them rather than export a guess.
+            disabled={!built || busy || (allFiles.length > 0 && sizes === null)}
             autoFocus
             className="flex items-center gap-1.5 rounded-md border border-line-strong bg-paper px-3 py-1.5 text-ink transition-colors hover:border-accent hover:text-accent disabled:opacity-40"
           >

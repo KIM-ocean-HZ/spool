@@ -143,7 +143,13 @@ export default function PackCopyList({
           </div>
         ))}
         {pictures.count > 0 && (
-          <label className="flex cursor-pointer items-center gap-2 py-0.5">
+          // In a workspace the switch is for every project's pictures — set apart, so it does
+          // not read as the last project's.
+          <label
+            className={`flex cursor-pointer items-center gap-2 py-0.5 ${
+              groups.some((g) => g.title !== undefined) ? 'mt-1 border-t border-line pt-1' : ''
+            }`}
+          >
             <input
               type="checkbox"
               checked={picturesOn}

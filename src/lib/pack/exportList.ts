@@ -38,8 +38,8 @@ export const formatBytes = (bytes: number): string =>
     : `${bytes === 0 ? 0 : Math.max(1, Math.round(bytes / 1024))} KB`;
 
 /** The sentence for an export that did not happen. Rust answers the two cases the user can do
- *  something about with a code (`pack.rs::write_pack_export`). */
-export const exportErrorMessage = (e: unknown): string => {
+ *  something about with a code (`pack.rs::write_pack_export`); anything else gets `otherwise`. */
+export const exportErrorMessage = (e: unknown, otherwise?: string): string => {
   const code = e instanceof Error ? e.message : String(e);
   if (code.startsWith('missing:')) {
     try {
@@ -52,5 +52,5 @@ export const exportErrorMessage = (e: unknown): string => {
     }
   }
   if (code === 'no_image') return t('有图片已经不在库里了，所以什么都没导出。关掉再打开一次试试。');
-  return t('没导出成，换个位置再试一次');
+  return otherwise ?? t('没导出成，换个位置再试一次');
 };

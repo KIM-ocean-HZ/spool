@@ -6,6 +6,7 @@ import { assemble, blockSeqMap, filterBlocksForRange, type PackImage, type PackR
 import {
   buildPackFolder,
   buildProjectExport,
+  carriesAnything,
   exportFileName,
   indexSummary,
   sanitizeFolderName,
@@ -527,6 +528,20 @@ describe('buildPackFolder with files and pictures (P8)', () => {
       expect(f.content).not.toMatch(LOCAL_PATH);
     }
     expect(links).toBe(written.size);
+  });
+
+  it('each project’s links point into its OWN folder, never a neighbour’s (P8-4)', () => {
+    const out = folderOf({ files: new Set(['xa1', 'ya1', 'za1']), images: true });
+    const projectFiles = out.files.filter((f) => f.path !== 'INDEX.md');
+    expect(projectFiles).toHaveLength(3);
+    for (const f of projectFiles) {
+      const own = `${f.path.split('/').pop()!.replace(/\.md$/, '')}/`;
+      const links = [...f.content.matchAll(/\]\(([^)\s]+)\)/g)].map((m) => m[1]!).filter((l) => l !== 'image');
+      expect(links.length).toBeGreaterThan(0);
+      for (const l of links) expect(l.startsWith(own)).toBe(true);
+    }
+    expect(carriesAnything(out)).toBe(true);
+    expect(carriesAnything(folderOf(NONE))).toBe(false);
   });
 
   it('a sub-workspace named like a project’s folder steps aside — only when that folder exists', () => {

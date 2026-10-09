@@ -6,7 +6,7 @@ import { annotationIsAi } from '@/lib/blocks/annotationAuthor';
 import { listBlocksByIds } from '@/lib/db/blocks';
 import { t } from '@/lib/i18n';
 import type { CitedBlock } from '@/lib/pack/assemble';
-import type { PackFile } from '@/lib/pack/folder';
+import { carriesAnything, type PackFolder } from '@/lib/pack/folder';
 import { openTarget } from '@/lib/utils/openTarget';
 import { buildWorkspaceTree, compareWorkspaceTitles } from '@/lib/workspaces/tree';
 import { useBlocksStore } from '@/stores/blocksStore';
@@ -142,21 +142,39 @@ export default function WorkspacePackHost() {
 
   if (!packingId || !tree || loading) return null;
 
-  const onExport = async (folderName: string, files: PackFile[]): Promise<void> => {
+  const onExport = async (folderName: string, built: PackFolder): Promise<void> => {
     // Ocean 2026-08-17: the folder is going to be handed to Claude Code / Codex, so where it
     // lands is his call rather than a fixed Desktop drop.
     const parent = await open({ directory: true, multiple: false, title: t('导出到哪个文件夹？') });
     if (parent == null) return; // cancelled — not an error, and the dialog stays open
-    const root = await invoke<string>('write_pack_folder', {
+    // ⚠️ threadId is ours, not the writer's — the command takes bytes and a path.
+    const files = built.files.map((f) => ({ path: f.path, content: f.content }));
+    const reveal = (root: string) => () => {
+      void openTarget(root).catch((e) => console.warn('[workspace-pack] reveal failed', e));
+    };
+    // P8-4: files or pictures ticked ⇒ the command that copies them too; nothing ⇒ the .md
+    // files alone, through the same command as always.
+    if (!carriesAnything(built)) {
+      const root = await invoke<string>('write_pack_folder', { parent, folderName, files });
+      setPacking(null);
+      toast.action(t('已导出 {n} 个文件', { n: files.length }), t('打开文件夹'), reveal(root));
+      return;
+    }
+    const done = await invoke<{ root: string; skipped: number }>('write_pack_export', {
       parent,
       folderName,
-      // ⚠️ threadId is ours, not the writer's — the command takes bytes and a path.
-      files: files.map((f) => ({ path: f.path, content: f.content })),
+      files,
+      copies: built.copies,
+      images: built.pictures,
     });
     setPacking(null);
-    toast.action(t('已导出 {n} 个文件', { n: files.length }), t('打开文件夹'), () => {
-      void openTarget(root).catch((e) => console.warn('[workspace-pack] reveal failed', e));
-    });
+    toast.action(
+      done.skipped > 0
+        ? t('已导出到 {path}（文件夹里的 {n} 个替身没有拷）', { path: done.root, n: done.skipped })
+        : t('已导出到 {path}', { path: done.root }),
+      t('打开文件夹'),
+      reveal(done.root),
+    );
   };
 
   return (
