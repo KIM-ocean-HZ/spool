@@ -229,7 +229,9 @@ export default function WorkspacePackDialog({
   }, [onClose, busy]);
 
   const doExport = async () => {
-    if (!built) return;
+    // The list's sizes decide which files can go; a press before they are in waits for them.
+    // (Not `disabled`: that would cost the button its autoFocus.)
+    if (!built || (allFiles.length > 0 && sizes === null)) return;
     setBusy(true);
     setError(null);
     try {
@@ -383,8 +385,7 @@ export default function WorkspacePackDialog({
           </span>
           <button
             onClick={() => void doExport()}
-            // The list's sizes decide which files can go; wait for them rather than export a guess.
-            disabled={!built || busy || (allFiles.length > 0 && sizes === null)}
+            disabled={!built || busy}
             autoFocus
             className="flex items-center gap-1.5 rounded-md border border-line-strong bg-paper px-3 py-1.5 text-ink transition-colors hover:border-accent hover:text-accent disabled:opacity-40"
           >

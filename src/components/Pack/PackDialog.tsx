@@ -191,6 +191,9 @@ export default function PackDialog({
   // 一样都没有 ⇒ 照旧存单个 .md。⚠️ 没有图的项目，单个 .md 和「复制」逐字节一样；有图但不带时，
   // 图片那几行是 `![注释](image)`（第 52 条），这是两者唯一的不同。
   const onExport = async () => {
+    // The list's sizes decide which files can go; a press before they are in waits for them
+    // rather than exporting a guess. (Not `disabled`: that would cost the button its autoFocus.)
+    if (busy || (exportable.length > 0 && sizes === null)) return;
     setExportError(null);
     setExportedTo(null);
     const stamp = `${sanitizeFolderName(thread.title, t('无标题'))}-${formatPackDate(Date.now()).replace(/-/g, '')}`;
@@ -350,10 +353,8 @@ export default function PackDialog({
           </button>
           <button
             onClick={() => void onExport()}
-            // The list's sizes decide which files can go; wait for them rather than export a guess.
-            disabled={busy || (exportable.length > 0 && sizes === null)}
             autoFocus
-            className={`flex items-center gap-1.5 rounded-md border px-3 py-1.5 transition-colors disabled:opacity-40 ${
+            className={`flex items-center gap-1.5 rounded-md border px-3 py-1.5 transition-colors ${
               exported
                 ? 'border-accent bg-accent/10 text-accent'
                 : 'border-line-strong bg-paper text-ink hover:border-accent hover:text-accent'
