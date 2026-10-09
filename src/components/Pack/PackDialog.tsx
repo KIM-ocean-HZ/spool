@@ -1,8 +1,9 @@
 import { invoke } from '@tauri-apps/api/core';
 import { writeText } from '@tauri-apps/plugin-clipboard-manager';
-import { save } from '@tauri-apps/plugin-dialog';
-import { Check, Copy, FileDown, X } from 'lucide-react';
+import { open, save } from '@tauri-apps/plugin-dialog';
+import { Check, Copy, FileDown, FolderDown, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
+import PackCopyList, { useSourceSizes } from './PackCopyList';
 import { createBackdropClose } from '@/lib/utils/backdropClose';
 import {
   assemble,
@@ -14,7 +15,14 @@ import {
   type PackImage,
   type PackRange,
 } from '@/lib/pack/assemble';
-import { sanitizeFolderName } from '@/lib/pack/folder';
+import { exportErrorMessage, isFound, pickedFiles } from '@/lib/pack/exportList';
+import {
+  buildProjectExport,
+  carriesAnything,
+  exportableFiles,
+  packedPictures,
+  sanitizeFolderName,
+} from '@/lib/pack/folder';
 import { INSTRUCTION_HEADER } from '@/lib/pack/templates';
 import { useSettingsStore } from '@/stores/settingsStore';
 import type { Attachment } from '@/lib/db/attachments';
@@ -66,7 +74,10 @@ export default function PackDialog({
   const language = useLanguage();
   const [copied, setCopied] = useState(false);
   const [exported, setExported] = useState(false);
-  const [exportError, setExportError] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
+  // P8-3: where the last folder export went (「导完写一句导出到哪了」).
+  const [exportedTo, setExportedTo] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
   // ⚠️ **「压缩」不在这个对话框里了**（WORKPLAN-2026-08-20 §9.6.2，2026-08-21）。
   // Ocean:「压缩功能不要放在 pack 里面，放到右边栏，他不是和 pack 绑定的工作。」
   // 他是对的 —— 压缩改的是**库里的块**，不是这一次打包；挂在这儿等于说「只有你要粘贴的
@@ -109,6 +120,51 @@ export default function PackDialog({
     };
   }, [thread, blocks, attachments, refTitles, refBlocks, images, range, instructions, language]);
 
+  // P8-3 — the files and pictures that go along (Ocean 2026-09-30 §9.2 第 12 条, 10-08 第 50 条,
+  // 10-10 第 52–53 条). Everything starts ticked; the user turns some off. Not remembered — like
+  // the range, it is a choice about this one export.
+  const exportable = useMemo(() => exportableFiles(attachments), [attachments]);
+  const sizes = useSourceSizes(exportable);
+  const [unticked, setUnticked] = useState<ReadonlySet<string>>(() => new Set());
+  const [picturesOn, setPicturesOn] = useState(true);
+  const picked = useMemo(() => pickedFiles(exportable, sizes, unticked), [exportable, sizes, unticked]);
+  const pictures = useMemo(() => {
+    const list = packedPictures(blocks, range, images, Date.now()).flatMap((p) => p.images);
+    return { count: list.length, bytes: list.reduce((sum, i) => sum + (i.sizeBytes ?? 0), 0) };
+  }, [blocks, range, images]);
+  // What 导出 writes. ⚠️ Not `text`: in an export a ticked file links to its copy, and a picture
+  // is `images/…` when taken and `![caption](image)` when not — never a path of this computer.
+  // 「复制」 keeps `text`, exactly as before (§9.2 第 47 / 48 条).
+  const exportPlan = useMemo(
+    () =>
+      buildProjectExport({
+        thread,
+        blocks,
+        attachments,
+        range,
+        refTitles,
+        refBlocks,
+        images,
+        choice: { files: picked, images: picturesOn },
+        instructions,
+        outputLanguage: language,
+      }),
+    [thread, blocks, attachments, range, refTitles, refBlocks, images, picked, picturesOn, instructions, language],
+  );
+  const toFolder = carriesAnything(exportPlan);
+
+  const toggleFile = (id: string) =>
+    setUnticked((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  const toggleAllFiles = () => {
+    const found = exportable.filter((a) => isFound(sizes, a));
+    setUnticked(found.every((a) => picked.has(a.id)) ? new Set(exportable.map((a) => a.id)) : new Set());
+  };
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
@@ -125,24 +181,58 @@ export default function PackDialog({
     setTimeout(() => setCopied(false), 1500);
   };
 
-  // P2 · B1（Ocean 09-30「导出 .md 为主，留一个复制按键」）。⚠️ 写出去的就是上面复制的那个
-  // `text`，Rust 一个字节不改 —— 两个出口拿到的必须逐字节一样。
+  const flashExported = () => {
+    setExported(true);
+    setTimeout(() => setExported(false), 1500);
+  };
+
+  // P2 · B1（Ocean 09-30「导出 .md 为主，留一个复制按键」）。Rust 一个字节不改。
+  // P8-3：有要拷的 ⇒ 选一个文件夹，在里面新建「项目名-日期」，放 pack.md + files/ + images/；
+  // 一样都没有 ⇒ 照旧存单个 .md。⚠️ 没有图的项目，单个 .md 和「复制」逐字节一样；有图但不带时，
+  // 图片那几行是 `![注释](image)`（第 52 条），这是两者唯一的不同。
   const onExport = async () => {
-    setExportError(false);
-    const name = sanitizeFolderName(thread.title, t('无标题'));
-    const dest = await save({
-      title: t('导出 .md'),
-      defaultPath: `${name}-${formatPackDate(Date.now()).replace(/-/g, '')}.md`,
-      filters: [{ name: 'Markdown', extensions: ['md'] }],
-    });
-    if (!dest) return; // cancelled — not an error
+    setExportError(null);
+    setExportedTo(null);
+    const stamp = `${sanitizeFolderName(thread.title, t('无标题'))}-${formatPackDate(Date.now()).replace(/-/g, '')}`;
+    if (!toFolder) {
+      const dest = await save({
+        title: t('导出 .md'),
+        defaultPath: `${stamp}.md`,
+        filters: [{ name: 'Markdown', extensions: ['md'] }],
+      });
+      if (!dest) return; // cancelled — not an error
+      try {
+        await invoke('write_pack_file', { dest, content: exportPlan.file.content });
+        flashExported();
+      } catch (e) {
+        console.error('[pack] export failed', e);
+        setExportError(t('没导出成，换个位置再试一次'));
+      }
+      return;
+    }
+    // Same picker as the workspace export (WorkspacePackHost).
+    const parent = await open({ directory: true, multiple: false, title: t('导出到哪个文件夹？') });
+    if (parent == null) return; // cancelled — not an error
+    setBusy(true);
     try {
-      await invoke('write_pack_file', { dest, content: text });
-      setExported(true);
-      setTimeout(() => setExported(false), 1500);
+      const done = await invoke<{ root: string; skipped: number }>('write_pack_export', {
+        parent,
+        folderName: stamp,
+        files: [exportPlan.file],
+        copies: exportPlan.copies,
+        images: exportPlan.pictures,
+      });
+      setExportedTo(
+        done.skipped > 0
+          ? t('已导出到 {path}（文件夹里的 {n} 个替身没有拷）', { path: done.root, n: done.skipped })
+          : t('已导出到 {path}', { path: done.root }),
+      );
+      flashExported();
     } catch (e) {
-      console.error('[pack] export failed', e);
-      setExportError(true);
+      console.error('[pack] folder export failed', e);
+      setExportError(exportErrorMessage(e));
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -226,13 +316,27 @@ export default function PackDialog({
           </pre>
         </div>
 
-        <footer className="flex flex-none items-center justify-between border-t border-line bg-paper-2/40 px-5 py-3 text-xs">
-          <span className="text-muted">
-            {exportError
-              ? t('没导出成，换个位置再试一次')
-              : t('{packed} / {total} 块 · {chars} 字符', { packed: packedCount, total: blocks.length, chars: text.length.toLocaleString() })}
+        {(exportable.length > 0 || pictures.count > 0) && (
+          <PackCopyList
+            groups={[{ key: thread.id, files: exportable }]}
+            seqs={blockSeqMap(blocks)}
+            sizes={sizes}
+            picked={picked}
+            onToggle={toggleFile}
+            onToggleAll={toggleAllFiles}
+            pictures={pictures}
+            picturesOn={picturesOn}
+            onTogglePictures={() => setPicturesOn((on) => !on)}
+          />
+        )}
+
+        <footer className="flex flex-none items-center justify-between gap-3 border-t border-line bg-paper-2/40 px-5 py-3 text-xs">
+          <span className="min-w-0 truncate text-muted" title={exportError ?? exportedTo ?? undefined}>
+            {exportError ??
+              exportedTo ??
+              t('{packed} / {total} 块 · {chars} 字符', { packed: packedCount, total: blocks.length, chars: text.length.toLocaleString() })}
           </span>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-none items-center gap-2">
           <button
             onClick={() => void onCopy()}
             className={`flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] transition-colors ${
@@ -246,15 +350,25 @@ export default function PackDialog({
           </button>
           <button
             onClick={() => void onExport()}
+            // The list's sizes decide which files can go; wait for them rather than export a guess.
+            disabled={busy || (exportable.length > 0 && sizes === null)}
             autoFocus
-            className={`flex items-center gap-1.5 rounded-md border px-3 py-1.5 transition-colors ${
+            className={`flex items-center gap-1.5 rounded-md border px-3 py-1.5 transition-colors disabled:opacity-40 ${
               exported
                 ? 'border-accent bg-accent/10 text-accent'
                 : 'border-line-strong bg-paper text-ink hover:border-accent hover:text-accent'
             }`}
           >
-            {exported ? <Check size={12} /> : <FileDown size={12} />}
-            <span>{exported ? t('已导出') : t('导出 .md')}</span>
+            {exported ? <Check size={12} /> : toFolder ? <FolderDown size={12} /> : <FileDown size={12} />}
+            <span>
+              {exported
+                ? t('已导出')
+                : busy
+                  ? t('正在导出…')
+                  : toFolder
+                    ? t('导出文件夹')
+                    : t('导出 .md')}
+            </span>
           </button>
           </div>
         </footer>

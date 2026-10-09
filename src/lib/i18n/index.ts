@@ -414,6 +414,19 @@ const EN: Record<string, string> = {
   '已导出': 'Exported',
   '没导出成，换个位置再试一次': "Couldn't export — try saving it somewhere else",
 
+  // P8 — the files and images that go along with an exported pack.
+  '一起导出的文件和图片': 'Files and images to include',
+  '找不到了': 'Not found',
+  '图片 {n} 张，共 {size}': '{n} images, {size} in all',
+  '一共 {n} 个文件，{size}': '{n} files in all, {size}',
+  '已导出到 {path}': 'Exported to {path}',
+  '已导出到 {path}（文件夹里的 {n} 个替身没有拷）':
+    'Exported to {path} ({n} aliases inside folders were not copied)',
+  '这些文件刚才还在，现在找不到了，所以什么都没导出：{names}':
+    'These files were there a moment ago and can no longer be found, so nothing was exported: {names}',
+  '有图片已经不在库里了，所以什么都没导出。关掉再打开一次试试。':
+    'An image is no longer in the library, so nothing was exported. Close this and open it again.',
+
   // Workspace pack — DESIGN_WORKSPACE_PACK §1. ⚠️ The subtitle deliberately does NOT say
   // 「直接粘贴」 like the single-project one: this produces a folder, and §2.3 says handing the
   // AI one file out of it walks past the rules in INDEX.md.

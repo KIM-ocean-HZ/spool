@@ -209,6 +209,11 @@ const uniqueFileName = (taken: Set<string>, name: string): string => {
   }
 };
 
+/** Which way an export goes (§3「导出出来的样子」): something to copy ⇒ a folder
+ *  (`write_pack_export`); nothing ⇒ the .md alone, by the route it always took. */
+export const carriesAnything = (x: { copies: readonly unknown[]; pictures: readonly unknown[] }): boolean =>
+  x.copies.length > 0 || x.pictures.length > 0;
+
 /** `.png` / `.jpg` / … of the cached copy — the extension Rust checks the picture against. */
 const extOf = (path: string): string => /\.[A-Za-z0-9]+$/.exec(path)?.[0] ?? '.png';
 
@@ -438,7 +443,7 @@ export function buildPackFolder({
       const plan = choice
         ? planProject(project.blocks, project.attachments, range, images, choice, name.replace(/\.md$/, ''), at)
         : null;
-      if (plan && (plan.copies.length > 0 || plan.pictures.length > 0)) {
+      if (plan && carriesAnything(plan)) {
         takenHere.add(name.replace(/\.md$/, ''));
         copies.push(...plan.copies.map((c) => ({ ...c, path: fromRoot(c.path) })));
         pictures.push(...plan.pictures.map((p) => ({ ...p, path: fromRoot(p.path) })));
@@ -483,7 +488,7 @@ export function buildPackFolder({
   };
 
   walk(root, '', 0);
-  const withProjectFolders = copies.length > 0 || pictures.length > 0;
+  const withProjectFolders = carriesAnything({ copies, pictures });
   files.unshift({ path: 'INDEX.md', content: renderIndex(root.title, entries, range, at, withProjectFolders) });
 
   return {
