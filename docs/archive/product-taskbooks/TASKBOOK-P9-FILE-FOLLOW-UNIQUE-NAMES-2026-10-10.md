@@ -1,6 +1,6 @@
 # 产品任务书 P9 —— 文件挪了 Spool 跟着找到、右栏提示丢失；同一个工作区里不许重名
 
-> **状态：ACTIVE。**
+> **状态：COMPLETE —— 待 Ocean 验收。** 四步已提交（`7d6afd6` `10fef6a` `53486c3` `7efc7b5`），**还没换装**：换装会把真库迁到 v33，按 §5 先问 Ocean。回执在 §7 末尾。
 >
 > **唯一交付：** 下面 §3 的四步（P9-1 – P9-4），按顺序做完，每一步测试通过、单独一笔提交，并在 §7 写回执。
 >
@@ -244,3 +244,103 @@ P9：
    - 下一段是 **P9B**（深浅色 + 周回顾「活动」图表，正文在 HANDOFF §9.7 和 §9.9 `DISCOVERED-20261010-2`，第 59–61 条已经拍板了三件）。下发前先读 §9.7，并核一下 `EXECUTION_POLICY.md` §5.2 的交替：P1–P11 是 Ocean 09-30 批准的同一个 P 里程碑，按 §9.0 不算连开两个里程碑。
 3. `docs/README.md` 入口表里 ACTIVE 产品任务书那一行改成「暂无，待下发 P9B」（只暂存这一行）。
 4. 这些文档改动单独一笔提交（同样只 add 自己改的路径）。
+
+### 回执（2026-10-10 执行窗）
+
+开工核对：起点 `7e52b0b docs: 下发 P9`，上一笔 `cc0f301`，和 §2 一致。基线和 §2 写的一字不差：tsc 干净；vitest 81 / 969；cargo 176 · 4；sidecar 14；`(none missing)`；`--dead` 87 行；`cargo tree` 网络那条是空的；Rust 警告三条。
+
+#### P9-1 · 同一个工作区里不许重名
+
+- 提交：`7d6afd6 feat(names): P9-1 同一个工作区里不许重名 —— …`
+- 改了：
+  - `src/lib/names/uniqueTitle.ts`（新：规则本身）、`src/lib/names/uniqueTitle.test.ts`（新）
+  - `src/lib/names/renameNotice.ts`（新：那一句提示）
+  - `src/lib/db/threads.ts`、`src/lib/db/workspaces.ts`、`src/lib/db/transfer.ts`
+  - `src/stores/threadsStore.ts`、`src/stores/workspacesStore.ts`
+  - `src/components/Sidebar/ThreadListItem.tsx`、`src/components/Sidebar/WorkspaceGroup.tsx`、`src/components/ThreadView/ThreadHeader.tsx`
+  - `src/lib/pack/folder.ts`、`src/lib/pack/folder.test.ts`
+  - `src/lib/db/uniqueNames.test.ts`（新）、`src/lib/i18n/index.ts`
+- 施工时定的：
+  - **规则放在库那一层**：新建、改名、挪工作区、拖成子工作区（右键「移到…」那条路）、撤销删除、导入，全在写库的函数里加「 2」，所以以后再加入口也绕不过去。比的时候 `trim()` + `toLowerCase()`；空名字不算；删掉的不算；项目只和同一个工作区的项目比，工作区只和同一个父工作区（或都在最顶层）的工作区比。「X 2」也有了就「X 3」；原来就叫「X 2」又撞了就是「X 2 2」，没做聪明的拆数字。
+  - **提示措辞**：项目「同一个工作区里已经有叫「{name}」的项目了，这个改叫「{renamed}」」（This workspace already has a project called "{name}", so this one is now "{renamed}".）；工作区「同一层已经有叫「{name}」的工作区了，这个改叫「{renamed}」」（There is already a workspace called "{name}" here, …）。
+  - **改名的提示什么时候出**：改名框每 200ms 就存一次，库里每一次都照样不重名；但提示等改完才说一次（回车、Esc、离开输入框）。打字时输入框不跳成「X 2」—— 不然在「Lecture 3」停一下、想打「Lecture 3 notes」，就会变成「Lecture 3 2 notes」。项目标题那个框以前没有「改完」这一说，加了获得 / 离开焦点；左栏两个框改完时把还没存的最后几个字也存进去（以前回车太快会丢掉最后 200ms 打的字，这次顺带补上，是提示要对得上必须的）。
+  - **挪动的提示**：右键「移到…」、拖到别的工作区（项目），右键挪工作区，撞了名都当场说一句。连按两次 ＋ 是两个空名字，不改、不说。
+  - **撤销删除、导入**：照样加「 2」，不弹提示。导入时只改真会进来的、活着的行（已经有的 id 照旧被跳过、名字不动；删掉的行等撤销删除时再查），带进来的行之间也互相比。现有测试「两个库里各自建的同名项目，合并之后是两个」照旧过：那两个「Flux」在两个不同的工作区里（两个库各有一个「升学」，带进来的那个现在叫「升学 2」）。
+  - **导出兜底**：`uniqueIn` 不分大小写比，`Notes/` 和 `notes-2/`；项目同名文件夹那一格也按小写记。
+  - 和 MCP 的小差别：界面这边用 JS 的 `trim` / `toLowerCase`（认 Unicode），MCP 的 `create_thread` 用 SQLite 的 `lower(trim())`（只认 ASCII）。MCP 照旧拒绝、没改；只差大小写的非英文字母（比如 Ä / ä）界面会加「 2」，MCP 不会拒。
+- 怎么验的：vitest 规则 7 条 + 入口 23 条（新建 / 改名 / 挪工作区 / 拖成子工作区 / 撤销删除项目和工作区 / 导入 4 条 / 提示 5 条含英文）+ 导出 1 条（`Notes/`、`notes-2/`）。全套 vitest 83 / 1000。
+- 没偏离任务书。
+
+#### P9-2 · 库 v33：文件表加两列
+
+- 提交：`10fef6a feat(db): P9-2 库 v33 —— …`
+- 改了：`src/lib/db/client.ts`、`src/lib/db/schema.sql`、`src-tauri/src/mcp.rs`（`EXPECTED_SCHEMA_VERSION` = 33，同一笔）、`src/lib/db/client.test.ts`、`src/lib/db/transfer.ts`、`src/lib/db/transfer.test.ts`
+- 施工时定的：
+  - **两列**：`target_identity`（BLOB，系统认文件用的那段字节，只有 Rust 读写）、`target_notice`（TEXT，JSON）。`target_notice` 两种：`{"kind":"moved","from":"<旧路径>"}` = Spool 跟到了新位置、用户还没看过（挪了两次还没看，`from` 仍是用户最后知道的那一个）；`{"kind":"dismissed"}` = 用户点过「知道了」。没有第三列。
+  - **导入时这两列不跟着走**（落成空的）：Mac 的书签只在记下它的那台电脑上认得，带到别的电脑会把好好在那儿的文件说成「删掉了」；而且导入那条路搬不了 BLOB（会变成 "[1,2,3]" 这样的文本）。在原处的文件第一次被看到时会再记上。
+  - 老的迁移测试补了 `downgradeToV32`：之前它们从 v33 的表开始「降级」，没真走到 v33 那一步（加完列测试照样全绿，就是这么发现的）。
+- 怎么验的：
+  - vitest：v32 → v33 逐表逐行相等、建表语句只在 attachments 尾巴上多两列、半跑一次能重跑、新装直接有两列；导入那两列不跟着走（用照插件真实行为写的适配器）。全套 83 / 1004；cargo 176 · 4（mcp.rs 那条读 `SCHEMA_VERSION` 对数的测试也过）。
+  - **真库副本**：`sqlite3 -readonly … "VACUUM INTO '<scratchpad>/realcopy/spool.db'"`，在 vitest 里用 `__migrateSchemaForTest` 跑真迁移：v32 → v33、`fresh` = false、`integrity_check ok`、工作区 / 项目 / 块 / 文件 = 28 / 67 / 1097 / 13、24 张表每一列的条数和总长都和迁之前一样（正文 332541、批注 13558、文件正文 130320、图片 764139 字节）、别的表 / 索引 / 触发器的建表语句一字没变、两列在且全空。没起 debug 版 GUI，真库没碰。
+
+#### P9-3 · Rust：记身份、按身份找、分清楚是哪一种
+
+- 提交：`53486c3 feat(files): P9-3 记住文件的身份、按身份找、分清楚是哪一种 —— …`
+- 改了：
+  - `src-tauri/src/file_identity.rs`（新：平台那一层，不依赖本 crate 别的东西）
+  - `src-tauri/src/file_follow.rs`（新：每看一次分成哪一种、跟过去、三个命令）
+  - `src-tauri/src/lib.rs`（两个模块、三个命令）、`src-tauri/src/images.rs`（`open_library` 改成 `pub(crate)` 共用）、`src-tauri/src/mcp.rs`（P6 路径闸那几样改成 `pub(crate)`，规则一个字没改）
+  - `src-tauri/Cargo.toml`：windows-sys 加一个 feature `Win32_Storage_FileSystem`。⛔ 没加新的包，`cargo tree` 网络那条是空的
+  - `src/lib/files/locate.ts`（新：包三个命令）、`src/lib/db/attachments.ts`（`setAttachmentNotice`）、`src/stores/blocksStore.ts`、`src/stores/fileFollow.test.ts`（新）
+- 施工时定的：
+  - **身份的格式**：两个字节的标签打头，另一个平台写的身份读成「没有」。Mac `M1` + 设备号 + inode + 系统书签（`CFURLCreateBookmarkData`）；Windows `W1` + 卷序列号 + 128 位文件号。⚠️ Mac 多带设备号 + inode 的原因：很多编辑器保存时是「写一个新文件再改名盖过去」，同一个路径 inode 变了，书签就还指着旧的 inode，以后一挪就会被说成「删掉了」。每看一次比一下（一次 stat），对不上就重记，⛔ 绝不因此「跟过去」。
+  - **分成哪一种**（命令 `locate_files`，`(async)`）：路径上有东西 ⇒ 在原处（没身份或身份对不上就补记；「确认过丢了」自动清掉）；路径在 `/Volumes/<盘名>/…` 而那个盘不在 ⇒ 外接盘没接上（先于身份判）；没有身份 ⇒ 不知道去哪了；书签认不出 ⇒ 删掉了；认出来在 `~/.Trash` 或别的盘的 `.Trashes` 里 ⇒ 在废纸篓里（不跟进废纸篓，「放回原处」之后下一次就是在原处）；认出来在别处 ⇒ 跟过去：路径改成新的、身份重记、记下「跟到了新位置」+ 旧路径，正文不重抽。解析书签带「不弹界面、不自动挂载」。
+  - **任务书 P9-3 第 3 条要停下来问的那一种，先没跟**：文件开着「AI 可读」、原来不在 P6 路径闸管的地方、现在被认出挪进了闸管的地方（隐藏文件夹、系统文件夹、`~/Library`）⇒ 标成 `held`，给出找到的位置，界面上写「挪进了系统或隐藏文件夹」，用户点「是这个」才跟过去。**这一条等 Ocean 定**，已记进 HANDOFF §9.9 `DISCOVERED-20261010-5`。没开「AI 可读」的照常跟过去。
+  - **按名字找**（命令 `find_same_name`）：`/usr/bin/mdfind -0`，查询是 `kMDItemFSName == 名字 || kMDItemDisplayName == 名字 || kMDItemDisplayName == 去掉扩展名的名字`，结果再按完整文件名筛一遍、只留同类（文件 / 文件夹）、废纸篓里的不列、新的在前。⚠️ 实测（10-10，只读）：只用 `kMDItemFSName ==` 对「Fall_2027_美国申研完整方案_2026-08-07.pdf」一个都找不到（带中文的名字，等号对 FSName 不灵，通配符倒是灵的），`kMDItemDisplayName ==` 正好找到 4 份 PDF；HAI 那份两种都只找到 `桌面/HAI/` 那一份。Windows 没有 Spotlight，返回空，界面只给「重新选位置」。
+  - **选位置**（命令 `relocate_file`）：改路径、记身份、清掉要说的事；路径上没东西回 `missing`，文件 / 文件夹选反了回 `wrong_kind`。不过 P6 路径闸（是用户自己选的）。正文不重抽。
+  - **挂上的那一刻记**：`blocksStore.attach` 挂完就看一次（用户点选、访达拖入、同意 AI 的提议、新版取代旧版都从这里进）。
+  - P9-4 里顺带补的一处（在 `7efc7b5`）：跟过去 / 选位置时，标签还是旧文件名的就换成新文件名 —— 选文件对话框和访达拖进来的标签就是文件名，不换的话在访达里改了名的文件还显示旧名；用户自己起的名不动。
+- 怎么验的：
+  - Rust 新加 14 条（`file_identity` 5、`file_follow` 9）：临时目录里挪到别的文件夹 / 改名 ⇒ 挪走了 + 新路径、库里路径新、身份新、`target_notice` 写着旧路径、正文没变；挪两次 `from` 仍是第一次的；挪进 `.Trashes` ⇒ 在废纸篓里、不跟；真删掉 ⇒ 删掉了；没身份、原处没有 ⇒ 不知道去哪了；在原处 ⇒ 第一次补记、之后不再写库；`/Volumes/spool-p9-no-such-disk/x.pdf` ⇒ 外接盘没接上；编辑器式重写 ⇒ 对不上要重记；文件夹也能跟；「确认过」又找到了自动清；held；选位置三种拒绝；两种 JSON；Spotlight 查询的转义。⛔ 测试里没往用户自己的废纸篓放任何东西（用的是临时目录里的 `.Trashes`）。
+  - Spotlight 真找同名那条：标 `#[ignore]`（Spotlight 收录新文件要几秒到几分钟；刚编译完、索引忙的时候 30 秒都没收录过），手动 `cargo test -- --ignored spotlight_finds` 跑过一遍是过的（两个同名文件都找到了）；等待时间放到了 2 分钟。
+  - **Windows 那一半没编过、没跑过**：本机编不了整个 app（记忆 isolated-verify §43），在 scratchpad 单开一个 crate 用 `#[path]` 引同一个 `file_identity.rs`、同一组 windows-sys feature，`cargo check --target x86_64-pc-windows-msvc` 带 `deny(warnings)` 过了 —— 只证明类型对，没链接、没在 Windows 上跑过。
+  - vitest 6 条（`fileFollow.test.ts`）：跟过去之后列表里的路径换成新的；找不到的路径不动；Rust 报错时列表照旧；挂上就去记；「是这个」；「知道了」写进库里那一列。
+  - 全套：vitest 84 / 1010；cargo 190 · 5 跳过（多的那一条跳过就是 Spotlight）；sidecar 14；警告仍是基线三条。
+
+#### P9-4 · 右栏：主动提示丢失、标出跟上了、帮老文件找回来
+
+- 提交：`7efc7b5 feat(files): P9-4 右栏主动提示丢失、标出跟上了、帮老文件找回来 —— …`
+- 改了：
+  - `src/lib/files/fileStatus.ts`（新：状态 → 文字和按钮、标题旁边数几个）、`src/lib/files/fileStatus.test.ts`（新）
+  - `src/components/RightRail/ProjectFiles.tsx`、`src/components/RightRail/RailSection.tsx`（标题能放一个节点）
+  - `src/lib/files/openFile.ts`（`openAttachment`）、`src/components/ThreadView/BlockItem.tsx`、`src/components/ThreadView/DigestView.tsx`
+  - `src/components/Pack/PackCopyList.tsx`、`src/lib/i18n/index.ts`、`src-tauri/src/file_follow.rs`（上面那条标签）
+- 施工时定的：
+  - **什么时候看**：右栏「项目文件」打开时，和每次 Spool 回到前台时（窗口 focus）—— 第 7 条验收是「在访达里挪了、回到 Spool 就看到标记」，只在打开时看就看不到。只看这个项目、只看顶层那几行；收在新版下面的旧版不标、不数，点开它时再看。⛔ 不扫整个库。
+  - **跟上了**：名字后面一个小标记「已跟到新位置」（英文 New place —— 英文原句 Followed to its new place 把名字挤成「Lectur…」，截图里看出来的）；悬停写「从 <旧路径> 挪到了 <新路径>，Spool 已经跟过去了，点一下这个标记就不再显示」；点一下清掉。
+  - **找不到的**：开头的文件图标换成表示「怎么没的」的图标（废纸篓 / 带叉的文件 / 硬盘 / 问号 / 带锁的文件夹），⛔ 没用警示符号（三个找不到就是一列警示）；颜色用设置里「路径已变」那个 `--status-parked`。下面一行：在废纸篓里 / 已经删掉了 / 外接盘没接上 / 不知道挪到哪了 / 挪进了系统或隐藏文件夹（In the Trash / Deleted / Its disk is not connected / Moved — not sure where / Moved into a system or hidden folder）。再下面的按钮：
+    - 找一找（只有「不知道挪到哪了」、只在 Mac 上）⇒「正在找…」⇒「找到 N 个同名文件」，每个写它所在的完整文件夹（折行，不截断）、大小、修改时间、「是这个」；一个都没有就写「没找到同名的文件」。
+    - 是这个（held 那种，找到的位置写在上面）。
+    - 打开最近的文件夹（和导出清单同一个命令；外接盘没接上的不给 —— 最近的就是 `/Volumes`，没用）。
+    - 重新选位置（系统的选文件对话框，文件夹就选文件夹）。
+    - 知道了 ⇒ 那一行变灰、按钮只在鼠标停上去时出来、不再算进标题旁边的数；文件还在列表里。
+  - **主动**：标题「项目文件」旁边「N 个找不到了」（英文 N missing），只数没点过「知道了」的。
+  - **点开文件**：右栏、块上那一行文件、已完成项目的总览三处都先看一遍再开（`openAttachment`）：挪走了就从新位置开；找不到就说「打不开：<是哪一种>」，不再是「文件不存在或已被移动」。
+  - **导出清单**：打开时先看一遍，挪走了的先跟过去（列表里的路径变了，大小就按新位置重查），能照常勾选、导出；找不到的「找不到了」换成具体是哪一种（还没看完时仍写「找不到了」）。
+- 怎么验的：
+  - vitest 6 条（`fileStatus.test.ts`）：状态 → 文字和按钮的对应；「找一找」只给不知道挪到哪了的、只在 Mac；外接盘不给打开最近的文件夹；数「几个找不到了」只算没确认过的；确认之后不再算；又找到了（在原处）就不算。
+  - **截图**按记忆 isolated-verify §45（真组件渲成静态页、WKWebView 截；样式是单独编到 scratchpad 的 `vite build`，没碰 `dist/`）：一张右栏里同时有「已跟到新位置」「在废纸篓里」「不知道挪到哪了 + 找到 4 个同名文件」（4 个用的是真库那份 PDF 的 4 个真实位置、真实大小和时间），经典、情人节各一张，再加一张英文；另截了导出清单中英文各一张。都看过：标题旁边的数、标记、图标、折行的完整文件夹路径、按钮都放得下。⚠️「找到 4 个同名文件」那一块是组件里的状态，静态渲染到不了，截图那个 scratchpad 测试文件里替换了 `useState` 的第一次 `null` 初值，只在截图时用。图在 scratchpad 的 `shots/`，没进仓库。
+  - 全套（`7efc7b5` 上）：tsc 干净；vitest 85 个文件 / 1016 条全过（比基线多 4 个文件、47 条）；cargo 190 过 · 5 跳过（多 14 条、多 1 条跳过）；sidecar 14；`(none missing)`；`--dead` 和开工时逐行一样（87 行）；`cargo tree` 网络那条是空的；Rust 警告只有基线那三条。
+  - 真找回来要 Ocean 手指（§6）。
+
+#### 新发现（记在 HANDOFF §9.9）
+
+- `DISCOVERED-20261010-4`：`bg-accent-soft` 这个类在 Tailwind 里没有定义，10 个组件在用，生成的 CSS 里一条都没有（那些地方本该有的淡底色从来没显示过）。P8 之前就有，没修 —— 补上会改经典版的样子，要 Ocean 定。
+- `DISCOVERED-20261010-5`：P9-3 第 3 条那种（AI 可读的文件挪进了 P6 路径闸管的地方）现在先不跟、等用户点「是这个」，要 Ocean 定以后怎么办。
+- `DISCOVERED-20261010-6`：删一块、选了「一起从项目里去掉」它挂着的文件，再 ⌘Z，撤回走 `restoreAttachment`，那两列没带回来（落成空的）：在原处的下次看会重新记上；「知道了」会丢、要再点一次。
+
+#### 还差什么
+
+- 换装：还没做。按 §5 先问 Ocean「现在换装吗」（这一次真库会从 v32 迁到 v33，并带上 P8 验收第一轮那三条 `8dc204a`）。
+- Ocean 验收：待验收（§6 九条）。
+- 没 push、没发版。
