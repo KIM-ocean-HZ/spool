@@ -1,6 +1,6 @@
 # 产品任务书 P8 —— pack 导出带上项目的文件和图片（单项目 + 工作区）
 
-> **状态：COMPLETE —— 待 Ocean 验收。**（2026-10-10：四步已提交、已换装；回执在 §7 末尾。）
+> **状态：COMPLETE —— 待 Ocean 验收。**（2026-10-10：四步已提交、已换装；验收第一轮三条已改、还没换装；回执在 §7 末尾。）
 >
 > **唯一交付：** 下面 §3 的四步（P8-1 – P8-4），按顺序做完，每一步测试通过、单独一笔提交，并在 §7 写回执。
 >
@@ -405,4 +405,22 @@ cargo tree --manifest-path src-tauri/Cargo.toml -e normal | grep -iE "ureq|rustl
 
 #### Ocean 验收
 
-待验收（§6 八条，换装之后给）。
+**第一轮（10-10）**，原话：
+
+> 验收结束：1.打包项目不能给项目文件夹命名，只能选择默认名字；2.严重问题：当前COMP3074工作区HAI-Lecture3项目的文件无法打开，我不知道是文件被我转移了之后路径失效无法打开了（这个问题也需要解决，路径需要跟随文件位置变化，除非用户删除了）还是spool储存的路径丢失。/Users/hzjin/Desktop/HAI/Lecture 3 - Introduction to Natural Language Processing for HAI - 2.pdf有可能是我重新下载了一遍，删掉了原版？需要标清楚文件是被删除的还是spool自己的错误，在导出COMP3074工作区时也会显示Lecture 3 - Introduction to Natural Language Processing for HAI - 2.pdf /Users/hzjin/Desktop/Lecture 3 - Introduction to Natural Language Processing for HAI - 2.pdf（在spool的页面里，路径其实无法显示完整：Lecture 3 - Introduction to Natural Lang...是这样的，用户根本不知道真实路径）找不到了 一共 1 个文件，766 KB；找不到了不能解决问题，应该帮助用户点击跳转到最近的文件夹查证。并且项目右侧边栏的文件管理需要能够主动提示文件被删除或者丢失，让用户确认后才可不提示。
+
+- **先查清楚第 2 条是不是 Spool 的错**（只读查询，没写库）：**不是。** 文件 10-06 挂上时在桌面上，10-07 14:07 被挪进了 `桌面/HAI/`（同一份文件，不是重新下载的）；Spool 记的路径从挂上那一刻起每一份备份里都一样，代码里也没有任何地方改路径。证据写在 HANDOFF §9.9 `DISCOVERED-20261010-3`。
+- 问了 Ocean 两件（HANDOFF §9.2 第 57–58 条）：
+  - 「路径跟着文件走 + 右栏主动提示丢失、确认后不再提示 + 标清楚挪走 / 废纸篓 / 删掉」这一整套要改库结构 ⇒ Ocean 选**放进下一任务（P9）**；
+  - 以前挂的文件 ⇒ **先自动找同名文件，问一句**。
+- 当场改了（`8dc204a fix(pack): P8 验收第一轮 —— …`，不改库结构）：
+  - 改了：`src-tauri/src/pack.rs`、`src-tauri/src/lib.rs`、`src/components/Pack/PackDialog.tsx`、`src/components/Pack/PackCopyList.tsx`、`src/lib/pack/exportList.ts`、`src/lib/i18n/index.ts`
+  - 第 1 条：单项目导出成文件夹时，底栏上面多一个「文件夹名」框（和工作区导出那个一样），默认「项目名-日期」，空着就用默认名。只导单个 .md 时照旧在存储对话框里起名。
+  - 路径看不全：清单里每个文件的完整路径单独占一行，太长就折行，不再截断；名字那一行可以截断，因为下一行的路径里有完整名字。
+  - 「找不到了」：下面多一个「打开最近的文件夹」。新命令 `open_nearest_folder` 从记着的路径一路往上，打开第一个还在的文件夹（Mac 上是访达，Windows 上是资源管理器）。Lecture 3 那一行点了会打开桌面。
+- 怎么验的：
+  - Rust 新加 1 条（往上找几层都能找到最近还在的那个文件夹；空路径回不出来）：cargo 176 · 4。
+  - tsc 干净；vitest 81 / 969；i18n `(none missing)`，`--dead` 和开工时一样；`cargo tree` 网络那条是空的。
+  - 截图用的是这次的真实情况（Lecture 3 找不到、Lecture 4 在 `HAI/`）：经典、情人节、英文三张都看过，完整路径折行正常，「打开最近的文件夹」单独一行。
+  - 点下去真的打开访达，要换装后手指验。
+- 还没换装。
