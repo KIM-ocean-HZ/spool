@@ -93,4 +93,8 @@ windows-sys = { version = "0.61", features = [
     "Win32_UI_Input_KeyboardAndMouse",
     "Win32_System_SystemInformation",
     "Win32_UI_WindowsAndMessaging",
+    # P9-3: a project file's identity (volume serial + file id) and finding it again after a
+    # move — CreateFileW / GetFileInformationByHandleEx / OpenFileById /
+    # GetFinalPathNameByHandleW (file_identity.rs). Same crate, more API surface.
+    "Win32_Storage_FileSystem",
 ] }

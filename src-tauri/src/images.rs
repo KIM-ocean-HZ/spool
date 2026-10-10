@@ -320,7 +320,7 @@ pub fn cached_block_images(app: tauri::AppHandle, block_ids: Vec<String>) -> Res
     cached_images_of(&conn, &dir, &ids)
 }
 
-fn open_library(app: &tauri::AppHandle) -> Result<Connection, String> {
+pub(crate) fn open_library(app: &tauri::AppHandle) -> Result<Connection, String> {
     let path = crate::transfer::data_dir(app)?.join("spool.db");
     let conn = Connection::open(path).map_err(|e| e.to_string())?;
     // The webview holds its own connection to the same file (WAL); wait for it rather than

@@ -16,6 +16,7 @@ import {
   type ImagePlace,
 } from '@/lib/db/blockImages';
 import { addImageBytes, addImagesFromPaths, imageErrorMessage } from '@/lib/images/blockImageIo';
+import { locateFiles, relocateFile, type FileState } from '@/lib/files/locate';
 import { appendImageLines, remapImageIds } from '@/lib/blocks/imageLines';
 import type { Block, CreateBlockArgs, IncomingRef, RefKind } from '@/lib/db/blocks';
 import { quoteIsInBlock } from '@/lib/blocks/quoteFold';
@@ -118,6 +119,16 @@ interface BlocksState {
   // setIncludeInPack and deliberately NOT the same flag — one is "put the text in the pack
   // I am building", the other is "an AI may ask for this at all".
   setAiAccess: (attachmentId: string, threadId: string, value: boolean) => Promise<void>;
+  /** P9-3: where each project file is now, by attachment id — only files looked at since
+   *  launch have an entry. */
+  fileStates: Record<string, FileState>;
+  /** P9-3: look at these files of `threadId` (the right rail, a file about to open, the
+   *  export list). A file that moved is followed — its `target` here is updated to match. */
+  locateFiles: (threadId: string, ids: string[]) => Promise<FileState[]>;
+  /** P9-4: 「是这个」 / 「重新选位置」 — the user said where it is. */
+  relocateFile: (threadId: string, id: string, path: string) => Promise<void>;
+  /** P9-4: 「已跟到新位置」 looked at (null), or 「知道了」 on a gone file (DISMISSED_NOTICE). */
+  setFileNotice: (id: string, notice: string | null) => Promise<void>;
   // v30 (P5): move a block's file back onto the project (null) — the right rail's 「移到项目」.
   // ⚠️ Not in the undo ring, on purpose — same reason as pin: nothing is lost (the file stays
   // in the project's list, in view), and the move is one deliberate click.
@@ -278,6 +289,7 @@ export const useBlocksStore = create<BlocksState>((set, get) => {
     attachmentsByThread: {},
     imagesByBlock: {},
     incomingByBlock: {},
+    fileStates: {},
     selectedBlockIds: new Set<string>(),
 
     load: async (threadId) => {
@@ -669,7 +681,54 @@ export const useBlocksStore = create<BlocksState>((set, get) => {
       if (a.kind === 'file' && useSettingsStore.getState().autoExtractAttachments) {
         void extractAndStore(a, true);
       }
+      // P9-3: its identity is recorded the moment it is attached, so a move right after is
+      // followed too (「挂上的那一刻记」). Fire-and-forget like the extraction above.
+      void get().locateFiles(a.threadId, [a.id]);
       return a;
+    },
+
+    locateFiles: async (threadId, ids) => {
+      let states: FileState[];
+      try {
+        states = await locateFiles(ids);
+      } catch (e) {
+        // Not being able to look is not news for the user: the list shows what it showed.
+        console.warn('[files] locate failed', e);
+        return [];
+      }
+      const byId = new Map(states.map((st) => [st.id, st]));
+      set((s) => {
+        const list = s.attachmentsByThread[threadId];
+        return {
+          fileStates: { ...s.fileStates, ...Object.fromEntries(byId) },
+          attachmentsByThread: list
+            ? {
+                ...s.attachmentsByThread,
+                [threadId]: list.map((a) => {
+                  const st = byId.get(a.id);
+                  return st && st.path !== a.target ? { ...a, target: st.path } : a;
+                }),
+              }
+            : s.attachmentsByThread,
+        };
+      });
+      return states;
+    },
+
+    relocateFile: async (threadId, id, path) => {
+      const st = await relocateFile(id, path);
+      set((s) => ({
+        ...patchAttachment(s, threadId, id, { target: st.path }),
+        fileStates: { ...s.fileStates, [id]: st },
+      }));
+    },
+
+    setFileNotice: async (id, notice) => {
+      await adb.setAttachmentNotice(id, notice);
+      set((s) => {
+        const st = s.fileStates[id];
+        return st ? { fileStates: { ...s.fileStates, [id]: { ...st, notice } } } : s;
+      });
     },
 
     detach: async (attachmentId, threadId) => {

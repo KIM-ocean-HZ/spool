@@ -10,6 +10,8 @@ mod compress_sweep;
 mod capture;
 #[cfg(target_os = "macos")]
 mod double_tap;
+mod file_follow;
+mod file_identity;
 mod images;
 // Windows peer of double_tap: the same double-tap-modifier gesture (Ctrl there, ⌥ on
 // macOS), built on Raw Input instead of a CGEventTap. Cfg'd out everywhere else.
@@ -375,6 +377,9 @@ pub fn run() {
             pack::pack_source_sizes,
             pack::write_pack_export,
             pack::open_nearest_folder,
+            file_follow::locate_files,
+            file_follow::find_same_name,
+            file_follow::relocate_file,
             transfer::export_library,
             transfer::stage_import_db,
             transfer::discard_import_staging,

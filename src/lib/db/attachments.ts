@@ -180,6 +180,15 @@ export const createAttachment = async (args: CreateAttachmentArgs): Promise<Atta
   return a;
 };
 
+// P9-4 (v33): `target_notice` — NULL once the user has looked at 「已跟到新位置」, the dismissed
+// shape for 「知道了」 on a file that is gone. The JSON shapes belong to src-tauri/src/file_follow.rs
+// (`Notice`); lib/files/locate reads them. ⚠️ `target_identity` is never written here: it is a BLOB
+// and only Rust can carry it.
+export const setAttachmentNotice = async (id: string, notice: string | null): Promise<void> => {
+  const db = await getDb();
+  await db.execute('UPDATE attachments SET target_notice = $1 WHERE id = $2', [notice, id]);
+};
+
 // §20.1 forward (copy to thread): INSERT pre-built copy attachments (one multi-row, atomic
 // statement — additive only, same data-safety contract as blocks.insertBlocks). Every cached
 // field (extracted_text, extracted_at, extraction_kind, include_in_pack) is copied verbatim,

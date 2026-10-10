@@ -5885,15 +5885,15 @@ fn request_file_access_json(
 
 /// What the path gate needs to know about this computer. `path_gate_rules()` builds the real
 /// one; tests build their own around a temp home.
-struct PathGateRules {
-    home: PathBuf,
-    system_roots: Vec<PathBuf>,
+pub(crate) struct PathGateRules {
+    pub(crate) home: PathBuf,
+    pub(crate) system_roots: Vec<PathBuf>,
     /// The folder under home where apps keep their own data — `~/Library` (Spool's own
     /// database is in there), `%USERPROFILE%\AppData` on Windows.
-    home_private: &'static str,
+    pub(crate) home_private: &'static str,
     /// …except these, directly inside it, where the user's own files live: iCloud Drive and
     /// the Dropbox / OneDrive / Google Drive folders (`~/Library/CloudStorage`).
-    home_private_open: &'static [&'static str],
+    pub(crate) home_private_open: &'static [&'static str],
 }
 
 // ⚠️ `/tmp`, `/var` and `/etc` resolve into `/private`, and every path is judged after it is
@@ -5910,7 +5910,7 @@ fn canonical_or_same(p: PathBuf) -> PathBuf {
     std::fs::canonicalize(&p).unwrap_or(p)
 }
 
-fn path_gate_rules() -> Option<PathGateRules> {
+pub(crate) fn path_gate_rules() -> Option<PathGateRules> {
     #[cfg(windows)]
     {
         let home = std::env::var_os("USERPROFILE")?;
@@ -5938,7 +5938,7 @@ fn path_gate_rules() -> Option<PathGateRules> {
     }
 }
 
-enum GateStop {
+pub(crate) enum GateStop {
     Hidden(String),
     System(PathBuf),
     HomePrivate,
@@ -5948,7 +5948,7 @@ enum GateStop {
 /// runs it twice: on the path the AI sent (so a forbidden place is refused before Spool
 /// says whether anything is there) and on the resolved one (so a symlink or a `..` cannot
 /// walk around it — that second run is the one that decides).
-fn path_gate_stop(path: &std::path::Path, rules: &PathGateRules) -> Option<GateStop> {
+pub(crate) fn path_gate_stop(path: &std::path::Path, rules: &PathGateRules) -> Option<GateStop> {
     use std::path::Component;
     let under_home = path.strip_prefix(&rules.home).ok();
     for c in under_home.unwrap_or(path).components() {
