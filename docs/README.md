@@ -17,7 +17,7 @@
 | `HANDOFF-2026-09-04.md` | **Knote 这边仍然生效的约束 + 还没做完的事**（2026-09-05 已精简到 190 行）。⛔ 不含执行光标 | 每窗结束时补未完成项 |
 | `CODEX-HANDOFF-STAGE0A-D2-REVIEW-2026-09-03.md` | **实验线（Stage 0-a）的唯一滚动入口**；GR15R3 已 `Redo`，当前光标为 ACTIVE GR15R4。文件名里的日期和 D2 只是历史，内容是最新的 | Codex |
 | `TASKBOOK-STAGE0A-GR15R4-DEVELOPMENT-TRACE-CALLS-MADE-PRE-PRODUCT-READ-CLOSURE-CORRECTION-2026-09-24.md` | **当前唯一 ACTIVE 实验任务书**；只纠正实际 product read / rebuild 顺序自保护，保留既有语义绑定与科学结果，完成即归档 | Codex 下发；Claude Code 执行 |
-| `TASKBOOK-P<n>-*.md` | **当前唯一 ACTIVE 产品任务书**（现在**暂无，待下发 P9B**；P1、P1B、P2 – P9 都已验收，都在 `archive/product-taskbooks/`）；这一窗做什么、按什么顺序、怎么验。做完移进 `archive/product-taskbooks/`。产品线的任务库与红线已并进 `HANDOFF-2026-09-04.md` §10（原 `WORKPLAN-2026-08-22.md` 2026-09-30 归档） | 下发窗写；执行窗执行 |
+| `TASKBOOK-P<n>-*.md` | **当前唯一 ACTIVE 产品任务书**（现在是 `TASKBOOK-P9A-AUDIT-KNOWN-ISSUES-DESIGN-DEBTS-2026-10-10.md`：零散的已知问题 + 设计稿欠账，只核对、给建议、不改代码，Ocean 裁定；之后是 P9B；P1、P1B、P2 – P9 都已验收，都在 `archive/product-taskbooks/`）；这一窗做什么、按什么顺序、怎么验。做完移进 `archive/product-taskbooks/`。产品线的任务库与红线已并进 `HANDOFF-2026-09-04.md` §10（原 `WORKPLAN-2026-08-22.md` 2026-09-30 归档） | 下发窗写；执行窗执行 |
 
 两份 handoff 的分工，别搞混：**执行光标只在 Codex 那一份**（它的 §8 列了所有不许恢复的旧光标）；
 `HANDOFF-2026-09-04.md` 只管「仍然生效的约束」和「还没做完的事」，里面不许再出现「下一步 = …」。
