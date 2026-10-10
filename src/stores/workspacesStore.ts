@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { ensureBaseData } from '@/lib/db/client';
 import { setCaptureTarget, setThreadCompletion } from '@/lib/db/threads';
+import { noticeRenamed } from '@/lib/names/renameNotice';
 import * as db from '@/lib/db/workspaces';
 import type { Workspace } from '@/lib/db/workspaces';
 import { archivePlan } from '@/lib/workspaces/archive';
@@ -27,7 +28,9 @@ interface WorkspacesState {
   setArchiving: (id: string | null) => void;
   load: () => Promise<void>;
   create: (title?: string, parentId?: string | null) => Promise<Workspace>;
-  rename: (id: string, title: string) => Promise<void>;
+  /** Resolves to the name stored — `<title> 2` when that level already has the one asked
+   *  for (P9-1). Says nothing itself: the box it is typed in does, once the user is done. */
+  rename: (id: string, title: string) => Promise<string>;
   reorder: (orderedIds: string[]) => Promise<void>;
   /** v23: re-parent a workspace. `null` sends it back to the top level. */
   move: (id: string, parentId: string | null) => Promise<void>;
@@ -63,15 +66,17 @@ export const useWorkspacesStore = create<WorkspacesState>((set, get) => ({
 
   create: async (title = '', parentId = null) => {
     const ws = await db.createWorkspace(title, parentId);
+    noticeRenamed('workspace', title, ws.title);
     set((s) => ({ workspaces: [...s.workspaces, ws] }));
     return ws;
   },
 
-  rename: async (id, title) => {
-    const updatedAt = await db.renameWorkspace(id, title);
+  rename: async (id, asked) => {
+    const { updatedAt, title } = await db.renameWorkspace(id, asked);
     set((s) => ({
       workspaces: s.workspaces.map((w) => (w.id === id ? { ...w, title, updatedAt } : w)),
     }));
+    return title;
   },
 
   reorder: async (orderedIds) => {
@@ -93,10 +98,14 @@ export const useWorkspacesStore = create<WorkspacesState>((set, get) => ({
   // say no to the user, and swallowing it here would make an illegal drag look like it
   // worked until the next reload.
   move: async (id, parentId) => {
-    const updatedAt = await db.setWorkspaceParent(id, parentId);
+    const before = get().workspaces.find((w) => w.id === id)?.title;
+    const { updatedAt, title } = await db.setWorkspaceParent(id, parentId);
     set((s) => ({
-      workspaces: s.workspaces.map((w) => (w.id === id ? { ...w, parentId, updatedAt } : w)),
+      workspaces: s.workspaces.map((w) =>
+        w.id === id ? { ...w, parentId, title, updatedAt } : w,
+      ),
     }));
+    noticeRenamed('workspace', before ?? title, title);
   },
 
   remove: async (id) => {

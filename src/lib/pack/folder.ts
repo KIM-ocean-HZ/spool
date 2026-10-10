@@ -124,16 +124,20 @@ export const sanitizeFolderName = (input: string, fallback: string): string => {
 const pad2 = (n: number): string => String(n).padStart(2, '0');
 
 /** Makes a name unique within one directory. Sub-workspaces have no numeric prefix to
- *  separate them, so two sibling workspaces called 「文书」 would otherwise be one folder. */
+ *  separate them, so two sibling workspaces called 「文书」 would otherwise be one folder.
+ *  P9-1: compared without case (`taken` holds lower-cased names) — a Mac disk does not tell
+ *  `Notes` from `notes`, so those two would be one folder too. Names are kept unique where
+ *  they are made now; this is the floor under what is not (two empty-named sub-workspaces,
+ *  data from before). */
 const uniqueIn = (taken: Set<string>, name: string): string => {
-  if (!taken.has(name)) {
-    taken.add(name);
+  if (!taken.has(name.toLowerCase())) {
+    taken.add(name.toLowerCase());
     return name;
   }
   for (let i = 2; ; i++) {
     const candidate = `${name}-${i}`;
-    if (!taken.has(candidate)) {
-      taken.add(candidate);
+    if (!taken.has(candidate.toLowerCase())) {
+      taken.add(candidate.toLowerCase());
       return candidate;
     }
   }
@@ -444,7 +448,7 @@ export function buildPackFolder({
         ? planProject(project.blocks, project.attachments, range, images, choice, name.replace(/\.md$/, ''), at)
         : null;
       if (plan && carriesAnything(plan)) {
-        takenHere.add(name.replace(/\.md$/, ''));
+        takenHere.add(name.replace(/\.md$/, '').toLowerCase());
         copies.push(...plan.copies.map((c) => ({ ...c, path: fromRoot(c.path) })));
         pictures.push(...plan.pictures.map((p) => ({ ...p, path: fromRoot(p.path) })));
       }

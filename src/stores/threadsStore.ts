@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { ensureBaseData } from '@/lib/db/client';
 import * as db from '@/lib/db/threads';
 import type { Thread, ThreadPatch } from '@/lib/db/threads';
+import { noticeRenamed } from '@/lib/names/renameNotice';
 import { buildThreadDeleteManyUndo, buildThreadDeleteUndo, useUndoStore } from './undoStore';
 
 /** The sidebar's pinned entries — the two "projects" whose contents are not blocks.
@@ -58,7 +59,9 @@ interface ThreadsState {
   loadAll: () => Promise<void>;
   loadWorkspace: (workspaceId: string) => Promise<void>;
   create: (workspaceId: string, title?: string) => Promise<Thread>;
-  patch: (id: string, patch: ThreadPatch) => Promise<void>;
+  /** Resolves to the name now stored when the patch renamed or moved the project (P9-1: it
+   *  is `<title> 2` when the name was taken there), else undefined. */
+  patch: (id: string, patch: ThreadPatch) => Promise<string | undefined>;
   setSummary: (id: string, summary: string | null) => Promise<void>;
   setCaptureTarget: (id: string) => Promise<void>;
   remove: (id: string) => Promise<void>;
@@ -147,6 +150,7 @@ export const useThreadsStore = create<ThreadsState>((set, get) => ({
 
   create: async (workspaceId, title = '') => {
     const t = await db.createThread(workspaceId, title);
+    noticeRenamed('project', title, t.title);
     set((s) => ({
       threadsByWorkspace: {
         ...s.threadsByWorkspace,
@@ -158,20 +162,28 @@ export const useThreadsStore = create<ThreadsState>((set, get) => ({
   },
 
   patch: async (id, patch) => {
-    const updatedAt = await db.updateThread(id, patch);
+    const before = selectThreadById(id)(get())?.title;
+    const { updatedAt, title } = await db.updateThread(id, patch);
     const state = get();
     // A thread may move across workspaces; rebuild by walking all groups.
     const flat: Thread[] = [];
     for (const list of Object.values(state.threadsByWorkspace)) {
       for (const t of list) {
         if (t.id === id) {
-          flat.push({ ...t, ...patch, updatedAt } as Thread);
+          flat.push({ ...t, ...patch, ...(title !== undefined && { title }), updatedAt } as Thread);
         } else {
           flat.push(t);
         }
       }
     }
     set({ threadsByWorkspace: groupByWorkspace(flat) });
+    // P9-1: a move says so itself when it had to rename. A rename does NOT say it here — the
+    // box it is typed in saves every 200ms, and a pause after 「Lecture 3」 on the way to
+    // 「Lecture 3 notes」 must not pop a notice; the box says it once the user is done.
+    if (patch.workspaceId !== undefined && patch.title === undefined && title !== undefined) {
+      noticeRenamed('project', before ?? title, title);
+    }
+    return title;
   },
 
   // The AI status-summary write path (§11.3). User-triggered, so no debounce.

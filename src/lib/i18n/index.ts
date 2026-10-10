@@ -139,6 +139,11 @@ const EN: Record<string, string> = {
   '收起': 'Collapse',
   '+ 创建第一个项目': '+ Create the first project',
   '双击重命名': 'Double-click to rename',
+  // P9-1: a name the user gave was taken there, so it got 「 2」.
+  '同一个工作区里已经有叫「{name}」的项目了，这个改叫「{renamed}」':
+    'This workspace already has a project called “{name}”, so this one is now “{renamed}”.',
+  '同一层已经有叫「{name}」的工作区了，这个改叫「{renamed}」':
+    'There is already a workspace called “{name}” here, so this one is now “{renamed}”.',
   '当前捕捉目标': 'Current capture target',
   '设为捕捉目标': 'Set as capture target',
   '最近': 'Recent',

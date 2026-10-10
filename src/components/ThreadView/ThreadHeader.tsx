@@ -6,6 +6,7 @@ import { useT } from '@/lib/i18n';
 import { IS_MAC } from '@/lib/platform';
 import type { Block } from '@/lib/db/blocks';
 import type { Thread } from '@/lib/db/threads';
+import { noticeRenamed } from '@/lib/names/renameNotice';
 import { useBlocksStore } from '@/stores/blocksStore';
 import type { Attachment } from '@/lib/db/attachments';
 import { ACTION_LABEL, useEngineStore } from '@/stores/engineStore';
@@ -51,13 +52,19 @@ const CONTENT_WARN_THRESHOLD = 20_000;
 // title is the one free-form header field. While the user is typing the local value
 // wins; `resetKey` (the thread id) force-resyncs on a thread switch so a mid-edit switch
 // can't carry text across.
+//
+// P9-1: "typing" now lasts as long as the box has focus. A save can come back as a different
+// name (「Lecture 3」 stored as 「Lecture 3 2」, taken in this workspace); adopting that under
+// the caret would make 「Lecture 3 2 notes」 out of a pause on the way to 「Lecture 3 notes」.
+// The caller settles the name on blur.
 function useDebouncedField<T>(
   external: T,
   resetKey: string,
   write: (value: T) => void,
-): [T, (value: T) => void] {
+): [T, (value: T) => void, { onFocus: () => void; onBlur: () => void }] {
   const [value, setValue] = useState(external);
   const dirty = useRef(false);
+  const focused = useRef(false);
   const latest = useRef(value);
   latest.current = value;
   const writeRef = useRef(write);
@@ -72,7 +79,7 @@ function useDebouncedField<T>(
 
   // Same thread, value changed elsewhere: adopt it only when not mid-edit.
   useEffect(() => {
-    if (!dirty.current) setValue(external);
+    if (!dirty.current && !focused.current) setValue(external);
   }, [external]);
 
   useEffect(() => {
@@ -88,7 +95,13 @@ function useDebouncedField<T>(
     return () => clearTimeout(t);
   }, [value, external]);
 
-  return [value, setValue];
+  const onFocus = (): void => {
+    focused.current = true;
+  };
+  const onBlur = (): void => {
+    focused.current = false;
+  };
+  return [value, setValue, { onFocus, onBlur }];
 }
 
 // A deadline is stored as the ms epoch of the picked day's last moment, so the thread
@@ -120,9 +133,25 @@ export default function ThreadHeader({
     (s) => s.attachmentsByThread[thread.id] ?? EMPTY_ATTACHMENTS,
   );
 
-  const [title, setTitle] = useDebouncedField(thread.title, thread.id, (v) =>
+  const [title, setTitle, titleFocus] = useDebouncedField(thread.title, thread.id, (v) =>
     void patch(thread.id, { title: v }),
   );
+  // P9-1: the user is done with the name. Store what the box holds now (the debounce may not
+  // have run yet); when it landed as 「<name> 2」 say so once and show it. Only on the project
+  // still on screen — a blur from clicking another project resolves after the switch.
+  const shownThreadId = useRef(thread.id);
+  shownThreadId.current = thread.id;
+  const commitTitle = (): void => {
+    titleFocus.onBlur();
+    const id = thread.id;
+    const asked = title;
+    if (asked === thread.title) return;
+    void patch(id, { title: asked }).then((stored) => {
+      if (stored === undefined) return;
+      noticeRenamed('project', asked, stored);
+      if (shownThreadId.current === id) setTitle(stored);
+    });
+  };
 
   // Status summary (§9.11) — the thread's "catalogue card". Written by hand here, or
   // by a connected MCP client via set_thread_summary; never auto-generated in-app.
@@ -226,6 +255,8 @@ export default function ThreadHeader({
         <input
           value={title}
           onChange={(e) => setTitle(e.target.value)}
+          onFocus={titleFocus.onFocus}
+          onBlur={commitTitle}
           placeholder={t('无标题')}
           className="min-w-0 flex-1 bg-transparent font-serif text-2xl text-ink outline-none placeholder:text-muted/50"
         />

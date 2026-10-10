@@ -1,4 +1,5 @@
 import { nanoid } from 'nanoid';
+import { uniqueTitle } from '@/lib/names/uniqueTitle';
 import { getDb, INBOX_WORKSPACE_TITLE } from './client';
 
 export interface Workspace {
@@ -37,6 +38,26 @@ export const listWorkspaces = async (): Promise<Workspace[]> => {
   return rows.map(fromRow);
 };
 
+type Db = Awaited<ReturnType<typeof getDb>>;
+
+// P9-1: the names a workspace may not take under `parentId` — the other live workspaces on
+// that level (the top level when null). `except` is the one being renamed or moved.
+const titlesInLevel = async (
+  db: Db,
+  parentId: string | null,
+  except: string | null,
+): Promise<string[]> => {
+  const rows = await db.select<{ title: string }[]>(
+    parentId === null
+      ? 'SELECT title FROM workspaces WHERE deleted_at IS NULL AND parent_id IS NULL AND id != $1'
+      : 'SELECT title FROM workspaces WHERE deleted_at IS NULL AND parent_id = $2 AND id != $1',
+    parentId === null ? [except ?? ''] : [except ?? '', parentId],
+  );
+  return rows.map((r) => r.title);
+};
+
+/** The returned workspace carries the title actually stored — `<title> 2` when that level
+ *  already has one by that name (P9-1). */
 export const createWorkspace = async (
   title: string = '',
   parentId: string | null = null,
@@ -55,7 +76,7 @@ export const createWorkspace = async (
   const sortOrder = (maxRows[0]?.m ?? 0) + 1;
   const ws: Workspace = {
     id: nanoid(),
-    title,
+    title: uniqueTitle(title, await titlesInLevel(db, parentId, null)),
     parentId,
     sortOrder,
     createdAt: now,
@@ -68,15 +89,24 @@ export const createWorkspace = async (
   return ws;
 };
 
-export const renameWorkspace = async (id: string, title: string): Promise<number> => {
+/** `title` is the name stored: `<title> 2` when that level already has the one asked for. */
+export const renameWorkspace = async (
+  id: string,
+  title: string,
+): Promise<{ updatedAt: number; title: string }> => {
   const db = await getDb();
+  const [row] = await db.select<{ parent_id: string | null }[]>(
+    'SELECT parent_id FROM workspaces WHERE id = $1',
+    [id],
+  );
+  const stored = uniqueTitle(title, await titlesInLevel(db, row?.parent_id ?? null, id));
   const now = Date.now();
   await db.execute('UPDATE workspaces SET title = $1, updated_at = $2 WHERE id = $3', [
-    title,
+    stored,
     now,
     id,
   ]);
-  return now;
+  return { updatedAt: now, title: stored };
 };
 
 export const reorderWorkspaces = async (orderedIds: string[]): Promise<void> => {
@@ -91,7 +121,7 @@ export const reorderWorkspaces = async (orderedIds: string[]): Promise<void> => 
 // soft-deleted stops the walk — its own subtree was stamped by that earlier delete and
 // belongs to that delete's undo, not this one.
 const descendantIds = async (
-  db: Awaited<ReturnType<typeof getDb>>,
+  db: Db,
   rootId: string,
 ): Promise<string[]> => {
   const rows = await db.select<{ id: string }[]>(
@@ -113,10 +143,13 @@ const descendantIds = async (
 // the ring VANISHES from the sidebar — the user's projects are still in the database and
 // nowhere on screen. Refused here rather than repaired in the renderer, because a renderer
 // that quietly re-roots a cycle hides the fact that the data is wrong.
+//
+// P9-1: it lands as `<title> 2` when the new level already has a workspace by its name;
+// `title` is what is stored.
 export const setWorkspaceParent = async (
   id: string,
   parentId: string | null,
-): Promise<number> => {
+): Promise<{ updatedAt: number; title: string }> => {
   if (parentId === id) throw new Error('a workspace cannot be its own parent');
   const db = await getDb();
   if (parentId !== null) {
@@ -125,13 +158,16 @@ export const setWorkspaceParent = async (
       throw new Error('a workspace cannot be moved inside one of its own descendants');
     }
   }
-  const now = Date.now();
-  await db.execute('UPDATE workspaces SET parent_id = $1, updated_at = $2 WHERE id = $3', [
-    parentId,
-    now,
+  const [row] = await db.select<{ title: string }[]>('SELECT title FROM workspaces WHERE id = $1', [
     id,
   ]);
-  return now;
+  const title = uniqueTitle(row?.title ?? '', await titlesInLevel(db, parentId, id));
+  const now = Date.now();
+  await db.execute(
+    'UPDATE workspaces SET parent_id = $1, title = $2, updated_at = $3 WHERE id = $4',
+    [parentId, title, now, id],
+  );
+  return { updatedAt: now, title };
 };
 
 // Soft-delete a workspace and cascade-soft-delete its threads. Deleting the workspace
@@ -167,6 +203,10 @@ export const softDeleteWorkspace = async (
 //
 // v23: walks back down the same subtree, and only through rows carrying THIS delete's
 // timestamp — a nested workspace the user had deleted a week earlier stays deleted.
+//
+// P9-1: one row at a time, parents first, each checked against what is already live beside
+// it — while they were gone the user may have made a workspace or project by the same name.
+// What comes back then takes 「 2」 (no notice: this is an undo, not something the user named).
 export const restoreWorkspace = async (id: string, timestamp: number): Promise<void> => {
   const db = await getDb();
   const rows = await db.select<{ id: string }[]>(
@@ -179,14 +219,30 @@ export const restoreWorkspace = async (id: string, timestamp: number): Promise<v
     [id, timestamp],
   );
   for (const { id: wsId } of rows) {
-    await db.execute(
-      'UPDATE workspaces SET deleted_at = NULL WHERE id = $1 AND deleted_at = $2',
+    const [ws] = await db.select<{ parent_id: string | null; title: string }[]>(
+      'SELECT parent_id, title FROM workspaces WHERE id = $1 AND deleted_at = $2',
       [wsId, timestamp],
     );
-    await db.execute(
-      'UPDATE threads SET deleted_at = NULL, is_capture_target = 0 WHERE workspace_id = $1 AND deleted_at = $2',
+    if (ws) {
+      await db.execute('UPDATE workspaces SET deleted_at = NULL, title = $1 WHERE id = $2', [
+        uniqueTitle(ws.title, await titlesInLevel(db, ws.parent_id, wsId)),
+        wsId,
+      ]);
+    }
+    const threads = await db.select<{ id: string; title: string }[]>(
+      'SELECT id, title FROM threads WHERE workspace_id = $1 AND deleted_at = $2',
       [wsId, timestamp],
     );
+    for (const th of threads) {
+      const live = await db.select<{ title: string }[]>(
+        'SELECT title FROM threads WHERE workspace_id = $1 AND deleted_at IS NULL',
+        [wsId],
+      );
+      await db.execute(
+        'UPDATE threads SET deleted_at = NULL, is_capture_target = 0, title = $1 WHERE id = $2',
+        [uniqueTitle(th.title, live.map((r) => r.title)), th.id],
+      );
+    }
   }
 };
 

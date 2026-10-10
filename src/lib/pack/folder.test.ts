@@ -252,6 +252,20 @@ describe('buildPackFolder', () => {
     expect(paths).toEqual(['INDEX.md', '文书/01-a.md', '文书-2/01-b.md']);
   });
 
+  // P9-1 (DISCOVERED-20261010-1): a Mac disk does not tell case apart, so `Notes/` and `notes/`
+  // would be ONE folder and the second project file would land beside the first.
+  it('keeps two sub-workspaces apart when their names differ only in case', () => {
+    const paths = build({
+      title: '升学',
+      projects: [],
+      children: [
+        { title: 'Notes', projects: [project('t1', 'a', [])], children: [] },
+        { title: 'notes', projects: [project('t2', 'b', [])], children: [] },
+      ],
+    }).files.map((f) => f.path);
+    expect(paths).toEqual(['INDEX.md', 'Notes/01-a.md', 'notes-2/01-b.md']);
+  });
+
   it('exports an empty workspace as an INDEX.md that says so', () => {
     const out = build({ title: '空工作区', projects: [], children: [] });
     expect(out.files.map((f) => f.path)).toEqual(['INDEX.md']);

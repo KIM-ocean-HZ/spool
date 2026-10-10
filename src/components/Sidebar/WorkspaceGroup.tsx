@@ -5,6 +5,7 @@ import MenuDeleteItem from '@/components/ui/MenuDeleteItem';
 import { useMenuPosition } from '@/components/ui/useMenuPosition';
 import type { Thread } from '@/lib/db/threads';
 import type { Workspace } from '@/lib/db/workspaces';
+import { noticeRenamed } from '@/lib/names/renameNotice';
 import { DROP_WORKSPACE_ATTR } from '@/lib/sidebar/railDrag';
 import { isImeComposing } from '@/lib/utils/ime';
 import { useT } from '@/lib/i18n';
@@ -82,8 +83,14 @@ export default function WorkspaceGroup({
     if (!editing) setTitleInput(workspace.title);
   }, [workspace.title, editing]);
 
+  // Enter / Esc end the edit and the box then goes away, which may blur it — one commit.
+  const committedRef = useRef(false);
+
   useEffect(() => {
-    if (editing) inputRef.current?.focus();
+    if (editing) {
+      committedRef.current = false;
+      inputRef.current?.focus();
+    }
   }, [editing]);
 
   // Debounce save while editing
@@ -96,7 +103,17 @@ export default function WorkspaceGroup({
     return () => clearTimeout(t);
   }, [titleInput, workspace.title, workspace.id, editing, rename]);
 
-  const exitEdit = () => setEditing(false);
+  // P9-1: the name typed may have been stored as 「<name> 2」 (taken on this level). Said once,
+  // here, when the user is done — not by the 200ms saves while they are still typing. A save
+  // the debounce had not run yet is made now rather than dropped.
+  const exitEdit = () => {
+    setEditing(false);
+    if (committedRef.current) return;
+    committedRef.current = true;
+    const asked = titleInput;
+    if (asked === workspace.title) return;
+    void rename(workspace.id, asked).then((stored) => noticeRenamed('workspace', asked, stored));
+  };
 
   const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
     if (isImeComposing(e.nativeEvent)) return;

@@ -1,4 +1,5 @@
 import { nanoid } from 'nanoid';
+import { uniqueTitle } from '@/lib/names/uniqueTitle';
 import { getDb } from './client';
 
 export type ThreadStatus = 'active' | 'parked' | 'done';
@@ -94,13 +95,29 @@ export const getCaptureTargetThread = async (): Promise<Thread | null> => {
   return rows[0] ? fromRow(rows[0]) : null;
 };
 
+// P9-1: the names a project may not take in `workspaceId` — the other live projects there.
+// `except` is the project being renamed or moved, which does not collide with itself.
+const titlesInWorkspace = async (
+  db: Awaited<ReturnType<typeof getDb>>,
+  workspaceId: string,
+  except: string | null,
+): Promise<string[]> => {
+  const rows = await db.select<{ title: string }[]>(
+    'SELECT title FROM threads WHERE workspace_id = $1 AND deleted_at IS NULL AND id != $2',
+    [workspaceId, except ?? ''],
+  );
+  return rows.map((r) => r.title);
+};
+
+/** The returned thread carries the title actually stored: `title` itself, or `<title> 2` when
+ *  the workspace already has one by that name (P9-1). */
 export const createThread = async (workspaceId: string, title: string = ''): Promise<Thread> => {
   const db = await getDb();
   const now = Date.now();
   const t: Thread = {
     id: nanoid(),
     workspaceId,
-    title,
+    title: uniqueTitle(title, await titlesInWorkspace(db, workspaceId, null)),
     summary: null,
     digest: null,
     deadline: null,
@@ -119,8 +136,29 @@ export const createThread = async (workspaceId: string, title: string = ''): Pro
   return t;
 };
 
-export const updateThread = async (id: string, patch: ThreadPatch): Promise<number> => {
+/** `title` is the name now stored, whenever the patch renamed or moved the project — it is
+ *  `<title> 2` rather than what was asked when that name was taken where it landed (P9-1). */
+export const updateThread = async (
+  id: string,
+  patch: ThreadPatch,
+): Promise<{ updatedAt: number; title?: string }> => {
   const db = await getDb();
+  // P9-1: a rename, or a move into another workspace, must not land on a name already used
+  // there. A move with no new name checks the name the project already has.
+  let title: string | undefined;
+  if (patch.title !== undefined || patch.workspaceId !== undefined) {
+    const [row] = await db.select<{ workspace_id: string; title: string }[]>(
+      'SELECT workspace_id, title FROM threads WHERE id = $1',
+      [id],
+    );
+    if (row) {
+      title = uniqueTitle(
+        patch.title ?? row.title,
+        await titlesInWorkspace(db, patch.workspaceId ?? row.workspace_id, id),
+      );
+      patch = { ...patch, title };
+    }
+  }
   const sets: string[] = [];
   const values: unknown[] = [];
   let i = 1;
@@ -156,7 +194,7 @@ export const updateThread = async (id: string, patch: ThreadPatch): Promise<numb
   values.push(now);
   values.push(id);
   await db.execute(`UPDATE threads SET ${sets.join(', ')} WHERE id = $${i}`, values);
-  return now;
+  return { updatedAt: now, title };
 };
 
 // DESIGN_FOLLOW_UP §8 (v22) — what a project follows up moved OUT of this file.
@@ -262,10 +300,21 @@ export const softDeleteThread = async (id: string): Promise<void> => {
 // §9.13 undo: clear the soft-delete so the thread (and its blocks, which were never
 // deleted) returns. Also clears is_capture_target — deleting the capture target re-promotes
 // another, so restoring it must not leave two active targets; the user can re-set it.
+//
+// P9-1: while it was gone the user may have made another project by the same name in that
+// workspace; the one coming back then takes 「 2」 (no notice — the user asked for an undo,
+// not a rename, and the name is right there in the sidebar).
 export const restoreThread = async (id: string): Promise<void> => {
   const db = await getDb();
-  await db.execute(
-    'UPDATE threads SET deleted_at = NULL, is_capture_target = 0 WHERE id = $1',
+  const [row] = await db.select<{ workspace_id: string; title: string }[]>(
+    'SELECT workspace_id, title FROM threads WHERE id = $1',
     [id],
+  );
+  const title = row
+    ? uniqueTitle(row.title, await titlesInWorkspace(db, row.workspace_id, id))
+    : null;
+  await db.execute(
+    'UPDATE threads SET deleted_at = NULL, is_capture_target = 0, title = COALESCE($2, title) WHERE id = $1',
+    [id, title],
   );
 };

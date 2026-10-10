@@ -6,6 +6,7 @@ import MenuDeleteItem from '@/components/ui/MenuDeleteItem';
 import StatusDot from '@/components/ui/StatusDot';
 import { useMenuPosition } from '@/components/ui/useMenuPosition';
 import type { Thread } from '@/lib/db/threads';
+import { noticeRenamed } from '@/lib/names/renameNotice';
 import { startRailDrag } from '@/lib/sidebar/railDrag';
 import { isImeComposing } from '@/lib/utils/ime';
 import { useT } from '@/lib/i18n';
@@ -82,12 +83,28 @@ export default function ThreadListItem({
     return () => clearTimeout(t);
   }, [titleInput, thread.title, thread.id, editingTitle, patchThread]);
 
+  // Enter commits and the box then goes away, which may blur it — one commit, not two.
+  const committedRef = useRef(false);
+
   const enterRename = (): void => {
     canceledRef.current = false;
+    committedRef.current = false;
     setTitleInput(thread.title);
     setEditingTitle(true);
   };
-  const commitRename = (): void => setEditingTitle(false); // debounce already persisted
+  // P9-1: the name typed may have been stored as 「<name> 2」 (taken in this workspace). Said
+  // once, here, when the user is done — not by the 200ms saves while they are still typing.
+  // A save the debounce had not run yet is made now rather than dropped.
+  const commitRename = (): void => {
+    setEditingTitle(false);
+    if (committedRef.current || canceledRef.current) return;
+    committedRef.current = true;
+    const asked = titleInput;
+    if (asked === thread.title) return;
+    void patchThread(thread.id, { title: asked }).then((stored) => {
+      if (stored !== undefined) noticeRenamed('project', asked, stored);
+    });
+  };
   const cancelRename = (): void => {
     canceledRef.current = true;
     setTitleInput(thread.title);

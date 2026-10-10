@@ -7,6 +7,7 @@
 
 import { invoke } from '@tauri-apps/api/core';
 import Database from '@tauri-apps/plugin-sql';
+import { uniqueTitle } from '@/lib/names/uniqueTitle';
 import { CURRENT_SCHEMA_VERSION, getDb, migrateStagedImport } from './client';
 
 // ⚠️ Parents first. There is no transaction around any of this — tauri-plugin-sql's sqlx
@@ -68,6 +69,44 @@ const columnsOf = async (db: Database, table: string): Promise<string[]> => {
 const rowsPerStatement = (columnCount: number): number =>
   Math.max(1, Math.floor(900 / Math.max(1, columnCount)));
 
+// P9-1: the column that says what a row sits beside — the level a name must be unique on.
+const LEVEL_COLUMN = { workspaces: 'parent_id', threads: 'workspace_id' } as const;
+
+/**
+ * P9-1 (Ocean 2026-10-10 第 54、62、65 条): a workspace or project arriving from another
+ * library takes 「 2」 when one beside it here already has its name — the same rule as a
+ * rename in the app, applied silently (the user imported, they did not name anything).
+ *
+ * Only rows that will actually go in and are alive: an id already here is skipped by the
+ * insert and keeps the name it has here; a deleted row competes with nothing until an undo
+ * brings it back, and that undo checks then. Arriving rows are checked against each other
+ * too, in the order they come.
+ */
+const renameOnArrival = async (
+  target: Database,
+  table: keyof typeof LEVEL_COLUMN,
+  rows: Row[],
+): Promise<void> => {
+  const level = LEVEL_COLUMN[table];
+  const here = await target.select<
+    { id: string; level: string | null; title: string; deleted_at: number | null }[]
+  >(`SELECT id, ${level} AS level, title, deleted_at FROM ${table}`);
+  const ids = new Set(here.map((r) => r.id));
+  // Keyed by the level's id; '' for a workspace at the top (ids are never empty).
+  const taken = new Map<string, string[]>();
+  const take = (at: unknown, title: string): void => {
+    const key = at == null ? '' : String(at);
+    taken.set(key, [...(taken.get(key) ?? []), title]);
+  };
+  for (const r of here) if (r.deleted_at == null) take(r.level, r.title);
+  for (const row of rows) {
+    if (ids.has(String(row.id)) || row.deleted_at != null) continue;
+    const at = row[level];
+    row.title = uniqueTitle(String(row.title ?? ''), taken.get(at == null ? '' : String(at)) ?? []);
+    take(at, row.title as string);
+  }
+};
+
 /**
  * Copy every row this build knows about from `source` into `target`, keeping whatever
  * `target` already has.
@@ -121,6 +160,7 @@ export const mergeLibrary = async (source: Database, target: Database): Promise<
     const rows = await source.select<Row[]>(`SELECT ${quoted} FROM ${table}`);
     if (rows.length === 0) continue;
 
+    if (table === 'workspaces' || table === 'threads') await renameOnArrival(target, table, rows);
     if (table === 'threads') {
       for (const row of rows) {
         if (row.is_capture_target !== 1) continue;
