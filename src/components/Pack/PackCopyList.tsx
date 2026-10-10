@@ -2,9 +2,11 @@ import { File, Folder, Image as ImageIcon } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import SeqBadge from '../ThreadView/SeqBadge';
 import type { Attachment } from '@/lib/db/attachments';
+import { lookOf, LOST_LABEL } from '@/lib/files/fileStatus';
 import { fileLabel } from '@/lib/files/openFile';
 import { useT } from '@/lib/i18n';
 import { fetchSourceSizes, formatBytes, isFound, openNearestFolder, type SourceSize } from '@/lib/pack/exportList';
+import { useBlocksStore } from '@/stores/blocksStore';
 
 // P8-3 / P8-4 — what goes along with a pack (Ocean 2026-09-30 §9.2 第 12 条, 10-10 第 53 条):
 // every file on its own row — name, path, size, the block it hangs off — ticked by default, with
@@ -24,9 +26,23 @@ export interface CopyGroup {
 }
 
 /** Sizes of these files, asked fresh each time the list opens. null while asking. A failed
- *  question leaves the sizes unknown (「—」) rather than calling every file missing. */
+ *  question leaves the sizes unknown (「—」) rather than calling every file missing.
+ *
+ *  P9-3 (「导出清单打开时」): the files are looked at first. One that moved is followed — its path
+ *  in the store changes, the files handed in here change with it, and the sizes are asked again
+ *  for where it is now — so the export takes it along instead of calling it gone. */
 export const useSourceSizes = (files: readonly Attachment[]): Map<string, SourceSize> | null => {
   const key = files.map((a) => a.target).join('\n');
+  const idsKey = files.map((a) => `${a.threadId}:${a.id}`).join(',');
+  useEffect(() => {
+    if (!idsKey) return;
+    const byThread = new Map<string, string[]>();
+    for (const pair of idsKey.split(',')) {
+      const [threadId, id] = pair.split(':') as [string, string];
+      byThread.set(threadId, [...(byThread.get(threadId) ?? []), id]);
+    }
+    for (const [threadId, ids] of byThread) void useBlocksStore.getState().locateFiles(threadId, ids);
+  }, [idsKey]);
   const [sizes, setSizes] = useState<Map<string, SourceSize> | null>(null);
   useEffect(() => {
     let stale = false;
@@ -70,6 +86,8 @@ export default function PackCopyList({
   onTogglePictures,
 }: Props) {
   const t = useT();
+  // P9-4: the same words the right rail uses for a file that is gone.
+  const fileStates = useBlocksStore((s) => s.fileStates);
   const files = groups.flatMap((g) => g.files);
   const found = files.filter((a) => isFound(sizes, a));
   const allOn = found.length > 0 && found.every((a) => picked.has(a.id));
@@ -79,6 +97,12 @@ export default function PackCopyList({
     .reduce((sum, a) => sum + (sizes?.get(a.target)?.bytes ?? 0), 0);
   const count = picked.size + (picturesOn ? pictures.count : 0);
   const bytes = fileBytes + (picturesOn ? pictures.bytes : 0);
+
+  // Which way it is gone, once a look has said; 「找不到了」 until then (or if it could not look).
+  const goneLabel = (a: Attachment): string => {
+    const look = lookOf(fileStates[a.id]);
+    return look.kind === 'lost' ? t(LOST_LABEL[look.why]) : t('找不到了');
+  };
 
   const row = (a: Attachment) => {
     const size = sizes?.get(a.target);
@@ -100,7 +124,7 @@ export default function PackCopyList({
             {fileLabel(a)}
           </span>
           <span className="flex-none whitespace-nowrap text-right tabular-nums text-muted">
-            {!here ? t('找不到了') : size ? formatBytes(size.bytes) : sizes ? '—' : '…'}
+            {!here ? goneLabel(a) : size ? formatBytes(size.bytes) : sizes ? '—' : '…'}
           </span>
           {/* Like the right rail: a block's file shows the block's number; a project's file nothing. */}
           <span

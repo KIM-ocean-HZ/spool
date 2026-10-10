@@ -1,15 +1,44 @@
-import { Bot, ChevronDown, ChevronRight, File, Folder, Plus, Unlink, X } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { open } from '@tauri-apps/plugin-dialog';
+import {
+  Bot,
+  ChevronDown,
+  ChevronRight,
+  File,
+  FileQuestion,
+  FileX,
+  Folder,
+  FolderLock,
+  HardDrive,
+  Plus,
+  Trash2,
+  Unlink,
+  X,
+  type LucideIcon,
+} from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
 import RailSection from './RailSection';
 import { useT } from '@/lib/i18n';
 import { isMcpSource } from '@/lib/blocks/sourceIcon';
 import type { Attachment } from '@/lib/db/attachments';
 import type { Block } from '@/lib/db/blocks';
 import { addFilesFromPicker } from '@/lib/files/addFiles';
-import { fileLabel, openFile } from '@/lib/files/openFile';
+import {
+  countUnconfirmedLost,
+  lookOf,
+  lostActions,
+  LOST_LABEL,
+  type FileLook,
+  type LostAction,
+  type LostWhy,
+} from '@/lib/files/fileStatus';
+import { DISMISSED_NOTICE, findSameName, type SameNameCandidate } from '@/lib/files/locate';
+import { fileLabel, openAttachment } from '@/lib/files/openFile';
 import { groupFileVersions } from '@/lib/files/versions';
+import { formatBytes, openNearestFolder } from '@/lib/pack/exportList';
+import { IS_MAC } from '@/lib/platform';
 import { formatBlockTime } from '@/lib/utils/time';
 import { useBlocksStore } from '@/stores/blocksStore';
+import { toast } from '@/stores/toastStore';
 import SeqBadge from '../ThreadView/SeqBadge';
 
 // DESIGN_PROJECT_FILES §3.2 — 「项目文件」, the place a file lives now.
@@ -59,6 +88,137 @@ const aiName = (addedBy: string): string => {
 const EMPTY: readonly Attachment[] = [];
 const EMPTY_BLOCKS: readonly Block[] = [];
 
+// P9-4 (Ocean 2026-10-10 第 57、58、66 条) — a file that is not where Spool recorded it says
+// WHICH way it is gone, and what can be done. ⚠️ An icon per way, never a warning sign per row:
+// the rail is allowed one at most (HANDOFF §10.6), and a list with three missing files would
+// otherwise be a column of them.
+const LOST_ICON: Record<LostWhy, LucideIcon> = {
+  trash: Trash2,
+  deleted: FileX,
+  offline: HardDrive,
+  unknown: FileQuestion,
+  held: FolderLock,
+};
+
+// The colour Settings already uses for 「路径已变」 — attention without alarm.
+const ATTENTION = { color: 'var(--status-parked)' } as const;
+
+const parentOf = (path: string): string => path.replace(/[/\\][^/\\]*$/, '') || path;
+
+type Lost = Extract<FileLook, { kind: 'lost' }>;
+
+/** Under a missing file's row: the plain words, then the ways out. Once the user has said
+ *  「知道了」 it goes quiet — grey words, the ways out only while the pointer is on it. */
+function LostDetail({ a, threadId, look }: { a: Attachment; threadId: string; look: Lost }) {
+  const t = useT();
+  const relocateFile = useBlocksStore((s) => s.relocateFile);
+  const setFileNotice = useBlocksStore((s) => s.setFileNotice);
+  // 「找一找」: null = not asked; 'looking' while Spotlight answers.
+  const [found, setFound] = useState<SameNameCandidate[] | 'looking' | null>(null);
+
+  const moveTo = (path: string): void => {
+    void relocateFile(threadId, a.id, path).catch((e) => {
+      const code = e instanceof Error ? e.message : String(e);
+      toast.error(
+        code === 'missing'
+          ? t('那个位置上已经没有这个文件了')
+          : code === 'wrong_kind'
+            ? a.kind === 'folder'
+              ? t('这里要选一个文件夹')
+              : t('这里要选一个文件')
+            : t('没改成，再试一次'),
+      );
+    });
+  };
+  const run: Record<LostAction, () => void> = {
+    find: () => {
+      setFound('looking');
+      void findSameName(a.id)
+        .then(setFound)
+        .catch((e) => {
+          console.warn('[files] same-name search failed', e);
+          setFound([]);
+        });
+    },
+    thisOne: () => {
+      if (look.foundAt) moveTo(look.foundAt);
+    },
+    nearest: () =>
+      void openNearestFolder(a.target).catch((e) => console.warn('[files] open folder failed', e)),
+    relocate: () =>
+      void open({ multiple: false, directory: a.kind === 'folder' }).then((picked) => {
+        if (typeof picked === 'string') moveTo(picked);
+      }),
+    dismiss: () => void setFileNotice(a.id, DISMISSED_NOTICE),
+  };
+  const label: Record<LostAction, string> = {
+    find: t('找一找'),
+    thisOne: t('是这个'),
+    nearest: t('打开最近的文件夹'),
+    relocate: t('重新选位置'),
+    dismiss: t('知道了'),
+  };
+
+  return (
+    <div className="pb-1 pl-[30px] pr-3 text-[11px] leading-snug">
+      <div className={look.quiet ? 'text-muted' : ''} style={look.quiet ? undefined : ATTENTION}>
+        {t(LOST_LABEL[look.why])}
+      </div>
+      {look.why === 'held' && look.foundAt && (
+        <div className="select-text break-all text-muted">{look.foundAt}</div>
+      )}
+      <div
+        className={`flex-wrap gap-x-3 gap-y-0.5 ${
+          look.quiet ? 'hidden group-focus-within/lost:flex group-hover/lost:flex' : 'flex'
+        }`}
+      >
+        {lostActions(look.why, look.quiet, IS_MAC).map((k) => (
+          <button
+            key={k}
+            type="button"
+            onClick={run[k]}
+            className={`${look.quiet ? 'text-muted hover:text-ink' : 'text-accent'} hover:underline`}
+          >
+            {label[k]}
+          </button>
+        ))}
+      </div>
+      {found === 'looking' && <div className="pt-0.5 text-muted">{t('正在找…')}</div>}
+      {Array.isArray(found) &&
+        (found.length === 0 ? (
+          <div className="pt-0.5 text-muted">{t('没找到同名的文件')}</div>
+        ) : (
+          <div className="pt-0.5">
+            <div className="text-muted">{t('找到 {n} 个同名文件', { n: found.length })}</div>
+            {/* 第 58 条: Spool lists them, the user picks — ⛔ never one chosen for them. Each shows
+                the whole folder it is in (P8 验收: a path cut short tells nobody anything). */}
+            <ul>
+              {found.map((c) => (
+                <li key={c.path} className="flex items-start gap-2 py-0.5">
+                  <span className="min-w-0 flex-1">
+                    <span className="block select-text break-all text-ink-2">{parentOf(c.path)}</span>
+                    <span className="tabular-nums text-muted">
+                      {a.kind === 'folder'
+                        ? formatBlockTime(c.modifiedMs)
+                        : `${formatBytes(c.bytes)} · ${formatBlockTime(c.modifiedMs)}`}
+                    </span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => moveTo(c.path)}
+                    className="flex-none text-accent hover:underline"
+                  >
+                    {t('是这个')}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
+    </div>
+  );
+}
+
 export default function ProjectFiles({ threadId }: { threadId: string }) {
   const t = useT();
   const files = useBlocksStore((s) => s.attachmentsByThread[threadId] ?? EMPTY);
@@ -72,6 +232,29 @@ export default function ProjectFiles({ threadId }: { threadId: string }) {
   // Newest first, older versions folded under their replacement. ⚠️ Only here: the store keeps
   // join order, which is what packs are built in.
   const groups = useMemo(() => groupFileVersions(files), [files]);
+
+  // P9-3 / P9-4: look at this project's files when the rail shows them, and again each time
+  // Spool comes back to the front — the user moved one in Finder and came back to see (第 66 条
+  // 「回到 Spool，右栏那个文件标着已跟到新位置」). Only the rows on top: an older version folded
+  // under its replacement is history, and opening it looks at it then (`openAttachment`).
+  // ⛔ Nothing else in the library is looked at.
+  const locateFiles = useBlocksStore((s) => s.locateFiles);
+  const fileStates = useBlocksStore((s) => s.fileStates);
+  const setFileNotice = useBlocksStore((s) => s.setFileNotice);
+  const shownIds = useMemo(() => groups.map((g) => g.file.id), [groups]);
+  const idsKey = shownIds.join(',');
+  useEffect(() => {
+    if (!idsKey) return;
+    const ids = idsKey.split(',');
+    const look = (): void => void locateFiles(threadId, ids);
+    look();
+    window.addEventListener('focus', look);
+    return () => window.removeEventListener('focus', look);
+  }, [threadId, idsKey, locateFiles]);
+  // 「主动」: how many are gone that the user has not said 「知道了」 to — beside the title, so
+  // nobody has to click through the files to find out.
+  const missing = countUnconfirmedLost(shownIds, fileStates);
+
   // Folded by default (Ocean 2026-10-06 #4); not remembered — it is a glance, not a setting.
   const [unfolded, setUnfolded] = useState<ReadonlySet<string>>(() => new Set());
   const toggle = (id: string): void =>
@@ -83,7 +266,16 @@ export default function ProjectFiles({ threadId }: { threadId: string }) {
     });
 
   // The icon at the head of a row: the robot when an AI proposed it and the user approved.
-  const iconFor = (a: Attachment) => {
+  // P9-4: a file that is gone wears the icon of HOW it is gone instead (grey once confirmed).
+  const iconFor = (a: Attachment, look: FileLook = { kind: 'normal' }) => {
+    if (look.kind === 'lost') {
+      const Icon = LOST_ICON[look.why];
+      return (
+        <span className="flex flex-none" style={look.quiet ? undefined : ATTENTION}>
+          <Icon size={12} className={look.quiet ? 'text-muted' : ''} />
+        </span>
+      );
+    }
     if (isMcpSource(a.addedBy)) {
       return (
         <span title={t('{name} 提议、你同意的', { name: aiName(a.addedBy!) })} className="flex flex-none">
@@ -97,7 +289,16 @@ export default function ProjectFiles({ threadId }: { threadId: string }) {
 
   return (
     <RailSection
-      title={t('项目文件')}
+      title={
+        <>
+          {t('项目文件')}
+          {missing > 0 && (
+            <span className="ml-2" style={ATTENTION}>
+              {t('{n} 个找不到了', { n: missing })}
+            </span>
+          )}
+        </>
+      }
       action={
         <button
           type="button"
@@ -124,22 +325,40 @@ export default function ProjectFiles({ threadId }: { threadId: string }) {
             const seq = a.anchorBlockId != null ? seqById.get(a.anchorBlockId) : undefined;
             const onBlock = seq !== undefined;
             const open = unfolded.has(a.id);
+            const look = lookOf(fileStates[a.id]);
             return (
-              <li key={a.id}>
+              <li key={a.id} className="group/lost">
                 <div
                   className={`group/file flex items-center gap-1.5 rounded-md px-3 py-1 hover:bg-paper-2/60 ${
                     replaced ? 'opacity-60' : ''
                   }`}
                 >
-                  {iconFor(a)}
+                  {iconFor(a, look)}
                   <button
                     type="button"
-                    onClick={() => void openFile(a.target)}
+                    onClick={() => void openAttachment(a)}
                     title={a.target}
-                    className="min-w-0 flex-1 truncate text-left text-[12px] text-ink-2 transition-colors hover:text-accent"
+                    className={`min-w-0 flex-1 truncate text-left text-[12px] transition-colors hover:text-accent ${
+                      look.kind === 'lost' ? 'text-muted' : 'text-ink-2'
+                    }`}
                   >
                     {fileLabel(a)}
                   </button>
+                  {/* 第 66 条: Spool followed it to a new place — say so once. Hover shows from where
+                      to where (both whole); a click means 「看过了」 and the mark goes. */}
+                  {look.kind === 'followed' && (
+                    <button
+                      type="button"
+                      onClick={() => void setFileNotice(a.id, null)}
+                      title={t('从 {from}\n挪到了 {to}\nSpool 已经跟过去了，点一下这个标记就不再显示。', {
+                        from: look.from,
+                        to: look.to,
+                      })}
+                      className="flex-none whitespace-nowrap rounded-full bg-accent/10 px-1.5 text-[10.5px] leading-[16px] text-accent transition-colors hover:bg-accent/20"
+                    >
+                      {t('已跟到新位置')}
+                    </button>
+                  )}
                   {older.length > 0 && (
                     <button
                       type="button"
@@ -233,6 +452,7 @@ export default function ProjectFiles({ threadId }: { threadId: string }) {
                     </button>
                   </span>
                 </div>
+                {look.kind === 'lost' && <LostDetail a={a} threadId={threadId} look={look} />}
                 {/* P6-4: the older versions, greyed, each with its own added time — hover says when
                     it was replaced. Still openable. Only 「AI 可读」 on hover: a replaced file is not
                     in any pack, so 「打包可读」 would be a switch that does nothing; whether an AI
@@ -250,7 +470,7 @@ export default function ProjectFiles({ threadId }: { threadId: string }) {
                           {iconFor(o)}
                           <button
                             type="button"
-                            onClick={() => void openFile(o.target)}
+                            onClick={() => void openAttachment(o)}
                             title={o.target}
                             className="min-w-0 flex-1 truncate text-left text-[12px] text-ink-2 transition-colors hover:text-accent"
                           >

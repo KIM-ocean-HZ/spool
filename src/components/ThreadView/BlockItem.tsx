@@ -15,7 +15,7 @@ import { SegmentedContent } from '@/lib/blocks/SegmentedContent';
 import type { Attachment } from '@/lib/db/attachments';
 import type { Block, IncomingRef } from '@/lib/db/blocks';
 import { addFilesFromPicker } from '@/lib/files/addFiles';
-import { fileLabel, openFile } from '@/lib/files/openFile';
+import { fileLabel, openAttachment } from '@/lib/files/openFile';
 import { correctionsBySource, type Correction } from '@/lib/pack/assemble';
 import type { HitOffset } from '@/lib/search/query';
 import { isImeComposing } from '@/lib/utils/ime';
@@ -1432,7 +1432,7 @@ function TextBlockItem({
               <button
                 key={a.id}
                 type="button"
-                onClick={() => void openFile(a.target)}
+                onClick={() => void openAttachment(a)}
                 title={a.target}
                 className="inline-flex min-w-0 max-w-full items-center gap-1 transition-colors hover:text-accent"
               >

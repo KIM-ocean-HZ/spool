@@ -35,7 +35,8 @@ import SectionLabel from '@/components/Sidebar/SectionLabel';
 // 「矩形结构太多，没有空间呼吸感」 (2026-08-11, the brief for §9.13), so the rule between
 // sections carries the separation and the whitespace carries the breathing.
 interface Props {
-  title: string;
+  /** P9-4: a node, so 项目文件 can say how many of its files are missing beside its name. */
+  title: ReactNode;
   /** Optional control on the heading line — 编辑 / 加文件. Right-aligned by the flex row. */
   action?: ReactNode;
   children: ReactNode;

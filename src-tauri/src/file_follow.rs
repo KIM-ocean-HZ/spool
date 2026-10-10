@@ -93,6 +93,18 @@ fn path_text(p: &Path) -> String {
     p.to_string_lossy().into_owned()
 }
 
+fn file_name_of(p: &str) -> String {
+    Path::new(p).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()
+}
+
+/// The new path's name, written into `label` only where the label is still the old path's file
+/// name: the picker and a Finder drop store the file name as the label, so a file renamed in
+/// Finder would otherwise keep showing its old name. A name the user typed is left alone.
+/// `old` / `new` are the statement's parameter numbers for the two names.
+fn follow_label(old: usize, new: usize) -> String {
+    format!("label = CASE WHEN label = ?{old} THEN ?{new} ELSE label END")
+}
+
 /// Look at one file and write down what the look learnt (a first identity, a follow, a
 /// 「确认过」 that no longer holds). None when there is no such file in the library.
 ///
@@ -168,8 +180,18 @@ pub(crate) fn look(
     let new_path = path_text(&found);
     // Same file, so the extracted text stays as it is (⛔ not extracted again).
     conn.execute(
-        "UPDATE attachments SET target = ?1, target_identity = COALESCE(?2, target_identity), target_notice = ?3 WHERE id = ?4",
-        params![new_path, file_identity::record(&found), moved, id],
+        &format!(
+            "UPDATE attachments SET target = ?1, target_identity = COALESCE(?2, target_identity), target_notice = ?3, {} WHERE id = ?4",
+            follow_label(5, 6)
+        ),
+        params![
+            new_path,
+            file_identity::record(&found),
+            moved,
+            id,
+            file_name_of(&row.target),
+            file_name_of(&new_path)
+        ],
     )
     .map_err(|e| e.to_string())?;
     Ok(Some(FileState {
@@ -192,8 +214,11 @@ pub(crate) fn relocate(conn: &Connection, id: &str, new_path: &str) -> Result<Fi
         return Err("wrong_kind".into());
     }
     conn.execute(
-        "UPDATE attachments SET target = ?1, target_identity = ?2, target_notice = NULL WHERE id = ?3",
-        params![new_path, file_identity::record(p), id],
+        &format!(
+            "UPDATE attachments SET target = ?1, target_identity = ?2, target_notice = NULL, {} WHERE id = ?3",
+            follow_label(4, 5)
+        ),
+        params![new_path, file_identity::record(p), id, file_name_of(&row.target), file_name_of(new_path)],
     )
     .map_err(|e| e.to_string())?;
     Ok(FileState {
@@ -350,12 +375,17 @@ mod tests {
         conn
     }
 
+    /// Labelled the way the picker and a Finder drop label a file: with its own name.
     fn attach(conn: &Connection, id: &str, kind: &str, target: &Path) {
         conn.execute(
-            "INSERT INTO attachments (id, thread_id, kind, target, extracted_text) VALUES (?1, 't', ?2, ?3, 'the text')",
-            params![id, kind, path_text(target)],
+            "INSERT INTO attachments (id, thread_id, kind, target, label, extracted_text) VALUES (?1, 't', ?2, ?3, ?4, 'the text')",
+            params![id, kind, path_text(target), file_name_of(&path_text(target))],
         )
         .unwrap();
+    }
+
+    fn label(conn: &Connection, id: &str) -> String {
+        conn.query_row("SELECT label FROM attachments WHERE id = ?1", [id], |r| r.get(0)).unwrap()
     }
 
     fn row(conn: &Connection, id: &str) -> (String, Option<Vec<u8>>, Option<String>, String) {
@@ -414,6 +444,8 @@ mod tests {
         assert_ne!(identity.unwrap(), before, "a fresh identity, recorded at the new place");
         assert_eq!(read_notice(notice.as_deref()), Some(Notice::Moved { from: path_text(&f) }));
         assert_eq!(text, "the text", "same file: the extracted text is not touched");
+        let label: String = conn.query_row("SELECT label FROM attachments WHERE id = 'a'", [], |r| r.get(0)).unwrap();
+        assert_eq!(label, "Lecture 3.pdf", "the label was the old file name, so it follows the rename");
 
         // Moved again before the user looked: the mark still says where they last knew it.
         let again = d.join("Lecture 3 (final).pdf");
@@ -539,6 +571,15 @@ mod tests {
         assert_eq!(identity.is_some(), cfg!(any(target_os = "macos", windows)));
         assert_eq!(notice, None);
         assert_eq!(text, "the text");
+
+        assert_eq!(label(&conn, "a"), "picked.pdf", "the label was the old file name");
+
+        // A name the user typed stays whatever the file is called.
+        conn.execute("UPDATE attachments SET label = '第三讲讲义' WHERE id = 'a'", []).unwrap();
+        let other = d.join("other.pdf");
+        std::fs::write(&other, b"y").unwrap();
+        relocate(&conn, "a", &path_text(&other)).unwrap();
+        assert_eq!(label(&conn, "a"), "第三讲讲义");
 
         assert_eq!(relocate(&conn, "a", &path_text(&d)).unwrap_err(), "wrong_kind");
         assert_eq!(relocate(&conn, "a", &path_text(&d.join("nope.pdf"))).unwrap_err(), "missing");

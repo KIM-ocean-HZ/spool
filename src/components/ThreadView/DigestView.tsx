@@ -5,9 +5,8 @@ import { MarkdownContent } from '@/lib/blocks/MarkdownContent';
 import type { Attachment, AttachmentKind } from '@/lib/db/attachments';
 import type { Block } from '@/lib/db/blocks';
 import type { Thread } from '@/lib/db/threads';
-import { openTarget } from '@/lib/utils/openTarget';
+import { openAttachment } from '@/lib/files/openFile';
 import { useBlocksStore } from '@/stores/blocksStore';
-import { toast } from '@/stores/toastStore';
 import BlockItem from './BlockItem';
 import { useT } from '@/lib/i18n';
 
@@ -65,15 +64,6 @@ export default function DigestView({ thread, blocks, attachments, onShowLog }: P
     attachments.filter((a) => a.kind === kind),
   );
 
-  const handleOpen = async (target: string): Promise<void> => {
-    try {
-      await openTarget(target);
-    } catch (e) {
-      // §14.4: a missing target is non-fatal — surface a toast and keep going.
-      toast.error(e instanceof Error ? e.message : t('无法打开附件'));
-    }
-  };
-
   return (
     <div className="flex-1 overflow-y-auto px-6 py-4">
       <div className="flex flex-col gap-6">
@@ -113,7 +103,8 @@ export default function DigestView({ thread, blocks, attachments, onShowLog }: P
                   <li key={a.id}>
                     <button
                       type="button"
-                      onClick={() => void handleOpen(a.target)}
+                      // P9-3: looks first — a file that moved opens from where it is now.
+                      onClick={() => void openAttachment(a)}
                       title={a.target}
                       className="flex w-full items-center gap-2 rounded-md border border-line bg-paper px-3 py-1.5 text-left text-[13px] text-ink-2 transition-colors hover:border-accent hover:text-accent"
                     >
