@@ -3986,7 +3986,8 @@ fn thread_resources(conn: &Connection) -> Result<Vec<Value>, String> {
 // ⚠️ v30 (P5, 2026-10-04)：`attachments` 加了四个可空列；这边读文件的查询都是点名列的，只跟版本号。
 // ⚠️ v31 (P6, 2026-10-07)：新建 `file_proposals`（AI 提的文件排队等点头），这边的两个新工具往里写。
 // ⚠️ v32 (P7, 2026-10-07)：`blocks.replaced_by_block_id`（旧块记住被谁取代）、`supersede_proposals.suggested_kind`、新表 `block_images`。
-const EXPECTED_SCHEMA_VERSION: i64 = 32;
+// ⚠️ v33 (P9, 2026-10-10)：`attachments` 加 `target_identity` / `target_notice` 两个可空列；这边读文件的查询都是点名列的，只跟版本号。
+const EXPECTED_SCHEMA_VERSION: i64 = 33;
 
 // Name reported by the client at initialize (clientInfo.name); feeds the source label.
 static CLIENT_NAME: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);

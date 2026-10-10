@@ -52,6 +52,16 @@ export type MergeReport = {
 // message several hundred megabytes long.
 const BLOB_COLUMNS: Partial<Record<MergeTable, readonly string[]>> = { block_images: ['bytes'] };
 
+// v33 (P9-2): what a file's two new columns say is about the computer they were written on —
+// a macOS bookmark only resolves there, and 「跟到了新位置 / 用户确认过丢了」 is about a path on
+// that disk. Carried to another machine, a bookmark that will not resolve would read as 「删掉了」
+// for a file that may well be sitting right there. So they stay behind and land NULL here; the
+// identity is recorded again the first time this machine sees the file in place (P9-3).
+// (`target_identity` is also a BLOB, which this path could not carry intact anyway.)
+const LOCAL_ONLY_COLUMNS: Partial<Record<MergeTable, readonly string[]>> = {
+  attachments: ['target_identity', 'target_notice'],
+};
+
 const emptyAdded = (): Record<MergeTable, number> =>
   Object.fromEntries(MERGE_TABLES.map((t) => [t, 0])) as Record<MergeTable, number>;
 
@@ -135,7 +145,9 @@ export const mergeLibrary = async (source: Database, target: Database): Promise<
   for (const table of MERGE_TABLES) {
     const targetCols = await columnsOf(target, table);
     const sourceCols = new Set(await columnsOf(source, table));
-    const cols = targetCols.filter((c) => sourceCols.has(c));
+    const cols = targetCols.filter(
+      (c) => sourceCols.has(c) && !LOCAL_ONLY_COLUMNS[table]?.includes(c),
+    );
     if (cols.length === 0) continue;
 
     const quoted = cols.join(', ');

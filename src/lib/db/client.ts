@@ -38,7 +38,7 @@ export const setSeedLanguage = (lang: SeedLanguage): void => {
 // carries a database from the previous version to the new one. On startup the
 // database's PRAGMA user_version is compared against this and every applicable step
 // runs in sequence, each stamping user_version as its own checkpoint (§19.3).
-const SCHEMA_VERSION = 32;
+const SCHEMA_VERSION = 33;
 
 // Things a migration did to the user's data that the user is entitled to hear about.
 // v15 is the first migration that removes anything (the retired `url` attachments), and
@@ -1059,6 +1059,38 @@ const MIGRATIONS: Migration[] = [
       )`);
       await db.execute(`CREATE INDEX IF NOT EXISTS idx_block_images_block
         ON block_images(block_id, position ASC)`);
+    },
+  },
+  {
+    // v33 (P9 任务书 P9-2, Ocean 2026-10-10 批准这一次动库，HANDOFF §9.2 第 63 条：「只给文件表加两列」)：
+    // 文件挪了 Spool 能跟着找到（P9-3），找不到的右栏能主动说、用户点过「知道了」就不再说（P9-4）。
+    // ⚠️⚠️ **只有两句 `ADD COLUMN`**，⛔ 别的表、别的列一个不动、⛔ 不往里填任何东西、⛔ 没有 rebuild
+    // 分支（2026-05-29 抹库是**重建表**那条分支干的）。`schema.sql` 那一段写了每一列的意思：
+    //   * `target_identity`（BLOB）：系统用来认出这个文件的那段字节（Mac 的书签 / Windows 的卷号 +
+    //     文件号）。⚠️ BLOB —— 前端的 tauri-plugin-sql 搬不了字节，只由 Rust 自己的连接读写（P9-3）。
+    //   * `target_notice`（TEXT）：还要告诉用户的事，JSON —— 跟到了新位置、还没看过（带着旧路径），
+    //     或者用户已经确认过这个文件丢了。
+    //   * 往前：老库两列都是 NULL = 还没记身份（运行时第一次看到还在原处的文件就补记）/ 没什么要说的。
+    //   * 往回：`ALTER TABLE attachments DROP COLUMN` 两句退回 v32，⛔ 不丢任何 v32 就有的数据 ——
+    //     丢的只是身份（文件再挪就只能按名字找）和「跟上了 / 确认过」那两种标记。
+    //
+    // ⚠️ 半跑一次和跑完一次分不出来，而这正是安全的那一类：`ADD COLUMN` 撞上已存在的列会抛、
+    // catch 掉（v30 / v32 逐字同一个写法）。
+    from: 32,
+    to: 33,
+    name: 'add-attachment-identity-and-notice',
+    run: async (db) => {
+      const cols: Array<[string, string]> = [
+        ['target_identity', 'BLOB'],
+        ['target_notice', 'TEXT'],
+      ];
+      for (const [col, type] of cols) {
+        try {
+          await db.execute(`ALTER TABLE attachments ADD COLUMN ${col} ${type}`);
+        } catch (e) {
+          console.info(`[db] attachments.${col}: not added (likely exists)`, e);
+        }
+      }
     },
   },
 ];

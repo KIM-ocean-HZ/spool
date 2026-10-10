@@ -298,6 +298,27 @@ describe('库的导出与导入 (DESIGN_LIBRARY_TRANSFER)', () => {
     });
   });
 
+  // P9-2: a file's identity and notice describe the machine they were written on — a bookmark
+  // from another Mac would not resolve here and read as 「删掉了」. They stay behind; the rest
+  // of the row comes as before. Through the plugin's real byte handling, so a BLOB that DID
+  // ride along would show up here as the text "[1,2,3]".
+  it('文件的身份和「还要告诉用户的事」不跟着走，别的照旧', async () => {
+    __setTestDb(src.db);
+    const ws = await createWorkspace('材料');
+    const thread = await createThread(ws.id, '文书');
+    const a = await createAttachment({ threadId: thread.id, kind: 'file', target: '/Users/a/v1.pdf' });
+    __setTestDb(null);
+    src.handle
+      .prepare('UPDATE attachments SET target_identity = ?, target_notice = ? WHERE id = ?')
+      .run(new Uint8Array([1, 2, 3]), '{"kind":"dismissed"}', a.id);
+
+    await mergeLibrary(asPluginSql(src.handle), asPluginSql(dst.handle));
+
+    expect(
+      dst.handle.prepare('SELECT id, target, target_identity, target_notice FROM attachments').all(),
+    ).toEqual([{ id: a.id, target: '/Users/a/v1.pdf', target_identity: null, target_notice: null }]);
+  });
+
   // P7-2 (Ocean 2026-10-07 #5: 图片存进库文件里，导出 / 搬到新电脑照旧一个文件全带走).
   it('带图片的块导出再导入，图片字节原样回来（走 tauri-plugin-sql 真实的收发方式）', async () => {
     __setTestDb(src.db);

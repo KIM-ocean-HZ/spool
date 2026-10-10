@@ -388,7 +388,17 @@ CREATE TABLE IF NOT EXISTS attachments (
   anchor_block_id TEXT,                            -- v30: block it hangs off; NULL = the project
   added_by        TEXT,                            -- v30: 'user' | P6 `<client> · MCP`; NULL = user
   superseded_by   TEXT,                            -- v30: attachment id that replaced this one
-  superseded_at   INTEGER                          -- v30: ms epoch of that replacement
+  superseded_at   INTEGER,                         -- v30: ms epoch of that replacement
+  -- v33 (P9-2, Ocean 2026-10-10 HANDOFF §9.2 第 63 条)：文件挪了 Spool 跟着找到、找不到的主动说。
+  -- 两列都只在运行时写（迁移不填）；NULL = v33 以前挂的 / 还没记成 / 没什么要说的。
+  target_identity BLOB,                            -- v33: the bytes the OS recognises this file by
+                                                   --   (macOS bookmark / Windows volume + file id);
+                                                   --   ⚠️ written and read by Rust only — the front
+                                                   --   end's SQL plugin cannot carry bytes
+  target_notice   TEXT                             -- v33: JSON, what the user still has to hear:
+                                                   --   {"kind":"moved","from":<old path>} = Spool
+                                                   --   followed it, not seen yet; {"kind":"dismissed"}
+                                                   --   = the user confirmed it is gone, stay quiet
 );
 
 CREATE INDEX IF NOT EXISTS idx_attachments_thread

@@ -144,6 +144,16 @@ const sansV32Sql = (r: { name: string; sql: string | null }) => ({
   sql: r.sql?.replace(/, replaced_by_block_id TEXT|, suggested_kind TEXT/g, '') ?? null,
 });
 
+// v33's two columns, off an `attachments` row, and the text their ADD COLUMNs append to its
+// CREATE statement — every migration test that rewinds below v33 walks past them.
+const V33_ATTACHMENT_COLS = ['target_identity', 'target_notice'];
+const stripV33 = (r: Record<string, unknown>): Record<string, unknown> =>
+  Object.fromEntries(Object.entries(r).filter(([k]) => !V33_ATTACHMENT_COLS.includes(k)));
+const sansV33Sql = (r: { name: string; sql: string | null }) => ({
+  name: r.name,
+  sql: r.sql?.replace(/, target_identity BLOB, target_notice TEXT/g, '') ?? null,
+});
+
 // v19's three columns, off a `threads` row — the same job blocksSansV13 does for blocks:
 // a test that rewinds below v19 compares rows across a migration that legitimately added
 // them, and only these three may differ.
@@ -184,12 +194,25 @@ const downgradeToV13 = (handle: Sqlite): void => {
   `);
 };
 
+// Rewind past v33: a file was known by its path alone, and nothing remembered that Spool had
+// followed it somewhere or that the user had been told it was gone.
+// ⚠️ 这两句就是 v33 的「能回滚」——`add-attachment-identity-and-notice` 只加了两个可空列，
+// ⛔ 一个字的既有数据都没动；退回来丢的只是文件的身份和「跟上了 / 确认过」那两种标记。
+const downgradeToV32 = (handle: Sqlite): void => {
+  handle.exec(`
+    ALTER TABLE attachments DROP COLUMN target_identity;
+    ALTER TABLE attachments DROP COLUMN target_notice;
+    PRAGMA user_version = 32;
+  `);
+};
+
 // Rewind past v32: a replacement still sat in the new block's one relation slot, nothing
 // recorded which kind an AI had suggested, and a block could not hold an image.
 // ⚠️ 这三句就是 v32 的「能回滚」——`add-block-replacement-suggested-kind-and-images` 只加了两个
 // 可空列和一张新表，⛔ 一个字的既有数据都没动；退回来丢的只是 v32 以后的取代记在哪、建议的种类和图片。
 // ⚠️ 必须先于更老的降级跑：`block_images.block_id` 指着 `blocks`，老的降级会重建 / 丢 `blocks` 的列。
 const downgradeToV31 = (handle: Sqlite): void => {
+  downgradeToV32(handle);
   handle.exec(`
     DROP TABLE IF EXISTS block_images;
     ALTER TABLE blocks DROP COLUMN replaced_by_block_id;
@@ -1058,7 +1081,9 @@ describe('migrateSchema registry (§19.3)', () => {
     // ⛔ 不叫 block_id —— v15 去掉过一列同名的。
     expect(cols).not.toContain('block_id');
     expect(
-      (handle.prepare('SELECT * FROM attachments ORDER BY id').all() as Record<string, unknown>[]).map(stripV30),
+      (handle.prepare('SELECT * FROM attachments ORDER BY id').all() as Record<string, unknown>[])
+        .map(stripV30)
+        .map(stripV33),
     ).toEqual(before);
     const unwritten = { anchor_block_id: null, added_by: null, superseded_by: null, superseded_at: null };
     expect(
@@ -1128,10 +1153,12 @@ describe('migrateSchema registry (§19.3)', () => {
         .get(),
     ).toEqual({ c: 1 });
     for (const t of tables) {
-      expect(handle.prepare(`SELECT * FROM ${t} ORDER BY rowid`).all().map(stripV32), t).toEqual(before[t]);
+      expect(handle.prepare(`SELECT * FROM ${t} ORDER BY rowid`).all().map(stripV32).map(stripV33), t).toEqual(
+        before[t],
+      );
     }
-    // 别的表的建表语句一个字没变（⛔ 只许 CREATE TABLE + 它自己的索引）。v32 接着走过去，
-    // 它加的那两列和那张表另有一条测试盯着，这里先抹掉。
+    // 别的表的建表语句一个字没变（⛔ 只许 CREATE TABLE + 它自己的索引）。v32 / v33 接着走过去，
+    // 它们加的列和那张表另有测试盯着，这里先抹掉。
     expect(
       (
         handle
@@ -1139,7 +1166,9 @@ describe('migrateSchema registry (§19.3)', () => {
             "SELECT name, sql FROM sqlite_master WHERE name NOT LIKE '%file_proposals%' AND name NOT LIKE '%block_images%' ORDER BY name",
           )
           .all() as { name: string; sql: string | null }[]
-      ).map(sansV32Sql),
+      )
+        .map(sansV32Sql)
+        .map(sansV33Sql),
     ).toEqual(schemaBefore);
   });
 
@@ -1189,14 +1218,22 @@ describe('migrateSchema registry (§19.3)', () => {
         .prepare("SELECT COUNT(*) AS c FROM sqlite_master WHERE type='index' AND name='idx_block_images_block'")
         .get(),
     ).toEqual({ c: 1 });
-    // 每张表逐行相等（两张加了列的表去掉新列再比）；v32 以前那条 `supersedes` 一个字没动。
+    // 每张表逐行相等（加了列的表去掉新列再比；v33 接着走过去，它那两列另有一条测试盯着）；
+    // v32 以前那条 `supersedes` 一个字没动。
     for (const t of tables) {
-      expect(handle.prepare(`SELECT * FROM ${t} ORDER BY rowid`).all().map(stripV32), t).toEqual(before[t]);
+      expect(handle.prepare(`SELECT * FROM ${t} ORDER BY rowid`).all().map(stripV32).map(stripV33), t).toEqual(
+        before[t],
+      );
     }
     // 别的表的建表语句一个字没变（⛔ 只许两句 ADD COLUMN + 一张新表和它的索引）。
-    expect(handle.prepare(`SELECT name, sql FROM sqlite_master WHERE ${untouched} ORDER BY name`).all()).toEqual(
-      schemaBefore,
-    );
+    expect(
+      (
+        handle.prepare(`SELECT name, sql FROM sqlite_master WHERE ${untouched} ORDER BY name`).all() as {
+          name: string;
+          sql: string | null;
+        }[]
+      ).map(sansV33Sql),
+    ).toEqual(schemaBefore);
   });
 
   it('a fresh install builds the two v32 columns and block_images straight from schema.sql', () => {
@@ -1204,6 +1241,83 @@ describe('migrateSchema registry (§19.3)', () => {
     expect(columnNames(handle, 'blocks')).toContain('replaced_by_block_id');
     expect(columnNames(handle, 'supersede_proposals')).toContain('suggested_kind');
     expect(columnNames(handle, 'block_images')).toEqual(V32_BLOCK_IMAGE_COLS);
+  });
+
+  // P9-2 (Ocean 2026-10-10 第 63 条「只给文件表加两列」). 两句 ADD COLUMN，⛔ 不填任何东西：
+  // 迁移之后两列全空（身份要到运行时第一次看到文件才记，P9-3），别的表、别的列一个字节没动。
+  it('v32 → v33 adds two empty attachment columns and leaves every row as it was', async () => {
+    applySchema(handle);
+    downgradeToV32(handle);
+    seedUserData(handle);
+    handle.exec(
+      `INSERT INTO attachments (id, thread_id, kind, target, label, extracted_text, ai_access, created_at,
+                                anchor_block_id, added_by, superseded_by, superseded_at)
+         VALUES ('a1', 't1', 'file', '/Users/x/Desktop/Lecture 3.pdf', 'Lecture 3.pdf', 'text', 1, ${NOW},
+                 'b1', 'user', NULL, NULL),
+                ('a2', 't1', 'folder', '/Volumes/Disk/notes', 'notes', NULL, 0, ${NOW}, NULL, NULL, 'a1', ${NOW})`,
+    );
+    const tables = (
+      handle
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE '%fts%' ORDER BY name")
+        .all() as { name: string }[]
+    ).map((r) => r.name);
+    const before = Object.fromEntries(
+      tables.map((t) => [t, handle.prepare(`SELECT * FROM ${t} ORDER BY rowid`).all()]),
+    );
+    const schemaBefore = handle
+      .prepare("SELECT name, sql FROM sqlite_master WHERE name != 'attachments' ORDER BY name")
+      .all();
+    const attachmentSqlBefore = handle
+      .prepare("SELECT sql FROM sqlite_master WHERE name = 'attachments'")
+      .get() as { sql: string };
+
+    const fresh = await __migrateSchemaForTest(db);
+
+    expect(fresh).toBe(false);
+    expect(userVersion(handle)).toBe(CURRENT_SCHEMA_VERSION);
+    expect(CURRENT_SCHEMA_VERSION).toBe(33);
+    const cols = columnNames(handle, 'attachments');
+    expect(cols.slice(-2)).toEqual(V33_ATTACHMENT_COLS);
+    expect(
+      handle
+        .prepare('SELECT COUNT(*) AS c FROM attachments WHERE target_identity IS NOT NULL OR target_notice IS NOT NULL')
+        .get(),
+    ).toEqual({ c: 0 });
+    expect(
+      handle.prepare("SELECT typeof(target_identity) AS t FROM attachments WHERE id = 'a1'").get(),
+    ).toEqual({ t: 'null' });
+    // 每张表逐行相等（attachments 去掉两列新列再比）。
+    for (const t of tables) {
+      expect(handle.prepare(`SELECT * FROM ${t} ORDER BY rowid`).all().map(stripV33), t).toEqual(before[t]);
+    }
+    // ⛔ 只许两句 ADD COLUMN：别的表、索引、触发器的建表语句一个字没变，attachments 只在尾巴上多两列。
+    expect(handle.prepare("SELECT name, sql FROM sqlite_master WHERE name != 'attachments' ORDER BY name").all()).toEqual(
+      schemaBefore,
+    );
+    expect(
+      sansV33Sql({
+        name: 'attachments',
+        sql: (handle.prepare("SELECT sql FROM sqlite_master WHERE name = 'attachments'").get() as { sql: string }).sql,
+      }).sql,
+    ).toBe(attachmentSqlBefore.sql);
+  });
+
+  it('v32 → v33 is re-runnable after a half-finished pass', async () => {
+    applySchema(handle);
+    downgradeToV32(handle);
+    seedUserData(handle);
+    // Half a pass: the first column went in, the version stamp did not.
+    handle.exec('ALTER TABLE attachments ADD COLUMN target_identity BLOB');
+
+    await __migrateSchemaForTest(db);
+
+    expect(userVersion(handle)).toBe(33);
+    expect(columnNames(handle, 'attachments').slice(-2)).toEqual(V33_ATTACHMENT_COLS);
+  });
+
+  it('a fresh install builds the two v33 columns straight from schema.sql', () => {
+    applySchema(handle);
+    expect(columnNames(handle, 'attachments').slice(-2)).toEqual(V33_ATTACHMENT_COLS);
   });
 
   // DESIGN_PROJECT_FILES §3.4 (phase three). The queue starts empty and grants nothing: a
