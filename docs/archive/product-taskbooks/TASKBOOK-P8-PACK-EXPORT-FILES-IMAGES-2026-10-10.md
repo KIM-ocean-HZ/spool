@@ -1,6 +1,6 @@
 # 产品任务书 P8 —— pack 导出带上项目的文件和图片（单项目 + 工作区）
 
-> **状态：COMPLETE —— 待 Ocean 验收。**（2026-10-10：四步已提交，还没换装；回执在 §7 末尾。）
+> **状态：COMPLETE —— 待 Ocean 验收。**（2026-10-10：四步已提交、已换装；回执在 §7 末尾。）
 >
 > **唯一交付：** 下面 §3 的四步（P8-1 – P8-4），按顺序做完，每一步测试通过、单独一笔提交，并在 §7 写回执。
 >
@@ -381,9 +381,27 @@ cargo tree --manifest-path src-tauri/Cargo.toml -e normal | grep -iE "ureq|rustl
 
 - `DISCOVERED-20261010-1`：工作区导出里，两个只差大小写的子工作区会写进同一个文件夹（P8 之前就有）。记在 HANDOFF §9.9，captured，没修。
 
-#### 换装
+#### 换装（Ocean 10-10 答「现在换装」）
 
-还没做。照 §5，先问 Ocean「现在换装吗」。这一批不改库结构，真库不会迁移。没 push，没发版。
+- 构建：
+  - 在 `377a06b` 上构建，`src` / `src-tauri` / `site` / `scripts` 没有未提交改动。
+  - 命令和 P7 一样：`env -u APPLE_ID -u APPLE_PASSWORD -u APPLE_TEAM_ID -u APPLE_API_KEY -u APPLE_API_ISSUER -u APPLE_API_KEY_PATH APPLE_SIGNING_IDENTITY="Developer ID Application: Hanze JIN (Q5Y5JRXZ58)" npm run tauri build -- --bundles app`，日志写进文件；没改 `tauri.conf.json`，日志里是「skipping app notarization」。
+  - TSA 第一遍就过（主程序、`spool-ai` 都是 01:24:15），没有 `timestamp was expected`；`--verify --deep --strict` 过。
+  - 二进制里有 `write_pack_export`、`pack_source_sizes`。前端（`dist/`，01:23）里有「一起导出的文件和图片」和对应的英文。
+- 装前：
+  - Developer ID，`spctl` = `Unnotarized Developer ID`，0.6.2；`spool` sha256 `e8eecf70…`（P7 第二轮那版）。
+  - 真库 v32 · ok · 28 / 67 / 1097 / 13（工作区 / 项目 / 块 / 文件）· 图片 4 张（764139 字节）· 正文 332541 · 批注 13558 · 文件正文 130320；迁移快照 24 个，`mcp-clients.json` 18 行。
+- 停：GUI 96363 和 `--overlay` 96409 按 pid `kill -TERM`，1 秒内都退了，再查已不在。`--mcp` 子进程 8 个一个没碰（前后都是 8）。
+- 真库备份：`~/Desktop/spool.before-p8-install-20261010-012502.db`（`VACUUM INTO`）。和活库逐项一致：v32 · ok，各项计数和总长都一样。
+- 旧包挪到 `~/Desktop/Spool/spool-pre-install/Spool-old-20261010-012507-pre-p8.app`；新包 `ditto` 进 `/Applications`，再 `open --stdout … --stderr …` 起来。
+- 装后：
+  - `--verify --deep --strict` 过；Developer ID；`spctl` = `Unnotarized Developer ID`；identifier `com.oceanjin.spool`；0.6.2。
+  - `spool` sha256 `df8c7565…`，和构建产物一致。
+  - 主进程 91116 和 `--overlay` 91142 都是 01:25:07 起的（换装之后），`lsof` txt inode 都是 77921741，就是新文件。
+  - stderr 只有 `[overlay] helper started` 和 `[double-tap] installed at HID/active` 两行，没有 error / panic。
+- 真库：这一批不改库结构，没有迁移。`user_version` 仍是 32，`integrity_check ok`，各项计数和总长和装前逐项一致；快照仍是 24 个，`mcp-clients.json` 仍是 18 行。
+- 那 8 个 `--mcp` 子进程跑的还是旧二进制。这一批没改 MCP，库也没变，所以它们和新版的行为完全一样，不用重启 AI 客户端。
+- commit、build、换装分开记在上面；没 push，没发版。
 
 #### Ocean 验收
 
