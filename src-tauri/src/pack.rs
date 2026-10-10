@@ -177,6 +177,23 @@ pub fn pack_source_sizes(paths: Vec<String>) -> Vec<SourceSize> {
     paths.iter().map(|p| source_size(Path::new(p))).collect()
 }
 
+/// The closest folder on the way up from `path` that still exists — where to start looking for
+/// a file that is no longer where Spool recorded it (P8 验收第一轮, Ocean 2026-10-10:「找不到了不能
+/// 解决问题，应该帮助用户点击跳转到最近的文件夹查证」).
+fn nearest_existing_dir(path: &Path) -> Option<PathBuf> {
+    path.ancestors().skip(1).find(|p| p.is_dir()).map(Path::to_path_buf)
+}
+
+/// Open that folder in Finder / Explorer, and say which one it was.
+// ⚠️ `(async)`：一路往上 stat，断开的网络卷会卡住，⛔ 不占主线程。
+#[tauri::command(async)]
+pub fn open_nearest_folder(path: String) -> Result<String, String> {
+    let dir = nearest_existing_dir(Path::new(&path)).ok_or_else(|| "no_folder".to_string())?;
+    let dir = dir.to_string_lossy().into_owned();
+    crate::capture::open_default_handler(&dir).map_err(|e| e.to_string())?;
+    Ok(dir)
+}
+
 /// One of the project's files (or folders), copied as it is into the export at `path`.
 #[derive(serde::Deserialize)]
 pub struct PackCopy {
@@ -623,6 +640,21 @@ mod tests {
         for d in [src, out, data] {
             fs::remove_dir_all(d).unwrap();
         }
+    }
+
+    /// A file moved away: the nearest folder still there, however many levels up that is.
+    #[test]
+    fn the_nearest_folder_is_the_closest_one_still_there() {
+        let root = scratch("p8-nearest");
+        fs::create_dir_all(root.join("a")).unwrap();
+        fs::write(root.join("a/here.txt"), "x").unwrap();
+        assert_eq!(nearest_existing_dir(&root.join("a/gone.pdf")), Some(root.join("a")));
+        assert_eq!(nearest_existing_dir(&root.join("a/b/c/gone.pdf")), Some(root.join("a")));
+        assert_eq!(nearest_existing_dir(&root.join("x/gone")), Some(root.clone()));
+        // A file that is still there: its own folder (a file is never "the folder").
+        assert_eq!(nearest_existing_dir(&root.join("a/here.txt")), Some(root.join("a")));
+        assert_eq!(nearest_existing_dir(Path::new("")), None);
+        fs::remove_dir_all(&root).unwrap();
     }
 
     /// The four cases the export list meets: a file, a folder (sub-folders added in), a path that is

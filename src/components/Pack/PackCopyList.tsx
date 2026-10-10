@@ -4,12 +4,16 @@ import SeqBadge from '../ThreadView/SeqBadge';
 import type { Attachment } from '@/lib/db/attachments';
 import { fileLabel } from '@/lib/files/openFile';
 import { useT } from '@/lib/i18n';
-import { fetchSourceSizes, formatBytes, isFound, type SourceSize } from '@/lib/pack/exportList';
+import { fetchSourceSizes, formatBytes, isFound, openNearestFolder, type SourceSize } from '@/lib/pack/exportList';
 
 // P8-3 / P8-4 — what goes along with a pack (Ocean 2026-09-30 §9.2 第 12 条, 10-10 第 53 条):
 // every file on its own row — name, path, size, the block it hangs off — ticked by default, with
 // 「全选」; the pictures are ONE switch, 「图片 N 张，共 X MB」; the total underneath.
 // ⚠️ The path is for the user's own eyes. It is shown here and nowhere in the exported .md.
+// P8 验收第一轮 (Ocean 2026-10-10): the path is shown WHOLE, on its own line — cut short beside a
+// long file name it said 「Lecture 3 - Introduction to Natural Lang…」 and nobody could tell where
+// the file was supposed to be. A file not there any more offers to open the nearest folder that
+// still is, so the user can go and look.
 
 /** One project's files (a workspace export lists one group per ticked project). */
 export interface CopyGroup {
@@ -82,35 +86,44 @@ export default function PackCopyList({
     const seq = a.anchorBlockId != null ? seqs.get(a.anchorBlockId) : undefined;
     const Icon = a.kind === 'folder' ? Folder : File;
     return (
-      <label
-        key={a.id}
-        className={`flex items-center gap-2 py-0.5 ${here ? 'cursor-pointer' : 'opacity-50'}`}
-      >
-        <input
-          type="checkbox"
-          checked={picked.has(a.id)}
-          disabled={!here}
-          onChange={() => onToggle(a.id)}
-          className="h-3 w-3 flex-none accent-[var(--accent)]"
-        />
-        <Icon size={11} className="flex-none text-muted" />
-        <span className="max-w-[40%] flex-none truncate text-ink" title={fileLabel(a)}>
-          {fileLabel(a)}
-        </span>
-        <span className="min-w-0 flex-1 truncate text-muted" title={a.target}>
-          {a.target}
-        </span>
-        <span className="w-[64px] flex-none whitespace-nowrap text-right tabular-nums text-muted">
-          {!here ? t('找不到了') : size ? formatBytes(size.bytes) : sizes ? '—' : '…'}
-        </span>
-        {/* Like the right rail: a block's file shows the block's number; a project's file nothing. */}
-        <span
-          title={seq != null ? t('挂在第 {n} 块上', { n: seq }) : undefined}
-          className="flex w-[18px] flex-none items-center justify-end text-muted"
-        >
-          {seq != null && <SeqBadge seq={seq} />}
-        </span>
-      </label>
+      <div key={a.id} className="py-0.5">
+        <label className={`flex items-center gap-2 ${here ? 'cursor-pointer' : 'opacity-50'}`}>
+          <input
+            type="checkbox"
+            checked={picked.has(a.id)}
+            disabled={!here}
+            onChange={() => onToggle(a.id)}
+            className="h-3 w-3 flex-none accent-[var(--accent)]"
+          />
+          <Icon size={11} className="flex-none text-muted" />
+          <span className="min-w-0 flex-1 truncate text-ink" title={fileLabel(a)}>
+            {fileLabel(a)}
+          </span>
+          <span className="flex-none whitespace-nowrap text-right tabular-nums text-muted">
+            {!here ? t('找不到了') : size ? formatBytes(size.bytes) : sizes ? '—' : '…'}
+          </span>
+          {/* Like the right rail: a block's file shows the block's number; a project's file nothing. */}
+          <span
+            title={seq != null ? t('挂在第 {n} 块上', { n: seq }) : undefined}
+            className="flex w-[18px] flex-none items-center justify-end text-muted"
+          >
+            {seq != null && <SeqBadge seq={seq} />}
+          </span>
+        </label>
+        {/* 39px = the checkbox, the icon and the two gaps: the path starts under the name. */}
+        <div className="pl-[39px] pr-[26px] text-[10.5px] leading-snug">
+          <span className="select-text break-all text-muted">{a.target}</span>
+          {!here && (
+            <button
+              type="button"
+              onClick={() => void openNearestFolder(a.target).catch((e) => console.warn('[pack] open folder failed', e))}
+              className="mt-0.5 block text-accent hover:underline"
+            >
+              {t('打开最近的文件夹')}
+            </button>
+          )}
+        </div>
+      </div>
     );
   };
 
@@ -133,7 +146,7 @@ export default function PackCopyList({
           </label>
         )}
       </div>
-      <div className="max-h-[168px] overflow-y-auto">
+      <div className="max-h-[220px] overflow-y-auto">
         {groups.map((g) => (
           <div key={g.key}>
             {g.title !== undefined && g.files.length > 0 && (

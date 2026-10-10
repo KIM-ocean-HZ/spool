@@ -19,6 +19,10 @@ export const fetchSourceSizes = async (paths: readonly string[]): Promise<Map<st
   return new Map(paths.map((p, i) => [p, got[i]!]));
 };
 
+/** P8 验收第一轮 (Ocean 2026-10-10: 「找不到了不能解决问题，应该帮助用户点击跳转到最近的文件夹查证」):
+ *  open the closest folder still there on the way up from where the file was recorded. */
+export const openNearestFolder = (path: string): Promise<string> => invoke<string>('open_nearest_folder', { path });
+
 /** Found on this computer — or not known yet. ⚠️ Not knowing does not lock a row:
  *  `write_pack_export` looks at every source again and refuses the whole export if one is gone. */
 export const isFound = (sizes: ReadonlyMap<string, SourceSize> | null, a: Attachment): boolean =>

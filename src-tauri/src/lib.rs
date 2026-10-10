@@ -374,6 +374,7 @@ pub fn run() {
             pack::write_pack_file,
             pack::pack_source_sizes,
             pack::write_pack_export,
+            pack::open_nearest_folder,
             transfer::export_library,
             transfer::stage_import_db,
             transfer::discard_import_staging,

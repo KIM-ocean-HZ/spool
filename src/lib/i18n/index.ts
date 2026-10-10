@@ -417,6 +417,7 @@ const EN: Record<string, string> = {
   // P8 — the files and images that go along with an exported pack.
   '一起导出的文件和图片': 'Files and images to include',
   '找不到了': 'Not found',
+  '打开最近的文件夹': 'Open the nearest folder',
   '图片 {n} 张，共 {size}': '{n} images, {size} in all',
   '一共 {n} 个文件，{size}': '{n} files in all, {size}',
   '已导出到 {path}': 'Exported to {path}',

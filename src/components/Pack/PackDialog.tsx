@@ -152,6 +152,11 @@ export default function PackDialog({
     [thread, blocks, attachments, range, refTitles, refBlocks, images, picked, picturesOn, instructions, language],
   );
   const toFolder = carriesAnything(exportPlan);
+  // P8 验收第一轮 (Ocean 2026-10-10: 「打包项目不能给项目文件夹命名，只能选择默认名字」) — the same box the
+  // workspace export has. null = 「还没改过」: the box shows the suggested name, and an emptied box
+  // falls back to it rather than exporting a folder called nothing.
+  const defaultName = `${sanitizeFolderName(thread.title, t('无标题'))}-${formatPackDate(Date.now()).replace(/-/g, '')}`;
+  const [nameEdit, setNameEdit] = useState<string | null>(null);
 
   const toggleFile = (id: string) =>
     setUnticked((prev) => {
@@ -196,11 +201,11 @@ export default function PackDialog({
     if (busy || (exportable.length > 0 && sizes === null)) return;
     setExportError(null);
     setExportedTo(null);
-    const stamp = `${sanitizeFolderName(thread.title, t('无标题'))}-${formatPackDate(Date.now()).replace(/-/g, '')}`;
     if (!toFolder) {
+      // The save dialog is where a single .md gets its name.
       const dest = await save({
         title: t('导出 .md'),
-        defaultPath: `${stamp}.md`,
+        defaultPath: `${defaultName}.md`,
         filters: [{ name: 'Markdown', extensions: ['md'] }],
       });
       if (!dest) return; // cancelled — not an error
@@ -220,7 +225,7 @@ export default function PackDialog({
     try {
       const done = await invoke<{ root: string; skipped: number }>('write_pack_export', {
         parent,
-        folderName: stamp,
+        folderName: sanitizeFolderName(nameEdit ?? defaultName, defaultName),
         files: [exportPlan.file],
         copies: exportPlan.copies,
         images: exportPlan.pictures,
@@ -331,6 +336,18 @@ export default function PackDialog({
             picturesOn={picturesOn}
             onTogglePictures={() => setPicturesOn((on) => !on)}
           />
+        )}
+
+        {toFolder && (
+          <div className="flex flex-none items-center gap-2 border-t border-line bg-paper-2/30 px-5 py-2 text-[11px]">
+            <span className="flex-none text-muted">{t('文件夹名')}</span>
+            <input
+              value={nameEdit ?? defaultName}
+              onChange={(e) => setNameEdit(e.target.value)}
+              spellCheck={false}
+              className="min-w-0 flex-1 rounded-md border border-line bg-paper px-2 py-0.5 text-ink outline-none transition-colors focus:border-accent"
+            />
+          </div>
         )}
 
         <footer className="flex flex-none items-center justify-between gap-3 border-t border-line bg-paper-2/40 px-5 py-3 text-xs">
