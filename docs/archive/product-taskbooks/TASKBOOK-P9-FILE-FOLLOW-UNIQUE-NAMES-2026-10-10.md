@@ -1,6 +1,6 @@
 # 产品任务书 P9 —— 文件挪了 Spool 跟着找到、右栏提示丢失；同一个工作区里不许重名
 
-> **状态：COMPLETE —— 待 Ocean 验收。** 四步已提交（`7d6afd6` `10fef6a` `53486c3` `7efc7b5`），**还没换装**：换装会把真库迁到 v33，按 §5 先问 Ocean。回执在 §7 末尾。
+> **状态：COMPLETE —— 待 Ocean 验收。** 四步已提交（`7d6afd6` `10fef6a` `53486c3` `7efc7b5`），10-10 已换装（真库已迁到 v33）。回执在 §7 末尾。
 >
 > **唯一交付：** 下面 §3 的四步（P9-1 – P9-4），按顺序做完，每一步测试通过、单独一笔提交，并在 §7 写回执。
 >
@@ -339,8 +339,30 @@ P9：
 - `DISCOVERED-20261010-5`：P9-3 第 3 条那种（AI 可读的文件挪进了 P6 路径闸管的地方）现在先不跟、等用户点「是这个」，要 Ocean 定以后怎么办。
 - `DISCOVERED-20261010-6`：删一块、选了「一起从项目里去掉」它挂着的文件，再 ⌘Z，撤回走 `restoreAttachment`，那两列没带回来（落成空的）：在原处的下次看会重新记上；「知道了」会丢、要再点一次。
 
-#### 还差什么
+#### 换装（Ocean 10-10 答「换装」；`DISCOVERED-20261010-5` 选甲 = 现在的做法，不改代码）
 
-- 换装：还没做。按 §5 先问 Ocean「现在换装吗」（这一次真库会从 v32 迁到 v33，并带上 P8 验收第一轮那三条 `8dc204a`）。
-- Ocean 验收：待验收（§6 九条）。
-- 没 push、没发版。
+- 构建：
+  - 在 `1a32482` 上构建（代码就是 `7efc7b5`），`src` / `src-tauri` / `site` / `scripts` 没有未提交改动。
+  - 命令和 P8 一样：`env -u APPLE_ID -u APPLE_PASSWORD -u APPLE_TEAM_ID -u APPLE_API_KEY -u APPLE_API_ISSUER -u APPLE_API_KEY_PATH APPLE_SIGNING_IDENTITY="Developer ID Application: Hanze JIN (Q5Y5JRXZ58)" npm run tauri build -- --bundles app`，日志写进文件；没改 `tauri.conf.json`，日志里是「skipping app notarization」。
+  - TSA 第一遍就过（主程序 12:23:06、`spool-ai` 12:23:05），没有 `timestamp was expected`；`--verify --deep --strict` 过。
+  - 二进制里有 `locate_files`、`find_same_name`、`relocate_file`、`kMDItemDisplayName`；前端（`dist/`）里有 v33 那一步迁移、「已跟到新位置」「个找不到了」和英文 New place。
+- 新二进制的 `--mcp` 探针（记忆 §44，连的是 scratchpad 里的两份真库副本，⛔ 没连真库目录）：v32 的副本 ⇒ 拒绝，「Spool's database is still the older v32; this MCP server is v33…」；迁到 v33 的副本（`fresh` = false）⇒ `list_threads` 正常，HAI-Lecture3 1 个文件。两个方向都对。
+- 装前：
+  - Developer ID，`spctl` = `Unnotarized Developer ID`，0.6.2；`spool` sha256 `df8c7565…`（P8 那版）。
+  - 真库 v32 · ok · 28 / 67 / 1097 / 13（工作区 / 项目 / 块 / 文件）· 图片 4 张（764139 字节）· 正文 332541 · 批注 13558 · 文件正文 130320；迁移快照 24 个，`mcp-clients.json` 18 行。
+- 停：GUI 91116 和 `--overlay` 91142 按 pid `kill -TERM`，1 秒内都退了，再查已不在。`/Applications` 那 7 个 `--mcp` 子进程一个没碰（前后都是 7）。
+- 真库备份：`~/Desktop/spool.before-p9-install-20261010-122358.db`（停了之后 `VACUUM INTO`）。和活库逐项一致：v32 · ok，各项计数和总长都一样。
+- 旧包挪到 `~/Desktop/Spool/spool-pre-install/Spool-old-20261010-122406-pre-p9.app`；新包 `ditto` 进 `/Applications`，再 `open --stdout … --stderr …` 起来。
+- 装后：
+  - `--verify --deep --strict` 过；`spctl` = `Unnotarized Developer ID`；identifier `com.oceanjin.spool`；0.6.2。
+  - `spool` sha256 `473b5288…`，和构建产物一致。
+  - 主进程 7761（12:24:06 起）和 `--overlay` 7777（12:24:07 起）都是换装之后起的，`lsof` txt inode 都是 78291323，就是新文件。
+  - stderr 只有 `[overlay] helper started` 和 `[double-tap] installed at HID/active` 两行，没有 error / panic。
+- 真库：GUI 自己从 v32 迁到了 v33。`user_version` = 33、`integrity_check ok`，工作区 / 项目 / 块 / 文件、图片张数和字节、正文、批注、文件正文和装前逐项一致；`attachments` 尾巴上多了 `target_identity` / `target_notice` 两列；迁移快照 24 → 25，正好多一个 `spool.pre-migration-v32-2026-10-10T11-24-07-470Z.db`；`mcp-clients.json` 仍是 18 行。
+  - 起来时开着的项目是「Lecture 1」，它那个还在原处的 .pptx 当场记上了身份（`M1` 开头，1102 字节）—— 「第一次看到就补记」在真机上走通了。别的文件要等打开它们的项目时才记。
+- ⚠️ 那 7 个 `--mcp` 子进程跑的还是旧二进制（v32），库已经是 v33 了，它们每次调用都会报「库比服务新」：要 Ocean 重启 Claude / Codex。
+- commit、build、换装分开记在上面；没 push，没发版。
+
+#### Ocean 验收
+
+- 待验收（§6 九条，第 1–3 条是 P8 验收第一轮的，这次一起装上了）。
