@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isPackSkeletonLine, stripInventedSkeleton } from './skeleton';
+import { isPackSkeletonLine, stripInventedSkeleton, stripPackRule } from './skeleton';
 import {
   EMPTY_LOG_LINE,
   EMPTY_PINNED_LINE,
@@ -98,5 +98,23 @@ describe('stripInventedSkeleton', () => {
     const r = stripInventedSkeleton('用户的原话', `${PACK_BEGIN}\n${PACK_END}`);
     expect(r.content.trim()).toBe('');
     expect(r.removed).toHaveLength(2);
+  });
+});
+
+// P9F F2（DISCOVERED-20261003-1）：`assemble` 在最后一块后面、「Output Language」前面印一行 `---`；
+// 项目没有文件时中间没有别的小节，切条目时这一行算进了最后一块。
+describe('stripPackRule', () => {
+  it('末尾那行 `---` 是 pack 的、压缩前那一块里没有 —— 去掉', () => {
+    expect(stripPackRule('原文很长的一段。', '压短的一段。\n\n---')).toBe('压短的一段。');
+  });
+
+  it('⛔ 块正文里本来就有的 `---` 照样留着（中间的、末尾的都算）', () => {
+    expect(stripPackRule('上面\n\n---\n\n下面', '上\n\n---\n\n下')).toBe('上\n\n---\n\n下');
+    // 用户自己的那一行在末尾，后面又跟了 pack 那一行：按原文减，只去掉多出来的那一行。
+    expect(stripPackRule('结尾一句\n\n---', '结尾\n\n---\n\n---')).toBe('结尾\n\n---');
+  });
+
+  it('末尾不是 `---` 的压缩稿，一个字节都不改', () => {
+    expect(stripPackRule('原文', '中间\n---\n还有字  ')).toBe('中间\n---\n还有字  ');
   });
 });

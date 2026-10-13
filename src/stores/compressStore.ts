@@ -34,7 +34,7 @@ import {
   type Block,
 } from '@/lib/db/blocks';
 import { PINNED_SEE_ABOVE } from '@/lib/pack/templates';
-import { stripInventedSkeleton } from '@/lib/pack/skeleton';
+import { stripInventedSkeleton, stripPackRule } from '@/lib/pack/skeleton';
 import type { Thread } from '@/lib/db/threads';
 import { assemble } from '@/lib/pack/assemble';
 import { buildThreadPack, pictureLinesAsIs } from '@/lib/pack/forThread';
@@ -272,9 +272,10 @@ const draftWrites = (session: CompressSession, compressed: string) => {
     if (p.before.body.trimEnd().endsWith(PINNED_SEE_ABOVE)) continue;
     const block = bySeq.get(p.seq);
     if (!block) continue;
+    // P9F F2：最后一块带着 pack 自己的那行 `---`（`skeleton.ts::stripPackRule` 写着为什么不算骨架行）。
     const stripped = stripInventedSkeleton(
       block.content,
-      contentFromEntryBody(p.after.body, heldFor.get(p.key)),
+      stripPackRule(block.content, contentFromEntryBody(p.after.body, heldFor.get(p.key))),
     );
     skeletonLines.push(...stripped.removed);
     const content = stripped.content;

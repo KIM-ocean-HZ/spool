@@ -122,7 +122,8 @@ describe('P4-3 · 压缩稿保住 pack 的首尾两行', () => {
   });
 
   // ⚠️ 比的是「补没补这两行」两次写进去的字一不一样，⛔ 不直接写死最后一块的期望值：
-  // 最后一块写回时会多带一行 `---`（压缩前就有的另一件事，DISCOVERED-20261003-1，和这两行无关）。
+  // 最后一块写回时带不带 pack 那行 `---` 是另一件事（DISCOVERED-20261003-1，P9F F2 修了，
+  // 钉在 `compressStore.packRule.test.ts`），和这两行无关。
   it('② 「用这一份」写回库：补没补这两行，写进每一块的字一模一样 —— 两行一个字都不进块', async () => {
     const writeBack = async (text: string): Promise<string[]> => {
       for (const b of blocks) {

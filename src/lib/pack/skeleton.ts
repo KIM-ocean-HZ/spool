@@ -97,3 +97,22 @@ export const stripInventedSkeleton = (before: string, after: string): SkeletonSt
   const content = kept.join('\n').replace(/\n{3,}/g, '\n\n').replace(/\s+$/, '');
   return { content, removed };
 };
+
+/** `assemble` 在最后一块后面、`## Output Language` 前面印的那条分隔线。 */
+const PACK_RULE = '---';
+
+/** P9F F2（DISCOVERED-20261003-1）：把切条目时带进**最后一块**的那行 pack 级 `---` 去掉。
+ *
+ *  项目没有文件时，最后一块和 `## Output Language` 之间只隔着这一行，切条目切到下一个小节
+ *  标题为止 ⇒ 它算进了最后一块，「用这一份」就把它写进了那一块的正文（真库〈申请帮助〉#13）。
+ *  ⚠️ 和 `stripInventedSkeleton` 同一套「按原文减」：只有压缩稿里的 `---` 行比压缩前那一块
+ *  **多**、而且多出来的那一行在**末尾**，才去掉末尾那一行 —— 用户自己写的分隔线一条不动。
+ *  ⛔ 不进 `FIXED_LINES`：那张表剔掉的行会报给用户「是 Spool 自己印的说明」，而这一行不是
+ *  模型发明的，是切条目时带进来的 —— 进了那张表，每压一个没有文件的项目就冒一句。 */
+export const stripPackRule = (before: string, after: string): string => {
+  const count = (text: string) => text.split('\n').filter((l) => l.trim() === PACK_RULE).length;
+  if (count(after) <= count(before)) return after;
+  const lines = after.replace(/\s+$/, '').split('\n');
+  if (lines[lines.length - 1]?.trim() !== PACK_RULE) return after;
+  return lines.slice(0, -1).join('\n').replace(/\s+$/, '');
+};
