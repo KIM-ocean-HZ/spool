@@ -1,6 +1,6 @@
 # 产品任务书 P9F（修补）—— 发版前修补：P9A 裁定要修的那几件 + 主窗默认大小
 
-> **状态：ACTIVE。**
+> **状态：COMPLETE —— 待 Ocean 验收。**（2026-10-13：九步都已提交、已换装；回执在 §7 末尾。）
 >
 > **唯一交付：** 下面 §3 的九步（F1 – F9），按 §3 开头写的顺序做，每一步测试通过、单独一笔提交，并在 §7 写回执。F8 中途要停下来给 Ocean 看截图、等他定（§3 F8）。
 >
@@ -282,6 +282,107 @@ cargo tree --manifest-path src-tauri/Cargo.toml -e normal | grep -iE "ureq|rustl
 F6 另写：每一次 Codex 运行传了什么、事件流里每个工具调用的结果、副本库里多了什么、一共跑了几次。
 F8 另写：截图在哪、Ocean 选了哪个、原话。
 最后一段：换装（做了没有、装的是哪个 commit、`spctl` 结果、真库备份文件名、计数核对）、Ocean 验收（还没有就写「待验收」）。
+
+
+### 7.1 开工
+
+- 起点：`git log -1` = `a9cd19c`（`docs: 下发 P9F`），上一笔 `e58e5b3`，和 §2 一样。
+- 测试基线和 §2 一样：tsc 干净；vitest 85 / 1016；cargo 190 · 5 跳过；sidecar 14；`(none missing)`；`--dead` 87；`cargo tree` 空。
+
+### 7.2 九步（按 §3 的顺序做；每步一笔提交，提交后都跑了 §5 的署名自查）
+
+**F5 · `147bdd9`** `fix(test): 读 HOME 的测试和改 HOME 的那一条共用一把锁`
+- 改了：`lib.rs`（只在测试里存在的 `home_lock()`，被 panic 毒过也照样能拿）、`mcp.rs`（改 HOME 的那一条整段拿锁、那句错注释改掉）、`engine.rs`、`file_identity.rs`（各一行拿锁）。产品代码一行没动。
+- 验：只挑那几条连跑 150 遍：改前红 19 遍（全是 `candidate_paths_…`，`engine.rs:1735`），改后 0 遍；全套连跑 10 遍全过，190 · 5。
+- 和「现在」一栏不一样的地方：真正读两次 HOME 的只有 `candidate_paths_cover_the_version_managed_install_dirs` 和 `knows_the_trash_and_an_unplugged_disk`；两条路径闸测试和截图那一条自己带规则 / 目录、不读 HOME，所以没拿锁。
+
+**F1 · `9347b36`** `fix: 删掉最新那块之后又来了一块新的，⌘Z 照样撤得回来；删掉没人用的 updateBlockThread`
+- 改了：`blocks.ts` 的 `restoreBlock` 在 INSERT 里判：旧号还空着就用旧号，被占了（或 NULL）就拿 MAX+1；「移动」那一支的两步绕法改成直接调它（只剩一套）；两处错注释（`blocks.ts`、`schema.sql`，只改注释）；删掉 `updateBlockThread`。
+- 屏幕上的编号：`runUndo` 之后 `blocksStore.load` 本来就从库里整份重读，不用补。
+- 验：新测试 `undoRestoreNumber.test.ts`（真 SQLite，走 ⌘Z 调的同一个 `runUndo`）：对照组 + 三种触发，改前三种都 `UNIQUE constraint failed`、对照组绿，改后四条绿（块回来换成 #4、文件挂回原块）。`grep -rn updateBlockThread src` 空。
+
+**F2 · `5fc8f83`** `fix: 压缩后「用这一份」不再把 pack 的那行 --- 写进最后一块`
+- 选的改法：`skeleton.ts` 加 `stripPackRule`（按「压缩前那一块里有几个 `---`」减，只去掉末尾多出来的那一行），`draftWrites` 先过它。**没**让 `FIXED_LINES` 认 `---`：那张表剔掉的行会报「有 n 行是 Spool 自己印的说明」，每压一个没有文件的项目就会冒一句（`compressStore.boundary.test.ts` 本来就钉着只有一句 notice）。pack 格式、`assemble.ts`、golden 没动。
+- 验：`skeleton.test.ts` +3、`compressStore.packRule.test.ts` 2 条（真库写回，改前两条都红）；压缩那几份测试照样绿。
+- 真库「申请帮助」#13 没碰，留给 Ocean（§6 第 2 条）。
+
+**F3 · `47c4d5b`** `fix(i18n): 英文界面三处 + 字典检查看得见捕捉浮窗的 tr()`
+- 改了：`ProjectFindBar.tsx` 两处走 `t()`，字典加「关闭查找 → Close find」；「批注」改成 Note；`i18n-check.mjs` 正则改 `\bt[rs]?\(`，`scan()` 多两个默认参数（只给它自己的测试用）；`i18n-check.test.mjs` 补一条（改前红）。
+- 验：`(none missing)`；临时删掉只有浮窗用的「固定窗口」⇒ `MISSING 固定窗口 src/overlay/CaptureOverlay.tsx`、退出码 1，已恢复；`--dead` 87。
+
+**F8 · 第一半没提交（补上那一半的效果图）· 第二半 `68a4c2b`** `chore(ui): 删掉那 27 处从没生效过的淡底色类`
+- 开工时数：27 行 / 15 个文件，和「现在」一栏一样；另 4 处 `var(--accent-soft)` 没碰。
+- 「补上」怎么做的：`tailwind.config.js` 加 `accent-soft`、`tokens.css` 两套主题各**加**一个 `--accent-soft-rgb`（已有的值一个没改，给 Ocean 看图时说了）。改前改后两份 css 逐条比：只多 `.bg-accent-soft`、`.bg-accent-soft/40`、`.hover:bg-accent-soft` 三条规则和两个新变量。这一半存成补丁、工作树恢复，没提交。
+- 截图（真组件、Spool 自己构建的样式、和 app 同一个 WebKit；内容是编的，不是真库）：27 处截到 26 处，另加情人节版两张总览，共 23 页 PDF：`scratchpad/f8/P9F-F8-accent-soft.pdf`（单张在 `scratchpad/f8/shots/`；scratchpad = 这一窗的 `/private/tmp/claude-501/-Users-hzjin-Desktop-Knote/b9ce420f-c37a-436f-a14c-a57c864886c3/scratchpad/`，会话结束后可能被清掉）。
+  - 静态渲染（记忆 §45）：设置三组、运行卡两处、正在跑、两个打包对话框、项目顶栏两处、待审面五种卡、跟进面板开关、左栏待审按钮、压缩页两处、多选方框。
+  - 要点开才出现的：自己写了一个只在 scratchpad 的小页面，把真组件挂上去、Tauri 那一层换成一个假的桥，再用脚本真的点开 —— 编辑面板（格式那一档、完成）、划词更正表单、「复制到…」查重那一步（假桥替 Rust 回答 `forward_duplicate_check`）、查找时刻度旁的预览卡；捕捉卡是从 vite 加载真的浮窗页面、用假桥送一次 show。
+  - 截不到的 1 处：右栏「AI 提了几条等你过目」那一行，只有鼠标停上去才有底色。
+  - 顺带撞到的：这一窗没有「屏幕录制」权限，`screencapture` 截别的进程的窗口是空白（所以没用记忆 §43 的截法）；离屏的 WebKit 不跑 CSS 动画和 requestAnimationFrame（捕捉卡的入场动画在截图页里关掉了，它的最后一帧就是正常样子）。
+- Ocean 选了哪个、原话：先回「我没看到截图，再显示一遍」，用「预览」在他电脑上打开、重发 PDF 和三张样例图之后，答「**删掉**」。
+- 删掉：15 个文件里这 27 处类名去掉；ScaleRail 两句注释「描边和底色」改成「描边和阴影」（底色从来没有过）。验：`grep -rn "bg-accent-soft" src` 空；重新构建的 main / overlay 两份 css 和改前逐条一致；15 张静态渲染改前改后逐像素一样（屏幕缩放中途从 2× 变成 1×，所以是同一缩放下重新渲染旧代码再比的）。
+
+**F4 · `14202ee`** `fix(capture): 捕捉浮窗三件`
+- ① 长按卡：空批注框 ⌘Z 什么都不做（`noteBoxUndo.ts`）；Rust `card_claims_undo(will_activate, note_mode)` + `NOTE_CARD`，`show_capture_overlay` 和 `on_overlay_shown` 两处补注册都按它判，长按卡跳过。⛔ 红线那一支（`on_overlay_shown` 补注册）**没删**，双击卡照旧走它，双击卡上 ⌘Z 的每条路没变。
+- ② × 的提示：「存下并关闭」，英文 `Save and close`，`aria-label` 一样；行为不变。
+- ③ 提示监听先 `flushPendingNote()` 再换内容。
+- 验：`noteBoxUndo.test.ts` 2 条、Rust 1 条；浮窗交互只能真手指（§6 第 4 – 6 条）。
+- 改完后第一遍 cargo 全套有 2 条红，没抓到是哪两条；之后连跑 43 遍全过。记成 `DISCOVERED-20261013-3`。
+
+**F7 · `a651648`** `feat(window): 主窗打开时的大小跟着屏幕走`
+- 改了：`lib.rs` 的 `fit_main_window_to_work_area` 每次启动都按主窗所在那块屏幕的可用区域定大小（整个窗口每边让出 `MAIN_WINDOW_GAP` = 4%，宽高同一个比例），居中，最小 860 × 560 照旧；计算抽成 `main_window_size` / `centred` 两个纯函数 + 测试。只在 `setup` 里跑一次；不保存窗口；`tauri.conf.json` 没动。
+- 缝的起始值：4%。外接屏（可用 2560 × 1352）上左右约 102 点、上下约 54 点；笔记本（1512 × 950）上左右约 60 点、上下约 38 点。
+- 冷启动：`setup` 在事件循环 Ready 回调里、窗口建好后马上跑，第一次画之前大小已经定了（08-21 起缩小那一支就在这里跑），所以没改成「先隐藏再显示」；这一条只能靠 Ocean 冷启动时看（§6 第 7 条）。截图没做：这一窗截不到别的进程的窗口（见 F8）。
+- 宽屏下中间那一栏会到约 1700 像素宽、块正文没有最大宽度（一行约 100 个汉字）：记成 `DISCOVERED-20261013-2` 问了 Ocean，他答「先不管，验收时看」。
+- Windows 走同一个函数，本机编不了 Windows，那一半没跑过。
+
+**F6 · `0669190`** `fix(engine): 用 Codex 跑跟进能写回了 —— 给 Spool 自己的工具预先放行`
+- 取值先免费探（不花额度）：`codex mcp get` 喂一个错值，报错列出 `auto` / `prompt` / `writes` / `approve`；每个工具单独的 `approval_mode` 也认同样四个。
+- 真跑（codex-cli 0.147.0；MCP 服务器是已装的正式版 `--mcp`，`SPOOL_DATA_DIR` 指向 scratchpad 里真库的 `VACUUM INTO` 副本；判据只看 `--json` 事件流里 `mcp_tool_call` 的 `status` / `error` 和副本库）：
+  - 没算的一次：第一次起的时候 stdin 是开着的，codex 一直「Reading additional input from stdin」，一个事件都没出、没开始，按 pid 停掉了；Spool 自己起 codex 时 stdin 是 null。
+  - 第 1 次（13:36 UTC）：照 `codex_args` 拼、加 `default_tools_approval_mode="approve"`，提示词直接点名三个写工具 ⇒ `close_follow_up_item` / `propose_blocks` / `add_block` 都 `completed`；副本里那条问题变成 answered、多 1 批 1 条提案、多 1 块（#13，来源 `Codex · MCP`）。
+  - 第 2 次（13:37 UTC，对照）：同样的提示词、**不带**这一行、新副本 ⇒ 三个都 `user cancelled MCP tool call`，副本一字没变。
+  - 第 3 次（13:39 – 13:41 UTC，确认）：改过的代码生成的参数原样跑一次真正的「跟进」（`guidance_text_headless` 的无人值守提示词、联网，项目〈Fall 2027 国际生政策风险台账〉）⇒ 读了一圈之后 `propose_blocks` 5 条进待审面、`close_follow_up_item` 收掉一条问题，都 `completed`。提示词和参数是用一个只在工作树里临时加、跑完就删的 ignored 测试打出来的，没进提交。
+  - 一共 3 次真跑（上限 4）。原始事件流：`scratchpad/f6/run-1.jsonl`、`run-2.jsonl`、`run-3.jsonl`。
+- 代码：`codex_config_overrides` 加那一行；`codex_args_isolate_the_run_from_the_users_own_config` 整串钉住（先加断言跑红、再改代码跑绿）。`--sandbox read-only` 照旧，没用去沙箱的开关，工具没标只读，MCP 没动。
+- 「现在」一栏写的 22 个工具现在是 24 个（P6 加了两个），不影响这一步。
+- 提交自查那条宽 grep 命中了正文里的「Claude Code」（产品里引擎槽的名字），窄版干净、作者是 KIM-ocean-HZ，没 amend。
+
+**F9 · `18b9429`** `docs: 10 份已经做完的设计稿挪进 archive`
+- 10 份 `git mv` 进 `docs/archive/`，每份标题下面加一行「已全部落地（日期，见 P9A 回执 §7.2 D）。2026-10-13 按 Ocean 10-11 的决定移进 archive …」—— 和任务书模板差一处：写的是实际挪的日期 10-13，不是 10-11。
+- README：§三 只剩 `DESIGN_WINDOWS_PORT.md`、`WINDOWS-CHECK.md`、`DESIGN_CASE_STUDY.md`（前两行照任务书改），§六 加上这 10 份；只暂存了自己的行。
+- HANDOFF：§10.6「全稿」那一列改成 `archive/…`；只写了文件名的两处没改；§9.9 记 `DISCOVERED-20261013-1` 的提醒（Codex handoff 那几行留给研究线）。Codex handoff 没碰。
+
+### 7.3 收尾的测试数字
+
+tsc 干净；vitest 88 个文件 / 1028 条（+3 个文件 / +12 条）；cargo 192 · 5 跳过（+2）；sidecar 14；`(none missing)`；`--dead` 87；`cargo tree … | grep` 空。
+
+### 7.4 换装（Ocean 2026-10-13 答「现在换装」）
+
+- 构建：在 `68a4c2b` 上（`src` / `src-tauri` / `site` / `scripts` 没有未提交改动），命令和 P9 一样（`APPLE_SIGNING_IDENTITY` 走环境变量，`tauri.conf.json` 没改），日志进文件；「skipping app notarization」；TSA 一遍过（主程序和 `spool-ai` 都有 Timestamp）；`--verify --deep --strict` 过。二进制里有 `default_tools_approval_mode`；前端有「存下并关闭」「Close find」，css 里没有 `bg-accent-soft`。
+- 新二进制的 `--mcp` 探针连 scratchpad 里的副本（没连真库目录）：24 个工具，`list_threads` 正常。
+- 装前：Developer ID，`spctl` = `Unnotarized Developer ID`，0.6.2，`spool` sha256 `473b5288…`（P9 那版）。真库 v33 · ok · 14 / 51 / 1099 / 13（工作区 / 项目 / 块 / 文件）· 正文 334659 · 批注 13558 · 文件正文 143894 · 图片 4 张 764139 字节 · 跟进 19 · 待审 0；迁移快照 25 个。
+- 停：GUI 30812 和 `--overlay` 30821 按 pid `kill -TERM`，第一次就退了。`/Applications` 那 15 个 `--mcp` 子进程一个没碰（前后同一组 pid）。
+- 真库备份：`~/Desktop/spool.before-p9f-install-20261013-232228.db`（停了之后 `VACUUM INTO`），和活库逐项一致。
+- 旧包挪到 `~/Desktop/Spool/spool-pre-install/Spool-old-20261013-232228-pre-p9f.app`；新包 `ditto` 进 `/Applications`，`open --stdout … --stderr …` 起来。
+- 装后：`--verify --deep --strict` 过；`spctl` = `Unnotarized Developer ID`；`spool` sha256 `74c7c73e…`，和构建产物一致；主进程 27752 和 `--overlay` 27843 都是 23:22:36（换装之后）起的，`lsof` txt inode 都是 80222695，就是新文件；stderr 只有 `[overlay] helper started` 和 `[double-tap] installed at HID/active` 两行。真库和装前逐项一致（这一次不迁移，快照仍是 25 个）。
+- 那 15 个 `--mcp` 子进程还是旧二进制；库结构没变，它们照常能用。F6 改的是 Spool 自己起 Codex 的那条路，不在它们身上，不用重启客户端。
+- commit、build、换装分开记在上面；没 push，没发版。
+
+### 7.5 新发现记在哪
+
+HANDOFF §9.9：`DISCOVERED-20261013-1`（Codex handoff 那几行要研究线改）、`-2`（宽屏正文没有最大宽度，Ocean：先不管，验收时看）、`-3`（cargo 一次 2 条红没抓到名字）。
+
+### 7.6 Ocean 验收
+
+待验收（§6 九条）。
+
+§6 第 6 条「让捕捉失败一次」的做法（照代码推出来的：双击 ⌥ 只在 10 秒内按过 ⌘C 时才算捕捉，剪贴板是空的就弹「剪贴板为空」那张提示卡；这一窗按不了真的双击 ⌥，没亲手试过）：
+1. 随便选一句字，按 ⌘C，双击 ⌥ —— 弹出捕捉卡。
+2. 在批注框里写一句，比如「测试批注」，先别关。
+3. 点卡片右上角的锁（固定窗口）—— 这样等一下点别处，卡片不会自己收起来。
+4. 在 Claude Code 的输入框里敲 `! pbcopy < /dev/null` 回车 —— 这一步把剪贴板清空。
+5. 点一下桌面空白的地方（什么都别选中），按一次 ⌘C，马上双击 ⌥。
+6. 看：卡片换成一张「剪贴板为空 — 先按 ⌘C 复制要捕捉的内容，再双击 ⌥」的提示卡；打开主窗，刚才那一块的批注是「测试批注」。
 
 ## 8. 收尾的文档动作（执行窗做）
 
