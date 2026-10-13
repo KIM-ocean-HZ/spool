@@ -778,6 +778,18 @@ fn codex_config_overrides(exe: &str, web: bool) -> Vec<String> {
         format!("mcp_servers.{MCP_SERVER_NAME}.command={}", toml_string(exe)),
         format!("mcp_servers.{MCP_SERVER_NAME}.args=[\"--mcp\"]"),
         format!("mcp_servers.{MCP_SERVER_NAME}.enabled_tools=[{tools}]"),
+        // ⚠️⚠️ P9F F6 (DISCOVERED-20260924-1, Ocean 2026-10-11 #80「Codex 必须能写回」).
+        // `approval_policy="never"` alone does NOT let a tool through: codex treats every MCP
+        // tool that is not read-only as needing approval, and with nobody there to give it the
+        // call ends as `user cancelled MCP tool call` before it reaches Spool — annotations
+        // correct or not. This per-server setting pre-approves Spool's own tools (and only
+        // those: `enabled_tools` above is still the list). Same grant claude's `--allowedTools`
+        // gives the same 24 tools (§2.2). Values codex 0.147 accepts: auto / prompt / writes /
+        // approve. Verified on a copy of the real library, 2026-10-13: with this line
+        // close_follow_up_item, propose_blocks and add_block all completed; without it, all
+        // three were cancelled. ⛔ Not a reason to mark tools read-only, and ⛔ never trade
+        // `--sandbox read-only` for a bypass flag to get the same effect.
+        format!("mcp_servers.{MCP_SERVER_NAME}.default_tools_approval_mode=\"approve\""),
     ]
 }
 
@@ -1833,6 +1845,16 @@ mod tests {
             assert!(tools.contains(&format!("\"{t}\"")), "{t} missing from enabled_tools");
         }
         assert_eq!(tools.matches('"').count(), ALLOWED_TOOL_NAMES.len() * 2);
+        // P9F F6 (Ocean 2026-10-11 #80「Codex 必须能写回」): without exactly this line codex
+        // cancels every call to a tool that is not read-only before it reaches Spool — verified
+        // twice on a copy of the real library, 2026-10-13, codex-cli 0.147.0 (with it: all three
+        // write tools completed; without it: all three `user cancelled MCP tool call`).
+        assert!(
+            overrides
+                .iter()
+                .any(|o| o.as_str() == "mcp_servers.spool.default_tools_approval_mode=\"approve\""),
+            "Spool's own tools must be pre-approved, or a headless run cannot write back",
+        );
         // The escape hatches, in this CLI's spelling.
         for forbidden in [
             "--dangerously-bypass-approvals-and-sandbox",
