@@ -573,22 +573,6 @@ export const updateBlockSource = async (id: string, source: string | null): Prom
   await db.execute('UPDATE blocks SET source = $1 WHERE id = $2', [source, id]);
 };
 
-// Reparent a block to a different thread (§11.5 — the capture classification "move").
-// Keeps the block's id and created_at, so it sorts into the target thread by time.
-// v9: `seq` is per-thread, so a move has to draw a fresh number from the destination —
-// carrying the old one over would collide with whatever already holds it there. The
-// block's visible number therefore changes when it changes project; nothing else does.
-export const updateBlockThread = async (id: string, threadId: string): Promise<void> => {
-  const db = await getDb();
-  await db.execute(
-    `UPDATE blocks
-        SET thread_id = $1,
-            seq = (SELECT COALESCE(MAX(seq), 0) + 1 FROM blocks WHERE thread_id = $1)
-      WHERE id = $2`,
-    [threadId, id],
-  );
-};
-
 export const updateBlockContent = async (id: string, content: string): Promise<void> => {
   const db = await getDb();
   await db.execute('UPDATE blocks SET content = $1 WHERE id = $2', [content, id]);
@@ -675,14 +659,23 @@ export const deleteBlock = async (id: string): Promise<void> => {
 // id and created_at so it lands back at the same feed position. The blocks_ai FTS trigger
 // re-indexes it on insert (a fresh rowid is assigned — fine, FTS is rebuilt from it).
 // Used to undo a delete, and to recreate the non-survivor blocks when undoing a merge.
-// v9: the original `seq` comes back with it. Numbers are never reused after a delete, so
-// nothing can have taken it in the meantime — and the user undoing a delete expects the
-// block they were just looking at, #12 included.
+// v9: the original `seq` comes back with it when it is still free — the user undoing a
+// delete expects the block they were just looking at, #12 included.
+// ⚠️ P9F F1: it is NOT always free. Numbers are MAX+1 and a delete is a real delete, so
+// deleting the newest block hands its number to the next block that arrives (an AI's
+// add_block, the composer). Inserting the old number then hit idx_blocks_thread_seq and the
+// undo failed with its entry already spent — the block was simply gone. A taken (or NULL)
+// number comes back as a fresh MAX+1, decided inside the INSERT like createBlock's.
 export const restoreBlock = async (block: Block): Promise<void> => {
   const db = await getDb();
   await db.execute(
     `INSERT INTO blocks (id, thread_id, kind, content, annotation, annotation_by, ref_thread_id, ref_block_id, source, pinned, seq, created_at, stale_at, ref_kind, source_url, retrieved_at, recheck_after, corrected_quote, gist, ref_note, gist_by, ref_reviewed_stale_at, replaced_by_block_id)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)`,
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
+             CASE WHEN $11 IS NOT NULL AND NOT EXISTS (SELECT 1 FROM blocks WHERE thread_id = $2 AND seq = $11)
+                  THEN $11
+                  ELSE (SELECT COALESCE(MAX(seq), 0) + 1 FROM blocks WHERE thread_id = $2)
+             END,
+             $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)`,
     [
       block.id,
       block.threadId,

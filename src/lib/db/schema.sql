@@ -329,8 +329,10 @@ CREATE TABLE IF NOT EXISTS blocks (
 -- can find it. It is STORED, never derived: a "12th by time" rule would renumber every
 -- later block the moment one is deleted, and the #12 the user wrote down yesterday would
 -- silently point somewhere else. Assigned per thread as MAX(seq)+1 inside the INSERT
--- statement (WAL serialises writers, so the app and the MCP subprocess cannot collide),
--- and never reused after a delete. NULL only on rows written before v9's backfill.
+-- statement (WAL serialises writers, so the app and the MCP subprocess cannot collide).
+-- A delete is a real delete, so deleting the newest block frees its number for the next
+-- one; undoing that delete then takes a fresh MAX+1 (restoreBlock). NULL only on rows
+-- written before v9's backfill.
 -- Internal ids stay invisible: `seq` is for people, `id` is still a tool parameter.
 CREATE UNIQUE INDEX IF NOT EXISTS idx_blocks_thread_seq
   ON blocks(thread_id, seq);

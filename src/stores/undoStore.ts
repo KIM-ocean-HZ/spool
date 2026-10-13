@@ -440,13 +440,9 @@ const reverseAndBuildRedo = async (
       for (const { block } of moved) {
         await moveBlock(block.id, block.threadId, block.seq, block.createdAt);
       }
-      for (const b of deleted) {
-        // ⚠️ Its #n may have been handed to a block captured since (seq is MAX+1). Restoring
-        // it verbatim would hit idx_blocks_thread_seq; come back numberless, then take the
-        // old number if it is still free.
-        await restoreBlock({ ...b, seq: null });
-        await moveBlock(b.id, b.threadId, b.seq, b.createdAt);
-      }
+      // Its #n may have been handed to a block captured since (seq is MAX+1); restoreBlock
+      // takes the old number only if it is still free, like every other undo.
+      for (const b of deleted) await restoreBlock(b);
       // Removing a duplicate put its files on the project; they hang back on it now.
       for (const f of deletedFiles) await setAttachmentAnchor(f.id, f.anchorBlockId);
       return async () => {
