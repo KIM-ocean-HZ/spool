@@ -15178,7 +15178,8 @@ mod tests {
     }
 
     // One test on purpose: it redirects the home directory to a temp dir, and env vars are
-    // process-global across the parallel test harness. No other test reads them.
+    // process-global across the parallel test harness. It holds `crate::home_lock()` for its
+    // whole run, and every test that reads the home directory takes the same lock.
     //
     // ⚠️ The two GUI clients (Claude Desktop, VS Code) live under a DIFFERENT root from the
     // dot-file CLIs, and where that root is depends on the platform. Their paths are asked
@@ -15187,6 +15188,7 @@ mod tests {
     // still compiled and still failed on the machine that mattered.
     #[test]
     fn one_click_client_config_status_merge_backup() {
+        let _home = crate::home_lock();
         store_lang(Lang::Zh); // these fixtures are the Chinese rendering
         let tmp = std::env::temp_dir().join(format!("spool-mcp-cfg-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&tmp);

@@ -448,6 +448,7 @@ mod tests {
 
     #[test]
     fn knows_the_trash_and_an_unplugged_disk() {
+        let _home = crate::home_lock();
         let home = std::env::var("HOME").unwrap();
         assert!(in_trash(&Path::new(&home).join(".Trash/Lecture 3.pdf")));
         assert!(in_trash(Path::new("/Volumes/Disk/.Trashes/501/a.pdf")));

@@ -1725,6 +1725,7 @@ mod tests {
     #[cfg(unix)] // see run_env_carries_the_three_load_bearing_vars
     #[test]
     fn candidate_paths_cover_the_version_managed_install_dirs() {
+        let _home = crate::home_lock();
         let home = std::path::PathBuf::from(std::env::var("HOME").unwrap_or_default());
         for kind in EngineKind::ALL {
             let paths = candidate_paths(kind);

@@ -30,6 +30,18 @@ pub mod transfer;
 #[cfg(target_os = "windows")]
 mod win32;
 
+// Tests only. `HOME` (`USERPROFILE` / `APPDATA` on Windows) is process-wide, and the test
+// harness runs tests on parallel threads: `mcp::one_click_client_config_status_merge_backup`
+// points it at a temp dir. ⚠️ Every test that reads `HOME` — itself, or through the
+// function under test — holds this lock, or it can read the real home first and the temp
+// one a moment later (that was the occasional red `candidate_paths_…`, 2026-10-07).
+#[cfg(test)]
+pub(crate) fn home_lock() -> std::sync::MutexGuard<'static, ()> {
+    static HOME: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    // One test failing while it holds the lock must not fail every later one with it.
+    HOME.lock().unwrap_or_else(|e| e.into_inner())
+}
+
 use tauri::Manager;
 
 // §20.12: the Settings panel shows a copy-paste MCP client config pointing at THIS
