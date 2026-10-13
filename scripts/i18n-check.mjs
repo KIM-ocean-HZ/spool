@@ -16,7 +16,8 @@
 // Exit code is 1 when something is missing, so it can gate a commit if that is ever wanted.
 // `scripts/i18n-check.test.mjs` runs the same scan inside vitest, so a green suite includes it.
 //
-// ⚠️ It only sees STRING LITERALS passed to t()/ts(). A call like `t(SOME_CONST)` is beyond
+// ⚠️ It only sees STRING LITERALS passed to t()/ts()/tr() (`tr` is what the capture overlay
+// names its `useT()`; P9F F3). A call like `t(SOME_CONST)` is beyond
 // it — those are usually label tables (engineStore's ACTION_LABEL, pack templates), whose
 // values must be in the dictionary too. Check those by eye when you add one.
 import fs from 'node:fs';
@@ -27,10 +28,11 @@ const DICT = 'src/lib/i18n/index.ts';
 
 const hasChinese = (s) => /[一-鿿]/.test(s);
 // Quoted key, either quote style, escapes honoured; `\s*` covers a call broken over lines.
-const CALL = /\bts?\(\s*(['"])((?:(?!\1)[^\\]|\\.)*)\1/g;
+const CALL = /\bt[rs]?\(\s*(['"])((?:(?!\1)[^\\]|\\.)*)\1/g;
 
-// Paths are relative to the repo root — run it from there (vitest does).
-export function scan() {
+// Paths are relative to the repo root — run it from there (vitest does). The two arguments
+// exist for the checker's own test; the real run always scans `src` against DICT.
+export function scan(root = 'src', dictFile = DICT) {
   const sources = [];
   (function walk(dir) {
     for (const name of fs.readdirSync(dir)) {
@@ -38,14 +40,14 @@ export function scan() {
       if (fs.statSync(p).isDirectory()) walk(p);
       else if (/\.tsx?$/.test(name) && !/\.test\./.test(name)) sources.push(p);
     }
-  })('src');
+  })(root);
 
-  const dict = fs.readFileSync(DICT, 'utf8');
+  const dict = fs.readFileSync(dictFile, 'utf8');
   const inDict = (key) => dict.includes(`'${key}'`) || dict.includes(`"${key}"`);
 
   const used = new Map();
   for (const file of sources) {
-    if (path.normalize(file) === path.normalize(DICT)) continue;
+    if (path.normalize(file) === path.normalize(dictFile)) continue;
     const text = fs.readFileSync(file, 'utf8');
     for (const m of text.matchAll(CALL)) {
       if (hasChinese(m[2]) && !used.has(m[2])) used.set(m[2], file);

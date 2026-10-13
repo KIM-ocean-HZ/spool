@@ -198,7 +198,7 @@ const EN: Record<string, string> = {
   '编辑': 'Edit',
   '标为重点': 'Highlight',
   '取消重点': 'Remove highlight',
-  '批注': 'Annotate',
+  '批注': 'Note',
   '添加批注': 'Add note',
   '编辑文本': 'Edit text',
   '复制内容': 'Copy content',
@@ -488,6 +488,7 @@ const EN: Record<string, string> = {
   '上一个匹配': 'Previous match',
   '下一个匹配 (⌘G / ↵)': 'Next match (⌘G / ↵)',
   '下一个匹配': 'Next match',
+  '关闭查找': 'Close find',
   '浏览器自动化权限': 'Browser automation access',
 
   // Complete / digest

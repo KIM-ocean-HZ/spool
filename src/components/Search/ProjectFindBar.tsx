@@ -153,8 +153,8 @@ export default function ProjectFindBar({
       <button
         type="button"
         onClick={onDismiss}
-        title="关闭 (Esc)"
-        aria-label="关闭查找"
+        title={t('关闭 (Esc)')}
+        aria-label={t('关闭查找')}
         className="flex h-6 w-6 flex-none items-center justify-center rounded text-muted transition-colors hover:bg-paper hover:text-accent"
       >
         <X size={14} />
