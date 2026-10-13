@@ -42,6 +42,7 @@ import type { Thread } from '@/lib/db/threads';
 import type { Workspace } from '@/lib/db/workspaces';
 import { copyIdAfterEdit } from '@/lib/capture/noteCopy';
 import { isImeComposing } from '@/lib/utils/ime';
+import { noteBoxUndo } from '@/lib/capture/noteBoxUndo';
 import { useAppliedTheme } from '@/hooks/useTheme';
 import { themeOrDefault } from '@/lib/theme';
 import { useSettingsStore } from '@/stores/settingsStore';
@@ -405,6 +406,10 @@ export default function CaptureOverlay() {
     let cancelled = false;
     void (async () => {
       const dispose = await listen<OverlayNotice>(OVERLAY_NOTICE_EVENT, (e) => {
+        // P9F F4: a notice replaces the card on screen, so what was written on it is saved
+        // first — the same as a fresh capture does below. Left in the refs it would only be
+        // saved by the next capture, and lost if Spool quit before one.
+        flushPendingNote();
         setContent({ kind: 'notice', data: e.payload });
         setHover(false);
         setPickerOpen(false);
@@ -938,8 +943,10 @@ export default function CaptureOverlay() {
           type="button"
           onMouseDown={(e) => e.stopPropagation()}
           onClick={dismissToast}
-          title={tr('关闭 (Esc)')}
-          aria-label={tr('关闭')}
+          // P9F F4 (Ocean 2026-10-11 #82 甲): × keeps what was written (dismissToast flushes
+          // it first) — unlike Esc, which throws it away. The label says so.
+          title={tr('存下并关闭')}
+          aria-label={tr('存下并关闭')}
           className="rounded p-1 text-muted/70 hover:bg-paper-2 hover:text-ink"
         >
           <X size={11} />
@@ -1068,10 +1075,13 @@ export default function CaptureOverlay() {
               // ⚠️ Reachable only because capture.rs does NOT claim ⌘Z globally when the
               // toast takes the foreground — a global shortcut fires before the webview.
               // ⚠️ ⇧⌘Z is redo and never ends a capture.
+              // ⚠️ P9F F4 (Ocean 2026-10-11 #81 甲): the long-press card has nothing captured
+              // yet, so an empty box's ⌘Z there does nothing — see noteBoxUndo.
               if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key.toLowerCase() === 'z') {
-                if (e.currentTarget.value.length > 0) return;
+                const undo = noteBoxUndo(e.currentTarget.value.length > 0, isNote);
+                if (undo === 'typing') return;
                 e.preventDefault();
-                onUndo();
+                if (undo === 'capture') onUndo();
                 return;
               }
               if (e.key === 'Enter' && !e.shiftKey) {

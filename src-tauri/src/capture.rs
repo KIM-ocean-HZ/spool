@@ -1152,6 +1152,20 @@ static ACTIVATE_ON_SHOWN: AtomicBool = AtomicBool::new(false);
 // Every platform — the Windows branch of on_overlay_shown claims it too.
 static CARD_CLAIMS_UNDO: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
+// P9F F4: whether the capture card on screen is the long-press one (`note_mode`). Set by every
+// show_capture_overlay, read by on_overlay_shown's late claim.
+static NOTE_CARD: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Whether a capture card gets the global ⌘Z: only when it will not hold the keyboard (so its
+/// note box can never answer the key itself), and ⛔ never for the long-press card (P9F F4,
+/// Ocean 2026-10-11 #81 甲). That card has saved nothing yet — its block is only created at
+/// 完成 — so the ⌘Z would undo whatever came before it (an earlier capture, a delete…) and the
+/// half-written card would vanish with it. Its own note box ignores ⌘Z on an empty box for the
+/// same reason (noteBoxUndo.ts). The double-tap card's rule is unchanged.
+fn card_claims_undo(will_activate: bool, note_mode: bool) -> bool {
+    !will_activate && !note_mode
+}
+
 // =============================================================================
 // Note-first activation (2026-08-01, DESIGN_CAPTURE_NOTE_FIRST §3.6)
 // =============================================================================
@@ -1405,6 +1419,8 @@ pub fn show_capture_overlay<R: Runtime>(
     };
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     let will_activate = false;
+    let note_mode = payload.note_mode;
+    NOTE_CARD.store(note_mode, std::sync::atomic::Ordering::SeqCst);
     let payload = serde_json::to_value(payload).map_err(|e| e.to_string())?;
     let (origin_x, origin_y) = send_overlay_show(&app, "show", payload, will_activate)?;
     // §9.13: arm the click-outside dismiss watch over the toast's frame, and grab the
@@ -1431,8 +1447,10 @@ pub fn show_capture_overlay<R: Runtime>(
     // is necessarily empty and 丙's second half is the only reachable case — exactly what
     // the global shortcut does. `on_overlay_shown` registers it late if activation is
     // refused, which is the same situation arriving by a different route.
-    CARD_CLAIMS_UNDO.store(!will_activate, std::sync::atomic::Ordering::SeqCst);
-    if !will_activate {
+    // P9F F4: never for the long-press card — see card_claims_undo.
+    let claims = card_claims_undo(will_activate, note_mode);
+    CARD_CLAIMS_UNDO.store(claims, std::sync::atomic::Ordering::SeqCst);
+    if claims {
         register_undo_shortcut(&app);
     }
     Ok(())
@@ -1448,7 +1466,9 @@ pub fn on_overlay_shown<R: Runtime>(app: &AppHandle<R>, focused: bool) {
     // globally or an undo from the source app has no route at all.
     #[cfg(target_os = "windows")]
     {
-        if !focused {
+        // ⚠️ P9F F4: the long-press card skips the claim (card_claims_undo); the double-tap
+        // card takes it exactly as before.
+        if !focused && card_claims_undo(false, NOTE_CARD.load(std::sync::atomic::Ordering::SeqCst)) {
             eprintln!("[capture] the toast did not get the foreground — note box needs a click");
             CARD_CLAIMS_UNDO.store(true, std::sync::atomic::Ordering::SeqCst);
             register_undo_shortcut(app);
@@ -1473,8 +1493,12 @@ pub fn on_overlay_shown<R: Runtime>(app: &AppHandle<R>, focused: bool) {
             // webview will never see a ⌘Z. show_capture_overlay skipped the global claim on
             // the strength of an activation that did not happen; make it now, or an undo
             // from the source app has no route at all.
-            CARD_CLAIMS_UNDO.store(true, Ordering::SeqCst);
-            register_undo_shortcut(app);
+            // ⛔ This branch is a red line (HANDOFF §10.6) and stays: P9F F4 only keeps the
+            // long-press card out of it (card_claims_undo) — that card has nothing to undo.
+            if card_claims_undo(false, NOTE_CARD.load(Ordering::SeqCst)) {
+                CARD_CLAIMS_UNDO.store(true, Ordering::SeqCst);
+                register_undo_shortcut(app);
+            }
         }
     }
     #[cfg(not(target_os = "macos"))]
@@ -1778,6 +1802,16 @@ pub fn system_idle_ms() -> Option<u64> {
 #[cfg(all(test, desktop))]
 mod tests {
     use super::*;
+
+    // P9F F4 (Ocean 2026-10-11 #81 甲): the long-press card never takes the global ⌘Z; the
+    // double-tap card takes it exactly when it will not hold the keyboard (08-15 丙, unchanged).
+    #[test]
+    fn only_a_double_tap_card_that_cannot_hold_the_keyboard_claims_undo() {
+        assert!(card_claims_undo(false, false), "double-tap card, no keyboard: claims");
+        assert!(!card_claims_undo(true, false), "double-tap card holding the keyboard: its box answers");
+        assert!(!card_claims_undo(false, true), "long-press card: never");
+        assert!(!card_claims_undo(true, true), "long-press card: never");
+    }
 
     // The shipped Windows/Linux capture default (src/lib/capture/shortcut.ts
     // DEFAULT_CAPTURE_ACCEL) is the one accelerator no human ever types into the recorder,
