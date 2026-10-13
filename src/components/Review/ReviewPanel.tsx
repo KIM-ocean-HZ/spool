@@ -276,7 +276,7 @@ function FileRequestCard({
           type="button"
           disabled={busy}
           onClick={onApprove}
-          className="flex flex-1 items-center justify-center gap-1.5 rounded-md border border-accent/60 bg-accent-soft px-3 py-1.5 text-xs font-medium text-accent transition-colors enabled:hover:border-accent enabled:hover:bg-accent/15 disabled:opacity-40"
+          className="flex flex-1 items-center justify-center gap-1.5 rounded-md border border-accent/60 px-3 py-1.5 text-xs font-medium text-accent transition-colors enabled:hover:border-accent enabled:hover:bg-accent/15 disabled:opacity-40"
         >
           <Check size={12} />
           {t('可以读')}
@@ -344,7 +344,7 @@ function SupersedeCard({
       onClick={() => onDecide(key)}
       className={`flex flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded-md border px-3 py-1.5 text-xs transition-colors disabled:opacity-40 ${
         suggested
-          ? 'border-accent/60 bg-accent-soft font-medium text-accent enabled:hover:border-accent enabled:hover:bg-accent/15'
+          ? 'border-accent/60 font-medium text-accent enabled:hover:border-accent enabled:hover:bg-accent/15'
           : 'border-line bg-paper text-ink-2 enabled:hover:border-line-strong enabled:hover:text-ink'
       }`}
     >
@@ -497,7 +497,7 @@ function FileProposalCard({
           type="button"
           disabled={busy}
           onClick={onApprove}
-          className="flex flex-1 items-center justify-center gap-1.5 rounded-md border border-accent/60 bg-accent-soft px-3 py-1.5 text-xs font-medium text-accent transition-colors enabled:hover:border-accent enabled:hover:bg-accent/15 disabled:opacity-40"
+          className="flex flex-1 items-center justify-center gap-1.5 rounded-md border border-accent/60 px-3 py-1.5 text-xs font-medium text-accent transition-colors enabled:hover:border-accent enabled:hover:bg-accent/15 disabled:opacity-40"
         >
           <Check size={12} />
           {t('同意')}
@@ -578,7 +578,7 @@ function FollowUpLineCard({
           type="button"
           disabled={busy}
           onClick={onApprove}
-          className="flex flex-1 items-center justify-center gap-1.5 rounded-md border border-accent/60 bg-accent-soft px-3 py-1.5 text-xs font-medium text-accent transition-colors enabled:hover:border-accent enabled:hover:bg-accent/15 disabled:opacity-40"
+          className="flex flex-1 items-center justify-center gap-1.5 rounded-md border border-accent/60 px-3 py-1.5 text-xs font-medium text-accent transition-colors enabled:hover:border-accent enabled:hover:bg-accent/15 disabled:opacity-40"
         >
           <Check size={12} />
           {t('加进去')}
@@ -771,7 +771,7 @@ function BatchCard({
           type="button"
           disabled={busy || picked.size === 0}
           onClick={() => (partial ? onApproveSome([...picked]) : onApprove())}
-          className="flex flex-1 items-center justify-center gap-1.5 rounded-md border border-accent/60 bg-accent-soft px-3 py-1.5 text-xs font-medium text-accent transition-colors enabled:hover:border-accent enabled:hover:bg-accent/15 disabled:opacity-40"
+          className="flex flex-1 items-center justify-center gap-1.5 rounded-md border border-accent/60 px-3 py-1.5 text-xs font-medium text-accent transition-colors enabled:hover:border-accent enabled:hover:bg-accent/15 disabled:opacity-40"
         >
           <Check size={12} />
           {partial

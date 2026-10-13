@@ -323,7 +323,7 @@ export default function MergeToolbar({ threadId }: Props) {
                 const pill = (on: boolean): string =>
                   `rounded-md border px-2 py-0.5 transition-colors ${
                     on
-                      ? 'border-accent bg-accent-soft text-accent'
+                      ? 'border-accent text-accent'
                       : 'border-line bg-paper text-muted hover:border-line-strong hover:text-ink'
                   }`;
                 return (

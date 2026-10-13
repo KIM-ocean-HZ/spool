@@ -32,7 +32,7 @@ export default function LiveRun() {
   const typed = progress?.text.trim() ?? '';
 
   return (
-    <section className="rounded-md border border-accent/40 bg-accent-soft/40 px-2.5 py-2">
+    <section className="rounded-md border border-accent/40 px-2.5 py-2">
       <div className="flex items-baseline justify-between gap-2">
         <span className="min-w-0 truncate text-xs text-accent">
           {current.threadTitle

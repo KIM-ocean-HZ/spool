@@ -233,7 +233,7 @@ export default function RightRail({ thread, onCollapse, onEditBrief }: Props) {
           <button
             type="button"
             onClick={() => void openReview()}
-            className="flex w-full items-center gap-1.5 rounded px-1 py-1 text-left text-[13px] text-accent transition-colors hover:bg-accent-soft"
+            className="flex w-full items-center gap-1.5 rounded px-1 py-1 text-left text-[13px] text-accent transition-colors"
           >
             <Inbox size={12} className="flex-none" />
             <span className="min-w-0 flex-1 truncate">

@@ -1154,7 +1154,7 @@ function TextBlockItem({
             aria-label={selected ? t('取消选择') : t('选择此 block')}
             className={`flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded border transition-colors ${
               selected
-                ? 'border-accent bg-accent-soft text-accent'
+                ? 'border-accent text-accent'
                 : 'border-line-strong bg-paper hover:border-accent'
             }`}
           >
@@ -1505,7 +1505,7 @@ function TextBlockItem({
               type="button"
               onClick={() => void saveCorrection()}
               disabled={correctionDraft.trim().length === 0}
-              className="rounded border border-accent bg-accent-soft px-2 py-0.5 text-accent hover:bg-accent/10 disabled:cursor-not-allowed disabled:opacity-40"
+              className="rounded border border-accent px-2 py-0.5 text-accent hover:bg-accent/10 disabled:cursor-not-allowed disabled:opacity-40"
             >
               {t('保存更正')}
             </button>
@@ -1614,7 +1614,7 @@ function TextBlockItem({
                     onClick={() => applyFormat(f)}
                     className={`rounded border px-2 py-1 text-[11px] transition-colors ${
                       currentFormat === f
-                        ? 'border-accent bg-accent-soft text-accent'
+                        ? 'border-accent text-accent'
                         : 'border-line text-muted hover:border-accent hover:text-accent'
                     }`}
                     title={
@@ -1643,7 +1643,7 @@ function TextBlockItem({
                   type="button"
                   onMouseDown={(e) => e.preventDefault()} // don't pull focus out of the field first
                   onClick={() => void commitAll()}
-                  className="rounded border border-accent bg-accent-soft px-2.5 py-1 text-[11px] text-accent hover:bg-accent/10"
+                  className="rounded border border-accent px-2.5 py-1 text-[11px] text-accent hover:bg-accent/10"
                 >
                   {t('完成')}
                 </button>

@@ -66,7 +66,7 @@ export default function GeneralConfig() {
               onClick={() => void update({ language: lang })}
               className={`rounded-md border px-2.5 py-1 text-xs transition-colors ${
                 language === lang
-                  ? 'border-accent bg-accent-soft text-accent'
+                  ? 'border-accent text-accent'
                   : 'border-line bg-paper text-muted hover:border-line-strong hover:text-ink'
               }`}
             >
@@ -99,7 +99,7 @@ export default function GeneralConfig() {
               onClick={() => void update({ theme: name })}
               className={`rounded-md border px-2.5 py-1 text-xs transition-colors ${
                 theme === name
-                  ? 'border-accent bg-accent-soft text-accent'
+                  ? 'border-accent text-accent'
                   : 'border-line bg-paper text-muted hover:border-line-strong hover:text-ink'
               }`}
             >
@@ -130,7 +130,7 @@ export default function GeneralConfig() {
               onClick={() => void update({ blockFontSize: size })}
               className={`rounded-md border px-2.5 py-1 text-xs transition-colors ${
                 blockFontSize === size
-                  ? 'border-accent bg-accent-soft text-accent'
+                  ? 'border-accent text-accent'
                   : 'border-line bg-paper text-muted hover:border-line-strong hover:text-ink'
               }`}
             >

@@ -237,7 +237,7 @@ export default function CompressBoard({ threadId }: { threadId: string }) {
             title={t(LEVEL_HINTS[k])}
             className={`rounded-md border px-2 py-0.5 transition-colors disabled:opacity-50 ${
               level === k
-                ? 'border-accent bg-accent-soft text-accent'
+                ? 'border-accent text-accent'
                 : 'border-line bg-paper text-muted hover:border-line-strong hover:text-ink'
             }`}
           >
@@ -550,7 +550,7 @@ export default function CompressBoard({ threadId }: { threadId: string }) {
                     <button
                       type="button"
                       onClick={() => openResult(nightly)}
-                      className="rounded-md border border-accent bg-accent-soft px-3 py-1.5 text-[12px] text-accent transition-colors hover:opacity-80"
+                      className="rounded-md border border-accent px-3 py-1.5 text-[12px] text-accent transition-colors hover:opacity-80"
                     >
                       {t('这个项目有一份压好的，等你核对 —— 打开')}
                     </button>

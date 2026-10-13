@@ -285,7 +285,7 @@ export default function PackDialog({
                   title={t(RANGE_HINTS[k])}
                   className={`rounded-md border px-2 py-0.5 transition-colors ${
                     active
-                      ? 'border-accent bg-accent-soft text-accent'
+                      ? 'border-accent text-accent'
                       : 'border-line bg-paper text-muted hover:border-line-strong hover:text-ink'
                   }`}
                 >

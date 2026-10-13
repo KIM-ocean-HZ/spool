@@ -75,7 +75,7 @@ export default function RunCard({ run, onDismiss, onStore, busy }: Props) {
       className={`rounded-md border px-2.5 py-2 transition-colors ${
         answered || run.outcome !== 'ok'
           ? 'border-line bg-paper-2/30'
-          : 'border-accent/40 bg-accent-soft/40'
+          : 'border-accent/40'
       }`}
     >
       <div className="flex items-start gap-1">
@@ -155,7 +155,7 @@ export default function RunCard({ run, onDismiss, onStore, busy }: Props) {
           type="button"
           disabled={busy}
           onClick={() => onStore(run)}
-          className="mt-2 flex w-full items-center justify-center gap-1 rounded border border-accent/60 bg-accent-soft px-2 py-1 text-[13px] text-accent transition-colors enabled:hover:border-accent enabled:hover:bg-accent/15 disabled:opacity-40"
+          className="mt-2 flex w-full items-center justify-center gap-1 rounded border border-accent/60 px-2 py-1 text-[13px] text-accent transition-colors enabled:hover:border-accent enabled:hover:bg-accent/15 disabled:opacity-40"
         >
           <Check size={11} />
           {t('存成一块')}

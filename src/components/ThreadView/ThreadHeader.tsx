@@ -263,7 +263,7 @@ export default function ThreadHeader({
 
         <button
           onClick={onPack}
-          className="flex flex-none items-center gap-1 rounded-full border border-accent/60 bg-accent-soft px-3 py-1 text-xs font-medium text-accent transition-colors hover:border-accent hover:bg-accent/15"
+          className="flex flex-none items-center gap-1 rounded-full border border-accent/60 px-3 py-1 text-xs font-medium text-accent transition-colors hover:border-accent hover:bg-accent/15"
           title={t('打包上下文（⌘⇧P）')}
         >
           <Package size={12} />
@@ -277,7 +277,7 @@ export default function ThreadHeader({
           <button
             onClick={() => void updateSettings({ railCollapsed: false })}
             title={t('点一下打开右边，看它在写什么')}
-            className="flex flex-none items-center gap-1 rounded-full border border-accent/60 bg-accent-soft px-2.5 py-1 text-[11px] text-accent transition-colors hover:border-accent hover:bg-accent/15"
+            className="flex flex-none items-center gap-1 rounded-full border border-accent/60 px-2.5 py-1 text-[11px] text-accent transition-colors hover:border-accent hover:bg-accent/15"
           >
             <span>
               {engineQueue.length > 0

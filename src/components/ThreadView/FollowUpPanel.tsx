@@ -271,7 +271,7 @@ function KindPicker({
       }}
       className={`px-1.5 py-0.5 text-[10px] transition-colors ${value ? 'border-l border-line' : ''} ${
         standing === value
-          ? 'bg-accent-soft text-accent'
+          ? 'text-accent'
           : 'bg-paper text-muted hover:bg-paper-2 hover:text-ink-2'
       }`}
     >

@@ -62,7 +62,7 @@ const PREVIEW_CHARS = 150;
 // 时刻出现，一走就收。⛔ 仍然不是浮窗，它是刻度自己的子节点。
 //
 // ⭐ 第二轮那套「以当前块为中心向外递减」的尺寸已经删掉了：所有卡片一样大，
-// 「哪一张是当前这一块」改由**描边和底色**说（`isHere`），⛔ 不再由大小说 —— 大小既要表达
+// 「哪一张是当前这一块」改由**描边和阴影**说（`isHere`），⛔ 不再由大小说 —— 大小既要表达
 // 距离又要保证读得清，两件事挤在一个变量上，结果是远处那几张小到看不清字。
 
 /** 最多同时排几张。
@@ -448,10 +448,10 @@ export default function ScaleRail({ scrollRef, revision, threadId }: Props) {
                 style={{ width: PREVIEW_COL_W }}
                 // ⭐ 壳子和下面那张悬浮预览卡是**同一套**（`rounded-md border-line bg-paper`
                 // + 12px 正文）——Ocean 第三轮第 2 条「复用非搜索状态下的小 block」。
-                // ⚠️ 当前那一块靠**描边和底色**突出，⛔ 不靠尺寸（尺寸全都一样大）。
+                // ⚠️ 当前那一块靠**描边和阴影**突出，⛔ 不靠尺寸（尺寸全都一样大）。
                 className={`block rounded-md border px-2 py-1.5 text-left font-ui text-[12px] leading-[1.45] transition-colors ${
                   isHere
-                    ? 'border-accent bg-accent-soft text-ink shadow-[var(--shadow-card)]'
+                    ? 'border-accent text-ink shadow-[var(--shadow-card)]'
                     : 'border-line bg-paper text-ink-2 hover:border-accent'
                 }`}
                 title={text}

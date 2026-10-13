@@ -1227,7 +1227,7 @@ export default function CaptureOverlay() {
           type="button"
           onMouseDown={(e) => e.preventDefault()} // don't blur the textarea first
           onClick={finishNote}
-          className="ml-auto rounded-md border border-accent bg-accent-soft px-2.5 py-0.5 text-[11px] text-accent hover:bg-accent/10"
+          className="ml-auto rounded-md border border-accent px-2.5 py-0.5 text-[11px] text-accent hover:bg-accent/10"
         >
           {tr('完成')}
         </button>
