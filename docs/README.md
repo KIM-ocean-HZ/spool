@@ -43,18 +43,8 @@
 
 | 文件 | 还欠什么 |
 |---|---|
-| `DESIGN_AI_ENGINE.md` | §7.6「模型真的写进一块」没验到；§7.7 免费档要不要再补一个，待拍板 |
-| `DESIGN_CONTEXT_HYGIENE.md` | 第 5 件（AI 一句话标签）当初压后，§8 说「现在该看了」 |
-| `DESIGN_FOLLOW_UP.md` | §8 会话内跟进这条新形状；M4 定时已明确不做 |
-| `DESIGN_MCP_INTENT_ROUTING.md` | A–E 已落地，**F 未开工**，要单独一窗 |
-| `DESIGN_MCP_WRITE_ROLE.md` | M1 已落地，M2 等真实使用后再定 |
-| `DESIGN_PROJECT_FILES.md` | 评估 + 计划，未开工 |
-| `DESIGN_WORKBENCH.md` | §9 那轮重构（「界面被无用按钮堆满」）是主线，§9.5 有两处冲突要先解 |
-| `DESIGN_WORKSPACE_PACK.md` | 嵌套已提交；**打包那半（§7）还没提交** |
-| `DESIGN_WINDOWS_PORT.md` | 首版已发，**未签名**是已知欠账 |
-| `WINDOWS-CHECK.md` | 给 Ocean 在 Windows 上照着做的验收单，第三、四轮还没装机验 |
-| `COMPRESS-UX-R2-2026-08-22.md` | 八条里 **1、5、7 三条没做**（第 1 条最大：压缩稿直接替换原库正文） |
-| `FEEDBACK-FORM-2026-08-22.md` | 问卷题目已写好，等 Ocean 在问卷星建好两份并把链接发回 |
+| `DESIGN_WINDOWS_PORT.md` | 首版随 v0.6.0 / v0.6.1 发过；不签名是 Ocean 定的（红线，不再问）；下一次 Windows 包在发版二（第 73 条） |
+| `WINDOWS-CHECK.md` | 第三、四轮还没装机验；发版二前先从 `main` 手动跑一次 `windows-build`，再照这份装机验（P1 – P9 的 Windows 部分还没在 Windows 上跑过，见 HANDOFF `DISCOVERED-20261010-9`） |
 | `DESIGN_CASE_STUDY.md` | 申请用 case-study 的计划与维护规矩；后面几期还在等 |
 
 ---
@@ -91,7 +81,7 @@
 - 已 SUPERSEDED 的开工面：`HANDOFF-2026-08-22.md`、`HANDOFF-2026-08-30.md`、`NEXT-WINDOW-PROMPT-2026-08-27.md`
 - 跑完就作废的一次性清单：`OVERNIGHT-TEST-PLAN-2026-08-23.md`、`OVERNIGHT-TEST-PLAN-2026-08-24.md`、`QA_SITE_2026-08-13.md`
 - 已经全做完的那几摊：`TEN-ITEMS-2026-08-27.md`、`FIND-UX-2026-08-27.md`、`COMPRESS-UX-2026-08-22.md`、`CHECK-DISPLAY-2026-08-21.md`、`FIX_TAILWIND_ALPHA-2026-08-19.md`
-- 已落地的设计稿：`DESIGN_CAPTURE_FOCUS.md`、`DESIGN_FIRST_DAY_VALUE.md`、`DESIGN_LIBRARY_TRANSFER.md`、`DESIGN_VALENTINE_EDITION.md`
+- 已落地的设计稿：`DESIGN_CAPTURE_FOCUS.md`、`DESIGN_FIRST_DAY_VALUE.md`、`DESIGN_LIBRARY_TRANSFER.md`、`DESIGN_VALENTINE_EDITION.md`；2026-10-13 又移进 10 份（P9A 核过早已全部落地，Ocean 10-11 第 84 条）：`DESIGN_AI_ENGINE.md`、`DESIGN_CONTEXT_HYGIENE.md`、`DESIGN_FOLLOW_UP.md`、`DESIGN_MCP_INTENT_ROUTING.md`、`DESIGN_MCP_WRITE_ROLE.md`、`DESIGN_PROJECT_FILES.md`、`DESIGN_WORKBENCH.md`、`DESIGN_WORKSPACE_PACK.md`、`COMPRESS-UX-R2-2026-08-22.md`、`FEEDBACK-FORM-2026-08-22.md`
 - 留档不开工的：`PROMO-VERDICT-2026-08-20.md`、`DEMO_SCRIPT.md`、`REVIEW_MEMTRAPBENCH-2026-08-21.md`、`MCP_LAB_PROMPT.md`、`MCP_SCREENSHOT_GUIDE.md`
 - `archive/stage0a-taskbooks/` —— Stage 0-a 已验收 / 已被纠正的 36 份任务书（D2 到 GR15R3）；根目录当前另有 1 份 ACTIVE GR15R4 任务书
 - `archive/HANDOFF-2026-09-04-FULL-PROCESS-LOG.md` —— 精简前的 2455 行完整过程流水（逐窗记录、已消耗的预算与提示词），一个字没删
