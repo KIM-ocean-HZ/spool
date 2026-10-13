@@ -708,8 +708,17 @@ pub fn run() {
 // Chrome (title bar + borders) is measured rather than assumed: `set_size` sets the INNER
 // size, and the difference is what would otherwise still hang off the bottom.
 //
-// ⚠️ A window that already fits returns before touching anything, so on the displays this was
-// never a problem on (15"/16" Macs, roomy externals) nothing moves — same size, same position.
+// ⚠️⚠️ **P9F F7 (Ocean 2026-10-11 #85): the window now ALWAYS takes its size from the screen**,
+// not only when 1600×1000 does not fit. His words: 「spool打开后的默认长宽比不对，现在近似一个正方形，
+// 不好看，需要改成和电脑窗口一致的长宽比，并且放大，保留小部分缝隙」. On his 2560×1440 external
+// (work area 2560×1352) the old rule left a 1600×1000 window — it fitted, so nothing moved —
+// which reads as a small near-square in a wide screen. See `main_window_size`.
+//
+// Once per launch, from `setup` only: reopening from the tray, or a size the user dragged to,
+// is never touched again. Nothing about the window is persisted (separate question).
+// The window should not be seen at 1600×1000 first: `setup` runs inside the event loop's Ready
+// callback right after the config window is built, before the run loop draws anything (the same
+// place the shrink-to-fit has run since 08-21). Checked by eye on a cold start, not measured.
 fn fit_main_window_to_work_area(app: &tauri::AppHandle) {
     use tauri::{LogicalSize, PhysicalPosition, PhysicalSize};
     let Some(win) = app.get_webview_window("main") else {
@@ -721,28 +730,76 @@ fn fit_main_window_to_work_area(app: &tauri::AppHandle) {
         return;
     };
     let work = *monitor.work_area();
-    let chrome_w = outer.width.saturating_sub(inner.width);
-    let chrome_h = outer.height.saturating_sub(inner.height);
-    let max_w = work.size.width.saturating_sub(chrome_w);
-    let max_h = work.size.height.saturating_sub(chrome_h);
-    if inner.width <= max_w && inner.height <= max_h {
-        return; // it already fits — leave the user's window exactly where it is
-    }
+    let chrome = (outer.width.saturating_sub(inner.width), outer.height.saturating_sub(inner.height));
     // The floor is the configured minimum (860×560 logical): a work area smaller than that
     // has no answer, and shrinking past it would just move the clipping inside the app.
-    let scale = monitor.scale_factor();
-    let min = LogicalSize::new(860.0, 560.0).to_physical::<u32>(scale);
-    let w = inner.width.min(max_w).max(min.width);
-    let h = inner.height.min(max_h).max(min.height);
+    let min = LogicalSize::new(860.0, 560.0).to_physical::<u32>(monitor.scale_factor());
+    let (w, h) = main_window_size((work.size.width, work.size.height), chrome, (min.width, min.height));
     if win.set_size(PhysicalSize::new(w, h)).is_err() {
         return;
     }
-    // ⚠️ Re-positioning is NOT cosmetic and not optional: a window shrunk to the work area's
-    // width but left at its old x still hangs off the same edge (1600→1512 at x=100 is still
-    // 100pt over). Centring is simply the position that is always inside, on every edge.
+    // ⚠️ Re-positioning is NOT cosmetic and not optional: a window resized but left at its old
+    // x can hang off an edge (1600→1512 at x=100 is still 100pt over). Centring is simply the
+    // position that is always inside, on every edge, and it is what makes the gap even.
     // Re-read: the resize is what decides how much room is left to centre in.
     let Ok(outer) = win.outer_size() else { return };
-    let x = work.position.x + ((work.size.width as i32 - outer.width as i32) / 2).max(0);
-    let y = work.position.y + ((work.size.height as i32 - outer.height as i32) / 2).max(0);
+    let (x, y) = centred(
+        (work.position.x, work.position.y),
+        (work.size.width, work.size.height),
+        (outer.width, outer.height),
+    );
     let _ = win.set_position(PhysicalPosition::new(x, y));
+}
+
+/// The gap left on EACH side of the main window, as a share of the work area's own length on
+/// that axis. ⚠️ One share for both axes is what keeps the window's shape the screen's shape
+/// (Ocean: 「和电脑窗口一致的长宽比」). 4% is the starting value from the taskbook — on his
+/// external that is about 100pt left/right and 54pt top/bottom; he may ask for more or less.
+const MAIN_WINDOW_GAP: f64 = 0.04;
+
+/// P9F F7: the main window's INNER size (what `set_size` sets) for a work area — the whole
+/// window, title bar included, is the work area shrunk by `MAIN_WINDOW_GAP` on every side; the
+/// chrome comes off that. Never below the configured minimum. All in physical pixels.
+fn main_window_size(work: (u32, u32), chrome: (u32, u32), min: (u32, u32)) -> (u32, u32) {
+    let keep = |len: u32| (f64::from(len) * (1.0 - 2.0 * MAIN_WINDOW_GAP)).round() as u32;
+    (
+        keep(work.0).saturating_sub(chrome.0).max(min.0),
+        keep(work.1).saturating_sub(chrome.1).max(min.1),
+    )
+}
+
+/// Top-left that centres a window of `outer` size in the work area (never left of / above it).
+fn centred(work_pos: (i32, i32), work: (u32, u32), outer: (u32, u32)) -> (i32, i32) {
+    (
+        work_pos.0 + ((work.0 as i32 - outer.0 as i32) / 2).max(0),
+        work_pos.1 + ((work.1 as i32 - outer.1 as i32) / 2).max(0),
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // P9F F7 (Ocean 2026-10-11 #85) on his two screens, in physical pixels at 2× (a 28pt title
+    // bar = 56px of chrome), and on a screen too small for the minimum.
+    #[test]
+    fn the_main_window_takes_the_screens_shape_with_a_small_even_gap() {
+        let chrome = (0, 56);
+        let min = (1720, 1120); // 860×560 logical
+        for (work, gap_pt) in [((5120, 2704), (102.5, 54.0)), ((3024, 1900), (60.5, 38.0))] {
+            let (w, h) = main_window_size(work, chrome, min);
+            let outer = (w + chrome.0, h + chrome.1);
+            // Same shape as the work area (to rounding), whole window included.
+            let ratio = |a: (u32, u32)| f64::from(a.0) / f64::from(a.1);
+            assert!((ratio(outer) - ratio(work)).abs() < 0.002, "{outer:?} vs {work:?}");
+            // An even gap, centred: about 4% of each side's own length.
+            let (x, y) = centred((0, 0), work, outer);
+            assert_eq!((f64::from(x as u32) / 2.0, f64::from(y as u32) / 2.0), gap_pt, "{work:?}");
+            assert_eq!(x as u32 * 2 + outer.0, work.0);
+        }
+        // Too small a screen: the minimum wins, as before.
+        assert_eq!(main_window_size((1800, 1200), chrome, min), min);
+        // A work area that does not start at 0 (a second display, a top/left taskbar).
+        assert_eq!(centred((2560, 40), (1000, 600), (900, 500)), (2610, 90));
+    }
 }
