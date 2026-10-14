@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import Sidebar from '@/components/Sidebar';
 import { useEngineStore } from '@/stores/engineStore';
 import { useSettingsStore } from '@/stores/settingsStore';
-import { emptyReviewsHint } from './index';
+import { emptyReviewsHint, reviewKind } from './index';
 
 // P9B-3 (Ocean 2026-10-10 第 76 条「一直显示」): the weekly review page has 「活动」 now, which needs
 // no AI — so its door is open on every machine, and the page never tells anyone to install a CLI.
@@ -29,5 +29,21 @@ describe('emptyReviewsHint', () => {
 
   it('says nothing at all with 「显示 AI 功能」 off', () => {
     expect(emptyReviewsHint('hidden')).toBeNull();
+  });
+});
+
+// P9C 验收第一轮（Ocean 10-15 第 104 – 105 条）: one button, the type picked first.
+describe('reviewKind', () => {
+  it('API off: only the local CLI', () => {
+    expect(reviewKind(false, true, 'api')).toBe('cli');
+  });
+
+  it('not a Mac: there is no local-CLI type, so API (第 97 条)', () => {
+    expect(reviewKind(true, false, 'cli')).toBe('api');
+  });
+
+  it('both there: the type the user picked — the same one the weekly run uses', () => {
+    expect(reviewKind(true, true, 'cli')).toBe('cli');
+    expect(reviewKind(true, true, 'api')).toBe('api');
   });
 });

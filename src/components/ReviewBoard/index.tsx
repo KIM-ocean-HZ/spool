@@ -73,6 +73,12 @@ import { CENTRE_HEADER_HEIGHT } from '@/lib/layout';
 export const emptyReviewsHint = (entry: AiEntryState): string | null =>
   entry === 'ready' ? '还没有回顾。点上面那一下，AI 会读一遍所有项目，说说这一周做了什么、还剩什么。' : null;
 
+/** Which type the review bar runs on (P9C 验收第一轮，第 104 – 105 条). API off ⇒ only the local CLI;
+ *  not a Mac ⇒ there is no local-CLI type (第 97 条), so API; both there ⇒ the one the user picked,
+ *  which is also what the weekly automatic run uses (`autoReviewRoute`). */
+export const reviewKind = (apiOn: boolean, isMac: boolean, picked: 'cli' | 'api'): 'cli' | 'api' =>
+  !apiOn ? 'cli' : !isMac ? 'api' : picked;
+
 /** §5 — spend, never remaining quota; same rule and same reason as RunCard's. */
 const money = (usd: number | null): string | null =>
   usd === null ? null : usd < 0.01 ? '<$0.01' : `$${usd.toFixed(2)}`;
@@ -199,6 +205,8 @@ export default function ReviewBoard() {
    *  用户分不出哪个是哪个 —— 按钮上必须说出跑的是谁。 */
   const selected = engineStatus?.selected ?? null;
   const cliName = selected ? (ENGINE_LABEL[selected] ?? selected) : null;
+  const kind = reviewKind(apiOn, IS_MAC, autoRoute);
+  const codexNote = kind === 'cli' && engineReady && selected === 'codex';
   // `W1` — the picker itself, on this bar rather than in a rail this screen does not have.
   // ⚠️ Same table and same settings key as the rail's (`lib/engine/models`), so picking here
   // and picking there are the same act; a second copy would be a second answer.
@@ -233,184 +241,219 @@ export default function ReviewBoard() {
           `DISCOVERED-20261014-1`）；只有「显示 AI 功能」关着才不画。 */}
       {reviewEntry !== null && reviewEntry !== 'hidden' && (
         <div className="flex-none border-b border-line px-6 py-2">
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-            {engineReady && (
-              <button
-                type="button"
-                disabled={current !== null || apiRunning}
-                onClick={() => enqueue('', '', 'weekly_review', timeoutSecs)}
-                title={t('回顾最近一周——读一遍所有项目')}
-                className="flex items-center gap-1.5 rounded px-1.5 py-1 text-xs text-ink-2 transition-colors enabled:hover:bg-paper-2 enabled:hover:text-accent disabled:text-muted disabled:opacity-50"
-              >
-                {running ? (
-                  <Loader2 size={12} className="flex-none animate-spin" />
+          {reviewEntry === 'locked' && !cliNeedsSwitches ? (
+            <LockedAiEntry
+              label={t('回顾这一周')}
+              reason={
+                IS_MAC
+                  ? t('写回顾要用一个 AI：本机的 Claude Code / Codex，或者 DeepSeek。')
+                  : t('写回顾要用一个 AI：DeepSeek。')
+              }
+              route="any"
+            />
+          ) : (
+            <>
+              {/* P9C 验收第一轮（Ocean 10-15 第 104 – 106 条）：「回顾这一周（用 Codex）」「回顾这一周（用
+                  deepseek-v4-flash）」两个按钮看着重复 ⇒ 一个按钮，先选类型：本机 CLI（里面再选 Claude
+                  Code / Codex）或 API（以后不止 DeepSeek）。选的类型就是 `autoReviewRoute` —— 手动点和
+                  每周自动跑走同一类，原来那个「自动那次用」选择器并进来了。本机 CLI 这一类总在（没准备好就
+                  锁着、当场能打开）；API 没开就不出现（不劝人花钱）。 */}
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+                {kind === 'cli' && !engineReady ? (
+                  cliNeedsSwitches ? (
+                    // P9C 第 93 条（`DISCOVERED-20261014-2`）：免费那条路只差 MCP 两个开关 —— 在按钮的
+                    // 位置给，弹出的小块当场打开（也老实说这两个开关还管着别的 AI）。
+                    <AiSetupButton
+                      route="cli"
+                      className="flex items-center gap-1.5 rounded px-1.5 py-1 text-xs text-ink-2 transition-colors hover:bg-paper-2 hover:text-accent"
+                    >
+                      <Lock size={12} className="flex-none" />
+                      {t('用 {engine} 回顾（不花钱）—— 先打开写入', { engine: cliName ?? 'Claude Code' })}
+                    </AiSetupButton>
+                  ) : engineStatus === null ? null : (
+                    <span className="flex items-center gap-1.5 px-1.5 py-1 text-xs text-muted opacity-70">
+                      <Lock size={12} className="flex-none" />
+                      {t('回顾这一周')}
+                    </span>
+                  )
                 ) : (
-                  <CalendarRange size={12} className="flex-none" />
+                  <button
+                    type="button"
+                    disabled={current !== null || apiRunning}
+                    onClick={() =>
+                      kind === 'api' ? void runViaApi() : enqueue('', '', 'weekly_review', timeoutSecs)
+                    }
+                    title={
+                      kind === 'api'
+                        ? t('用你自己填的端点和模型跑一次（按字数计费）')
+                        : t('回顾最近一周——读一遍所有项目')
+                    }
+                    className="flex items-center gap-1.5 rounded px-1.5 py-1 text-xs text-ink-2 transition-colors enabled:hover:bg-paper-2 enabled:hover:text-accent disabled:text-muted disabled:opacity-50"
+                  >
+                    {running || apiRunning ? (
+                      <Loader2 size={12} className="flex-none animate-spin" />
+                    ) : (
+                      <CalendarRange size={12} className="flex-none" />
+                    )}
+                    {running || apiRunning ? t('正在回顾…') : t('回顾这一周')}
+                  </button>
                 )}
-                {running
-                  ? t('正在回顾…')
-                  : cliName
-                    ? t('回顾这一周（用 {engine}）', { engine: cliName })
-                    : t('回顾这一周')}
-              </button>
-            )}
 
-            {/* P9C 第 93 条（`DISCOVERED-20261014-2`）：CLI 在、只差 MCP 那两个开关 —— 免费那条路就差
-                一下，在它自己的位置上给，弹出的那一小块当场打开（也老实说这两个开关还管着别的 AI）。
-                DeepSeek 开着的话它的按钮照旧在旁边。 */}
-            {!engineReady && cliNeedsSwitches && (
-              <AiSetupButton
-                route="cli"
-                className="flex items-center gap-1.5 rounded px-1.5 py-1 text-xs text-ink-2 transition-colors hover:bg-paper-2 hover:text-accent"
-              >
-                <Lock size={12} className="flex-none" />
-                {t('用 {engine} 回顾（不花钱）—— 先打开写入', { engine: cliName ?? 'Claude Code' })}
-              </AiSetupButton>
-            )}
+                {/* 用哪一类。两类都在才是一个能选的开关；只有一类就只写出它是哪一类。 */}
+                <span className="flex items-center gap-1.5">
+                  <span className="text-xs text-muted">{t('用')}</span>
+                  {apiOn && IS_MAC ? (
+                    <span className="inline-flex overflow-hidden rounded border border-line">
+                      {(['cli', 'api'] as const).map((k) => (
+                        <button
+                          key={k}
+                          type="button"
+                          disabled={current !== null || apiRunning}
+                          onClick={() => void update({ autoReviewRoute: k })}
+                          className={`px-2 py-0.5 text-xs transition-colors disabled:opacity-50 ${
+                            kind === k ? 'bg-accent/10 text-accent' : 'bg-paper text-muted hover:text-ink'
+                          }`}
+                        >
+                          {k === 'cli' ? t('本机 CLI') : 'API'}
+                        </button>
+                      ))}
+                    </span>
+                  ) : (
+                    <span className="text-xs text-ink-2">{kind === 'cli' ? t('本机 CLI') : 'API'}</span>
+                  )}
+                </span>
 
-            {reviewEntry === 'locked' && !cliNeedsSwitches && (
-              <LockedAiEntry
-                label={t('回顾这一周')}
-                reason={
-                  IS_MAC
-                    ? t('写回顾要用一个 AI：本机的 Claude Code / Codex，或者 DeepSeek。')
-                    : t('写回顾要用一个 AI：DeepSeek。')
-                }
-                route="any"
-              />
-            )}
-
-            {/* ⭐⭐ `W1` (Ocean 2026-08-26：「每周自动回顾无法选模型」) —— 选择器在这儿，
-                因为他站的就是这一屏，而这一屏没有右边栏。⛔ 别拿「跳去别处选」搪塞。
-                「默认」= 一个 `--model` 都不发，也就是用他自己 CLI 账号里配好的那个。 */}
-            {engineReady && models.length > 0 && (
-              <label className="flex items-center gap-1.5">
-                <span className="text-xs text-muted">{t('用哪个模型')}</span>
-                <select
-                  value={model ?? ''}
-                  disabled={current !== null}
-                  onChange={(e) =>
-                    void update({ [modelKeyFor(selected)]: e.target.value || null })
-                  }
-                  className="rounded border border-line bg-paper px-1.5 py-0.5 text-xs text-ink outline-none focus:border-accent disabled:opacity-50"
-                >
-                  <option value="">{t('默认')}</option>
-                  {models.map((m) => (
-                    <option key={m} value={m}>
-                      {m}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            )}
-
-            {/* ⭐⭐ Ocean 2026-08-25：「加入 deepseek 的周总结，总结的 model 可以让用户自行选择」。
-                ⚠️ 模型是**设置里那个「模型」框**（`apiModel`），⛔ 这里不再做第二个选择器 ——
-                按钮上把它的名字说出来，用户点之前就知道这一下花的是谁的钱。 */}
-            {apiOn && (
-              <button
-                type="button"
-                disabled={apiRunning || current !== null}
-                onClick={() => void runViaApi()}
-                title={t('用你自己填的端点和模型跑一次（按字数计费）')}
-                className="flex items-center gap-1.5 rounded px-1.5 py-1 text-xs text-ink-2 transition-colors enabled:hover:bg-paper-2 enabled:hover:text-accent disabled:text-muted disabled:opacity-50"
-              >
-                {apiRunning ? (
-                  <Loader2 size={12} className="flex-none animate-spin" />
-                ) : (
-                  <CalendarRange size={12} className="flex-none" />
+                {/* 本机 CLI 还没装（DeepSeek 开着才会走到这里）：这一类锁着，当场能装 / 能检测。 */}
+                {kind === 'cli' && !engineReady && !cliNeedsSwitches && engineStatus !== null && (
+                  <span className="flex items-center gap-2">
+                    <span className="text-[11px] text-muted">{t('要先装 Claude Code 或 Codex（不花钱）')}</span>
+                    <AiSetupButton
+                      route="cli"
+                      className="text-[11px] text-accent underline-offset-2 hover:underline"
+                    >
+                      {t('怎么打开')}
+                    </AiSetupButton>
+                  </span>
                 )}
-                {apiRunning
-                  ? t('正在回顾…')
-                  : t('回顾这一周（用 {engine}）', { engine: apiModel })}
-              </button>
-            )}
 
-            {/* ⭐ 余额贴着按它就要花钱的那个按钮。⛔ 不自动查 —— 点一下,或者一次运行
-                刚跑完顺带刷。 */}
-            {apiOn && <ApiBalance />}
+                {/* 本机 CLI 里选 Claude Code / Codex —— 和跟进面板里「用哪个」是同一个设置（`aiEngine`），
+                    两处选的是同一件事。只装了一个就只写它的名字。 */}
+                {kind === 'cli' && engineReady && (engineStatus?.engines.length ?? 0) > 1 && (
+                  <select
+                    value={selected ?? ''}
+                    disabled={current !== null}
+                    onChange={(e) => void update({ aiEngine: e.target.value as EngineKind }).then(probe)}
+                    className="rounded border border-line bg-paper px-1.5 py-0.5 text-xs text-ink outline-none focus:border-accent disabled:opacity-50"
+                  >
+                    {engineStatus?.engines.map((e) => (
+                      <option key={e.kind} value={e.kind}>
+                        {ENGINE_LABEL[e.kind]}
+                      </option>
+                    ))}
+                  </select>
+                )}
+                {kind === 'cli' && engineReady && (engineStatus?.engines.length ?? 0) <= 1 && cliName && (
+                  <span className="text-xs text-ink-2">{cliName}</span>
+                )}
 
-            {/* ⭐ 2026-08-25（Ocean:「周回顾没法暂停」）—— 停下的按钮以前**只长在右边栏的
-                LiveRun 卡片上**，而钉住的视图（项目管理 / 周回顾）根本不挂右边栏（App.tsx:
-                `pinnedView ? null : …`）。所以从这一屏点「回顾这一周」的人，看着它转，
-                没有任何地方能停。⛔ 别用「跳回项目再停」搪塞：他就在这一屏。
-                ⚠️ 停下不是暂停 —— 停了不能续跑，再点一次是从头跑（已经写进去的留着）。 */}
-            {running && (
-              <button
-                type="button"
-                onClick={() => void cancel()}
-                title={t('点一下停下来（停了不能续跑，再点就是从头再来）')}
-                className="rounded border border-line px-1.5 py-0.5 text-xs text-ink-2 transition-colors hover:border-accent hover:text-accent"
-              >
-                {t('停下')}
-              </button>
-            )}
+                {/* ⭐⭐ `W1` (Ocean 2026-08-26：「每周自动回顾无法选模型」) —— 选择器在这儿，
+                    因为他站的就是这一屏，而这一屏没有右边栏。⛔ 别拿「跳去别处选」搪塞。
+                    「默认」= 一个 `--model` 都不发，也就是用他自己 CLI 账号里配好的那个。 */}
+                {kind === 'cli' && engineReady && models.length > 0 && (
+                  <label className="flex items-center gap-1.5">
+                    <span className="text-xs text-muted">{t('用哪个模型')}</span>
+                    <select
+                      value={model ?? ''}
+                      disabled={current !== null}
+                      onChange={(e) =>
+                        void update({ [modelKeyFor(selected)]: e.target.value || null })
+                      }
+                      className="rounded border border-line bg-paper px-1.5 py-0.5 text-xs text-ink outline-none focus:border-accent disabled:opacity-50"
+                    >
+                      <option value="">{t('默认')}</option>
+                      {models.map((m) => (
+                        <option key={m} value={m}>
+                          {m}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
 
-            {/* §4.3's master switch, moved here from 项目管理 (2026-08-11). It used to govern
-                two things and now governs one: with per-project 压缩 retired, a weekly review is
-                the only thing automation still runs — so it belongs beside the action, not beside
-                the projects it no longer touches.
+                {/* ⭐⭐ Ocean 2026-08-25：「加入 deepseek 的周总结，总结的 model 可以让用户自行选择」。
+                    ⚠️ 模型是**设置里那个「模型」框**（`apiModel`），⛔ 这里不再做第二个选择器 ——
+                    把它的名字写出来，用户点之前就知道这一下花的是谁的钱。 */}
+                {kind === 'api' && <span className="text-xs text-ink-2">{apiModel}</span>}
 
-                ⚠️ Still default OFF, and that stays a deliberate reading of a request that pulled
-                two ways: Ocean asked for automation AND for 「必须节约token」/「让用户放心」 in one
-                breath, and this switch spends real money without asking again. */}
-            {reviewEntry === 'ready' && (
-              <label className="flex cursor-pointer items-center gap-2">
-                <Toggle checked={autoMaintain} onChange={(v) => void update({ aiAutoMaintain: v })} />
-                <span className="text-xs text-ink-2">{t('每周自动回顾一次')}</span>
-              </label>
-            )}
+                {/* ⭐ 余额贴着按它就要花钱的那个按钮。⛔ 不自动查 —— 点一下,或者一次运行
+                    刚跑完顺带刷。 */}
+                {kind === 'api' && <ApiBalance />}
 
-            {/* ⭐ `W2` —— 自动那一次**走哪条路**。⚠️ 它今天只认 CLI，所以 08-25 刚接上的
-                API 那条路自动回顾永远用不上；这是那件事的开关。
-                ⚠️ 模型跟着路走：CLI 用上面那个选择器，API 用设置里那个「模型」框。 */}
-            {autoMaintain && engineReady && apiOn && (
-              <label className="flex items-center gap-1.5">
-                <span className="text-xs text-muted">{t('自动那次用')}</span>
-                <select
-                  value={autoRoute}
-                  onChange={(e) =>
-                    void update({ autoReviewRoute: e.target.value === 'api' ? 'api' : 'cli' })
-                  }
-                  className="rounded border border-line bg-paper px-1.5 py-0.5 text-xs text-ink outline-none focus:border-accent"
-                >
-                  <option value="cli">{cliName ?? t('CLI')}</option>
-                  <option value="api">{apiModel}</option>
-                </select>
-              </label>
-            )}
-          </div>
+                {/* ⭐ 2026-08-25（Ocean:「周回顾没法暂停」）—— 停下的按钮以前**只长在右边栏的
+                    LiveRun 卡片上**，而钉住的视图（项目管理 / 周回顾）根本不挂右边栏（App.tsx:
+                    `pinnedView ? null : …`）。所以从这一屏点「回顾这一周」的人，看着它转，
+                    没有任何地方能停。⛔ 别用「跳回项目再停」搪塞：他就在这一屏。
+                    ⚠️ 停下不是暂停 —— 停了不能续跑，再点一次是从头跑（已经写进去的留着）。 */}
+                {running && (
+                  <button
+                    type="button"
+                    onClick={() => void cancel()}
+                    title={t('点一下停下来（停了不能续跑，再点就是从头再来）')}
+                    className="rounded border border-line px-1.5 py-0.5 text-xs text-ink-2 transition-colors hover:border-accent hover:text-accent"
+                  >
+                    {t('停下')}
+                  </button>
+                )}
 
-          {/* ⭐ 第二行：两句只在需要时才出现的话。⛔ 它们不是装饰 —— 各自堵着一个
-              「用户读到的是坏了」的洞。 */}
-          {reviewEntry === 'ready' && (autoMaintain || selected === 'codex') && (
-            <div className="mt-1.5 space-y-1 px-1.5">
-              {/* ⭐⭐ 分组按自然周切，而自动回顾判的是「距上次成功满 7 天」（lib/weeks 那段
-                  写着为什么两把尺子）。代价是「这一周」那一格可能空着、而自动那条还没到点，
-                  ⇒ 这句话就是那个代价的补丁：⛔ 别让用户从一个空格子里去猜。 */}
-              {autoMaintain && (
-                <p className="text-[11px] text-muted">
-                  {/* ⭐ 走哪条路要写出来,⛔ 不能只在两条都在时才说 —— 偏好可能指着一条
-                      今天走不通的路(选了 CLI 然后卸了它),那时 `effectiveAutoRoute` 会
-                      退到另一条,而另一条是**按字数花钱**的。退让可以,悄悄退让不行。 */}
-                  {/* ⚠️ `autoRun` 在这一行里不可能是 null —— 这一行的闸 `reviewEntry === 'ready'`
-                      本身就是「至少有一条路」，和 `effectiveAutoRoute` 读的是同一对布尔。 */}
-                  {t('自动那次走 {engine}。', {
-                    engine: autoRun === 'api' ? apiModel : (cliName ?? t('CLI')),
-                  })}{' '}
-                  {nextAt === null
-                    ? t('还没成功回顾过，下一次检查时就会跑。')
-                    : daysLeft <= 0
-                      ? t('该跑了——下一次检查时就跑（每十分钟看一次）。')
-                      : t('下次自动回顾：还有 {n} 天。', { n: daysLeft })}
-                </p>
+                {/* §4.3's master switch, moved here from 项目管理 (2026-08-11). It used to govern
+                    two things and now governs one: with per-project 压缩 retired, a weekly review is
+                    the only thing automation still runs — so it belongs beside the action, not beside
+                    the projects it no longer touches.
+
+                    ⚠️ Still default OFF, and that stays a deliberate reading of a request that pulled
+                    two ways: Ocean asked for automation AND for 「必须节约token」/「让用户放心」 in one
+                    breath, and this switch spends real money without asking again.
+                    It runs on the type picked above (`autoReviewRoute`, 第 104 条). */}
+                {reviewEntry === 'ready' && (
+                  <label className="flex cursor-pointer items-center gap-2">
+                    <Toggle checked={autoMaintain} onChange={(v) => void update({ aiAutoMaintain: v })} />
+                    <span className="text-xs text-ink-2">{t('每周自动回顾一次')}</span>
+                  </label>
+                )}
+              </div>
+
+              {/* ⭐ 第二行：两句只在需要时才出现的话。⛔ 它们不是装饰 —— 各自堵着一个
+                  「用户读到的是坏了」的洞。 */}
+              {reviewEntry === 'ready' && (autoMaintain || codexNote) && (
+                <div className="mt-1.5 space-y-1 px-1.5">
+                  {/* ⭐⭐ 分组按自然周切，而自动回顾判的是「距上次成功满 7 天」（lib/weeks 那段
+                      写着为什么两把尺子）。代价是「这一周」那一格可能空着、而自动那条还没到点，
+                      ⇒ 这句话就是那个代价的补丁：⛔ 别让用户从一个空格子里去猜。 */}
+                  {autoMaintain && (
+                    <p className="text-[11px] text-muted">
+                      {/* ⭐ 走哪条路要写出来 —— 上面选的那一类今天可能走不通（选了本机 CLI 然后卸了它），
+                          那时 `effectiveAutoRoute` 会退到另一类，而另一类是**按字数花钱**的。
+                          退让可以,悄悄退让不行。 */}
+                      {/* ⚠️ `autoRun` 在这一行里不可能是 null —— 这一行的闸 `reviewEntry === 'ready'`
+                          本身就是「至少有一条路」，和 `effectiveAutoRoute` 读的是同一对布尔。 */}
+                      {t('自动那次走 {engine}。', {
+                        engine: autoRun === 'api' ? apiModel : (cliName ?? t('CLI')),
+                      })}{' '}
+                      {nextAt === null
+                        ? t('还没成功回顾过，下一次检查时就会跑。')
+                        : daysLeft <= 0
+                          ? t('该跑了——下一次检查时就跑（每十分钟看一次）。')
+                          : t('下次自动回顾：还有 {n} 天。', { n: daysLeft })}
+                    </p>
+                  )}
+                  {/* ⭐ 2026-08-26 (Ocean 拍的乙)：codex 有引擎、没模型单子，于是上面什么都不画 ——
+                      而「一个选择器都不出」在用户那边读到的就是「坏了」。说一句为什么。 */}
+                  {codexNote && (
+                    <p className="text-[11px] leading-relaxed text-muted">{t(CODEX_NO_MODELS)}</p>
+                  )}
+                </div>
               )}
-              {/* ⭐ 2026-08-26 (Ocean 拍的乙)：codex 有引擎、没模型单子，于是上面什么都不画 ——
-                  而「一个选择器都不出」在用户那边读到的就是「坏了」。说一句为什么。 */}
-              {selected === 'codex' && (
-                <p className="text-[11px] leading-relaxed text-muted">{t(CODEX_NO_MODELS)}</p>
-              )}
-            </div>
+            </>
           )}
         </div>
       )}

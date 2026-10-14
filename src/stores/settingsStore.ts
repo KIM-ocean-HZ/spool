@@ -177,7 +177,11 @@ interface SettingsState {
    *  再发明第三份模型设置 —— 那会造出「我在界面上选了 haiku，自动跑的却是别的」这种
    *  用户自己发现不了的分叉。
    *
-   *  默认 `'cli'`：它是今天的行为，而另一条会按字数花钱。 */
+   *  默认 `'cli'`：它是今天的行为，而另一条会按字数花钱。
+   *
+   *  ⚠️ 2026-10-15（P9C 验收第一轮，第 104 条）：它**同时**是周回顾那一条上「用 [本机 CLI | API]」
+   *  选的那一类 —— 手动点的和每周自动跑的走同一类，原来单独的「自动那次用」选择器并掉了。
+   *  键名没改（不迁移）。 */
   autoReviewRoute: 'cli' | 'api';
   // DESIGN_CONTEXT_HYGIENE §1.1 — whether a clipboard pack carries the four-category
   // reading instructions. Ocean 2026-08-06: 「pack 降级成最简便操作,让纯网页端 ai 用户使用」,

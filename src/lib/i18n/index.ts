@@ -269,15 +269,16 @@ const EN: Record<string, string> = {
   '更正了其中一处：': 'corrects one point in:',
   '其中一处已被更正：': 'one point in this was corrected:',
   '点一下跳到那一块': 'Click to jump to that block',
-  // 2026-08-25：周回顾多了一条 API 的路，两个按钮并排 —— 名字里必须说出跑的是谁。
-  '回顾这一周（用 {engine}）': 'Review this week (with {engine})',
+  // 2026-10-15（P9C 验收第一轮）：周回顾一个按钮 + 先选类型（本机 CLI / API）。
+  '用': 'With',
+  '本机 CLI': 'Local CLI',
+  '要先装 Claude Code 或 Codex（不花钱）': 'Needs Claude Code or Codex installed first (no extra cost)',
   '用你自己填的端点和模型跑一次（按字数计费）':
     'Run it on the endpoint and model you configured (billed per token)',
   '周回顾跑完了，就在下面': 'The weekly review is done — it is right below',
   '周回顾没跑成': 'The weekly review did not run',
   // W 批（2026-08-26）：选得了模型、读得出「一周」。
   // ⚠️ 「这一周」在英文里是格子上的一个标签，不是句子 —— 'This week' 而不是 'this week'。
-  '自动那次用': 'Automatic run uses',
   '自动那次走 {engine}。': 'The automatic run uses {engine}.',
   'CLI': 'CLI',
   '下次自动回顾：还有 {n} 天。': 'Next automatic review: {n} days away.',
