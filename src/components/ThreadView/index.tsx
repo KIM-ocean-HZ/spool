@@ -1,7 +1,11 @@
+import { Lock } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { AiSetupPanel } from '@/components/AiSetup/AiSetupPanel';
 import type { Attachment } from '@/lib/db/attachments';
 import type { Block } from '@/lib/db/blocks';
+import { aiEntryState, type AiEntryState } from '@/lib/engine/gate';
 import { t } from '@/lib/i18n';
+import { IS_MAC } from '@/lib/platform';
 import { useBlocksStore } from '@/stores/blocksStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { selectThreadById, useThreadsStore } from '@/stores/threadsStore';
@@ -65,15 +69,24 @@ export default function ThreadView() {
   const staleAny = useCompressStore((s) =>
     activeId ? (s.stale[activeId]?.proposals.length ?? 0) : 0,
   );
-  /** 「压缩」和「过期检测」这两个出不出。引擎关了，但之前扫出来的还没点完，也要出。
-   *  ⛔ P7-5（Ocean 2026-10-07）：AI 提的不在这里了 —— 在待审里。 */
-  const showTabs = engineOn || staleAny > 0;
+  const showAi = useSettingsStore((s) => s.aiEngineActionsEnabled);
+  /** P9C（第 94、98、99 条）：「压缩」页签。DeepSeek 开着 ⇒ 照旧；没开 ⇒ 名字后面一把锁，点进去当场打开；
+   *  「显示 AI 功能」关着 ⇒ 不画。 */
+  const compressEntry: AiEntryState = aiEntryState({
+    ready: engineOn,
+    route: 'api',
+    showAi,
+    isMac: IS_MAC,
+  });
+  /** 「过期检测」页签：同上，⚠️ 但之前扫出来的还没点完时照出、不锁 —— 那是等他决定的东西，
+   *  不是入口（「显示 AI 功能」关着也照出）。⛔ P7-5（Ocean 2026-10-07）：AI 提的不在这里了 —— 在待审里。 */
+  const staleEntry: AiEntryState =
+    staleAny > 0 ? 'ready' : aiEntryState({ ready: engineOn, route: 'api', showAi, isMac: IS_MAC });
   // ⭐⭐ Q4（2026-08-25）：**页签条从此永远画。**
   // 「摘要」是 AI 通过 MCP 写进来的，和本地引擎开没开**毫无关系** —— 一个从没开过引擎的
   // 用户照样会有一库摘要，而在这之前 `showTabs` 是整条页签排的总闸，`false` 的时候
   // 一个页签都不画，那一库摘要就永远看不见。
-  // ⛔ 别顺手把 `showTabs` 删了：它仍然挡着「压缩」和「过期检测」—— 那两个点进去
-  // 确实只会说「你还没配」，而这正是它当初存在的理由。
+  // P9C：`showTabs` 那道闸换成了上面两个入口状态 —— 没配的时候不再藏起来，锁着、点进去当场就能配。
   const highlight = useSearchStore((s) => s.highlight);
   /** 「摘要」页签上那个数：**只数「这一块挂着更正，而摘要还是更正之前那句」**。
    *  ⛔ 不数「没有摘要」—— 大多数块本来就没有摘要，那个数字会永远是个大数，
@@ -127,20 +140,19 @@ export default function ThreadView() {
         viewMode={viewMode}
         onSetViewMode={setViewOverride}
       />
-      {/* 页签。⚠️ **压缩没开的时候整条不出现** —— 一个点了只会说「你还没配」的页签
-          不如没有（和右栏那一格同一条规矩）。
+      {/* 页签。P9C（第 94 条）：压缩没开的时候不再藏起来 —— 名字后面一把锁，点进去那一页
+          当场就能打开（推翻原来「点了只会说你还没配的页签不如没有」那条）。
 
           ⭐ 2026-08-23（Ocean 第 3 条「把两个功能拆出来，变成内容，压缩，和一个新的」）：
           原来是两个页签，第二个叫「整理」，里面上下摞着压缩核对面和查旧块。
           ⛔ 别再摞回去 —— 两件事没关系，摞在一起的唯一后果是核对面只剩半屏。 */}
-      {/* 「过期检测」在扫出来的还没点完时照出（哪怕引擎后来关了）；「压缩」只跟着 `engineOn` 走：
-          那一个点进去确实只会说「你还没配」。⛔ P7-5：AI 提的「更正 / 取代」不进这里，在待审里
-          （Ocean 2026-10-07「过期检测只适用于用户自主检测」，推翻 08-24 S2）。 */}
+      {/* 「过期检测」在扫出来的还没点完时照出（哪怕引擎后来关了）。⛔ P7-5：AI 提的「更正 / 取代」
+          不进这里，在待审里（Ocean 2026-10-07「过期检测只适用于用户自主检测」，推翻 08-24 S2）。 */}
       <div className="flex flex-none items-center gap-4 border-b border-line px-5 text-[12px]">
           <Tab active={tab === 'content'} onClick={() => setTab(thread.id, 'content')}>
             {t('内容')}
           </Tab>
-          {engineOn && (
+          {compressEntry !== 'hidden' && (
           <Tab active={tab === 'compress'} onClick={() => setTab(thread.id, 'compress')}>
             {/* ⚠️ 有一份等着核对就在页签上说出来 —— 切走之后它还在，别让人以为没了。 */}
             {runningKind === 'compress'
@@ -148,17 +160,19 @@ export default function ThreadView() {
               : tidyReady || nightlyReady
                 ? t('压缩（1）')
                 : t('压缩')}
+            {compressEntry === 'locked' && <TabLock />}
           </Tab>
           )}
           {/* ⭐ 2026-08-23 Ocean 改的名：「『查旧块』名字改成『过期检测』，更加贴切」。
               ⛔ 仍然不许出现「作废」两个字（§2.E3 写死的）——「过期」不是「作废」。 */}
-          {showTabs && (
+          {staleEntry !== 'hidden' && (
           <Tab active={tab === 'stale'} onClick={() => setTab(thread.id, 'stale')}>
             {runningKind === 'stale'
               ? t('过期检测（在跑）')
               : staleLeft > 0
                 ? t('过期检测（{n}）', { n: staleLeft })
                 : t('过期检测')}
+            {staleEntry === 'locked' && <TabLock />}
           </Tab>
           )}
           {/* ⭐ Q4：和「内容」一样永远在。 */}
@@ -180,14 +194,22 @@ export default function ThreadView() {
             }}
           />
         </div>
-      ) : engineOn && tab === 'compress' ? (
+      ) : compressEntry === 'ready' && tab === 'compress' ? (
         <div className="min-h-0 flex-1">
           <CompressBoard threadId={thread.id} />
         </div>
-      ) : showTabs && tab === 'stale' ? (
+      ) : compressEntry === 'locked' && tab === 'compress' ? (
+        <LockedApiPage
+          text={t('压缩：让 DeepSeek 把这个项目写短一点、合并重复的话。你一块对一块核对过之前，库里一个字都不动。这一步按字数花钱，用你自己的 DeepSeek key。')}
+        />
+      ) : staleEntry === 'ready' && tab === 'stale' ? (
         <div className="min-h-0 flex-1">
           <StaleReview threadId={thread.id} />
         </div>
+      ) : staleEntry === 'locked' && tab === 'stale' ? (
+        <LockedApiPage
+          text={t('过期检测：让 DeepSeek 读一遍这个项目，找出已经被后面的块整条取代了的旧块。换不换由你一条一条定，你不点，库里一个字都不动。这一步按字数花钱，用你自己的 DeepSeek key。')}
+        />
       ) : viewMode === 'digest' ? (
         <DigestView
           key={thread.id}
@@ -199,6 +221,26 @@ export default function ThreadView() {
       ) : (
         <LogView key={thread.id} threadId={thread.id} />
       )}
+    </div>
+  );
+}
+
+/** P9C — the small lock after a tab's name while DeepSeek is off. */
+function TabLock() {
+  return <Lock size={10} className="ml-1 inline-block align-[-1px]" aria-hidden />;
+}
+
+/** P9C（第 94、95 条）— a locked tab's page: what it does and what it costs, with the 「AI 引擎」
+ *  piece right there (no second click). Turning DeepSeek on swaps this for the real page in place. */
+function LockedApiPage({ text }: { text: string }) {
+  return (
+    <div className="min-h-0 flex-1 overflow-y-auto px-6 py-8">
+      <div className="mx-auto max-w-[420px] space-y-4">
+        <p className="text-sm leading-relaxed text-ink-2">{text}</p>
+        <div className="rounded-md border border-line bg-paper p-3">
+          <AiSetupPanel route="api" />
+        </div>
+      </div>
     </div>
   );
 }

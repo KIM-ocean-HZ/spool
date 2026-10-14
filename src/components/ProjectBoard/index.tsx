@@ -84,7 +84,8 @@ export default function ProjectBoard() {
   // 方便多项目加入」。⚠️ 排队这件事本来就是**跨项目**的（睡前勾三个，早上一起看），
   // 而这一屏是唯一一个所有项目并排在一起的地方 —— 一个一个点进去勾，正是他嫌麻烦的那件事。
   // ⛔ 压缩没开的时候这个动作不出现（和右栏、页签同一条规矩：默认关闭）。
-  const engineOn = useSettingsStore((s) => s.apiEngineEnabled);
+  // P9C（第 98、99 条）：「显示 AI 功能」关着也不出现；没开压缩时这一行不放锁（项目里的页签上有）。
+  const engineOn = useSettingsStore((s) => s.apiEngineEnabled && s.aiEngineActionsEnabled);
   const queue = useSettingsStore((s) => s.compressQueue);
   const nightlyAt = useSettingsStore((s) => s.compressNightlyAt);
   const updateSettings = useSettingsStore((s) => s.update);

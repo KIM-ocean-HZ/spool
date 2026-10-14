@@ -147,7 +147,9 @@ function TextBlockItem({
 }: Props) {
   const t = useT();
   // §9.6.6 单块压缩：从块自己的菜单进，和右侧栏的「压缩这个项目」通向同一张核对桌。
-  const apiEngineEnabled = useSettingsStore((s) => s.apiEngineEnabled);
+  // P9C（第 98、99 条）：「显示 AI 功能」关着也不出现（DeepSeek 开着也一样）；没开 DeepSeek 时不放锁，
+  // 项目里那个「压缩」页签上的锁就够了。
+  const apiEngineEnabled = useSettingsStore((s) => s.apiEngineEnabled && s.aiEngineActionsEnabled);
   const openCompressBlock = useCompressStore((s) => s.openBlock);
   const restoreOriginal = useBlocksStore((s) => s.restoreOriginal);
   const compressThread = useThreadsStore(selectThreadById(block.threadId));
