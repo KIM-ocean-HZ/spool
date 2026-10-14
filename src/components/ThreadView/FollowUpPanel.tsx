@@ -1,8 +1,11 @@
 import { Check, Globe, Loader2, RotateCcw, Trash2, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
+import LockedAiEntry from '@/components/AiSetup/LockedAiEntry';
 import EngineBar from '@/components/RightRail/EngineBar';
+import { aiEntryState } from '@/lib/engine/gate';
 import { isImeComposing } from '@/lib/utils/ime';
 import { useT } from '@/lib/i18n';
+import { IS_MAC } from '@/lib/platform';
 import type { FollowUpItem } from '@/lib/db/followUpItems';
 import type { Thread } from '@/lib/db/threads';
 import { useEngineStore } from '@/stores/engineStore';
@@ -43,6 +46,14 @@ export default function FollowUpPanel({ thread, onClose }: Props) {
   const engineStatus = useEngineStore((s) => s.status);
   const probeEngine = useEngineStore((s) => s.probe);
   const engineAvailable = engineStatus?.available === true;
+  // P9C (第 94、97、98 条): the readiness above is unchanged — only whether a CLI is here, not the
+  // switches. Not ready ⇒ locked on a Mac, hidden on Windows; 「显示 AI 功能」 off ⇒ hidden. Undecided
+  // until the first detection answers.
+  const showAi = useSettingsStore((s) => s.aiEngineActionsEnabled);
+  const draftEntry =
+    engineStatus === null
+      ? null
+      : aiEntryState({ ready: engineAvailable, route: 'cli', showAi, isMac: IS_MAC });
 
   const load = useFollowUpStore((s) => s.load);
   const items = useFollowUpStore((s) => s.items);
@@ -178,11 +189,11 @@ export default function FollowUpPanel({ thread, onClose }: Props) {
             {t('回车＝加一条；⇧回车在同一条里换行。')}
           </p>
 
-          {/* The drafting step is a LOCAL-CLI action. With no engine on the machine there is
-              nothing to withhold it from doing — the lines still work, they are just carried
-              out by whatever AI the user talks to through MCP, which is what the sentence
-              below says instead of leaving the absence unexplained. */}
-          {engineAvailable ? (
+          {/* The drafting step is a LOCAL-CLI action. With no engine on the machine the lines still
+              work, they are just carried out by whatever AI the user talks to through MCP — which
+              is what the sentence says. P9C: on a Mac the button is there, locked, with that
+              sentence under it; on Windows only the sentence; with 「显示 AI 功能」 off neither. */}
+          {draftEntry === 'ready' ? (
             <div className="mt-2 flex items-center gap-2">
               <button
                 type="button"
@@ -195,11 +206,22 @@ export default function FollowUpPanel({ thread, onClose }: Props) {
               </button>
               <span className="text-[10px] text-muted">{t('这一步只读你库里的东西，不联网。')}</span>
             </div>
-          ) : (
-            <p className="mt-2 text-[10px] leading-relaxed text-muted">
-              {t('这台电脑上没有本机 AI 引擎，所以 Spool 自己不会去查这几行。接了 MCP 的 AI（Claude、ChatGPT 里的 Codex 等）读得到它们，也能替你加一条、结束一条。')}
-            </p>
-          )}
+          ) : draftEntry !== null && showAi ? (
+            <div className="mt-2 space-y-1.5">
+              {draftEntry === 'locked' && (
+                <LockedAiEntry
+                  label={t('让 AI 看看还缺什么')}
+                  reason={t('要用本机的 Claude Code 或 Codex。')}
+                  route="cli"
+                />
+              )}
+              {/* Only ever shown once detection has answered 「none」 (draftEntry is null before),
+                  so its first half is always true where it appears. */}
+              <p className="text-[10px] leading-relaxed text-muted">
+                {t('这台电脑上没有本机 AI 引擎，所以 Spool 自己不会去查这几行。接了 MCP 的 AI（Claude、ChatGPT 里的 Codex 等）读得到它们，也能替你加一条、结束一条。')}
+              </p>
+            </div>
+          ) : null}
 
           {/* §8.6 — an answered line is retired, not deleted: it stays here with one click to
               put it back. That is what makes it safe to let an AI close one without asking

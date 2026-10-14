@@ -1327,8 +1327,6 @@ const EN: Record<string, string> = {
   '存好了': 'Stored',
   '{action} · {engine}': '{action} · {engine}',
   '{n} 条待你过目': '{n} waiting for you',
-  '装了 Claude Code 或 Codex，并打开「允许 AI 写入」之后，这里才有东西。':
-    'This fills up once Claude Code or Codex is installed and “Let AI write” is on.',
   // The rail's third section heading. It is a heading now rather than a sentence, because
   // all three sections share one shape (RightRail/RailSection) — the count moved to the
   // right of the line, where 编辑 and 加文件 sit on the other two.
@@ -1341,6 +1339,10 @@ const EN: Record<string, string> = {
     'Not set yet. Write a few lines of what to watch for, and the AI can go and look.',
   '照你定的那几行联网搜索': 'Search the web, following the lines you wrote',
   '联网搜索': 'Search the web',
+  // P9C — the two follow-up buttons while locked.
+  '联网搜索要用本机的 Claude Code 或 Codex。': 'Web search runs on Claude Code or Codex on this Mac.',
+  '{engine} 已经装好，还差打开 MCP 那边的开关。': '{engine} is installed; the MCP switches still need turning on.',
+  '要用本机的 Claude Code 或 Codex。': 'This runs on Claude Code or Codex on this Mac.',
   // The brief editor's placeholder. Replaced 2026-08-06 (Ocean #10: the CMU example was too
   // niche) and never translated — the shape is the point, so the English keeps it concrete
   // enough to act as a search rule rather than becoming an abstraction.

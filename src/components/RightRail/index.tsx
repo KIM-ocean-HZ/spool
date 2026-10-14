@@ -1,6 +1,7 @@
 import { ChevronDown, ChevronRight, Globe, Inbox } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import CompressRail from "@/components/Compress/CompressRail";
+import LockedAiEntry from "@/components/AiSetup/LockedAiEntry";
 import LiveRun from "./LiveRun";
 import McpBar from "./McpBar";
 import ProjectFiles from "./ProjectFiles";
@@ -10,9 +11,10 @@ import RunCard from "./RunCard";
 import { createBlock } from "@/lib/db/blocks";
 import type { EngineRun } from "@/lib/db/engineRuns";
 import { groupAiActivity, visibleRuns } from "@/lib/engine/activity";
-import { canShowEngineActions, engineActionsDisabled } from "@/lib/engine/gate";
+import { aiEntryState, canShowEngineActions, engineActionsDisabled } from "@/lib/engine/gate";
 import { imageLinesAsText } from "@/lib/blocks/imageLines";
 import { dateLocale, useT } from "@/lib/i18n";
+import { IS_MAC } from "@/lib/platform";
 import type { Thread } from "@/lib/db/threads";
 import { useBlocksStore } from "@/stores/blocksStore";
 import { useSearchStore } from "@/stores/searchStore";
@@ -139,7 +141,13 @@ export default function RightRail({ thread, onCollapse, onEditBrief }: Props) {
     busyOnThisThread,
   };
   const engineReady = canShowEngineActions(gate);
-  const showActions = engineReady && thread !== null;
+  // P9C (第 94、97、98 条): 「联网搜索」 runs on the local CLI only — locked on a Mac without it
+  // (or with its switches off), hidden on Windows and with 「显示 AI 功能」 off. Undecided until the
+  // first detection answers, so no lock flashes past on a machine that has one.
+  const searchEntry =
+    status === null
+      ? null
+      : aiEntryState({ ready: engineReady, route: "cli", showAi: actionsEnabled, isMac: IS_MAC });
   const disabled = engineActionsDisabled(gate);
 
   // §3.1 — this is the "user agrees" the prompts have always asked for. The block goes in
@@ -245,38 +253,23 @@ export default function RightRail({ thread, onCollapse, onEditBrief }: Props) {
 
         {/* §3.1 — what the AI said. The reason this rail exists at all (§1.1: the text used
             to be thrown away and reported as "跑完了，没有新增块"). */}
-        {/* ⚠️ With an engine ready and nothing to show, this renders NOTHING (Ocean 2026-08-11:
-            「跑一次，结果留在这里等你过目。这句提示删掉」). That restores §9.13 #3 — 「Nothing
-            renders to say it is empty」 — which the line had been quietly breaking: it was a
-            permanent grey sentence in a rail whose whole rule is that a count of zero takes
-            zero pixels.
-            The other branch stays. It is not an empty state, it is the only place that says
-            what to install to make this column exist at all. */}
-        {shown.length === 0 && !current ? (
-          // ⚠️ 2026-08-17 (Ocean, Windows 验收): this used to be the one line that told a user
-          // with no CLI what to install. It is gone for the case that made it a nag — no CLI on
-          // the machine at all — because that is not an empty state, it is an advert for
-          // software the user may never want (his words: 「不如直接选择不显示这些功能」). It
-          // stays for the case it can still fix: a CLI IS installed and only a switch in
-          // settings is holding the column back.
-          !cliAvailable || showActions ? null : (
-            <p className="px-1 text-[12px] leading-relaxed text-muted">
-              {t("装了 Claude Code 或 Codex，并打开「允许 AI 写入」之后，这里才有东西。")}
-            </p>
-          )
-        ) : (
-          shown.map((run) => (
-            <RunCard
-              key={run.id}
-              run={run}
-              busy={storing === run.id}
-              onDismiss={(id) => void dismissRun(id)}
-              onStore={
-                run.action === "follow_up" ? undefined : (r) => void store(r)
-              }
-            />
-          ))
-        )}
+        {/* ⚠️ With nothing to show, this renders NOTHING (Ocean 2026-08-11: 「跑一次，结果留在这里
+            等你过目。这句提示删掉」) — §9.13 #3, 「Nothing renders to say it is empty」.
+            P9C (第 94 条): the other branch is gone too. It said 「装了 Claude Code 或 Codex，并打开
+            「允许 AI 写入」之后，这里才有东西」 when a CLI was installed and a switch held it back;
+            the entry that needs it, 「联网搜索」 below, is locked now and opens that switch in place,
+            so the same thing is not said twice. */}
+        {shown.map((run) => (
+          <RunCard
+            key={run.id}
+            run={run}
+            busy={storing === run.id}
+            onDismiss={(id) => void dismissRun(id)}
+            onStore={
+              run.action === "follow_up" ? undefined : (r) => void store(r)
+            }
+          />
+        ))}
 
         {/* §9.3 #2 — 新进展. The first level shows the target itself, permanently visible
             rather than only inside the editor; 「改」 is a quiet link into the second. */}
@@ -342,7 +335,23 @@ export default function RightRail({ thread, onCollapse, onEditBrief }: Props) {
                   — and drops the rule, because 2026-08-17 put a rule BETWEEN sections: a divider
                   inside a section and a divider around it, in the same column, is the noise that
                   pass exists to remove. It stays inline-width, not a full-width bar (§9.13 #2). */}
-              {showActions &&
+              {/* P9C: while locked, the same place shows the lock (只有跟进行的时候才有). */}
+              {searchEntry === "locked" && followUpLines.length > 0 && (
+                <div className="mt-2 px-3">
+                  <LockedAiEntry
+                    label={t("联网搜索")}
+                    reason={
+                      cliAvailable && status?.selected
+                        ? t("{engine} 已经装好，还差打开 MCP 那边的开关。", {
+                            engine: ENGINE_LABEL[status.selected],
+                          })
+                        : t("联网搜索要用本机的 Claude Code 或 Codex。")
+                    }
+                    route="cli"
+                  />
+                </div>
+              )}
+              {searchEntry === "ready" &&
                 followUpLines.length > 0 &&
                 (engineSupportsWeb(status?.selected ?? null) ? (
                   <div className="mt-2 px-3">
@@ -373,9 +382,9 @@ export default function RightRail({ thread, onCollapse, onEditBrief }: Props) {
               where you already are when you are deciding what a follow-up should do.
               ⚠️ It cost the thing the 2026-08-11 note here defended: with no engine installed
               the 跟进 block does not render, so 「没检测到引擎」 has nowhere to appear in the rail.
-              That trade is deliberate and it is not a silent one — the 「装了 Claude Code 或
-              Codex…」 line further up this column already tells a user with no engine what to
-              install, and Settings → AI still reports what was detected. A permanently-visible
+              That trade is deliberate and it is not a silent one — the locked 「联网搜索」 in the
+              跟进 section (P9C) says what is missing and opens it in place, and Settings → AI
+              still reports what was detected. A permanently-visible
               picker for a decision taken once is what he asked to be rid of. */}
 
           {/* 压缩在右栏剩下的那一点。⚠️⚠️ **2026-08-23 这一格被掏空了大半**（Ocean 真手指
