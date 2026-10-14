@@ -1,6 +1,6 @@
 # 产品任务书 P9C —— AI 入口统一：没准备好的地方锁着，当场就能打开
 
-> **状态：ACTIVE。**（2026-10-14 下发。P9B 已验收通过 —— HANDOFF §9.2 第 92 条。）
+> **状态：COMPLETE —— 待 Ocean 验收。**（2026-10-14 下发、同日做完：四步 `1f7820e` `79cff78` `64ae228` `246a547` 已提交、已换装，回执在 §7。P9B 已验收通过 —— HANDOFF §9.2 第 92 条。）
 >
 > **唯一交付：** 下面 §3 的四步（P9C-1 – P9C-4），按顺序做完，每一步测试通过、单独一笔提交，并在 §7 写回执。
 >
@@ -216,11 +216,11 @@ cargo tree --manifest-path src-tauri/Cargo.toml -e normal | grep -iE "ureq|rustl
 你的电脑上 AI 那些东西全开着，所以下面几条要你先关一个开关、看完再打开回来。最后一条说怎么全部还原。
 
 1. 设置 →「AI 引擎」：最上面多了一行「显示 AI 功能」，开着。
-2. 同一页把 DeepSeek 那个开关关掉（key 不会丢）。打开一个项目 ⇒ 「压缩」「过期检测」两个页签名字后面有一把小锁。点「压缩」⇒ 页里是一句说明，底下一个「打开」。点「打开」⇒ 马上变回平常的压缩页，不用再填 key。
-3. 再把 DeepSeek 关掉。设置 →「MCP」把「允许 AI 写入」关掉。左栏点「周回顾」⇒ 顶上那一条写着用 Claude Code 回顾要先打开写入；点那一下 ⇒「回顾这一周（用 Claude Code）」那个按钮回来了。回设置看，「允许 AI 写入」已经开着。不用真的点回顾。
-4. 再关掉「允许 AI 写入」（DeepSeek 也关着）。打开一个有跟进行的项目 ⇒ 右栏「联网搜索」是灰的，带一把锁。点旁边那个按钮 ⇒ 当场弹出一小块，点「打开」⇒「联网搜索」能点了。不用真的点。
+2. 同一页把 DeepSeek 那个开关关掉（key 不会丢）。打开一个项目 ⇒ 「压缩」「过期检测」两个页签名字后面有一把小锁。点「压缩」⇒ 页里是一句说明，底下一个「现在打开」。点「现在打开」⇒ 马上变回平常的压缩页，不用再填 key。
+3. 再把 DeepSeek 关掉。设置 →「MCP」把「允许 AI 写入」关掉。左栏点「周回顾」⇒ 顶上那一条写着「用 Claude Code 回顾（不花钱）—— 先打开写入」；点它 ⇒ 当场弹出一小块，说还差打开「允许 AI 写入」、这个开关也管你接的别的 AI；点「现在打开」⇒「回顾这一周（用 Claude Code）」那个按钮回来了。回设置看，「允许 AI 写入」已经开着。不用真的点回顾。
+4. 再关掉「允许 AI 写入」（DeepSeek 也关着）。打开一个有跟进行的项目 ⇒ 右栏「联网搜索」是灰的，带一把锁。点旁边的「怎么打开」⇒ 当场弹出一小块，点「现在打开」⇒「联网搜索」能点了。不用真的点。
 5. 设置 →「AI 引擎」把「显示 AI 功能」关掉 ⇒ 周回顾只剩「活动」和以前的回顾；项目里没有「压缩」「过期检测」两个页签；右栏没有「联网搜索」；块的工具条上没有「压缩」。再打开回来。
-6. 没装 Claude Code / Codex 的人看到的样子，你的电脑上做不出来（两个都装着），看我附的截图：周回顾、右栏、跟进面板、项目页签各一张。
+6. 没装 Claude Code / Codex 的人看到的样子，你的电脑上做不出来（两个都装着），看我附的截图（都在桌面 `Spool/P9C-screenshots-20261014/` 里）：周回顾 `p9c2/rv-locked-pop.png`、右栏 `p9c3/rail-locked-nocli-pop.png`、跟进面板 `p9c3/panel-locked-pop.png`、项目页签 `p9c4/proj-locked-compress-nokey.png`。
 7. 界面切成英文，上面看到的新字看一眼 ⇒ 都是英文。
 8. 还原：DeepSeek 开着、「允许 AI 写入」开着、「显示 AI 功能」开着 —— 和验收之前一样。
 
@@ -237,6 +237,94 @@ cargo tree --manifest-path src-tauri/Cargo.toml -e normal | grep -iE "ureq|rustl
 - 还差什么、有没有偏离本任务书、新发现记在 HANDOFF 哪里
 
 最后一段：换装（做了没有、装的是哪个 commit、`spctl` 结果、真库和 `settings.json` 的备份文件名、装前装后的核对）、Ocean 验收（还没有就写「待验收」）。
+
+### 7.0 开工核对
+
+- 起点：`b511a00 docs: 下发 P9C`，上一笔 `9243602`，代码停在 `76c8d10`；之后只有 docs 提交 ⇒ §2.1「现在」一栏照旧成立。
+- 基线和 §2 写的一字不差：tsc 干净；vitest 92 / 1056；cargo 192 · 5；sidecar 14；`(none missing)`；`--dead` 87 行；`cargo tree` 网络那条是空的。
+- 开工前按 HANDOFF §9.8 请 Ocean 看了两件，顺带问了一件（记在 HANDOFF §9.2 第 100 – 102 条）：P9C-1 第 4 条 **要**（「显示 AI 功能」关着，两样自动的都不跑）；`DISCOVERED-20261014-5` 排在 **P9C 之后、发版一之前**（做法下发时再定）；`DISCOVERED-20261014-4` **并进 P9C-1，只改那一句**。
+
+每一步收尾都跑了 §2 那七条，结果都在下面；`cargo test` 四次都是 192 · 5（没撞上假红），sidecar 都是 14，`cargo tree` 都是空的，`--dead` 每次都和开工那份逐行一样（87 行，一行没多一行没少 —— 被删掉的四句字典条目跟着删了）。
+
+截图全在桌面 `~/Desktop/Spool/P9C-screenshots-20261014/`（`p9c1` – `p9c4`，72 张；文件名带 `_en` 的是英文、`_win` 的是假装 Windows、`_dark` 的是深色）。做法是记忆 `isolated-verify-workflow` §46：真组件挂进小页面、Tauri 换成假桥（按场景回 `ai_engine_status` / `api_key_present` / `compress_sidecar_present`）、脚本真的去点；页面脚本也拷在那个文件夹的 `harness/` 里，下次可以接着用。这次截图时主屏是 1×。
+
+### 7.1 P9C-1 · 共用的规则 +「AI 引擎」小块 +「显示 AI 功能」
+
+- 提交：`1f7820e feat(ai): 锁着的 AI 入口共用的一条规则和「AI 引擎」小块；「显示 AI 功能」管所有地方（P9C-1）`
+- 改的文件：
+  - `src/lib/engine/gate.ts`、`src/lib/engine/gate.test.ts`
+  - `src/components/AiSetup/AiSetupPanel.tsx`（新）、`AiSetupPanel.test.tsx`（新）、`LockedAiEntry.tsx`（新）
+  - `src/components/Settings/AiFeaturesConfig.tsx`（新）、`Settings/index.tsx`、`Settings/EngineConfig.tsx`
+  - `src/hooks/useAutoMaintain.ts`、`src/components/Compress/NightlyRunner.tsx`
+  - `src/lib/i18n/index.ts`
+- 验：tsc 干净；vitest 93 / 1076（`gate.test.ts` 24 条，新加的覆盖整张表：三种入口 × 准备好没有 ×「显示 AI 功能」× Mac / Windows；弹出内容：CLI 没装 / 差 MCP 服务 / 差允许 AI 写入 / 两个都差 / DeepSeek 有 key / 没 key / 还在读钥匙串 / 找不到小程序 / Windows；`AiSetupPanel.test.tsx` 5 条：两个「现在打开」收到的**就是**那几个键 —— CLI 那半只有关着的那几个开关，DeepSeek 那半只有 `apiEngineEnabled`（填了 key 才存 key）—— 外加没装 CLI 时不出 Gemini、免费的在前）；cargo 192 · 5；sidecar 14；`(none missing)`。
+- 截图（`p9c1/`）：小块 `pop-nocli`（没装 CLI、DeepSeek 没 key）、`pop-cli-write`（差允许 AI 写入）、`pop-cli-both-key`（两个开关都差、DeepSeek 存过 key）、`pop-nosidecar`、`pop-win_win`（Windows 只有 DeepSeek 那半）、`pop-nocli_dark`；设置页 `settings_mac` / `settings_win`（各中英）。
+- 施工时自己定的：
+  - 规则：`aiEntryState`（`ready` / `locked` / `hidden`）、`aiSetupPlan`（小块出哪几样）、`cliSwitchesPatch`，都在 `lib/engine/gate.ts`；头注释改写成现在的规矩，写明推翻了 08-17 安静原则和 DESIGN_AI_ENGINE §1.1，引第 93 – 99 条。
+  - 小块：`AiSetupPanel`（能直接放进页面，P9C-4 就是这么用的）+ `AiSetupPopover`（贴着按钮弹出），在 `components/AiSetup/AiSetupPanel.tsx`。定位用 `ui/useMenuPosition.ts`（和左栏右键菜单同一套，会自己挪进窗口里），锚点 = 按钮左下角往下 4px；渲染进 `document.body`。Esc 在捕获阶段截住、只关这一块（跟进面板自己也认 Esc，不截的话一下 Esc 两个都关）；点外面关；再点一下按钮也关。
+  - 统一的锁：`LockedAiEntry`（灰的名字 + lucide `Lock` +「怎么打开 / How to turn it on」+ 一句为什么）和 `AiSetupButton`（任何按钮都能弹那一小块），在 `components/AiSetup/LockedAiEntry.tsx`。
+  - 小块里的按钮叫「现在打开 / Turn on now」，没用「打开」：字典里「打开」已经是 `Open`（打开文件那个意思），英文会错。§6 验收单跟着改了这个字。
+  - 小块里 CLI 那半的老实话：「这些开关也管你接的别的 AI（Claude、ChatGPT 里的 Codex 这些）：打开之后，它们也能读你的项目、往里加块；加的块都带来源标注，不会伪装成你写的。」
+  - DeepSeek 那半多了一种「正在看你存没存过 key… / Checking whether a key is already saved…」：key 在钥匙串里，换装之后第一次读可能要一分钟（记忆 `tauri-sync-commands-freeze-ui`）；读完之前不出 key 框，免得已经存过 key 的人以为要重填。
+  - 「装好了，再检测一次」点过还是没有 ⇒「还是没检测到。装在别处的话，可以在设置的「AI 引擎」里手动指定路径。」
+  - 「显示 AI 功能」英文 = `Show AI features`。说明：「关掉之后，所有要用 AI 的按钮和锁都藏起来，每周自动回顾和夜里的自动压缩也不跑；已经写好的回顾、AI 写的块照旧在。」（第 4 条 Ocean 要了，开关旁边就该说出来。）它在「AI 引擎」页最上面，Mac / Windows 都有、不看检测结果；键还是 `aiEngineActionsEnabled`。
+  - `EngineConfig.tsx` 那两句：「需要 MCP 那一页的两个开关都打开——……」**删了**（它说的是那个开关，开关搬走了）；「现在还不会出现：……」**改了**，成「要让它干活，MCP 那一页的「MCP 服务」和「允许 AI 写入」要都打开。」—— P9C 之后「还不会出现」不对了（现在会出现，是锁着的）。英文里开关名改成和 MCP 页上一样的 “MCP server” / “Allow AI writes”（旧那句写的是 “MCP service” / “Let AI write”，页上没有这两个名字）。
+  - `DISCOVERED-20261014-4`（Ocean 同意）：「所以 Spool 里没有填 API key 的地方，以后也不会有：……」改成「用这条路的话，key 和登录状态都在那个工具自己的目录里（比如 Gemini 是 ~/.gemini/.env），Spool 不存、也读不到。你的账单也走那边。」
+  - 自动的两样：`useAutoMaintain` 加了「`actionsEnabled` 关着就 return」（CLI 那条本来就被 `canShowEngineActions` 挡着，补的是 DeepSeek 那条）；`NightlyRunner` 的 `enabled` = `apiEngineEnabled && aiEngineActionsEnabled`（队列本身留着，开回来照旧）。
+- 还差：两样自动的「关着不跑」只核了代码，没有自动测试（是十分钟 / 一分钟一次的定时器）；验收单也看不到它。
+
+### 7.2 P9C-2 · 周回顾
+
+- 提交：`79cff78 feat(review): 周回顾没准备好时锁着、当场能打开；本机 CLI 只差开关时直接在原位打开（P9C-2）`
+- 改的文件：`src/components/ReviewBoard/index.tsx`、`src/components/ReviewBoard/reviewEntry.test.tsx`、`src/lib/i18n/index.ts`
+- 验：tsc 干净；vitest 93 / 1077（`emptyReviewsHint` 改成按入口状态：准备好 ⇒ 那句、锁着 ⇒ 没有、关着 ⇒ 没有，三条）；cargo 192 · 5；sidecar 14；`(none missing)`。
+- 截图（`p9c2/`，各中英）：都准备好 `rv-ready`；全锁着 `rv-locked`、点开 `rv-locked-pop`；CLI 差开关 + DeepSeek 关 `rv-cliswitch-apioff`、点开 `rv-cliswitch-apioff-pop`、点完「现在打开」`rv-cliswitch-apioff-done`（CLI 按钮、选模型、每周自动回顾都回来了）；CLI 差开关 + DeepSeek 开 `rv-cliswitch-apion`；「显示 AI 功能」关着 `rv-hidden`；Windows `rv-locked_win` / `rv-locked-pop_win`。
+- 施工时自己定的：
+  - 第 2 条用的是**弹出**，不是就地一键：那两个开关也管别的 AI，弹出那一块会把这件事说出来，就地一键就把这句话绕过去了。代价是多点一下（§6 第 3 条已改）。按钮字「用 {engine} 回顾（不花钱）—— 先打开写入 / Review with {engine} (no extra cost) — turn on writing first」，前面一把锁。
+  - 「CLI 在、差开关、DeepSeek 关」用第 2 条的样子，不用通用的锁（§6 第 3 条就是这么写的）；「全锁着」= 没装 CLI（或 Windows）而且 DeepSeek 关。
+  - 锁着那一句：Mac「写回顾要用一个 AI：本机的 Claude Code / Codex，或者 DeepSeek。」/「Writing a review takes an AI: Claude Code or Codex on this Mac, or DeepSeek.」；Windows「写回顾要用一个 AI：DeepSeek。」/「Writing a review takes an AI: DeepSeek.」
+  - 锁着时「每周自动回顾一次」、选模型、第二行那两句（自动那次走哪条、Codex 没有模型单子）都不画。
+  - 检测还没回来、DeepSeek 又没开的那一下，整条先不画，免得有 CLI 的机器上锁一闪而过。
+  - 366 – 381 那段注释照新规矩改写了。
+
+### 7.3 P9C-3 · 跟进的两个按钮（只在 Mac）
+
+- 提交：`64ae228 feat(follow-up): 跟进的两个按钮没准备好时锁着、当场能打开（P9C-3，只在 Mac）`。⚠️ 提交信息里引了被删的那句产品文案，`CLAUDE.md` §5 那条 grep 命中「Claude Code」；按记忆 `attribution-grep-false-positive` 窄版复核干净、作者 / 提交者都是 KIM-ocean-HZ —— 误报，没 amend。
+- 改的文件：`src/components/RightRail/index.tsx`、`src/components/ThreadView/FollowUpPanel.tsx`、`src/lib/i18n/index.ts`
+- 验：tsc 干净；vitest 93 / 1077；cargo 192 · 5；sidecar 14；`(none missing)`。
+- 截图（`p9c3/`，各中英）：右栏准备好 `rail-ready`；没装 CLI 锁着 `rail-locked-nocli`、点开 `rail-locked-nocli-pop`；装了差开关 `rail-locked-switch`、点完「现在打开」`rail-locked-switch-done`；关着 `rail-hidden`；跟进面板准备好 `panel-ready`、锁着 `panel-locked`、点开 `panel-locked-pop`、关着 `panel-hidden`；`IS_MAC` 为假：`rail-win`（没有联网搜索）、`panel-win`（没有按钮，那句 MCP 的话还在）。
+- 施工时自己定的：
+  - 右栏锁着那一句：没装 CLI「联网搜索要用本机的 Claude Code 或 Codex。」/「Web search runs on Claude Code or Codex on this Mac.」；装了、差开关「{engine} 已经装好，还差打开 MCP 那边的开关。」/「{engine} is installed; the MCP switches still need turning on.」
+  - 跟进面板锁着那一句：「要用本机的 Claude Code 或 Codex。」/「This runs on Claude Code or Codex on this Mac.」，底下那句「这台电脑上没有本机 AI 引擎……」原样留着 —— 它只在检测已经回答「没有」时才出（还在检测时整块不画），所以前半句出现的时候总是真的，不用拆成两句。
+  - 右栏结果区那句删了，字典里那一条也删了；那段注释和下面「跟进用的」那段注释里引它的地方都改了。
+
+### 7.4 P9C-4 · 项目里的「压缩」「过期检测」
+
+- 提交：`246a547 feat(compress): 项目里「压缩」「过期检测」两个页签没开 DeepSeek 时锁着、页里当场能打开（P9C-4）`
+- 改的文件：`src/components/ThreadView/index.tsx`、`src/components/ThreadView/BlockItem.tsx`、`src/components/ProjectBoard/index.tsx`、`src/lib/i18n/index.ts`
+- 验：tsc 干净；vitest 93 / 1077；cargo 192 · 5；sidecar 14；`(none missing)`。
+- 截图（`p9c4/`，各中英）：准备好 `proj-ready`；锁着的页签条 `proj-locked`；点进「压缩」（存过 key）`proj-locked-compress`、（没存过 key）`proj-locked-compress-nokey`、深色 `proj-locked-compress_dark`；点进「过期检测」`proj-locked-stale`；点完「现在打开」`proj-locked-compress-done`（变成平常的压缩页）；「显示 AI 功能」关着 `proj-hidden`（只剩「内容」「块摘要」）；块工具条 `block-ready`（有「压缩」）/ `block-hidden`（没有）。
+- 施工时自己定的：
+  - 页签上的锁：名字后面一个 10px 的 lucide `Lock`。页里是 `LockedApiPage`（在 `ThreadView/index.tsx`）：一句 + 直接摆着的 `AiSetupPanel`（只有 DeepSeek 那半）。
+  - 那两句：「压缩：让 DeepSeek 把这个项目写短一点、合并重复的话。你一块对一块核对过之前，库里一个字都不动。这一步按字数花钱，用你自己的 DeepSeek key。」/「Compress: DeepSeek rewrites this project shorter and merges what repeats. …」；「过期检测：让 DeepSeek 读一遍这个项目，找出已经被后面的块整条取代了的旧块。换不换由你一条一条定，你不点，库里一个字都不动。这一步按字数花钱，用你自己的 DeepSeek key。」/「Out-of-date check: …」。
+  - `showTabs` 那道闸换成了两个入口状态；`Q4` 那段注释里「别顺手把 `showTabs` 删了」那句改成说明它换成了什么。
+  - 块工具条和项目管理那一行只加了「显示 AI 功能」关着就不画，没加锁（第 99 条）。
+
+### 7.5 换装（Ocean 10-14 答「现在换装」；停之前又问了一次有没有没存的字，答「没有」）
+
+- 构建：在 `246a547` 上，`src` / `src-tauri` / `site` / `scripts` 没有未提交改动；命令和 P9 / P9F 一样（`env -u APPLE_ID -u APPLE_PASSWORD -u APPLE_TEAM_ID -u APPLE_API_KEY -u APPLE_API_ISSUER -u APPLE_API_KEY_PATH APPLE_SIGNING_IDENTITY="Developer ID Application: Hanze JIN (Q5Y5JRXZ58)" npm run tauri build -- --bundles app`，日志进文件，`tauri.conf.json` 没改）；「skipping app notarization」；TSA 一遍过（主程序和 `spool-ai` 都有 Timestamp 22:24:39）；`--verify --deep --strict` 过；新二进制 `--mcp` 连真库副本（`VACUUM INTO` 到 scratchpad）：24 个工具，和 P9B 一样。
+- 装前：Developer ID、`Unnotarized Developer ID`、`spool` sha256 `f8c62bff…`（P9B 那版）。真库 v33 · ok · 工作区 28 / 项目 68 / 块 1104 · 正文 339848 · 批注 13748 / 文件 29 · 正文 150093 / 图片 4 张 764139 字节 / 跟进 19 / 回顾记录 25 / 待审 0；快照 25 个；`settings.json` 26 个键。
+- 停：GUI 49535、`--overlay` 49540 按 pid `kill -TERM`，第一次就退了；15 个 `--mcp` 一个没碰。
+- 备份（桌面）：`spool.before-p9c-install-20261014-222556.db`（v33 · ok · 1104 块 · 正文 339848）、`settings.before-p9c-install-20261014-222556.json`、`focus.before-p9c-install-20261014-222556.json`。旧包挪到 `~/Desktop/Spool/spool-pre-install/Spool-old-20261014-222556-pre-p9c.app`。新包 `ditto` 进 `/Applications`，`open --stdout … --stderr …` 起来。
+- 装后：sha256 `72d7db69…` 和构建产物一致；主进程 71807、`--overlay` 71874 都是 22:26:06（换装之后）起的，txt inode 都是 80816972，就是新文件；`spctl` = `Unnotarized Developer ID`（和装前一样）；stderr 只有 `[overlay] helper started` 和 `[double-tap] installed at HID/active` 两行。真库上面那一串数逐项和装前一样（不迁移，快照仍是 25 个）；`settings.json` 和装前逐键一样（26 个键）。
+- 这一次不改 MCP、不改库，旧的 `--mcp` 子进程照常能用，不用重启 AI 客户端。
+- commit、build、换装分开记在上面；**没 push，没发版**。
+- Ocean 验收：**待验收**（§6 八条）。
+
+### 7.6 偏离任务书的地方、新发现记在哪
+
+- 偏离（都是措辞 / 做法，范围没扩）：小块里的按钮叫「现在打开」不叫「打开」（字典冲突，见 7.1）；P9C-2 第 2 条用弹出（见 7.2）；DeepSeek 那半多一个「正在看你存没存过 key…」的状态（见 7.1）；§6 验收单第 2、3、4、6 条跟着改了措辞（「现在打开」、第 3 条多一步弹出、第 6 条写了截图在哪）。`DISCOVERED-20261014-4` 是 Ocean 开工前同意并进来的，原来写在「不做」里。
+- 新发现：`DISCOVERED-20261014-6`（「AI 引擎」页还有两句和现状对不上：DeepSeek 那段在 Windows 上指向一个不存在的「下面那一节」；本机引擎那段开头「Spool 不存 API key」紧挨着 DeepSeek 的 key 框）记在 HANDOFF §9.9，没修。
 
 ## 8. 收尾的文档动作（执行窗做）
 
