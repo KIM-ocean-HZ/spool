@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { IS_MAC } from '@/lib/platform';
 import { useSettingsStore } from '@/stores/settingsStore';
 import AdvancedConfig from './AdvancedConfig';
+import AiFeaturesConfig from './AiFeaturesConfig';
 import ApiEngineConfig from './ApiEngineConfig';
 import { createBackdropClose } from '@/lib/utils/backdropClose';
 import EngineConfig from './EngineConfig';
@@ -111,8 +112,12 @@ export default function Settings() {
           {tab === 'mcp' && <McpConfig />}
           {tab === 'engine' && (
             <>
+              {/* P9C 第 98 条：管所有 AI 的地方，所以在两条路之上。 */}
+              <AiFeaturesConfig />
               {/* 形态 C 在前:它是不用先去装点什么就能用的那一条路。 */}
-              <ApiEngineConfig />
+              <div className="border-t border-line">
+                <ApiEngineConfig />
+              </div>
               {IS_MAC && (
                 <div className="border-t border-line">
                   <EngineConfig />

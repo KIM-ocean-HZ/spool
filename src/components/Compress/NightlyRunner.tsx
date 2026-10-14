@@ -15,7 +15,9 @@ import { useSettingsStore } from '@/stores/settingsStore';
 // ⚠️ 一分钟看一次。⛔ 不要为了「准时」把它改成秒级：这件事的时间精度是「今晚」，
 // 而每一次 tick 都要读一次 store。
 export default function NightlyRunner() {
-  const enabled = useSettingsStore((s) => s.apiEngineEnabled);
+  // P9C (第 98 条 + Ocean 10-14): 「显示 AI 功能」 off hides tonight's queue, so it does not run
+  // either — ⛔ nothing out of sight spends money. The queue itself is kept for when it is back on.
+  const enabled = useSettingsStore((s) => s.apiEngineEnabled && s.aiEngineActionsEnabled);
   const at = useSettingsStore((s) => s.compressNightlyAt);
   const lastRunDay = useSettingsStore((s) => s.compressLastRunDay);
   const queue = useSettingsStore((s) => s.compressQueue);

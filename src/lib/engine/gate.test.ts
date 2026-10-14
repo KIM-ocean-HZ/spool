@@ -1,8 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
+  aiEntryState,
+  aiSetupPlan,
   canShowEngineActions,
+  cliSwitchesPatch,
   effectiveAutoRoute,
   engineActionsDisabled,
+  type AiRoute,
+  type AiSetupInput,
   type EngineGateInput,
 } from './gate';
 
@@ -81,5 +86,122 @@ describe('effectiveAutoRoute (W2)', () => {
   it('两条都走不通就一条都不跑', () => {
     expect(effectiveAutoRoute('cli', false, false)).toBeNull();
     expect(effectiveAutoRoute('api', false, false)).toBeNull();
+  });
+});
+
+// P9C (Ocean 第 93 – 99 条): the whole table — three kinds of entry × ready or not × 「显示 AI 功能」
+// × Mac / Windows.
+describe('aiEntryState (P9C)', () => {
+  const routes: AiRoute[] = ['any', 'cli', 'api'];
+
+  it('「显示 AI 功能」 off hides everything — ready or not, either platform (第 98 条)', () => {
+    for (const route of routes)
+      for (const ready of [true, false])
+        for (const isMac of [true, false])
+          expect(aiEntryState({ ready, route, showAi: false, isMac }), `${route} ${ready} ${isMac}`).toBe(
+            'hidden',
+          );
+  });
+
+  it('a ready entry is drawn as it always was', () => {
+    for (const route of routes)
+      for (const isMac of [true, false])
+        expect(aiEntryState({ ready: true, route, showAi: true, isMac })).toBe('ready');
+  });
+
+  it('not ready on a Mac: locked, never hidden (第 94 条 overturns 08-17)', () => {
+    for (const route of routes)
+      expect(aiEntryState({ ready: false, route, showAi: true, isMac: true })).toBe('locked');
+  });
+
+  it('not ready on Windows: a CLI-only entry stays hidden (第 97 条), the others lock', () => {
+    expect(aiEntryState({ ready: false, route: 'cli', showAi: true, isMac: false })).toBe('hidden');
+    expect(aiEntryState({ ready: false, route: 'any', showAi: true, isMac: false })).toBe('locked');
+    expect(aiEntryState({ ready: false, route: 'api', showAi: true, isMac: false })).toBe('locked');
+  });
+});
+
+describe('aiSetupPlan (P9C)', () => {
+  // A Mac with nothing set up: no CLI, both MCP switches off, DeepSeek off with no key.
+  const bare: AiSetupInput = {
+    route: 'any',
+    isMac: true,
+    cliAvailable: false,
+    mcpEnabled: false,
+    mcpWriteEnabled: false,
+    apiOn: false,
+    apiKeyPresent: false,
+    sidecarPresent: true,
+  };
+
+  it('no CLI: offers to install one, free road first, DeepSeek with a key box', () => {
+    expect(aiSetupPlan(bare)).toEqual({
+      cli: { kind: 'install' },
+      api: { kind: 'enable', needsKey: true },
+    });
+  });
+
+  it('CLI there but the MCP service is off: names just that switch', () => {
+    expect(aiSetupPlan({ ...bare, cliAvailable: true, mcpWriteEnabled: true }).cli).toEqual({
+      kind: 'switches',
+      missing: ['mcpEnabled'],
+    });
+  });
+
+  it('CLI there but writing is off: names just that switch', () => {
+    expect(aiSetupPlan({ ...bare, cliAvailable: true, mcpEnabled: true }).cli).toEqual({
+      kind: 'switches',
+      missing: ['mcpWriteEnabled'],
+    });
+  });
+
+  it('CLI there with both switches off: names both', () => {
+    expect(aiSetupPlan({ ...bare, cliAvailable: true }).cli).toEqual({
+      kind: 'switches',
+      missing: ['mcpEnabled', 'mcpWriteEnabled'],
+    });
+  });
+
+  it('DeepSeek with a key already stored: just the switch, no key box', () => {
+    expect(aiSetupPlan({ ...bare, apiKeyPresent: true }).api).toEqual({ kind: 'enable', needsKey: false });
+  });
+
+  it('DeepSeek while the keychain has not answered yet: no key box until it does', () => {
+    expect(aiSetupPlan({ ...bare, apiKeyPresent: null }).api).toEqual({ kind: 'checking' });
+  });
+
+  it('DeepSeek with the request program missing: nothing to turn on', () => {
+    expect(aiSetupPlan({ ...bare, apiKeyPresent: true, sidecarPresent: false }).api).toEqual({
+      kind: 'no-sidecar',
+    });
+  });
+
+  it('each entry only offers the road it runs on', () => {
+    expect(aiSetupPlan({ ...bare, route: 'cli' }).api).toBeNull();
+    expect(aiSetupPlan({ ...bare, route: 'api' }).cli).toBeNull();
+  });
+
+  it('Windows: never the CLI half (第 97 条)', () => {
+    expect(aiSetupPlan({ ...bare, isMac: false })).toEqual({
+      cli: null,
+      api: { kind: 'enable', needsKey: true },
+    });
+  });
+
+  it('a road that is already open is not offered again', () => {
+    expect(aiSetupPlan({ ...bare, apiOn: true }).api).toBeNull();
+    expect(
+      aiSetupPlan({ ...bare, cliAvailable: true, mcpEnabled: true, mcpWriteEnabled: true }).cli,
+    ).toBeNull();
+  });
+});
+
+describe('cliSwitchesPatch (P9C)', () => {
+  it('turns on exactly the switches that were off — no other key', () => {
+    expect(cliSwitchesPatch(['mcpWriteEnabled'])).toEqual({ mcpWriteEnabled: true });
+    expect(cliSwitchesPatch(['mcpEnabled', 'mcpWriteEnabled'])).toEqual({
+      mcpEnabled: true,
+      mcpWriteEnabled: true,
+    });
   });
 });

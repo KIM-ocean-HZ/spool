@@ -852,8 +852,8 @@ const EN: Record<string, string> = {
   // 2026-08-17 (Ocean): 「AI 引擎是被动搜索形式的……根本不知道需要什么,或者 api key 要放在哪里」.
   '引擎不是 Spool 的一部分，是你自己装在电脑上的命令行工具（Claude Code / Codex / Gemini CLI）。装好之后在终端里登录一次它自己的账号，Spool 就能借它干活。':
     'An engine is not part of Spool. It is a command-line tool you install yourself (Claude Code / Codex / Gemini CLI) and sign into once in a terminal; Spool then borrows it.',
-  '所以 Spool 里没有填 API key 的地方，以后也不会有：key 和登录状态都在那个工具自己的目录里（比如 Gemini 是 ~/.gemini/.env），Spool 不存、也读不到。你的账单也走那边。':
-    'So there is no place to put an API key in Spool, and there never will be: the key and the login live in that tool’s own directory (Gemini’s is ~/.gemini/.env). Spool neither stores nor reads them, and the billing is theirs too.',
+  '用这条路的话，key 和登录状态都在那个工具自己的目录里（比如 Gemini 是 ~/.gemini/.env），Spool 不存、也读不到。你的账单也走那边。':
+    'On this route the key and the login live in that tool’s own directory (Gemini’s is ~/.gemini/.env). Spool neither stores nor reads them, and the billing is theirs too.',
   '装完这里还是写「没检测到」，多半是它装在了 Spool 没找的地方。终端里敲 which claude（或 codex / gemini）看一眼路径，填到下面那一行就行。':
     'If this still says “not detected” after installing, it probably landed somewhere Spool did not look. Run `which claude` (or codex / gemini) in a terminal and paste the path into the field below.',
   '不装也没关系——AI 那半边主要走 MCP（上一页），那条路不需要这些。':
@@ -1351,11 +1351,30 @@ const EN: Record<string, string> = {
   'AI 引擎': 'AI engine',
   '用哪个引擎、用哪个模型、这周花了多少——都在右侧栏最上面那一行，就在动作旁边。':
     'Which engine, which model and what this week cost are all on the top line of the right panel, next to the actions themselves.',
-  '显示 AI 维护动作': 'Show the AI maintenance actions',
-  '需要 MCP 那一页的两个开关都打开——AI 维护的产出是写回一块，读权限不够用。':
-    'Both switches on the MCP tab must be on — AI maintenance produces a block, and read access is not enough for that.',
-  '现在还不会出现：MCP 那一页的「MCP 服务」和「允许 AI 写入」要都打开。':
-    'Not showing yet: “MCP service” and “Let AI write” on the MCP tab both need to be on.',
+  '要让它干活，MCP 那一页的「MCP 服务」和「允许 AI 写入」要都打开。':
+    'For it to work, both “MCP server” and “Allow AI writes” on the MCP tab need to be on.',
+  // P9C — 「显示 AI 功能」 and the 「AI 引擎」 piece that opens where an AI entry is locked.
+  '显示 AI 功能': 'Show AI features',
+  '关掉之后，所有要用 AI 的按钮和锁都藏起来，每周自动回顾和夜里的自动压缩也不跑；已经写好的回顾、AI 写的块照旧在。':
+    'When off, every button that uses an AI — and every lock — is hidden, and the weekly auto-review and the nightly auto-compress do not run. Reviews already written and blocks an AI wrote stay as they are.',
+  '怎么打开': 'How to turn it on',
+  '现在打开': 'Turn on now',
+  '没打开': 'Could not turn it on',
+  '用本机的 Claude Code / Codex（不花钱）': 'Use Claude Code or Codex on this Mac (no extra cost)',
+  '用本机的 {engine}（不花钱）': 'Use {engine} on this Mac (no extra cost)',
+  '装好之后，在终端里登录一次它自己的账号。': 'Once it is installed, sign in to its own account once in Terminal.',
+  '装好了，再检测一次': 'Installed — check again',
+  '还是没检测到。装在别处的话，可以在设置的「AI 引擎」里手动指定路径。':
+    'Still not found. If it is installed somewhere unusual, you can point to it under Settings → AI engine.',
+  '还差打开两个开关：「MCP 服务」和「允许 AI 写入」。':
+    'Two switches are still off: “MCP server” and “Allow AI writes”.',
+  '还差打开「MCP 服务」。': '“MCP server” is still off.',
+  '还差打开「允许 AI 写入」。': '“Allow AI writes” is still off.',
+  '这些开关也管你接的别的 AI（Claude、ChatGPT 里的 Codex 这些）：打开之后，它们也能读你的项目、往里加块；加的块都带来源标注，不会伪装成你写的。':
+    'These switches also apply to the other AIs you have connected (Claude, Codex in ChatGPT and so on): once on, they can read your projects and add blocks too. Every block they add is labelled with its source and never passes as yours.',
+  '用 DeepSeek（按字数花钱，用你自己的 key）': 'Use DeepSeek (paid per character, with your own key)',
+  '正在看你存没存过 key…': 'Checking whether a key is already saved…',
+  '接口地址和模型在设置里改。': 'The endpoint and model can be changed in Settings.',
   // ---------------------------------------------------------------------------------------
   // 形态 C：Spool 自己调 API 压缩上下文（WORKPLAN-2026-08-20 §6.2 / §6.4.1）
   //

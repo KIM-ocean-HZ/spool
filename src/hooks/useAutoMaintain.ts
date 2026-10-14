@@ -68,6 +68,10 @@ export function useAutoMaintain(): void {
     const tick = async (): Promise<void> => {
       const g = gate.current;
       if (stopped || !g.enabled) return;
+      // P9C (第 98 条 + Ocean 10-14): 「显示 AI 功能」 off hides the 「每周自动回顾一次」 switch along
+      // with everything else, so neither road runs — ⛔ nothing out of sight spends money. The CLI
+      // road already stopped here through `canShowEngineActions`; this is the API road's stop.
+      if (!g.actionsEnabled) return;
       // W2 — one gate per road, because they are gated by different things.
       //
       // ⚠️ The CLI road keeps the three-way gate the manual actions render behind: without

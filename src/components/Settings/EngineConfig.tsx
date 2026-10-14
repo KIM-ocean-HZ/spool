@@ -1,7 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import { open } from '@tauri-apps/plugin-dialog';
 import { useEffect, useState } from 'react';
-import Toggle from '@/components/ui/Toggle';
 import { useT } from '@/lib/i18n';
 import { ENGINE_LABEL, useEngineStore } from '@/stores/engineStore';
 import { useSettingsStore } from '@/stores/settingsStore';
@@ -15,8 +14,8 @@ import { useSettingsStore } from '@/stores/settingsStore';
 //   请进来 — let a CLI on this machine do maintenance work for you.   → this tab
 //
 // §3.5 was half-done: the actions moved to the rail, the page never split. This is the other
-// half. What stays here is what you set once — detection, whether the actions show at all,
-// the per-run ceiling. What is NOT here is engine and model: those belong next to the runs
+// half. What stays here is what you set once — detection and the per-run ceiling (whether AI
+// shows at all moved to the top of the page in P9C). What is NOT here is engine and model: those belong next to the runs
 // they pay for, which is the rail (§9.3 #3), so this page says where to find them instead of
 // making the user carry a decision back from a dialog.
 //
@@ -48,7 +47,7 @@ export default function EngineConfig() {
   const probeEngine = useEngineStore((s) => s.probe);
   const aiEnginePath = useSettingsStore((s) => s.aiEnginePath);
   // 2026-08-17 (Ocean): 「这些都可以放进二级窗口里详细教学」 — one disclosure for the whole
-  // explanatory half, so the resting page is a status line and two controls.
+  // explanatory half, so the resting page is a status line and one control.
   const [helpOpen, setHelpOpen] = useState(false);
 
   // §2.1: re-probe each time the panel opens — the user may have just installed it.
@@ -109,27 +108,15 @@ export default function EngineConfig() {
         )}
       </div>
 
-      {/* The two controls — the only things on this page a user comes here to change. */}
+      {/* The control a user comes here to change. 「显示 AI 维护动作」 used to sit above it; P9C
+          (第 98 条) made it 「显示 AI 功能」 and moved it to the top of this page, over both roads. */}
       {engineStatus?.available && (
         <>
-          <div className="mt-2.5 flex items-center justify-between gap-4">
-            <div className="min-w-0">
-              <div className="text-sm text-ink">{t('显示 AI 维护动作')}</div>
-              <div className="mt-0.5 text-xs text-muted">
-                {t('需要 MCP 那一页的两个开关都打开——AI 维护的产出是写回一块，读权限不够用。')}
-              </div>
-            </div>
-            <Toggle
-              checked={aiEngineActionsEnabled}
-              onChange={(v) => void update({ aiEngineActionsEnabled: v })}
-            />
-          </div>
           {/* The gate is three-way (lib/engine/gate.ts) and two thirds of it live on another
-              tab now, so say which one is shut rather than leaving the rail mysteriously
-              empty with this switch on. */}
+              tab, so say which one is shut. (Each locked place can also turn them on in place.) */}
           {aiEngineActionsEnabled && !(mcpEnabled && mcpWriteEnabled) && (
             <p className="mt-1 text-[11px] text-muted">
-              {t('现在还不会出现：MCP 那一页的「MCP 服务」和「允许 AI 写入」要都打开。')}
+              {t('要让它干活，MCP 那一页的「MCP 服务」和「允许 AI 写入」要都打开。')}
             </p>
           )}
 
@@ -174,7 +161,7 @@ export default function EngineConfig() {
                 {t('引擎不是 Spool 的一部分，是你自己装在电脑上的命令行工具（Claude Code / Codex / Gemini CLI）。装好之后在终端里登录一次它自己的账号，Spool 就能借它干活。')}
               </p>
               <p>
-                {t('所以 Spool 里没有填 API key 的地方，以后也不会有：key 和登录状态都在那个工具自己的目录里（比如 Gemini 是 ~/.gemini/.env），Spool 不存、也读不到。你的账单也走那边。')}
+                {t('用这条路的话，key 和登录状态都在那个工具自己的目录里（比如 Gemini 是 ~/.gemini/.env），Spool 不存、也读不到。你的账单也走那边。')}
               </p>
               <p className="text-muted">
                 {t('不装也没关系——AI 那半边主要走 MCP（上一页），那条路不需要这些。')}
