@@ -1,6 +1,6 @@
 # 产品任务书 P9B —— 深浅色跟随系统；周回顾「活动」；存每天的专注时间
 
-> **状态：ACTIVE。**（2026-10-14 开工：P9A 已裁定、修补 P9F 已验收通过 —— HANDOFF §9.2 第 90 条。原来是 QUEUED。）
+> **状态：COMPLETE —— 待 Ocean 验收。**（2026-10-14：三步都已提交、已换装；回执在 §7 末尾。开工那天的记录：P9A 已裁定、修补 P9F 已验收通过 —— HANDOFF §9.2 第 90 条，原来是 QUEUED。）
 > 开工条件：P9A 那一窗做完、Ocean 裁定了它的建议表；如果裁定里有「修补」要排在 P9B 前面，修补也做完。开工的那一窗先把这一行改成 `ACTIVE`，再照 §2 重核起点（Ocean 10-10 第 75 条：「先 P9A，P9B 排队」；HANDOFF §9.4 第 1 条：同一时间只有一份 ACTIVE）。
 >
 > **唯一交付：** 下面 §3 的三步（P9B-1 – P9B-3），按顺序做完，每一步测试通过、单独一笔提交，并在 §7 写回执。
@@ -215,6 +215,59 @@ Windows 那一半这次验不了，等发版二在 Windows 上装机时一起验
 - 还差什么、有没有偏离本任务书、新发现记在 HANDOFF 哪里
 
 最后一段：换装（做了没有、装的是哪个 commit、`spctl` 结果、真库和两个 json 的备份文件名、装前装后的核对）、Ocean 验收（还没有就写「待验收」）。
+
+
+### 7.1 开工
+
+- 起点：`c25c4b5`（`docs: P9F 验收通过；P9B 开工`）。`c5f129b` 之后碰到 §2 点名文件的只有 P9F F8 删类名（`GeneralConfig.tsx`、`Sidebar/index.tsx`，`bg-accent-soft` 那几处），「现在」一栏照旧成立；左栏「周回顾」那道闸挪到了第 241 行。
+- 测试基线（P9F 收尾之后）：tsc 干净；vitest 88 / 1028；cargo 192 · 5；sidecar 14；`(none missing)`；`--dead` 87；`cargo tree` 空。
+- 真库和本机（10-14 只读）：v33；`settings.json` `theme` = classic、**`language` = zh**（任务书 10-10 记的是 en，现在是中文）、`blockFontSize` = medium、没有 `breakReminderEnabled`（= 开着）；`focus.json` 只有 `today`。
+
+### 7.2 三步
+
+**P9B-1 · `3f49053`** `feat(ui): 深浅色跟随系统 —— 一套暖深色、设置里「跟随系统 / 浅色 / 深色」、主窗和捕捉浮窗跟着变`
+- 改了：`src/styles/tokens.css`（末尾新加两块：`--search-hit` 的 `:root`、暖深色 `:root[data-scheme='dark']:not([data-theme='valentine'])`）、`src/styles/global.css`（`.paper-bg` / `flash` 的深色一份）、`ScaleRail.tsx`、`SearchResultItem.tsx`（命中底色读 `--search-hit`）、新文件 `src/lib/colorScheme.ts`、`src/hooks/useColorScheme.ts`、`public/scheme-boot.js`、`index.html`（`<head>` 里加那个脚本）、`settingsStore.ts`、`GeneralConfig.tsx`、`App.tsx`、`overlay.rs`、`overlayProtocol.ts`、`CaptureOverlay.tsx`、`i18n/index.ts`；测试 `colorScheme.test.ts`、`overlayProtocol.test.ts`。
+- 施工时定的：设置键 `colorScheme`（`system` / `light` / `dark`，默认 `system`，认不出的值当 `system`）；`<html>` 上的属性 `data-scheme`（`light` / `dark`，和 `data-theme` 各管各的）。冷启动不闪：设置读回来之前 hook 不动，第一帧由 `public/scheme-boot.js` 定 —— `<head>` 里一个同源的普通脚本（CSP `script-src 'self'` 不许内联、一个字没改），读 `localStorage` 的 `spool.schemeHint`（上一次应用的是什么，情人节记成 light），读不到就照系统。`tauri.conf.json` 和窗口 builder 没动。英文 Light or dark / Match system / Light / Dark。
+- 暖深色每个 token 的值和对比度（对 `--paper` #1e1b17）：paper 30 27 23 · paper-2 40 36 30 · ink 240 233 218（14.19）· ink-2 204 195 177（9.81）· muted 138 129 113（4.46，浅色 3.42）· line 48 43 36（1.22，浅色 1.24）· line-strong 68 61 51（1.60，浅色 1.48）· accent 230 145 52（6.91，浅色 4.69）· accent-2 #f5b762（9.66）· status-active #96ac7a（6.93）· status-parked #d6925c（6.64）· status-done #968d7c（5.23）· urgent #e87a64（6.04）· urgent-strong #f39884（7.87）；底上压字：selection #4b3a17 上 ink 9.06 · highlight #7a5714 上 5.43 · accent-soft #3d2e14 上 10.86 · notice-warm 上 11.01 · search-hit 上 6.65；阴影换成黑色。`--accent-soft` 深色给了值（直接写 `var(--accent-soft)` 的那 4 处要用；那 27 处类 P9F 已经删了）。
+- 验：构建出来的 main / overlay css 和 P9B 之前逐条比，只多了新加的规则；经典浅色的主窗、设置、周回顾三页同一份标记、前后两份 css 渲染，`compare-visual-snapshots.py` 门槛 0（`--pixel-delta 0 --max-changed-ratio 0 --max-channel-diff 0`）三页都是 0 个像素不同；深色、情人节（系统深色）、英文设置页、捕捉卡浅 / 深都截了图（`scratchpad/p9b/shots/`）。「跟着系统变」：在 WebKit 里把视图外观从浅切到深、从深切到浅，真组件 + 真 hook 的页面当场跟着变（底色 250 247 240 ⇄ 30 27 23）；只放 `scheme-boot.js` 的页面在深色外观下第一帧就是深色。
+- 偏离任务书：**没用演示版真切系统深浅色**。这一窗没有「屏幕录制」权限，截不到别的进程的窗口（P9F 已记进记忆 §46），切了也看不见；而切系统外观会动整台电脑。用上面那个 WebKit 视图外观切换代替，真机这一条交给 Ocean 验收第 1 – 3 条。原生窗口在网页画出来之前那一下的底色同理没验到，放进验收单。Windows 没验过（同一份代码，本机编不了）。
+
+**P9B-2 · `662a88f`** `feat(focus): 存每天的专注时间；关了休息提醒也照记`
+- 改了：`src/lib/db/focusDay.ts`、`src/lib/breakReminder.ts`（`focusTick`）、`src/hooks/useBreakReminder.ts`、`src/stores/breakStore.ts`（多存 `dayKey`）、`App.tsx`（一句注释）、`docs/PRIVACY.md`、`site/privacy.html`、`scripts/site-zh-privacy.html`、`site/zh/privacy.html`（`build-site-zh.mjs` 生成）；测试 `focusDay.test.ts`、`breakReminder.test.ts`。
+- `focus.json` 新那一栏叫 `days`，长这样：`{"today": {原来那三个数，样子没改}, "days": {"2026-10-14": 1966266, …}}`；只留 53 周（371 天）。
+- 关了提醒也照记：计时器总在跑，每个 tick 走 `focusTick`（同一个 `tickBreakState`，提醒关着时 `remind` 永远 false）；提醒切换都 `keepDay`（这一坐清零、今天不动）；`isWorking` / `shouldRollDay` / `usePanelFace` 没碰。
+- 隐私说明三处加一句，「最后更新」没改；没 push，官网不会动。
+- 验：vitest（老文件接进历史、只留 53 周、翻篇后昨天的数还在、坏文件当空的、提醒关着连做两个半小时一次都不提醒且总数和开着时一样、关→开这一坐清零今天不动）。
+
+**P9B-3 · `76c8d10`** `feat(review): 周回顾顶上的「活动」；周回顾入口一直显示`
+- 改了：新文件 `src/components/ReviewBoard/ActivityPanel.tsx`、`src/lib/activity.ts`；`src/lib/db/blocks.ts`（`countBlocksByProjectSince`）、`ReviewBoard/index.tsx`、`Sidebar/index.tsx`、`tokens.css`（`--activity-*`）、`i18n/index.ts`、`focusDay.ts`（删掉 P9B-2 加的 `focusByDay`，被 `weekFocus` 取代）；测试 `activity.test.ts`、`blocks.test.ts`、`ReviewBoard/reviewEntry.test.tsx`。
+- 「活动」的尺寸：一个卡片，宽跟着页面；大数字 48px（Geist 半粗，单位 16px）；七根柱子每根 14px 宽、区域 56px 高、4px 圆头、最低 1 小时当刻度顶（两分钟的一天不会画成一堵墙）；列表每行 8px 高的细条、三段之间 2px 空隙；整块在演示数据下约 350px 高。
+- 颜色：柱子过去的日子 `--muted`、今天 `--accent`（三种主题自动跟着走）；三段用 dataviz 参考调色板前三格按顺序：捕捉的 `--activity-capture` #2a78d6（深色 #3987e5）、自己写的 `--activity-self` #eb6834（#d95926）、AI 写回的 `--activity-ai` #1baf7a（#199e70）；情人节用浅色那一套。校验脚本：浅色、情人节、深色三种底上明度、彩度、色盲相邻 ΔE（9.2 / 9.4）、正常视力 ΔE（27.6 / 26.5）全过；浅色下橙、青对纸不到 3 : 1 ⇒ 图例带每一种的总数、每行带总数（脚本要求的「看得见的数字」）。
+- 英文措辞：Activity · Average focus per day · h / min · Today · no record · still to come · Captured / Written by you / Written back by AI · {n} more projects · No blocks added this week. · Due: · 「这一周」那颗悬停的说明全文。
+- 真库副本上那条 SQL（`VACUUM INTO` 到 scratchpad，直接调产品里的 `countBlocksByProjectSince`(本周一零点 = 10-12 00:00)）：**0 个项目、0 块** —— 库里最新一块是 10-11（周日）的，这一周还没加过块（之后 Ocean 又加了 2 块：10-14 10:58，都在〈个人网站素材〉、都是自己写的 —— 换装之后打开「活动」，列表里应该是这一个项目、2 块橙色）。截图里用真数据的那一张（`a5-real.png`）也是「这一周还没有加过块」、今天 10 分钟、周一周二没有记录；另用演示数据截了浅色 / 深色 / 情人节 / 英文 / 没有引擎的整页 / 没有 CLI 的左栏（`scratchpad/p9b/pages/a1 – a7`）。
+- 预期的副作用：只填了 DeepSeek、没装 CLI 的人，从此也能进这一页、用 DeepSeek 那个按钮。另一个副作用记成 `DISCOVERED-20261014-2`：装了 CLI 但「允许 AI 写入」关着的人，以前空列表会写一句「装了 Claude Code 或 Codex，并打开『允许 AI 写入』」，照任务书现在什么都不写了。
+
+### 7.3 收尾的测试数字
+
+tsc 干净；vitest 92 个文件 / 1056 条（开工 88 / 1028）；cargo 192 · 5；sidecar 14；`(none missing)`；`--dead` 87；`cargo tree … | grep` 空。
+
+### 7.4 换装（Ocean 2026-10-14 答「现在换装」）
+
+- 构建：在 `76c8d10` 上，代码树干净；命令和 P9F 一样（签名身份走环境变量、公证变量全 unset、日志进文件），「skipping app notarization」；TSA 一遍过；`--verify --deep --strict` 过。二进制里有 `overlay:scheme`；包里有 `scheme-boot.js`、`index.html` 加载它；css 里有深色那一块。新二进制 `--mcp` 连副本：24 个工具。
+- 装前：Developer ID、`Unnotarized Developer ID`、`spool` sha256 `74c7c73e…`（P9F 那版）。真库 v33 · ok · 14 / 51 / 1101 / 13 · 正文 336130 · 批注 13558 · 文件正文 143894 · 图片 4 张 764139 字节 · 跟进 19 · 待审 0；快照 25 个；`focus.json` 只有 `today`（1966266）；`settings.json` 25 个键、没有 `colorScheme`。
+- 停：GUI 27752、`--overlay` 27843 按 pid `kill -TERM`，第一次就退了；13 个 `--mcp` 一个没碰。
+- 备份（桌面）：`spool.before-p9b-install-20261014-162641.db`（和活库逐项一致）、`focus.before-p9b-install-20261014-162641.json`、`settings.before-p9b-install-20261014-162641.json`。旧包挪到 `~/Desktop/Spool/spool-pre-install/Spool-old-20261014-162641-pre-p9b.app`。
+- 装后：sha256 `f8c62bff…` 和构建产物一致；主进程 49535、`--overlay` 49540 都是 16:26:52 – 53（换装之后）起的，txt inode 都是 80600771，就是新文件；`spctl` = `Unnotarized Developer ID`；stderr 只有 `[overlay] helper started` 和 `[double-tap] installed at HID/active`。真库逐项和装前一样（不迁移，快照仍是 25 个）。`focus.json`：`today` 原样（1966266），第一个 tick 之后多了 `"days": {"2026-10-14": 1966266}`。`settings.json`：没有新键；`railWidth` 从 410.39 变成 316 —— 那个键只在拖右栏把手时写（`App.tsx` 的 `onCommit`），16:27:11 写的，是装好之后在这台电脑上拖过一次，不是换装写的。
+- 旧的 `--mcp` 子进程照常能用（库没变、MCP 没改），不用重启 AI 客户端。
+- commit、build、换装分开记在上面；没 push，没发版。
+
+### 7.5 新发现记在哪
+
+HANDOFF §9.9：`DISCOVERED-20261014-1`（没有引擎时周回顾页顶上那一大块空着）、`-2`（装了 CLI 但「允许 AI 写入」关着的人，空列表不再提示那个开关）。
+
+### 7.6 Ocean 验收
+
+待验收（§6 九条，外加一条：系统是深色时冷启动 Spool，看有没有先白一下）。
 
 ## 8. 收尾的文档动作（执行窗做）
 
