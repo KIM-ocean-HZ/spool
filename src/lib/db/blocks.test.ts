@@ -6,6 +6,7 @@ import {
   type Block,
   blockStatsByThread,
   computeMergedFields,
+  countBlocksByProjectSince,
   countCaptures,
   countMcpBlocks,
   countUserWrittenChars,
@@ -989,5 +990,46 @@ describe('provenance graph (v29)', () => {
     expect(await getBlockById(target.id)).not.toBeNull();
     expect((await getBlockById(target.id))!.staleAt).toBe(111);
     expect(await getBlockById(sameProject.id)).not.toBeNull();
+  });
+});
+
+// P9B-3 (周回顾「活动」): this week's new blocks per project, in three kinds. ⛔ No second rule:
+// the same labels as listCapturesSince / countMcpBlocks, sorted the same way.
+describe('countBlocksByProjectSince', () => {
+  let sqlite: Sqlite;
+
+  beforeEach(() => {
+    sqlite = new DatabaseSync(':memory:');
+    sqlite.exec(schemaSql);
+    __setTestDb(makeAdapter(sqlite));
+  });
+
+  afterEach(() => {
+    __setTestDb(null);
+    sqlite.close();
+  });
+
+  it('sorts each block the way the rest of Spool does, and leaves the tutorial out', async () => {
+    const ws = await createWorkspace('工作区');
+    const a = await createThread(ws.id, 'A');
+    const b = await createThread(ws.id, 'B');
+    const gone = await createThread(ws.id, '删掉的');
+    for (const source of [null, 'Safari', 'Chrome', '那本书', 'Claude · MCP', 'MCP', 'Spool 指南', 'Spool Guide']) {
+      await createBlock({ threadId: a.id, content: source ?? 'user', source });
+    }
+    const retired = await createBlock({ threadId: b.id, content: '不作数了的', source: 'Safari' });
+    sqlite.prepare('UPDATE blocks SET stale_at = ? WHERE id = ?').run(Date.now(), retired.id);
+    const old = await createBlock({ threadId: b.id, content: '上周的', source: null });
+    await createBlock({ threadId: gone.id, content: '删掉的项目里', source: null });
+    sqlite.prepare('UPDATE threads SET deleted_at = ? WHERE id = ?').run(Date.now(), gone.id);
+    const since = Date.now() - 60_000;
+    sqlite.prepare('UPDATE blocks SET created_at = ? WHERE id = ?').run(since - 7 * 86_400_000, old.id);
+
+    const rows = await countBlocksByProjectSince(since);
+    const byId = Object.fromEntries(rows.map((r) => [r.threadId, r]));
+    expect(byId[a.id]).toEqual({ threadId: a.id, capture: 3, self: 1, ai: 2 });
+    // a block marked 「不作数了」 was still added this week; last week's is not this week's
+    expect(byId[b.id]).toEqual({ threadId: b.id, capture: 1, self: 0, ai: 0 });
+    expect(byId[gone.id]).toBeUndefined();
   });
 });

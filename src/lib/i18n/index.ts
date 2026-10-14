@@ -895,6 +895,22 @@ const EN: Record<string, string> = {
   '压缩': 'Compress',
   '去重': 'Dedupe',
   '周回顾': 'Weekly review',
+  // P9B-3 周回顾顶上的「活动」(Ocean 第 13 条：中文「活动」、英文 Activity)
+  '活动': 'Activity',
+  '平均每天专注': 'Average focus per day',
+  '小时': 'h',
+  '每天专注多久': 'Focus per day',
+  '没有记录': 'no record',
+  '还没到': 'still to come',
+  '捕捉的': 'Captured',
+  '自己写的': 'Written by you',
+  'AI 写回的': 'Written back by AI',
+  '捕捉的 {a} · 自己写的 {b} · AI 写回的 {c}': 'Captured {a} · Written by you {b} · Written back by AI {c}',
+  '这一周还没有加过块。': 'No blocks added this week.',
+  '另外 {n} 个项目': '{n} more projects',
+  '到期：': 'Due: ',
+  '专注时间 = 你在电脑前、并且 Spool 在前台或 15 分钟内捕捉过的时间，和休息提醒是同一个计时；不是在某个项目上花的时间。':
+    'Focus time = time at the computer while Spool was in front or you had captured within 15 minutes — the same clock as the break reminder. It is not time spent on any one project.',
   'AI 整理中…': 'AI working…',
   '用本机的 {engine} 把这条脉络提炼成一块结论':
     'Use the {engine} on this machine to distil this thread into one conclusion block',

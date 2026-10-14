@@ -1,6 +1,7 @@
 import { CalendarRange, Loader2, Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import ApiBalance from '@/components/ApiBalance';
+import ActivityPanel from './ActivityPanel';
 import Toggle from '@/components/ui/Toggle';
 import { MarkdownContent } from '@/lib/blocks/MarkdownContent';
 import {
@@ -58,6 +59,12 @@ import { CENTRE_HEADER_HEIGHT } from '@/lib/layout';
 // lives in the right rail, and **a pinned view does not carry a right rail** (App.tsx:
 // `pinnedView ? null : …`). Standing on this screen there was nowhere to pick a model at all —
 // the same root as 08-25's 「周回顾没法暂停」, and it lands in the same place: this bar.
+
+/** P9B-3 (Ocean 2026-10-10 第 76 条): what an empty review list says. Something only when a way
+ *  to run a review is ready (a CLI with writing allowed, or DeepSeek); otherwise nothing — no
+ *  「装了 Claude Code 或 Codex……」 on a page that now opens for everyone. */
+export const emptyReviewsHint = (engineReady: boolean, apiOn: boolean): string | null =>
+  engineReady || apiOn ? '还没有回顾。点上面那一下，AI 会读一遍所有项目，说说这一周做了什么、还剩什么。' : null;
 
 /** §5 — spend, never remaining quota; same rule and same reason as RunCard's. */
 const money = (usd: number | null): string | null =>
@@ -359,16 +366,18 @@ export default function ReviewBoard() {
       )}
 
       <div className="flex-1 overflow-y-auto px-6 py-4">
+        {/* P9B-3 (Ocean 2026-09-30 第 13 条): 「活动」 first — it needs no AI and costs nothing, and
+            it is the reason the door to this page is always open now (Sidebar, 第 76 条). */}
+        <ActivityPanel />
         {reviews === null ? null : reviews.length === 0 ? (
-          <p className="pt-12 text-center text-sm text-muted">
-            {/* ⚠️ The second line is now reachable only one way: a CLI IS installed and the
-                「允许 AI 写入」 switch is off — because with no CLI at all the left rail no
-                longer shows a door to this screen (Sidebar, 2026-08-17). It is kept for that
-                case, where it names a switch the user can actually flip. */}
-            {engineReady
-              ? t('还没有回顾。点上面那一下，AI 会读一遍所有项目，说说这一周做了什么、还剩什么。')
-              : t('装了 Claude Code 或 Codex，并打开「允许 AI 写入」之后，这里才有东西。')}
-          </p>
+          // ⚠️ P9B-3 (第 76 条): with neither a CLI nor DeepSeek ready there is no engine bar above
+          // and no sentence here — not even 「装了 Claude Code 或 Codex……」. The page is 「活动」
+          // and nothing else; a hint about installing something is the nag gate.ts's 安静原则
+          // rejected everywhere else. Past reviews are still listed below when there are any —
+          // they are the user's history, not a prompt.
+          emptyReviewsHint(engineReady, apiOn) !== null ? (
+            <p className="pt-6 text-center text-sm text-muted">{t(emptyReviewsHint(engineReady, apiOn)!)}</p>
+          ) : null
         ) : (
           <div className="space-y-6">
             {weeks.map((w) => (

@@ -124,14 +124,3 @@ export const restoreBreakState = (day: FocusDay | null): Partial<BreakState> =>
   day === null
     ? {}
     : { totalMs: day.totalMs, dayKey: day.dayKey, lastActiveAt: day.lastActiveAt };
-
-/** P9B-2 第 4 条 —— 给周回顾「活动」的读法：这几天每天专注了多少毫秒，**没有记录的天是 null**
- *  （⛔ 不当 0：装上这一版之前的日子没有数，那不等于那天没干活）。
- *  ⚠️ 今天那一天用正在走的那个数（breakStore 的 `totalMs` / `dayKey`），⛔ 不用上次写盘的数 ——
- *  这样和左栏时钟那一面的「今天已专注 N 分钟」是同一个数。 */
-export const focusByDay = (
-  dayKeys: readonly string[],
-  days: FocusDays,
-  live: { dayKey: string | null; totalMs: number },
-): (number | null)[] =>
-  dayKeys.map((k) => (live.dayKey === k ? live.totalMs : (days[k] ?? null)));

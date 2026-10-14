@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { dayKeyOf, initialBreakState, PRESENCE_WINDOW_MS, TICK_MS, tickBreakState } from '@/lib/breakReminder';
-import { DAYS_KEPT, cleanDays, focusByDay, readFocusFile, withDay, type FocusDay } from './focusDay';
+import { DAYS_KEPT, cleanDays, readFocusFile, withDay, type FocusDay } from './focusDay';
 
 // P9B-2 (Ocean 09-30 第 16 条 C-D1): focus.json keeps one number per day. Still a file of its own —
 // not the library, not settings.json (the reasons are in focusDay.ts).
@@ -73,14 +73,5 @@ describe('rolling over to a new day', () => {
     // today starts from zero (plus the reducer's own capped first tick); it is the live total
     expect(days['2026-10-14']).toBe(s.totalMs);
     expect(s.totalMs).toBeLessThan(20 * 60 * 1000);
-  });
-});
-
-describe('focusByDay', () => {
-  it('reads today from the running clock, and a day with no record as null — not 0', () => {
-    const days = { '2026-10-12': 0, '2026-10-13': 1_200_000, '2026-10-14': 300_000 };
-    expect(
-      focusByDay(['2026-10-11', '2026-10-12', '2026-10-13', '2026-10-14'], days, { dayKey: '2026-10-14', totalMs: 360_000 }),
-    ).toEqual([null, 0, 1_200_000, 360_000]);
   });
 });

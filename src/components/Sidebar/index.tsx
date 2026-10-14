@@ -153,7 +153,6 @@ export default function Sidebar({ onCollapse }: Props) {
   useEffect(() => {
     if (engineStatus === null) void probeEngine();
   }, [engineStatus, probeEngine]);
-  const engineAvailable = engineStatus?.available === true;
 
   return (
     /* ⚠️ 这一行上有两件事，都是拍过板的：
@@ -229,31 +228,25 @@ export default function Sidebar({ onCollapse }: Props) {
               )}
             </div>
           </li>
-          {/* ⚠️ 2026-08-17 (Ocean, after the Windows install): 「没有 Claude code 和 codex,周回顾
-              和跟进都会提示无法使用……对于长期不打算使用这些功能的用户来说影响很大,不如直接选择
-              不显示这些功能」 — 拍板:所有平台一样。A weekly review is written BY a local CLI; with
-              no CLI on the machine this row leads to a screen whose only content is an
-              instruction to install one, which is the nagging gate.ts's 安静原则 already
-              rejected everywhere else. On Windows the engine is off at its front door
-              (engine.rs), so the row simply never appears there.
-              ⚠️ The reviews themselves are never deleted — they sit in `engine_runs`, and the
-              row comes back with the CLI. What is hidden is the door, not the history. */}
-          {engineAvailable && (
-            <li
-              onClick={() => openPinned('review')}
-              className={`group relative cursor-pointer rounded-md px-3 py-1.5 transition-colors ${
-                pinnedView === 'review' ? 'bg-paper-2' : 'hover:bg-paper-2/60'
-              }`}
-            >
-              {pinnedView === 'review' && (
-                <span className="absolute bottom-1.5 left-0 top-1.5 w-[2px] rounded-r bg-accent" />
-              )}
-              <div className="flex items-center gap-2">
-                <CalendarRange size={12} className="flex-none text-muted" />
-                <span className="min-w-0 flex-1 truncate text-sm text-ink">{t('周回顾')}</span>
-              </div>
-            </li>
-          )}
+          {/* ⭐ P9B-3 (Ocean 2026-10-10 第 76 条「一直显示」): the door is always open now, on every
+              platform. The page has 「活动」 at the top, which needs no AI and no CLI — so it is
+              no longer a screen whose only content is an instruction to install something (the
+              reason for 08-17's 「没有 CLI 就不显示」, which this replaces). The AI half of the page
+              still appears only when an engine is ready (ReviewBoard). */}
+          <li
+            onClick={() => openPinned('review')}
+            className={`group relative cursor-pointer rounded-md px-3 py-1.5 transition-colors ${
+              pinnedView === 'review' ? 'bg-paper-2' : 'hover:bg-paper-2/60'
+            }`}
+          >
+            {pinnedView === 'review' && (
+              <span className="absolute bottom-1.5 left-0 top-1.5 w-[2px] rounded-r bg-accent" />
+            )}
+            <div className="flex items-center gap-2">
+              <CalendarRange size={12} className="flex-none text-muted" />
+              <span className="min-w-0 flex-1 truncate text-sm text-ink">{t('周回顾')}</span>
+            </div>
+          </li>
         </ul>
         {/* 首日价值 — 「我攒了多少」. Ocean 2026-08-10 put it on this side rather than over the
             block feed so it is visible whichever project is open, and 二期 (拍板 3) made it

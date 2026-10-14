@@ -301,6 +301,41 @@ const captureClause = (): { sql: string; params: string[] } => {
   };
 };
 
+/** P9B-3（周回顾「活动」）—— 每个项目从 `since` 起新加了几块，分三种来历。
+ *
+ *  ⛔ **不另写一份判断**：AI 写回的 = `MCP_SOURCE_PREDICATE`；自己写的 = `source` 为空（和
+ *  `countUserWrittenChars` 同一条）；捕捉的 = `captureClause()`；教程那几块按 `tutorialSourceLabels()`
+ *  排除。一条 CASE 按这个顺序判，所以三种不会重叠（`source` 是空串的那种只算「自己写的」）。
+ *  ⚠️ 删掉的块不在表里，自然不算；标了「不作数了」的照算（它就是这一周加的）；已删除的项目不算。 */
+export interface ProjectBlockCounts {
+  threadId: string;
+  capture: number;
+  self: number;
+  ai: number;
+}
+
+export const countBlocksByProjectSince = async (since: number): Promise<ProjectBlockCounts[]> => {
+  const db = await getDb();
+  const cap = captureClause();
+  const holes = cap.params.map((_, i) => `$${i + 1}`).join(', ');
+  const rows = await db.select<{ threadId: string; capture: number; self: number; ai: number }[]>(
+    `SELECT thread_id AS threadId,
+            SUM(cls = 'capture') AS capture, SUM(cls = 'self') AS self, SUM(cls = 'ai') AS ai
+       FROM (SELECT blocks.thread_id,
+                    CASE WHEN ${MCP_SOURCE_PREDICATE} THEN 'ai'
+                         WHEN TRIM(COALESCE(source, '')) = '' THEN 'self'
+                         WHEN ${cap.sql} THEN 'capture'
+                    END AS cls
+               FROM blocks JOIN threads ON threads.id = blocks.thread_id
+              WHERE threads.deleted_at IS NULL
+                AND blocks.created_at >= $${cap.params.length + 1}
+                AND COALESCE(source, '') NOT IN (${holes}))
+      GROUP BY thread_id`,
+    [...cap.params, since],
+  );
+  return rows.map((r) => ({ threadId: r.threadId, capture: Number(r.capture), self: Number(r.self), ai: Number(r.ai) }));
+};
+
 /** What the user captured since `since` — newest first. Feeds the sidebar card's
  *  「今天读了 N 条」 line (首日价值, DESIGN_NEXT_STAGE §4.5) and its 打包 target.
  *
