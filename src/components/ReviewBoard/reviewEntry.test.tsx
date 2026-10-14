@@ -17,13 +17,17 @@ describe('周回顾 entry', () => {
   });
 });
 
+// P9C (第 93 – 98 条): the sentence follows the bar above it.
 describe('emptyReviewsHint', () => {
-  it('says nothing when no way to run a review is ready — no 「去装 CLI」', () => {
-    expect(emptyReviewsHint(false, false)).toBeNull();
+  it('invites a first run when a road is ready', () => {
+    expect(emptyReviewsHint('ready')).toContain('点上面那一下');
   });
 
-  it('invites a first run when a CLI or DeepSeek is ready', () => {
-    expect(emptyReviewsHint(true, false)).toContain('点上面那一下');
-    expect(emptyReviewsHint(false, true)).toContain('点上面那一下');
+  it('says nothing more while locked — the locked bar above already says it', () => {
+    expect(emptyReviewsHint('locked')).toBeNull();
+  });
+
+  it('says nothing at all with 「显示 AI 功能」 off', () => {
+    expect(emptyReviewsHint('hidden')).toBeNull();
   });
 });

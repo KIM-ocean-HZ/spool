@@ -1298,6 +1298,11 @@ const EN: Record<string, string> = {
   '正在回顾…': 'Reviewing…',
   '还没有回顾。点上面那一下，AI 会读一遍所有项目，说说这一周做了什么、还剩什么。':
     'No reviews yet. Press the button above and the AI reads every project, then says what moved this week and what is still open.',
+  // P9C — the review bar while no road is open, or the free one only needs a switch.
+  '用 {engine} 回顾（不花钱）—— 先打开写入': 'Review with {engine} (no extra cost) — turn on writing first',
+  '写回顾要用一个 AI：本机的 Claude Code / Codex，或者 DeepSeek。':
+    'Writing a review takes an AI: Claude Code or Codex on this Mac, or DeepSeek.',
+  '写回顾要用一个 AI：DeepSeek。': 'Writing a review takes an AI: DeepSeek.',
   '这次什么也没回来': 'nothing came back this time',
 
   // 「问 AI」 (§9.13) — the row's one-click question.

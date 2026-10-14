@@ -1,6 +1,7 @@
-import { CalendarRange, Loader2, Trash2 } from 'lucide-react';
+import { CalendarRange, Loader2, Lock, Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import ApiBalance from '@/components/ApiBalance';
+import LockedAiEntry, { AiSetupButton } from '@/components/AiSetup/LockedAiEntry';
 import ActivityPanel from './ActivityPanel';
 import Toggle from '@/components/ui/Toggle';
 import { MarkdownContent } from '@/lib/blocks/MarkdownContent';
@@ -12,9 +13,15 @@ import {
 } from '@/lib/db/engineRuns';
 import { runWeeklyReviewViaApi } from '@/lib/ai/weeklyReview';
 import { toast } from '@/stores/toastStore';
-import { canShowEngineActions, effectiveAutoRoute } from '@/lib/engine/gate';
+import {
+  aiEntryState,
+  canShowEngineActions,
+  effectiveAutoRoute,
+  type AiEntryState,
+} from '@/lib/engine/gate';
 import { CODEX_NO_MODELS, ENGINE_MODELS, modelKeyFor } from '@/lib/engine/models';
 import { dateLocale, useT } from '@/lib/i18n';
+import { IS_MAC } from '@/lib/platform';
 import {
   groupByWeek,
   startOfWeek,
@@ -60,11 +67,11 @@ import { CENTRE_HEADER_HEIGHT } from '@/lib/layout';
 // `pinnedView ? null : …`). Standing on this screen there was nowhere to pick a model at all —
 // the same root as 08-25's 「周回顾没法暂停」, and it lands in the same place: this bar.
 
-/** P9B-3 (Ocean 2026-10-10 第 76 条): what an empty review list says. Something only when a way
- *  to run a review is ready (a CLI with writing allowed, or DeepSeek); otherwise nothing — no
- *  「装了 Claude Code 或 Codex……」 on a page that now opens for everyone. */
-export const emptyReviewsHint = (engineReady: boolean, apiOn: boolean): string | null =>
-  engineReady || apiOn ? '还没有回顾。点上面那一下，AI 会读一遍所有项目，说说这一周做了什么、还剩什么。' : null;
+/** What an empty review list says (P9B-3 第 76 条, P9C 第 93 – 98 条). Only when a way to run a
+ *  review is ready; locked says nothing more here — the locked bar above already says it — and
+ *  hidden (「显示 AI 功能」 off) says nothing at all. */
+export const emptyReviewsHint = (entry: AiEntryState): string | null =>
+  entry === 'ready' ? '还没有回顾。点上面那一下，AI 会读一遍所有项目，说说这一周做了什么、还剩什么。' : null;
 
 /** §5 — spend, never remaining quota; same rule and same reason as RunCard's. */
 const money = (usd: number | null): string | null =>
@@ -173,6 +180,20 @@ export default function ReviewBoard() {
     mcpWriteEnabled,
     actionsEnabled,
   });
+  // P9C (第 93 – 98 条): either road ready ⇒ drawn as before; neither ⇒ locked; 「显示 AI 功能」 off
+  // ⇒ hidden. ⚠️ Until the first detection answers, nothing is decided — no lock flashing past
+  // on a machine that has a CLI.
+  const reviewEntry: AiEntryState | null =
+    engineStatus === null && !apiOn
+      ? null
+      : aiEntryState({ ready: engineReady || apiOn, route: 'any', showAi: actionsEnabled, isMac: IS_MAC });
+  // 第 93 条: a CLI is on this Mac and only the MCP switches hold the free road back — offered in
+  // the CLI button's own place, whether or not DeepSeek is on.
+  const cliNeedsSwitches =
+    IS_MAC &&
+    actionsEnabled &&
+    engineStatus?.available === true &&
+    !(mcpEnabled && mcpWriteEnabled);
   const running = current?.action === 'weekly_review';
   /** 装着的那个 CLI 叫什么。⚠️ 两条路并排摆着的时候，光写「回顾这一周」两遍
    *  用户分不出哪个是哪个 —— 按钮上必须说出跑的是谁。 */
@@ -205,10 +226,12 @@ export default function ReviewBoard() {
         <span className="text-[11px] text-muted">{t('跨所有项目，不属于任何一个')}</span>
       </header>
 
-      {/* ⭐ 2026-08-25：**两条路并存**，所以这根条子的闸是「随便哪条准备好了」，
+      {/* ⭐ 2026-08-25：**两条路并存**，所以「准备好」是「随便哪条准备好了」，
           ⛔ 不再只认 CLI。以前只认 `engineReady`，于是一个没装 CLI、但填了 API key 的用户
-          在这一屏上看不到任何可以点的东西。 */}
-      {(engineReady || apiOn) && (
+          在这一屏上看不到任何可以点的东西。
+          P9C（第 93 – 98 条）：两条都不通也画这根条子 —— 锁着，当场就能打开（顶上不再空一块，
+          `DISCOVERED-20261014-1`）；只有「显示 AI 功能」关着才不画。 */}
+      {reviewEntry !== null && reviewEntry !== 'hidden' && (
         <div className="flex-none border-b border-line px-6 py-2">
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
             {engineReady && (
@@ -230,6 +253,31 @@ export default function ReviewBoard() {
                     ? t('回顾这一周（用 {engine}）', { engine: cliName })
                     : t('回顾这一周')}
               </button>
+            )}
+
+            {/* P9C 第 93 条（`DISCOVERED-20261014-2`）：CLI 在、只差 MCP 那两个开关 —— 免费那条路就差
+                一下，在它自己的位置上给，弹出的那一小块当场打开（也老实说这两个开关还管着别的 AI）。
+                DeepSeek 开着的话它的按钮照旧在旁边。 */}
+            {!engineReady && cliNeedsSwitches && (
+              <AiSetupButton
+                route="cli"
+                className="flex items-center gap-1.5 rounded px-1.5 py-1 text-xs text-ink-2 transition-colors hover:bg-paper-2 hover:text-accent"
+              >
+                <Lock size={12} className="flex-none" />
+                {t('用 {engine} 回顾（不花钱）—— 先打开写入', { engine: cliName ?? 'Claude Code' })}
+              </AiSetupButton>
+            )}
+
+            {reviewEntry === 'locked' && !cliNeedsSwitches && (
+              <LockedAiEntry
+                label={t('回顾这一周')}
+                reason={
+                  IS_MAC
+                    ? t('写回顾要用一个 AI：本机的 Claude Code / Codex，或者 DeepSeek。')
+                    : t('写回顾要用一个 AI：DeepSeek。')
+                }
+                route="any"
+              />
             )}
 
             {/* ⭐⭐ `W1` (Ocean 2026-08-26：「每周自动回顾无法选模型」) —— 选择器在这儿，
@@ -306,10 +354,12 @@ export default function ReviewBoard() {
                 ⚠️ Still default OFF, and that stays a deliberate reading of a request that pulled
                 two ways: Ocean asked for automation AND for 「必须节约token」/「让用户放心」 in one
                 breath, and this switch spends real money without asking again. */}
-            <label className="flex cursor-pointer items-center gap-2">
-              <Toggle checked={autoMaintain} onChange={(v) => void update({ aiAutoMaintain: v })} />
-              <span className="text-xs text-ink-2">{t('每周自动回顾一次')}</span>
-            </label>
+            {reviewEntry === 'ready' && (
+              <label className="flex cursor-pointer items-center gap-2">
+                <Toggle checked={autoMaintain} onChange={(v) => void update({ aiAutoMaintain: v })} />
+                <span className="text-xs text-ink-2">{t('每周自动回顾一次')}</span>
+              </label>
+            )}
 
             {/* ⭐ `W2` —— 自动那一次**走哪条路**。⚠️ 它今天只认 CLI，所以 08-25 刚接上的
                 API 那条路自动回顾永远用不上；这是那件事的开关。
@@ -333,7 +383,7 @@ export default function ReviewBoard() {
 
           {/* ⭐ 第二行：两句只在需要时才出现的话。⛔ 它们不是装饰 —— 各自堵着一个
               「用户读到的是坏了」的洞。 */}
-          {(autoMaintain || selected === 'codex') && (
+          {reviewEntry === 'ready' && (autoMaintain || selected === 'codex') && (
             <div className="mt-1.5 space-y-1 px-1.5">
               {/* ⭐⭐ 分组按自然周切，而自动回顾判的是「距上次成功满 7 天」（lib/weeks 那段
                   写着为什么两把尺子）。代价是「这一周」那一格可能空着、而自动那条还没到点，
@@ -343,8 +393,8 @@ export default function ReviewBoard() {
                   {/* ⭐ 走哪条路要写出来,⛔ 不能只在两条都在时才说 —— 偏好可能指着一条
                       今天走不通的路(选了 CLI 然后卸了它),那时 `effectiveAutoRoute` 会
                       退到另一条,而另一条是**按字数花钱**的。退让可以,悄悄退让不行。 */}
-                  {/* ⚠️ `autoRun` 在这根条子里不可能是 null —— 这根条子的闸本身就是
-                      「至少有一条路」，和 `effectiveAutoRoute` 读的是同一对布尔。 */}
+                  {/* ⚠️ `autoRun` 在这一行里不可能是 null —— 这一行的闸 `reviewEntry === 'ready'`
+                      本身就是「至少有一条路」，和 `effectiveAutoRoute` 读的是同一对布尔。 */}
                   {t('自动那次走 {engine}。', {
                     engine: autoRun === 'api' ? apiModel : (cliName ?? t('CLI')),
                   })}{' '}
@@ -370,13 +420,13 @@ export default function ReviewBoard() {
             it is the reason the door to this page is always open now (Sidebar, 第 76 条). */}
         <ActivityPanel />
         {reviews === null ? null : reviews.length === 0 ? (
-          // ⚠️ P9B-3 (第 76 条): with neither a CLI nor DeepSeek ready there is no engine bar above
-          // and no sentence here — not even 「装了 Claude Code 或 Codex……」. The page is 「活动」
-          // and nothing else; a hint about installing something is the nag gate.ts's 安静原则
-          // rejected everywhere else. Past reviews are still listed below when there are any —
-          // they are the user's history, not a prompt.
-          emptyReviewsHint(engineReady, apiOn) !== null ? (
-            <p className="pt-6 text-center text-sm text-muted">{t(emptyReviewsHint(engineReady, apiOn)!)}</p>
+          // ⚠️ P9C (第 93 – 98 条): only a ready bar earns the 「点上面那一下」 sentence. A locked bar
+          // already says what is missing and opens it in place, so nothing is repeated here; with
+          // 「显示 AI 功能」 off the page is 「活动」 and past reviews, and nothing about AI at all.
+          // Past reviews are still listed below when there are any — they are the user's history,
+          // not a prompt.
+          reviewEntry !== null && emptyReviewsHint(reviewEntry) !== null ? (
+            <p className="pt-6 text-center text-sm text-muted">{t(emptyReviewsHint(reviewEntry)!)}</p>
           ) : null
         ) : (
           <div className="space-y-6">
