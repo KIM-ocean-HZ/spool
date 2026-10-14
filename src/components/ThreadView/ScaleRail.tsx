@@ -462,7 +462,7 @@ export default function ScaleRail({ scrollRef, revision, threadId }: Props) {
                       {text.slice(0, lead.match.start)}
                       <mark
                         className="rounded-sm px-0.5 text-ink"
-                        style={{ backgroundColor: 'rgba(251, 191, 36, 0.45)' }}
+                        style={{ backgroundColor: 'var(--search-hit)' }}
                       >
                         {text.slice(lead.match.start, lead.match.end)}
                       </mark>

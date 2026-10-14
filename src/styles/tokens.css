@@ -207,3 +207,82 @@
   --block-text:   18px;
   --block-text-2: 15px;
 }
+
+/* =====================================================================================
+   搜索命中的底色（P9B-1, 2026-10-14）。原来写死在两个组件的行内 style 里
+   （ScaleRail 的预览卡、搜索结果），深色下要换一个值，所以收成一个 token。
+   ⭐ 这一块的值就是写死的那一个 —— 浅色下一个像素都不动。 */
+:root {
+  --search-hit: rgba(251, 191, 36, 0.45);
+}
+
+/* =====================================================================================
+   暖深色 (P9B-1, 2026-10-14; Ocean 2026-10-10 第 55、60、61、79 条) —— 只给经典版。
+
+   ⚠️⚠️ 选择器带 `:not([data-theme='valentine'])`：情人节版永远是浅色（第 60 条），不管系统、
+   不管设置里那个「深浅」。⛔ 上面裸 `:root` 那一块、情人节那一块一个字节都没动 —— 浅色的人
+   拿到的仍然是已发布版本本身（§10.6「经典版 = 发布版本身」）；深色是另外一套值，只在
+   `<html data-scheme='dark'>` 时才压上去。属性由 lib/colorScheme.ts 写，冷启动第一帧由
+   public/scheme-boot.js 写（见那个文件为什么非得是一个单独的脚本）。
+
+   色调是第 79 条原话：「和经典版的纸同一个色系，深棕黑底、米白字、琥珀色强调照旧」。底就是
+   经典版的墨色那一族，字是经典版的纸那一族，强调色是同一个琥珀、为了深底看得清提亮过。
+
+   每一档字都对着 `--paper` 量过，不凭眼睛（下限：正文 ≥ 7，ink-2 和 accent ≥ 4.5，muted 不低于
+   浅色今天的 3.42）：ink 14.19 · ink-2 9.81 · muted 4.46（浅色 3.42）· accent 6.91（浅色 4.69）·
+   accent-2 9.66 · status-active 6.93 · status-parked 6.64 · status-done 5.23 · urgent 6.04 ·
+   urgent-strong 7.87。线和浅色同一个分量：line 1.22（浅色 1.24）· line-strong 1.60（1.48）。
+   底色上的字：ink 在 selection 上 9.06、在 highlight（当前那个搜索命中）上 5.43、在 accent-soft 上
+   10.86、在 notice-warm 上 11.01、在 search-hit 上 6.65。
+
+   ⚠️ 和裸 `:root` 同一个形状：上 Tailwind 的八个颜色每个都是 `*-rgb` + 完整颜色两个 token，
+   缺了通道值 `bg-ink/30` 这类类在深色下会拿到浅色的通道（理由见文件头）。
+   ⚠️ `color-scheme: dark` 写在这里：系统自带的控件（下拉框、日期选择、滚动条）跟着变深。
+   ===================================================================================== */
+:root[data-scheme='dark']:not([data-theme='valentine']) {
+  color-scheme: dark;
+
+  --paper-rgb:       30 27 23;
+  --paper:           rgb(var(--paper-rgb));
+  --paper-2-rgb:     40 36 30;
+  --paper-2:         rgb(var(--paper-2-rgb));
+  --paper-edge:      #39332a;
+  --ink-rgb:         240 233 218;
+  --ink:             rgb(var(--ink-rgb));
+  --ink-2-rgb:       204 195 177;
+  --ink-2:           rgb(var(--ink-2-rgb));
+  --muted-rgb:       138 129 113;
+  --muted:           rgb(var(--muted-rgb));
+
+  --line-rgb:        48 43 36;
+  --line:            rgb(var(--line-rgb));
+  --line-strong-rgb: 68 61 51;
+  --line-strong:     rgb(var(--line-strong-rgb));
+
+  /* 琥珀照旧，提亮到深底上小字也看得清；accent-2 在浅色里是「更深的那一档」，深色里反过来是
+     更亮的那一档（当前搜索命中那一圈细框用它）。下面四个是「底」，上面压的是 ink：做成深琥珀。 */
+  --accent-rgb:      230 145 52;
+  --accent:          rgb(var(--accent-rgb));
+  --accent-2:     #f5b762;
+  --accent-soft:  #3d2e14;
+  --highlight:    #7a5714;
+  --selection:    #4b3a17;
+
+  --block-active-bg:           #2c271f;
+  --block-active-bg-fade-ms:   3000ms;
+
+  --notice-warm:      rgba(245, 158, 11, 0.14);
+  --notice-warm-edge: rgba(230, 145, 52, 0.45);
+
+  --status-active:   #96ac7a;
+  --status-parked:   #d6925c;
+  --status-done:     #968d7c;
+  --urgent:          #e87a64;
+  --urgent-strong:   #f39884;
+
+  --search-hit: rgba(245, 158, 11, 0.36);
+
+  /* 深底上浅色那种淡棕阴影看不见，换成更重的黑；几何不变。 */
+  --shadow-card:  0 4px 12px -6px rgba(0, 0, 0, 0.55);
+  --shadow-toast: 0 8px 24px -8px rgba(0, 0, 0, 0.65);
+}

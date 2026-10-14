@@ -4,6 +4,8 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Spool</title>
+    <!-- 深浅色的第一帧：必须在第一次画之前跑，所以是 <head> 里一个同源的普通脚本（CSP 不许内联）。见文件头。 -->
+    <script src="/scheme-boot.js"></script>
   </head>
   <body>
     <div id="root"></div>

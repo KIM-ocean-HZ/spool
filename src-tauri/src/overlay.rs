@@ -55,6 +55,8 @@ static MAIN_PID: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::ne
 const DB_REQUEST_EVENT: &str = "overlay:db-request";
 const LANGUAGE_EVENT: &str = "overlay:language";
 const THEME_EVENT: &str = "overlay:theme";
+/// 深浅色 (P9B-1, 2026-10-14): 跟随系统 / 浅色 / 深色. Same channel as the theme.
+const SCHEME_EVENT: &str = "overlay:scheme";
 
 // =============================================================================
 // Main-process side: spawn, supervise, talk to the helper
@@ -354,6 +356,11 @@ fn on_main_message(app: &AppHandle, msg: &serde_json::Value) {
             if let Some(theme) = ui_theme(app) {
                 let _ = app.emit_to(WINDOW_LABEL, THEME_EVENT, theme);
             }
+            // 深浅色 (P9B-1) — the same again, also before the content. The card works out
+            // 跟随系统 from its own `matchMedia`, so only the setting itself travels.
+            if let Some(scheme) = ui_color_scheme(app) {
+                let _ = app.emit_to(WINDOW_LABEL, SCHEME_EVENT, scheme);
+            }
             // 休息提醒 (2026-08-22): remember who to let in front when the card is
             // clicked. ⚠️ Stored on the SHOW rather than read at click time, because by then
             // the only process that can make the grant is this one and the only process that
@@ -448,6 +455,11 @@ fn ui_language(app: &AppHandle) -> Option<String> {
 /// there is nothing to emit — the overlay is already painting it.
 fn ui_theme(app: &AppHandle) -> Option<String> {
     settings_string(app, "theme")
+}
+
+/// 深浅色 (P9B-1). Absent key = 跟随系统, which is also the frontend's default.
+fn ui_color_scheme(app: &AppHandle) -> Option<String> {
+    settings_string(app, "colorScheme")
 }
 
 /// One string key out of settings.json. Read fresh each time rather than cached: the user can

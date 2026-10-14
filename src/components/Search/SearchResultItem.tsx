@@ -21,7 +21,7 @@ const renderLine = (line: SearchSnippetLine) => {
       {line.text.slice(0, start)}
       <mark
         className="rounded-sm px-0.5 text-ink"
-        style={{ backgroundColor: 'rgba(251, 191, 36, 0.45)' }}
+        style={{ backgroundColor: 'var(--search-hit)' }}
       >
         {line.text.slice(start, end)}
       </mark>

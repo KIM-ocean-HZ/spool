@@ -200,3 +200,22 @@ article[data-block-id].block-active {
 .no-native-scrollbar::-webkit-scrollbar {
   display: none;                  /* WebKit — the one that matters here */
 }
+
+/* 暖深色 (P9B-1, 2026-10-14) —— 上面 `.paper-bg` 和 `flash` 两条写死了琥珀色，深色下另写一份。
+   ⛔ 浅色那两条原样留着（经典版 = 发布版本身）；选择器和 tokens.css 里深色那一块同一个，
+   情人节版永远吃不到它。 */
+:root[data-scheme='dark']:not([data-theme='valentine']) .paper-bg {
+  background:
+    radial-gradient(circle at 20% 0%, rgba(245, 158, 11, 0.05), transparent 40%),
+    radial-gradient(circle at 100% 100%, rgba(245, 158, 11, 0.035), transparent 35%),
+    var(--paper);
+}
+
+@keyframes flash-dark {
+  0%   { background-color: rgba(245, 158, 11, 0.22); }
+  100% { background-color: transparent; }
+}
+
+:root[data-scheme='dark']:not([data-theme='valentine']) .flash {
+  animation-name: flash-dark;
+}

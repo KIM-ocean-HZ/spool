@@ -34,6 +34,7 @@ import { useAutoMaintain } from '@/hooks/useAutoMaintain';
 import { useBreakReminder } from '@/hooks/useBreakReminder';
 import { useCapture } from '@/hooks/useCapture';
 import { useAppliedTheme } from '@/hooks/useTheme';
+import { useAppliedColorScheme } from '@/hooks/useColorScheme';
 import { useAppliedBlockFont } from '@/hooks/useBlockFont';
 import { useOverlayDbHost } from '@/hooks/useOverlayDbHost';
 import { useSearch } from '@/hooks/useSearch';
@@ -119,6 +120,8 @@ export default function App() {
   // 情人节限定版 (2026-08-19) — writes the theme onto <html>; the capture overlay does the same
   // from its own root, off the same settings.json.
   useAppliedTheme();
+  // 深浅色 (P9B-1)：设置读回来之前不动 —— 第一帧是 public/scheme-boot.js 画的，见 hook 的注释。
+  useAppliedColorScheme({ ready: settingsLoaded, rememberHint: true });
   // 块的字号档位（2026-08-27）。同上：只写 <html> 上的一个属性，读它的只有 BlockItem。
   useAppliedBlockFont();
   // 休息提醒 (2026-08-19 second pass) — both appearances now; the hook's gate is the SETTING, and

@@ -5,6 +5,7 @@ import {
   FIX_CARD_COMMAND,
   OVERLAY_BREAK_EVENT,
   OVERLAY_LANGUAGE_EVENT,
+  OVERLAY_SCHEME_EVENT,
   OVERLAY_THEME_EVENT,
 } from './overlayProtocol';
 
@@ -27,6 +28,8 @@ describe('overlay wire protocol ↔ overlay.rs', () => {
   it('names the same events on both sides', () => {
     expect(overlayRs).toContain(`const LANGUAGE_EVENT: &str = "${OVERLAY_LANGUAGE_EVENT}";`);
     expect(overlayRs).toContain(`const THEME_EVENT: &str = "${OVERLAY_THEME_EVENT}";`);
+    // P9B-1 (2026-10-14): 深浅色 rides the same wire, for the same reason.
+    expect(overlayRs).toContain(`const SCHEME_EVENT: &str = "${OVERLAY_SCHEME_EVENT}";`);
   });
 
   it('pushes the theme with every show, alongside the language', () => {
@@ -41,6 +44,8 @@ describe('overlay wire protocol ↔ overlay.rs', () => {
     const handler = overlayRs.slice(arm!.index, overlayRs.indexOf('fn ui_language'));
     expect(handler).toContain('LANGUAGE_EVENT');
     expect(handler).toContain('THEME_EVENT');
+    // P9B-1: and so is 深浅色 — a card shown without it would be light on a dark system.
+    expect(handler).toContain('SCHEME_EVENT');
     // 休息提醒 (2026-08-22): the break card is themed by being in that same arm, not by an
     // emit of its own — so what is pinned is its membership.
     expect(arm![0]).toContain('"break"');

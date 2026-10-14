@@ -25,6 +25,7 @@ import {
   OVERLAY_BREAK_EVENT,
   OVERLAY_DISMISS_EVENT,
   OVERLAY_LANGUAGE_EVENT,
+  OVERLAY_SCHEME_EVENT,
   OVERLAY_THEME_EVENT,
   OVERLAY_NOTICE_EVENT,
   OVERLAY_SHOW_EVENT,
@@ -44,6 +45,8 @@ import { copyIdAfterEdit } from '@/lib/capture/noteCopy';
 import { isImeComposing } from '@/lib/utils/ime';
 import { noteBoxUndo } from '@/lib/capture/noteBoxUndo';
 import { useAppliedTheme } from '@/hooks/useTheme';
+import { useAppliedColorScheme } from '@/hooks/useColorScheme';
+import { colorSchemeOrDefault } from '@/lib/colorScheme';
 import { themeOrDefault } from '@/lib/theme';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { t, useT } from '@/lib/i18n';
@@ -176,6 +179,9 @@ export default function CaptureOverlay() {
   // over whatever app the user was copying from, so a cream card in a pink build would be the
   // one piece of Spool visible on someone else's screen and the one piece that did not match.
   useAppliedTheme();
+  // 深浅色 (P9B-1): the setting is pushed in with every show (below), 跟随系统 is answered by this
+  // window's own matchMedia — so a card that is up while the system switches follows it too.
+  useAppliedColorScheme({ ready: true, rememberHint: false });
   const [content, setContent] = useState<OverlayContent>(null);
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [threadsByWs, setThreadsByWs] = useState<Record<string, Thread[]>>({});
@@ -331,6 +337,9 @@ export default function CaptureOverlay() {
         }),
         listen<string>(OVERLAY_THEME_EVENT, (e) => {
           useSettingsStore.setState({ theme: themeOrDefault(e.payload) });
+        }),
+        listen<string>(OVERLAY_SCHEME_EVENT, (e) => {
+          useSettingsStore.setState({ colorScheme: colorSchemeOrDefault(e.payload) });
         }),
       ]);
       if (cancelled) disposers.forEach((d) => d());

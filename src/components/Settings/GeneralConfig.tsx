@@ -3,6 +3,7 @@ import Toggle from '@/components/ui/Toggle';
 import { WORK_MINUTE_OPTIONS, type WorkMinutes } from '@/lib/breakReminder';
 import { loadDemoProject } from '@/lib/db/client';
 import { THEMES, type Theme } from '@/lib/theme';
+import { COLOR_SCHEMES, type ColorScheme } from '@/lib/colorScheme';
 import { BLOCK_FONT_SIZES, type BlockFontSize } from '@/lib/blockFont';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { useThreadsStore } from '@/stores/threadsStore';
@@ -16,6 +17,13 @@ import { useT } from '@/lib/i18n';
 const THEME_LABEL: Record<Theme, string> = {
   classic: '经典',
   valentine: '情人节',
+};
+
+// 深浅色 (P9B-1, 2026-10-14; Ocean 第 61 条：「跟随系统 / 浅色 / 深色」，默认跟随系统)。
+const COLOR_SCHEME_LABEL: Record<ColorScheme, string> = {
+  system: '跟随系统',
+  light: '浅色',
+  dark: '深色',
 };
 
 // 正文字号三档 (2026-08-27)。⚠️ 一个字的标签就够了 —— 它们并排放着，本来就是一把尺子的
@@ -41,6 +49,7 @@ export default function GeneralConfig() {
   const autoExtractAttachments = useSettingsStore((s) => s.autoExtractAttachments);
   const language = useSettingsStore((s) => s.language);
   const theme = useSettingsStore((s) => s.theme);
+  const colorScheme = useSettingsStore((s) => s.colorScheme);
   const blockFontSize = useSettingsStore((s) => s.blockFontSize);
   const breakReminderEnabled = useSettingsStore((s) => s.breakReminderEnabled);
   const breakWorkMinutes = useSettingsStore((s) => s.breakWorkMinutes);
@@ -104,6 +113,41 @@ export default function GeneralConfig() {
               }`}
             >
               {t(THEME_LABEL[name])}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="border-t border-line" />
+
+      {/* 深浅色 (P9B-1, 2026-10-14; Ocean 第 61 条). Right under 外观: it is the same kind of
+          control and the two combine — only 经典 has a dark palette. ⚠️ Same markup as the two
+          pickers above, deliberately (one kind of control, one widget). Under 情人节 the whole row
+          goes grey and says why: 情人节版 is always light (第 60 条), so a live switch there would
+          be a control that does nothing. */}
+      <div className="flex items-center justify-between gap-4 py-2.5">
+        <div className="min-w-0">
+          <div className="text-sm text-ink">{t('深浅')}</div>
+          <div className="mt-0.5 text-xs text-muted">
+            {theme === 'valentine'
+              ? t('情人节版只有浅色。')
+              : t('跟着电脑的深浅色走，或者固定一种。切换立即生效。')}
+          </div>
+        </div>
+        <div className="flex flex-none items-center gap-1">
+          {COLOR_SCHEMES.map((scheme) => (
+            <button
+              key={scheme}
+              type="button"
+              disabled={theme === 'valentine'}
+              onClick={() => void update({ colorScheme: scheme })}
+              className={`rounded-md border px-2.5 py-1 text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+                colorScheme === scheme
+                  ? 'border-accent text-accent'
+                  : 'border-line bg-paper text-muted enabled:hover:border-line-strong enabled:hover:text-ink'
+              }`}
+            >
+              {t(COLOR_SCHEME_LABEL[scheme])}
             </button>
           ))}
         </div>

@@ -13,6 +13,7 @@ import { DEFAULT_LEVEL, type CompressLevel } from '@/lib/ai/compress';
 import { DEFAULT_RAIL_WIDTH } from '@/lib/layout';
 import { DEFAULT_THEME, themeOrDefault, type Theme } from '@/lib/theme';
 import { DEFAULT_BLOCK_FONT, blockFontOrDefault, type BlockFontSize } from '@/lib/blockFont';
+import { DEFAULT_COLOR_SCHEME, colorSchemeOrDefault, type ColorScheme } from '@/lib/colorScheme';
 
 // Keys persisted to settings.json via tauri-plugin-store. `captureShortcut` /
 // `searchShortcut` are accelerator strings (lib/capture/shortcut.ts).
@@ -42,6 +43,7 @@ type PersistableKey =
   | 'packInstructions'
   | 'closeToTrayHintSeen'
   | 'theme'
+  | 'colorScheme'
   | 'blockFontSize'
   | 'breakReminderEnabled'
   | 'breakWorkMinutes'
@@ -203,6 +205,10 @@ interface SettingsState {
    *  ⚠️ NOT read by the `spool --mcp` subprocess, unlike `resolvedLanguage`: nothing an MCP
    *  client sees has a colour. */
   theme: Theme;
+  /** 深浅色 (P9B-1, 2026-10-14)：跟随系统 / 浅色 / 深色，默认跟随系统（第 61 条）。只有经典版有
+   *  深色 —— 情人节版不管这个值都是浅色（第 60 条），见 lib/colorScheme.ts `effectiveScheme`。
+   *  ⚠️ 捕捉浮窗读不到它，Rust 每次 show 之前推过去（OVERLAY_SCHEME_EVENT），和 theme 同一条路。 */
+  colorScheme: ColorScheme;
   /** 块的字号档位（2026-08-27）。⛔ 只管块自己那几行字，不是全窗缩放 —— 见 lib/blockFont.ts。 */
   blockFontSize: BlockFontSize;
   /** 休息提醒 (2026-08-19 second pass, Ocean: 「设置里面可以关闭休息提醒,做成两个 appearance 都
@@ -330,6 +336,7 @@ const KEYS: PersistableKey[] = [
   'packInstructions',
   'closeToTrayHintSeen',
   'theme',
+  'colorScheme',
   'blockFontSize',
   'breakReminderEnabled',
   'breakWorkMinutes',
@@ -391,6 +398,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   // Written once, by the card's own button — see components/CloseToTrayHint.
   closeToTrayHintSeen: false,
   theme: DEFAULT_THEME,
+  colorScheme: DEFAULT_COLOR_SCHEME,
   blockFontSize: DEFAULT_BLOCK_FONT,
   breakReminderEnabled: true,
   breakWorkMinutes: DEFAULT_WORK_MINUTES,
@@ -440,6 +448,8 @@ export const useSettingsStore = create<SettingsState>((set) => ({
       // onto <html> where no stylesheet matches it — a half-painted window rather than either
       // theme. Everything else here is a boolean, a number or a string the UI re-validates.
       if (next.theme !== undefined) next.theme = themeOrDefault(next.theme);
+      // 同理：认不出来的值当「跟随系统」（默认），不让 <html> 上出现一个没有规则接得住的值。
+      if (next.colorScheme !== undefined) next.colorScheme = colorSchemeOrDefault(next.colorScheme);
       // 同理：认不出来的档位会被写到 <html> 上，那儿没有哪条规则接得住，字号就没了。
       if (next.blockFontSize !== undefined) {
         next.blockFontSize = blockFontOrDefault(next.blockFontSize);

@@ -36,6 +36,9 @@ export const OVERLAY_LANGUAGE_EVENT = 'overlay:language';
 // to, because capabilities/overlay.json grants it no `store:` permission. That is exactly how
 // this shipped broken: the theme was wired to a mechanism that stopped existing.
 export const OVERLAY_THEME_EVENT = 'overlay:theme';
+// 深浅色 (P9B-1, 2026-10-14) — the 跟随系统 / 浅色 / 深色 setting, on the same channel for the
+// same reason. The card works out 跟随系统 itself, from its own `matchMedia`.
+export const OVERLAY_SCHEME_EVENT = 'overlay:scheme';
 // 休息提醒 (Ocean 2026-08-22) — 「跳弹窗…不跳主窗」. The break card floats over whatever the
 // user is actually in, because since the 2026-08-21 criterion rewrite a sitting no longer has
 // to be spent inside Spool to count. Carries OverlayBreakPayload.
