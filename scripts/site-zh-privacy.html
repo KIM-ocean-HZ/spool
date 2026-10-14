@@ -19,6 +19,7 @@
   <li>所有内容（工作区、项目、笔记、批注和附件索引）都存放在本机 SQLite 数据库中：<code>~/Library/Application Support/com.oceanjin.spool/spool.db</code></li>
   <li>界面设置保存在同一目录的 <code>settings.json</code> 中。API 引擎的 key <strong>不在</strong>这个文件里：macOS 上存在系统钥匙串，Windows 上存在同一目录下一个单独的 <code>0600</code> 文件。它不会被写进日志，也不会出现在任何报错信息里。</li>
   <li>Spool 不会复制或上传附件，只保存原文件的路径，以及（可选的）本地提取文本。PDF 和 Word 文档的文本提取也完全在本机完成。</li>
+  <li>Spool 在本机记每天专注了多久：你在电脑前（15 分钟内动过键盘或鼠标），并且 Spool 在前台或者 15 分钟内捕捉过的时间，每天一个数，存在同一目录的 <code>focus.json</code> 里。它不进数据库、不随库导出，也不会离开这台电脑；删掉这个目录就清掉了。</li>
   <li>每次升级数据库结构前，Spool 都会自动在同一目录保存一份快照备份。</li>
 </ul>
 <p>删除该目录即可彻底清除 Spool 的全部数据；在应用中选择「设置 → 清除所有数据」也会完成同样的操作。</p>

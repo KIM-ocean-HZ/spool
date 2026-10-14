@@ -17,9 +17,11 @@ interface BreakStoreState {
   /** Active ms in the current sitting, republished on every tick of the reducer. */
   activeMs: number;
   /** ⭐ 2026-08-27（Ocean:「倒计时结束之后，总专注时间还看得见、还在往上加」）——
-   *  **本次开机以来**的总专注时间。休息清 `activeMs`，⛔ 清不掉这个。
-   *  ⚠️ 一样不落盘（理由见上面那段），所以侧边栏写的是「已专注」而**不是**「今天已专注」。 */
+   *  **今天**的总专注时间（同一天的第二轮起跨重启记住，lib/db/focusDay.ts）。休息清 `activeMs`，
+   *  ⛔ 清不掉这个。P9B-2 起周回顾「活动」里今天那根柱子读的也是它（和左栏时钟同一个数）。 */
   totalMs: number;
+  /** P9B-2：`totalMs` 是哪一天的（`YYYY-MM-DD`）。null = 今天还没开过工。 */
+  dayKey: string | null;
   /** When the break lock lifts by itself. Null = not locked. ⚠️ A DEADLINE rather than a
    *  remaining-ms counter: the lock's own display ticks once a second, and a counter would
    *  drift against the wall clock every time the timer was throttled. */
@@ -29,7 +31,12 @@ interface BreakStoreState {
    *  and again while locked: nothing to draw ahead of. */
   tickAt: number | null;
   tickWorking: boolean;
-  publish: (activeMs: number, totalMs: number, tick?: { at: number; working: boolean }) => void;
+  publish: (
+    activeMs: number,
+    totalMs: number,
+    tick?: { at: number; working: boolean },
+    dayKey?: string | null,
+  ) => void;
   lock: (until: number) => void;
   unlock: () => void;
 }
@@ -37,11 +44,18 @@ interface BreakStoreState {
 export const useBreakStore = create<BreakStoreState>((set) => ({
   activeMs: 0,
   totalMs: 0,
+  dayKey: null,
   lockUntil: null,
   tickAt: null,
   tickWorking: false,
-  publish: (activeMs, totalMs, tick) =>
-    set({ activeMs, totalMs, tickAt: tick?.at ?? null, tickWorking: tick?.working ?? false }),
+  publish: (activeMs, totalMs, tick, dayKey) =>
+    set({
+      activeMs,
+      totalMs,
+      tickAt: tick?.at ?? null,
+      tickWorking: tick?.working ?? false,
+      ...(dayKey === undefined ? {} : { dayKey }),
+    }),
   // The streak is already zeroed by the reducer on the tick that fired, so the sidebar clock
   // reads 0 for the length of the break — which is true, and is what makes the count-up start
   // from the moment the user comes back rather than from the moment they were interrupted.

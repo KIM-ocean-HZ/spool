@@ -2,16 +2,16 @@ import { invoke } from '@tauri-apps/api/core';
 import { useEffect, useRef } from 'react';
 import {
   BREAK_MS,
+  focusTick,
   initialBreakState,
   isWorking,
   keepDay,
   msForMinutes,
-  tickBreakState,
   TICK_MS,
   type BreakState,
 } from '@/lib/breakReminder';
 import { SHOW_BREAK_OVERLAY_COMMAND } from '@/lib/capture/overlayProtocol';
-import { loadFocusDay, restoreBreakState, saveFocusDay } from '@/lib/db/focusDay';
+import { loadFocus, restoreBreakState, saveFocus, withDay, type FocusDays } from '@/lib/db/focusDay';
 import { useBreakStore } from '@/stores/breakStore';
 import { useCaptureStore } from '@/stores/captureStore';
 import { useSettingsStore } from '@/stores/settingsStore';
@@ -67,6 +67,10 @@ export const useBreakReminder = (): void => {
   const inFlightRef = useRef(false);
   /** 上一次写盘写的是什么 —— 只在数字真的变了的时候才写（每 30 秒一次 tick，⛔ 不该每次都写文件）。 */
   const savedRef = useRef<string>('');
+  /** P9B-2：每天一个数（focus.json 的 `days`），开机读回来，之后每次写今天那一条时一起写。 */
+  const daysRef = useRef<FocusDays>({});
+  /** 上一次 effect 跑的时候提醒是开是关 —— 只在**真的切换了**时把这一坐清零（见下面那个 effect）。 */
+  const enabledRef = useRef(enabled);
 
   // ⭐ 2026-08-27 第二轮：开机把「今天已经专注了多久」读回来。
   // ⚠️ 只读三个数（今天是哪天 / 今天多久 / 上一次真的在工作是什么时候），⛔ 不读「这一坐」——
@@ -74,12 +78,16 @@ export const useBreakReminder = (): void => {
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      const day = await loadFocusDay();
-      if (cancelled || day === null) return;
+      const { today: day, days } = await loadFocus();
+      if (cancelled) return;
+      daysRef.current = days;
+      if (day === null) return;
       stateRef.current = { ...stateRef.current, ...restoreBreakState(day) };
       savedRef.current = JSON.stringify(day);
       // 先把读回来的数亮出来，⛔ 别等第一次 tick（那要 30 秒）。
-      useBreakStore.getState().publish(stateRef.current.activeMs, stateRef.current.totalMs);
+      useBreakStore
+        .getState()
+        .publish(stateRef.current.activeMs, stateRef.current.totalMs, undefined, stateRef.current.dayKey);
     })();
     return () => {
       cancelled = true;
@@ -87,13 +95,16 @@ export const useBreakReminder = (): void => {
   }, []);
 
   useEffect(() => {
-    if (!enabled) {
-      // Switched off mid-sitting: drop the streak and lift the lock if it is up, so switching
-      // back on later starts a fresh interval rather than resuming a stale one.
+    // ⭐ P9B-2（Ocean 2026-10-10 第 77 条「关了也照记，只是不弹休息」）：计时器**总在跑**。
+    // 提醒关着时只是不提醒（不锁窗、不弹卡片）；左栏那张卡关着时只显示捕捉数，那是 SpoolCard 的
+    // usePanelFace 管的，这里不碰（第 78 条）。
+    // Switched either way mid-sitting: drop the streak (today's total stays — keepDay) and lift the
+    // lock if it is up, so switching back on starts a fresh sitting rather than resuming a stale one.
+    if (enabledRef.current !== enabled) {
+      enabledRef.current = enabled;
       stateRef.current = keepDay(stateRef.current);
       inFlightRef.current = false;
       useBreakStore.getState().unlock();
-      return;
     }
 
     const workMs = msForMinutes(workMinutes);
@@ -137,11 +148,13 @@ export const useBreakReminder = (): void => {
             systemIdleMs,
             lastCaptureAt: useCaptureStore.getState().lastCaptureAt,
           };
-          const { state, due } = tickBreakState(stateRef.current, input);
+          // P9B-2: the same reducer whether reminders are on or off — off only means `remind`
+          // never comes back true.
+          const { state, remind: due } = focusTick(stateRef.current, input, enabled);
           stateRef.current = state;
           // P6-5: plus when this tick ran and whether it counted — the sidebar clock draws ahead
           // of it every second. ⛔ The tick itself, and what it credits, are unchanged.
-          store.publish(state.activeMs, state.totalMs, { at: input.now, working: isWorking(input) });
+          store.publish(state.activeMs, state.totalMs, { at: input.now, working: isWorking(input) }, state.dayKey);
 
           // 写盘。⚠️ 只有 `dayKey` 齐了才写；⛔ 没变就不写（避免每 30 秒动一次文件）。
           if (state.dayKey !== null && state.lastActiveAt !== null) {
@@ -153,7 +166,9 @@ export const useBreakReminder = (): void => {
             const fingerprint = JSON.stringify(day);
             if (fingerprint !== savedRef.current) {
               savedRef.current = fingerprint;
-              void saveFocusDay(day);
+              // P9B-2: today's number goes into the per-day history in the same write.
+              daysRef.current = withDay(daysRef.current, day);
+              void saveFocus(day, daysRef.current);
             }
           }
 

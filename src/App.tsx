@@ -125,7 +125,8 @@ export default function App() {
   // 块的字号档位（2026-08-27）。同上：只写 <html> 上的一个属性，读它的只有 BlockItem。
   useAppliedBlockFont();
   // 休息提醒 (2026-08-19 second pass) — both appearances now; the hook's gate is the SETTING, and
-  // it checks that itself: switched off, it registers no listeners and no interval. Mounted HERE
+  // it checks that itself. P9B-2: switched off, the clock still runs (today's focus time is kept
+  // either way, Ocean 第 77 条) — it only never reminds. Mounted HERE
   // and not in the overlay on purpose — see the hook's header. What it produces goes into
   // breakStore, because the sidebar's countdown reads the same streak.
   useBreakReminder();

@@ -8,7 +8,9 @@ import {
   TICK_MS,
   WORK_MINUTE_OPTIONS,
   dayKeyOf,
+  focusTick,
   initialBreakState,
+  keepDay,
   isWorking,
   shouldRollDay,
   msForMinutes,
@@ -424,5 +426,41 @@ describe('formatCountdown', () => {
     expect(formatCountdown(0)).toBe('0:00');
     // A timer that fires late must not print a negative clock.
     expect(formatCountdown(-2_000)).toBe('0:00');
+  });
+});
+
+// P9B-2 (Ocean 2026-10-10 第 77 条「关了也照记，只是不弹休息」): one reducer either way.
+describe('focusTick — break reminders switched off', () => {
+  const ticks = (remindersOn: boolean, n: number) => {
+    let s = initialBreakState();
+    let reminded = 0;
+    let now = T0;
+    for (let i = 0; i < n; i++) {
+      const r = focusTick(s, { now, workMs: HOUR, focused: true, systemIdleMs: 1000, lastCaptureAt: null }, remindersOn);
+      s = r.state;
+      if (r.remind) reminded++;
+      now += TICK_MS;
+    }
+    return { state: s, reminded };
+  };
+
+  it('still counts today, and never once reminds — over two and a half hours of work', () => {
+    const n = (2.5 * 60 * 60 * 1000) / TICK_MS + 1;
+    const off = ticks(false, n);
+    const on = ticks(true, n);
+    expect(off.reminded).toBe(0);
+    expect(on.reminded).toBe(2);
+    // the very same number either way
+    expect(off.state.totalMs).toBe(on.state.totalMs);
+    expect(off.state.totalMs).toBe(2.5 * 60 * 60 * 1000);
+  });
+
+  it('switching reminders back on starts a fresh sitting and leaves today alone', () => {
+    const { state } = ticks(false, 61); // half an hour in
+    const switched = keepDay(state);
+    expect(switched.activeMs).toBe(0);
+    expect(switched.lastTickAt).toBeNull();
+    expect(switched.totalMs).toBe(state.totalMs);
+    expect(switched.dayKey).toBe(state.dayKey);
   });
 });

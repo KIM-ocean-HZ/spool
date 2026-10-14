@@ -310,6 +310,20 @@ export const tickBreakState = (state: BreakState, input: TickInput): TickResult 
   return { state: { activeMs, totalMs, dayKey, lastActiveAt: now, lastTickAt: now }, due: false };
 };
 
+/** ⭐ P9B-2（2026-10-14，Ocean 第 77 条「关了也照记，只是不弹休息」）—— 计时器每一个 tick 走这里。
+ *
+ *  ⚠️ **同一个 reducer**，⛔ 不另写一套：提醒关着的时候，今天的总数、翻篇、这一坐的长短全都和
+ *  开着时一模一样，唯一的区别是到点了**不提醒**（不锁窗、不弹卡片）。`tickBreakState` 到点时
+ *  照样把这一坐清零 —— 提醒关着时那只是一个没人看得见的数，今天的总数不受影响。 */
+export const focusTick = (
+  state: BreakState,
+  input: TickInput,
+  remindersOn: boolean,
+): { state: BreakState; remind: boolean } => {
+  const { state: next, due } = tickBreakState(state, input);
+  return { state: next, remind: remindersOn && due };
+};
+
 /** `m:ss` for the lock's countdown.
  *
  *  ⚠️ Rounds UP, so the lock opens showing 5:00 rather than 4:59 (a break that starts by
