@@ -46,6 +46,8 @@ function ToastItem({ item, onDismiss }: { item: Toast; onDismiss: () => void }) 
   };
   return (
     <div
+      // P9D-3：BlockItem's 「点外面 = 存」 does not count a click on a sticky toast as outside.
+      data-sticky-toast={item.sticky ? '' : undefined}
       className="pointer-events-auto flex max-w-[360px] items-start gap-2 rounded-md border bg-paper px-3 py-2 text-xs"
       style={{
         boxShadow: 'var(--shadow-toast)',

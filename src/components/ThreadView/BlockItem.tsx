@@ -699,7 +699,9 @@ function TextBlockItem({
     if (!editorOpen) return;
     const onDocMouseDown = (e: MouseEvent): void => {
       const target = e.target as HTMLElement | null;
-      if (target?.closest('[data-block-editor-panel]')) return;
+      // P9D-3：nor is the launch prompt about unsaved text — 去看 / × on it must not save a restored
+      // panel behind the user's back (it may be the very one it points at, «changed since» and all).
+      if (target?.closest('[data-block-editor-panel], [data-sticky-toast]')) return;
       void commitAll();
     };
     document.addEventListener('mousedown', onDocMouseDown);
