@@ -494,7 +494,8 @@ fn probe_from(v: &serde_json::Value) -> DuplicateProbe {
 #[tauri::command(async)]
 pub fn compress_duplicate_probe(thread_id: String) -> Result<DuplicateProbe, String> {
     let dir = crate::mcp::app_data_dir().ok_or_else(|| "no app data dir".to_string())?;
-    let conn = crate::mcp::open_db(&dir)?;
+    // P9E: the user's own number, shown to them — the whole library, private projects too.
+    let conn = crate::mcp::open_db_whole(&dir)?;
     let raw = crate::mcp::find_similar_blocks_json(&conn, Some(&thread_id), None, Some(30))?;
     let v: serde_json::Value = serde_json::from_str(&raw).map_err(|e| e.to_string())?;
     Ok(probe_from(&v))
@@ -509,7 +510,9 @@ pub fn forward_duplicate_check(
     block_ids: Vec<String>,
 ) -> Result<Vec<crate::mcp::ForwardDuplicate>, String> {
     let dir = crate::mcp::app_data_dir().ok_or_else(|| "no app data dir".to_string())?;
-    let conn = crate::mcp::open_db(&dir)?;
+    // P9E: the user moving blocks — into a private project too — checks the whole library
+    // (`open_db` is what an AI sees, and would find nothing there to compare against).
+    let conn = crate::mcp::open_db_whole(&dir)?;
     crate::mcp::forward_duplicates(&conn, &target_thread_id, &block_ids)
 }
 

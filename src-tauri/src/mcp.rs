@@ -182,6 +182,11 @@ const REF_BLOCK_MISSING: &str = "(cited block no longer exists)";
 // that simultaneously says "N blocks the user has marked as no longer valid are not shown".
 // ⚠️ Kept separate from REF_BLOCK_MISSING: retired and deleted are different facts.
 const REF_BLOCK_RETIRED: &str = "(cited block is no longer valid)";
+// P9E-2 (Ocean 2026-10-15 第 123 条) — the cited block is in a PRIVATE project. Still there,
+// so not REF_BLOCK_MISSING (that would have the AI tell the user their citation is broken);
+// not its words, its date or its project either. ⚠️ MCP side only, with no twin in
+// templates.ts: the pack the user copies is the user's, and they can read every project.
+const REF_BLOCK_HIDDEN: &str = "(cited block is not visible to AI)";
 // R6 debt 3 — mirrors templates.ts REF_BLOCK_FROM. Only rendered for a cross-project
 // citation; the wording has to say the evidence is NOT in this pack.
 const REF_BLOCK_FROM: &str = " — in project: ";
@@ -470,6 +475,9 @@ pub struct RefBlock {
     /// ⛔ 2026-08-30: the cited block carries `stale_at` — the user marked it as no longer
     /// valid. Resolved by the query that builds the map, exactly like `annotation_is_ai`.
     pub stale: bool,
+    /// P9E-2: the cited block is in a private project — every other field is empty, and the
+    /// line says only that it cannot be seen (REF_BLOCK_HIDDEN).
+    pub hidden: bool,
 }
 pub type RefBlocks = std::collections::HashMap<String, RefBlock>;
 
@@ -940,6 +948,7 @@ fn render_block(
         // same thing twice and dropped WHICH block was replaced. Byte-for-byte with assemble.ts.
         let retired_cite = b.ref_kind.as_deref() != Some("supersedes");
         lines.push(match ref_blocks.get(cited_id) {
+            Some(r) if r.hidden => format!("{NOTE_INDENT}{marker}{REF_BLOCK_HIDDEN}{why}"),
             Some(r) if r.stale && retired_cite => {
                 format!("{NOTE_INDENT}{marker}{REF_BLOCK_RETIRED}{why}")
             }
@@ -1343,7 +1352,19 @@ fn library_identity() -> String {
     )
 }
 
+// Tests only: a data directory for THIS thread, so a test can drive the whole request path
+// (`handle_request`, the prompts) against a library of its own. `SPOOL_DATA_DIR` would do it
+// for the whole process, and the test harness runs tests side by side on parallel threads.
+#[cfg(test)]
+thread_local! {
+    static TEST_DATA_DIR: std::cell::RefCell<Option<PathBuf>> = const { std::cell::RefCell::new(None) };
+}
+
 pub(crate) fn app_data_dir() -> Option<PathBuf> {
+    #[cfg(test)]
+    if let Some(dir) = TEST_DATA_DIR.with(|d| d.borrow().clone()) {
+        return Some(dir);
+    }
     if let Ok(dir) = std::env::var("SPOOL_DATA_DIR") {
         return Some(PathBuf::from(dir));
     }
@@ -1401,7 +1422,18 @@ fn mcp_write_enabled(dir: &std::path::Path) -> bool {
 // Queries (read-only connection per call — freshness by construction, §20.12 Q4)
 // ---------------------------------------------------------------------------------------
 
+/// What an AI connected through Spool may read: the library without its private projects
+/// (P9E, `hide_private_projects`). Every MCP read goes through here.
 pub(crate) fn open_db(dir: &std::path::Path) -> Result<Connection, String> {
+    let conn = open_db_whole(dir)?;
+    hide_private_projects(&conn)?;
+    Ok(conn)
+}
+
+/// The whole library, private projects included — for the USER's own actions that borrow a
+/// function from this file (`forward_duplicate_check`, `compress_duplicate_probe` in
+/// api_engine.rs). ⛔ Never for anything whose output reaches an AI: that is `open_db`.
+pub(crate) fn open_db_whole(dir: &std::path::Path) -> Result<Connection, String> {
     let path = dir.join("spool.db");
     if !path.exists() {
         return Err(t!("Spool 数据库不存在 — 请先启动一次 Spool 应用。", "No Spool database found — launch the Spool app once first."));
@@ -1438,6 +1470,67 @@ pub(crate) fn open_db(dir: &std::path::Path) -> Result<Connection, String> {
     }
     Ok(conn)
 }
+
+// ---------------------------------------------------------------------------------------
+// P9E (Ocean 2026-10-15 第 119 – 123 条) — private projects.
+//
+// An AI that reaches the library through this server must not read a private project or
+// learn that one exists: not its title, blocks, files, pictures, follow-up lines or summary,
+// and not how many there are. So every connection opened here for an AI sees the library
+// WITHOUT them: TEMP views named like the tables shadow them for the life of the connection
+// (SQLite resolves an unqualified name in `temp` before `main`). Every read query in this
+// file — over a hundred, plus whatever is added later — is filtered without having to
+// remember to be, and every count is a count of what the AI may see.
+//
+// ⚠️ Writes name `main.<table>`. An unqualified INSERT / UPDATE on a shadowed table fails
+// loudly (「cannot modify blocks because it is a view」) — the failure mode is an error,
+// never a write that lands somewhere unexpected.
+// ⚠️ A link block (kind = 'ref') whose target is private is hidden too: its whole content is
+// the linked project's title, copied when the user made the link.
+// ⚠️ A text block that CITES a block in a private project stays (it is the user's own public
+// text); where a citation is resolved the AI is told only that it cannot see the cited block
+// — see `hidden_from_ai`.
+// ⚠️ It keeps private projects out of what Spool hands an AI. It does not, and cannot, stop
+// an AI that reads this database file straight off the disk.
+fn hide_private_projects(conn: &Connection) -> Result<(), String> {
+    conn.execute_batch(
+        "CREATE TEMP VIEW threads AS
+           SELECT rowid AS rowid, * FROM main.threads WHERE private = 0;
+         CREATE TEMP VIEW blocks AS
+           SELECT rowid AS rowid, * FROM main.blocks
+            WHERE thread_id IN (SELECT id FROM main.threads WHERE private = 0)
+              AND NOT (kind = 'ref'
+                       AND IFNULL(ref_thread_id, '') IN (SELECT id FROM main.threads WHERE private = 1));
+         CREATE TEMP VIEW attachments AS
+           SELECT rowid AS rowid, * FROM main.attachments
+            WHERE thread_id IN (SELECT id FROM main.threads WHERE private = 0);
+         CREATE TEMP VIEW follow_up_items AS
+           SELECT rowid AS rowid, * FROM main.follow_up_items
+            WHERE thread_id IN (SELECT id FROM main.threads WHERE private = 0);
+         CREATE TEMP VIEW block_images AS
+           SELECT rowid AS rowid, * FROM main.block_images
+            WHERE block_id IN (SELECT id FROM temp.blocks);",
+    )
+    .map_err(|e| e.to_string())
+}
+
+/// P9E: a block that is there, in a live project, but a private one — what a citation to it
+/// must say is that the AI cannot see it, not that it is gone. Asked only after a lookup
+/// through the AI's view of the library came back empty.
+fn hidden_from_ai(conn: &Connection, block_id: &str) -> bool {
+    conn.query_row(
+        "SELECT 1 FROM main.blocks b JOIN main.threads t ON t.id = b.thread_id
+          WHERE b.id = ?1 AND t.private = 1 AND t.deleted_at IS NULL",
+        [block_id],
+        |_| Ok(()),
+    )
+    .is_ok()
+}
+
+/// …the same test as a SQL condition on a citation column, for the reports that count
+/// dangling citations: a citation to a private block is not dangling.
+const CITES_HIDDEN_SQL: &str = "EXISTS (SELECT 1 FROM main.blocks hb JOIN main.threads ht ON ht.id = hb.thread_id
+                 WHERE hb.id = b.ref_block_id AND ht.private = 1 AND ht.deleted_at IS NULL)";
 
 // R6 B-4: `approx_pack_chars` used to count block text only, with the tool description
 // telling the caller to "add ~3k for the skeleton" — which left out the per-block
@@ -3361,6 +3454,16 @@ fn get_blocks_json(
                     }))
                 })
                 .unwrap_or(Value::Null);
+            // P9E-2: the cited block is in a private project. The row is the user's public
+            // text and stays; the cited block's id, and a correction's quote out of it, do not.
+            if row["cited"].is_null() && hidden_from_ai(conn, &rid) {
+                row["ref_block_id"] = Value::Null;
+                row["corrected_quote"] = Value::Null;
+                row["cited"] = json!({
+                    "visible": false,
+                    "note": "The block this one cites is not visible to AIs connected through Spool.",
+                });
+            }
         }
     }
     // R6 B-5: get_pack's over-budget message points here ("page the rest with
@@ -3898,6 +4001,21 @@ fn build_pack(conn: &Connection, thread_id: &str, range: &str) -> Result<PackBui
                         created_at,
                         foreign_title: (cited_thread != thread_id).then_some(cited_title),
                         stale: stale_at.is_some(),
+                        hidden: false,
+                    },
+                );
+            } else if hidden_from_ai(conn, id) {
+                // P9E-2: not gone — in a private project. Nothing of it rides along.
+                ref_blocks.insert(
+                    id.to_string(),
+                    RefBlock {
+                        content: String::new(),
+                        annotation: None,
+                        annotation_is_ai: false,
+                        created_at: 0,
+                        foreign_title: None,
+                        stale: false,
+                        hidden: true,
                     },
                 );
             }
@@ -4122,6 +4240,9 @@ fn open_db_rw(dir: &std::path::Path) -> Result<Connection, String> {
              and its MCP server to the same version. Refusing to write, to be safe."
         ));
     }
+    // P9E: the write tools read as well — whether a project or block exists, what a quote is
+    // checked against — and every one of those reads must see what the AI may see.
+    hide_private_projects(&conn)?;
     Ok(conn)
 }
 
@@ -4332,6 +4453,7 @@ fn create_thread_json(
     workspace_title: Option<&str>,
     title: &str,
     summary: Option<&str>,
+    private: bool,
 ) -> Result<String, String> {
     let title = title.trim();
     if title.is_empty() {
@@ -4354,6 +4476,8 @@ fn create_thread_json(
     // is no delete tool, the duplicate is permanent. Titles are also the ONLY way a
     // project may be named to the user (naming hard rule) and the key resolve_thread
     // resolves prompts by, so two identical ones make both surfaces ambiguous forever.
+    // ⚠️ P9E-2: compared against the projects the AI can SEE (`threads` is its view). A private
+    // project by that name does not stop it: refusing would tell the AI one exists.
     {
         use rusqlite::OptionalExtension;
         let twin: Option<String> = conn
@@ -4395,13 +4519,24 @@ fn create_thread_json(
     conn.execute(
         // v16 (§5-5): a project created WITH a summary has that summary written now; one
         // created without keeps summary_at NULL alongside its NULL summary.
-        "INSERT INTO threads (id, workspace_id, title, summary, summary_source, summary_at,
-                              status, is_capture_target, created_at, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?7, 'active', 0, ?6, ?6)",
-        rusqlite::params![id, ws_id, title, summary, summary.map(|_| "mcp"), now, summary.map(|_| now)],
+        // P9E-2 (第 121 条): `private` — built that way from the start, for a task whose output
+        // other AIs must not see. The id still comes back: it is what add_block needs.
+        "INSERT INTO main.threads (id, workspace_id, title, summary, summary_source, summary_at,
+                              status, is_capture_target, created_at, updated_at, private)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?7, 'active', 0, ?6, ?6, ?8)",
+        rusqlite::params![
+            id,
+            ws_id,
+            title,
+            summary,
+            summary.map(|_| "mcp"),
+            now,
+            summary.map(|_| now),
+            i64::from(private)
+        ],
     )
     .map_err(|e| t!("写入失败: {e}", "Write failed: {e}"))?;
-    Ok(json!({ "thread_id": id, "workspace": ws_title, "title": title }).to_string())
+    Ok(json!({ "thread_id": id, "workspace": ws_title, "title": title, "private": private }).to_string())
 }
 
 // The thread's "catalogue card" (§9.11): since the MCP-first pivot the app itself never
@@ -4444,7 +4579,7 @@ fn set_thread_summary_json(
     conn.execute(
         // v16 (§5-5): summary_at is stamped on every summary write, here and in the GUI's
         // updateThread. Recorded only — no surface displays it to the user.
-        "UPDATE threads SET summary = ?1, summary_source = 'mcp', summary_at = ?2, updated_at = ?2
+        "UPDATE main.threads SET summary = ?1, summary_source = 'mcp', summary_at = ?2, updated_at = ?2
           WHERE id = ?3",
         rusqlite::params![summary, now, thread_id],
     )
@@ -4518,7 +4653,7 @@ fn set_block_gist_json(conn: &Connection, block_id: &str, gist: Option<&str>) ->
         reject_raw_ids(conn, &[("gist", g)])?;
     }
     conn.execute(
-        "UPDATE blocks SET gist = ?1, gist_by = 'ai' WHERE id = ?2",
+        "UPDATE main.blocks SET gist = ?1, gist_by = 'ai' WHERE id = ?2",
         rusqlite::params![gist, block_id],
     )
     .map_err(|e| t!("写入失败: {e}", "Write failed: {e}"))?;
@@ -4908,14 +5043,9 @@ fn add_block_json(
     if content.is_empty() {
         return Err(t!("content 不能为空。", "content must not be empty."));
     }
-    let (title, deleted): (String, Option<i64>) = conn
-        .query_row("SELECT title, deleted_at FROM threads WHERE id = ?1", [thread_id], |r| {
-            Ok((r.get(0)?, r.get(1)?))
-        })
-        .map_err(|_| no_such_thread())?;
-    if deleted.is_some() {
-        return Err(t!("该项目已被删除。", "That project has been deleted."));
-    }
+    // P9E-2: a private project takes the write; `title` is None for it, and then nothing about
+    // the project — title, id, block number — goes back in the receipt.
+    let title = write_target(conn, thread_id)?;
     // D2: a citation must point at a live block at write time (cross-thread allowed —
     // that is the point). It may dangle later if the citee is deleted; the pack
     // renderer says so instead of hiding it.
@@ -5108,12 +5238,12 @@ fn add_block_json(
     if dry_run {
         let next_seq: i64 = conn
             .query_row(
-                "SELECT COALESCE(MAX(seq), 0) + 1 FROM blocks WHERE thread_id = ?1",
+                "SELECT COALESCE(MAX(seq), 0) + 1 FROM main.blocks WHERE thread_id = ?1",
                 [thread_id],
                 |r| r.get(0),
             )
             .unwrap_or(1);
-        return Ok(json!({
+        let mut out = json!({
             "dry_run": true,
             "written": false,
             "thread_id": thread_id,
@@ -5136,8 +5266,15 @@ fn add_block_json(
                 "kind": kind,
                 "old_block_seq": seq,
             })),
-        })
-        .to_string());
+        });
+        if let (None, Some(o)) = (&title, out.as_object_mut()) {
+            // P9E-2: the number it would get is a count of what is already in there.
+            for key in ["thread_id", "thread_title", "would_be_seq"] {
+                o.remove(key);
+            }
+            o.insert("private_project".into(), json!(true));
+        }
+        return Ok(out.to_string());
     }
     let id = new_id()?;
     let tx = conn.transaction().map_err(|e| e.to_string())?;
@@ -5148,12 +5285,12 @@ fn add_block_json(
         // is calling this tool IS the AI, so there is no case where a block written here
         // carries a note the user wrote — and making it a column the caller could set would
         // hand back the exact authority this fix takes away.
-        "INSERT INTO blocks (id, thread_id, kind, content, annotation, annotation_by,
+        "INSERT INTO main.blocks (id, thread_id, kind, content, annotation, annotation_by,
                              ref_block_id, ref_kind, source, pinned, seq, created_at,
                              source_url, retrieved_at, recheck_after, corrected_quote, gist,
                              ref_note)
          VALUES (?1, ?2, 'text', ?3, ?4, 'ai', ?5, ?6, ?7, 0,
-                 (SELECT COALESCE(MAX(seq), 0) + 1 FROM blocks WHERE thread_id = ?2), ?8,
+                 (SELECT COALESCE(MAX(seq), 0) + 1 FROM main.blocks WHERE thread_id = ?2), ?8,
                  ?9, ?10, ?11, ?12, ?13, ?14)",
         rusqlite::params![
             id,
@@ -5198,7 +5335,7 @@ fn add_block_json(
         .map_err(|e| t!("写入失败: {e}", "Write failed: {e}"))?;
     }
     tx.execute(
-        "UPDATE threads SET updated_at = ?1 WHERE id = ?2",
+        "UPDATE main.threads SET updated_at = ?1 WHERE id = ?2",
         rusqlite::params![now, thread_id],
     )
     .map_err(|e| t!("写入失败: {e}", "Write failed: {e}"))?;
@@ -5208,13 +5345,17 @@ fn add_block_json(
     let seq: Option<i64> = conn
         .query_row("SELECT seq FROM blocks WHERE id = ?1", [&id], |r| r.get(0))
         .unwrap_or(None);
-    let mut out = json!({
-        "block_id": id,
-        "thread_id": thread_id,
-        "thread_title": title,
-        "source": source,
-        "seq": seq
-    });
+    let mut out = match &title {
+        Some(title) => json!({
+            "block_id": id,
+            "thread_id": thread_id,
+            "thread_title": title,
+            "source": source,
+            "seq": seq
+        }),
+        // P9E-2: what it wrote, and nothing about where it landed.
+        None => json!({ "block_id": id, "source": source, "private_project": true }),
+    };
     // P7-4: the block is stored; the correction / replacement is NOT — it waits for the user.
     if let Some((kind, _, _, old_seq)) = &suggested_old {
         out["suggestion"] = json!({
@@ -5279,7 +5420,9 @@ const PASSAGE_HEAVY_CHARS: usize = 2000;
 
 struct PendingProposal<'a> {
     thread_id: &'a str,
-    thread_title: String,
+    /// None = a private project (P9E-2): it takes the proposal, and its title stays out of
+    /// the receipt.
+    thread_title: Option<String>,
     content: &'a str,
     annotation: Option<&'a str>,
     ref_block_id: Option<&'a str>,
@@ -5310,6 +5453,29 @@ fn live_thread_title(conn: &Connection, thread_id: &str) -> Result<String, Strin
         return Err(t!("该项目已被删除。", "That project has been deleted."));
     }
     Ok(title)
+}
+
+// P9E-2 (Ocean 2026-10-15 第 120 条「读不了，但写得进」): a project an AI may write NEW things
+// into — any live one, private included. `Some(title)` for a project the AI can see; `None` for
+// a private one, whose title must not come back in anything the AI reads, receipts included.
+// ⚠️ Only for the writes that ADD something (add_block, propose_blocks, propose_attach_file).
+// Everything that acts on what is already in a project keeps `live_thread_title`, which reads
+// through the AI's view of the library and so answers 「no such project」 for a private one.
+fn write_target(conn: &Connection, thread_id: &str) -> Result<Option<String>, String> {
+    let (title, deleted, private): (String, Option<i64>, i64) = conn
+        .query_row(
+            "SELECT title, deleted_at, private FROM main.threads WHERE id = ?1",
+            [thread_id],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .map_err(|_| no_such_thread())?;
+    match (deleted, private) {
+        // A deleted private project is no more there for an AI than a live one.
+        (Some(_), 1) => Err(no_such_thread()),
+        (Some(_), _) => Err(t!("该项目已被删除。", "That project has been deleted.")),
+        (None, 1) => Ok(None),
+        (None, _) => Ok(Some(title)),
+    }
 }
 
 // ⭐⭐ S2(WORKPLAN §2.S2,Ocean 2026-08-24)—— propose_supersede。
@@ -5488,7 +5654,7 @@ fn propose_blocks_json(
     let source_text = source_text.map(str::trim).filter(|s| !s.is_empty());
     let source_thread_id = source_thread_id.map(str::trim).filter(|s| !s.is_empty());
     let source_thread_title = match (source_text, source_thread_id) {
-        (Some(_), Some(tid)) => Some((tid, live_thread_title(conn, tid)?)),
+        (Some(_), Some(tid)) => Some((tid, write_target(conn, tid)?)),
         (Some(_), None) => {
             return Err(t!(
                 "给了 source_text 就必须给 source_thread_id —— 原文要存成一块,总得有个项目\
@@ -5530,7 +5696,7 @@ fn propose_blocks_json(
             .ok_or_else(|| {
                 t!("第 {n} 条的 content 是空的。", "Proposal {n} has empty content.")
             })?;
-        let thread_title = live_thread_title(conn, thread_id)?;
+        let thread_title = write_target(conn, thread_id)?;
         let annotation =
             item.get("annotation").and_then(Value::as_str).map(str::trim).filter(|s| !s.is_empty());
         let ref_block_id = item
@@ -5712,21 +5878,27 @@ fn propose_blocks_json(
 
     // Projects named by title, in the order they first appear — the caller relays this to
     // the user, and the naming rule holds here like everywhere else.
+    // P9E-2: a private project is not named — it is only said that one is among them.
     let mut projects: Vec<String> = Vec::new();
     for p in &pending {
-        let title = if p.thread_title.is_empty() { untitled().to_string() } else { p.thread_title.clone() };
+        let Some(title) = &p.thread_title else { continue };
+        let title = if title.is_empty() { untitled().to_string() } else { title.clone() };
         if !projects.contains(&title) {
             projects.push(title);
         }
     }
-    let source_project = source_thread_title.map(|(_, title)| title);
+    let to_private = pending.iter().any(|p| p.thread_title.is_none());
+    let source_private = matches!(source_thread_title, Some((_, None)));
+    let source_project = source_thread_title.and_then(|(_, title)| title);
     let source_chars = source_text.map_or(0, |s| s.chars().count());
     Ok(json!({
         "queued": pending.len(),
         "written": false,
         "projects": projects,
+        "private_project": to_private,
         "expires_in_days": PROPOSAL_TTL_DAYS,
         "source_text_project": source_project,
+        "source_text_private_project": source_private,
         // DESIGN_CONTEXT_HYGIENE §9.5. The passage is the one thing in a batch that can be
         // document-sized, and «把整场对话分流进项目» is the case that makes it so. The size is
         // reported rather than refused, in both directions on purpose: a long article the
@@ -6154,7 +6326,9 @@ fn file_already_in_project(
 ) -> Result<Option<(String, String)>, String> {
     let mut stmt = conn
         .prepare(
-            "SELECT id, label, target, target_identity FROM attachments
+            // `main.`: a private project's files too (P9E-2) — only ever compared here, and
+            // propose_attach_file says no more than 「already there」 about one of those.
+            "SELECT id, label, target, target_identity FROM main.attachments
               WHERE thread_id = ?1 AND superseded_by IS NULL",
         )
         .map_err(|e| e.to_string())?;
@@ -6280,40 +6454,47 @@ fn propose_attach_file_json(
     why: &str,
     now: i64,
 ) -> Result<String, String> {
-    let title = live_thread_title(conn, thread_id)?;
+    // P9E-2 (第 120 条): a private project takes the proposal too; `title` is None for it, and
+    // then the receipt names neither the project, nor the block's number, nor a file in it.
+    let title = write_target(conn, thread_id)?;
     let why = file_proposal_why(why)?;
     // ⛔ Only a block of THIS project, and only a text block — a citation block has no file
     // row in Spool (P5-2), so a file hung on one would be on the card and nowhere else.
+    // `main.`: a block of a private project the AI was handed (add_block's receipt) counts.
     let block_id = block_id.map(str::trim).filter(|s| !s.is_empty());
     let anchor_seq: Option<i64> = match block_id {
         None => None,
         Some(b) => Some(
             conn.query_row(
-                "SELECT seq FROM blocks WHERE id = ?1 AND thread_id = ?2 AND kind = 'text'",
+                "SELECT seq FROM main.blocks WHERE id = ?1 AND thread_id = ?2 AND kind = 'text'",
                 [b, thread_id],
                 |r| r.get(0),
             )
-            .map_err(|_| {
-                t!(
+            .map_err(|_| match &title {
+                Some(title) => t!(
                     "〈{title}〉里没有这一块(或者它是一条引用,引用挂不了文件)。block_id 从 get_blocks 取;\
                      不挂在某一块上就不传它,文件挂在项目上。",
                     "\u{2039}{title}\u{203a} has no such block (or it is a citation, which cannot \
                      hold a file). Take block_id from get_blocks; leave it out and the file hangs \
                      off the project."
-                )
+                ),
+                None => no_such_block_here(),
             })?,
         ),
     };
     let (resolved, size) = gate_proposed_path(path, rules)?;
     if let Some((id, name)) = file_already_in_project(conn, thread_id, &resolved)? {
-        return Ok(already_in_project_json(&title, id, name));
+        return Ok(match &title {
+            Some(title) => already_in_project_json(title, id, name),
+            None => json!({ "queued": false, "private_project": true, "already_in_project": true }).to_string(),
+        });
     }
     if file_proposal_pending(conn, thread_id, &resolved, None, now)? {
         return Err(already_pending_message());
     }
     reject_raw_ids(conn, &[("why", why)])?;
     insert_file_proposal(conn, "attach", thread_id, &resolved, size, block_id, None, why, now)?;
-    Ok(json!({
+    let mut out = json!({
         "queued": true,
         // The words this tool exists to make impossible to get wrong. Nothing is attached.
         "attached_anything": false,
@@ -6322,8 +6503,12 @@ fn propose_attach_file_json(
         "size_bytes": size,
         "on_block": anchor_seq.map(|s| format!("#{s}")),
         "expires_in_days": PROPOSAL_TTL_DAYS,
-    })
-    .to_string())
+    });
+    if let (None, Some(o)) = (&title, out.as_object_mut()) {
+        o.remove("on_block");
+        o.insert("private_project".into(), json!(true));
+    }
+    Ok(out.to_string())
 }
 
 fn propose_replace_file_json(
@@ -6497,7 +6682,7 @@ fn stamp_lines_raised(dir: &std::path::Path, payload: &str, now: i64) {
     let Ok(conn) = open_db_rw(dir) else { return };
     for id in ids {
         let _ = conn.execute(
-            "UPDATE follow_up_items SET last_raised_at = ?2 WHERE id = ?1 AND status = 'open'",
+            "UPDATE main.follow_up_items SET last_raised_at = ?2 WHERE id = ?1 AND status = 'open'",
             rusqlite::params![id, now],
         );
     }
@@ -6685,10 +6870,14 @@ fn get_project_overview_json(conn: &Connection, thread_id: &str, now: i64) -> Re
     let duplicate_groups = dup["groups"].as_array().map_or(0, Vec::len);
     let dangling: i64 = conn
         .query_row(
-            "SELECT COUNT(*) FROM blocks b
-             WHERE b.thread_id = ?1 AND b.ref_block_id IS NOT NULL
-               AND NOT EXISTS (SELECT 1 FROM blocks c JOIN threads ct ON ct.id = c.thread_id
-                               WHERE c.id = b.ref_block_id AND ct.deleted_at IS NULL)",
+            // P9E-2: a citation into a private project is not dangling — it is there.
+            &format!(
+                "SELECT COUNT(*) FROM blocks b
+                 WHERE b.thread_id = ?1 AND b.ref_block_id IS NOT NULL
+                   AND NOT EXISTS (SELECT 1 FROM blocks c JOIN threads ct ON ct.id = c.thread_id
+                                   WHERE c.id = b.ref_block_id AND ct.deleted_at IS NULL)
+                   AND NOT {CITES_HIDDEN_SQL}"
+            ),
             [thread_id],
             |r| r.get(0),
         )
@@ -6822,7 +7011,7 @@ fn suggest_follow_up_item_json(
         )
         .map_err(|e| e.to_string())?;
     conn.execute(
-        "INSERT INTO follow_up_items
+        "INSERT INTO main.follow_up_items
            (id, thread_id, text, why, standing, fingerprint, status, proposed_by,
             sort_order, created_at)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'proposed', ?7, ?8, ?9)",
@@ -6980,7 +7169,7 @@ fn close_follow_up_item_json(
     }
 
     conn.execute(
-        "UPDATE follow_up_items
+        "UPDATE main.follow_up_items
             SET status = 'answered', answered_at = ?2, outcome = ?3, answer_block_id = ?4
           WHERE id = ?1 AND status = 'open'",
         rusqlite::params![item_id, now, outcome, answer_block_id],
@@ -7258,8 +7447,9 @@ fn check_library_json(conn: &Connection, now_ms: i64) -> Result<String, String> 
 
     // Section 3: citation integrity. The pack side already degrades a dangling ↩ line
     // to "(cited block no longer exists)" — this just makes it visible to the user.
+    // P9E-2: a citation into a private project is not dangling — it is there.
     let mut stmt = conn
-        .prepare(
+        .prepare(&format!(
             "SELECT t.title, b.created_at, b.content,
                     EXISTS(SELECT 1 FROM blocks c WHERE c.id = b.ref_block_id),
                     EXISTS(SELECT 1 FROM blocks c JOIN threads ct ON ct.id = c.thread_id
@@ -7269,8 +7459,9 @@ fn check_library_json(conn: &Connection, now_ms: i64) -> Result<String, String> 
              JOIN workspaces w ON w.id = t.workspace_id
              WHERE b.ref_block_id IS NOT NULL
                AND t.deleted_at IS NULL AND w.deleted_at IS NULL
-             ORDER BY t.title ASC, b.created_at ASC, b.rowid ASC",
-        )
+               AND NOT {CITES_HIDDEN_SQL}
+             ORDER BY t.title ASC, b.created_at ASC, b.rowid ASC"
+        ))
         .map_err(|e| e.to_string())?;
     let citations: Vec<(String, i64, String, bool, bool)> = stmt
         .query_map([], |r| {
@@ -7518,14 +7709,15 @@ fn tools_descriptor() -> Value {
         },
         {
             "name": "create_thread",
-            "description": "Create a new project in Spool. Use when the user asks to start tracking a new topic/project from this conversation. Search first — a project whose title already exists in the target workspace is refused (Spool has no delete tool, so a duplicate is permanent and makes both projects ambiguous to name). Requires the user to have enabled MCP writes in Spool's settings. Returns the new thread_id.",
+            "description": "Create a new project in Spool. Use when the user asks to start tracking a new topic/project from this conversation. Search first — a project whose title already exists in the target workspace is refused (Spool has no delete tool, so a duplicate is permanent and makes both projects ambiguous to name). Requires the user to have enabled MCP writes in Spool's settings. Returns the new thread_id. Pass private=true when the user wants this project kept away from other AIs.",
             "annotations": { "readOnlyHint": false, "destructiveHint": false, "idempotentHint": false },
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "title": { "type": "string", "description": "Project title, short and specific." },
                     "workspace_title": { "type": "string", "description": "Optional workspace to file it under (matched by name, case-insensitive). Omit for the user's default (first) workspace." },
-                    "summary": { "type": "string", "description": "Optional one-line status summary." }
+                    "summary": { "type": "string", "description": "Optional one-line status summary." },
+                    "private": { "type": "boolean", "description": "Optional, default false. true creates a PRIVATE project: once it exists, no AI connected through Spool — you included — can read it or see it in any list. You can still write into it (add_block, propose_blocks, propose_attach_file) with the thread_id this returns, so keep that id for the rest of the task. The user sees and uses it in Spool as usual, and can make it public again." }
                 },
                 "required": ["title"],
                 "additionalProperties": false
@@ -7982,6 +8174,7 @@ fn handle_tool_call(params: &Value) -> Value {
                         args.get("workspace_title").and_then(Value::as_str),
                         args.get("title").and_then(Value::as_str).ok_or_else(|| t!("缺少 title 参数。", "Missing the title argument."))?,
                         args.get("summary").and_then(Value::as_str),
+                        args.get("private").and_then(Value::as_bool).unwrap_or(false),
                     )
                 } else if name == "propose_blocks" {
                     let items = args
@@ -8278,13 +8471,36 @@ fn human_headline(name: &str, args: &Value, result: &str) -> Option<String> {
             "取了这段时间的跨项目简报,准备写回顾。",
             "Pulled the cross-project briefing for this stretch, ready to write the review."
         )),
-        "create_thread" => Some(t!(
-            "在 Spool 里新建了项目〈{}〉。",
-            "Created the project \u{2039}{}\u{203a} in Spool.",
-            args.get("title").and_then(Value::as_str).unwrap_or_default()
-        )),
+        "create_thread" => {
+            let title = args.get("title").and_then(Value::as_str).unwrap_or_default();
+            Some(if v.get("private").and_then(Value::as_bool).unwrap_or(false) {
+                // P9E-2: the one thing to get across is that it will not be able to look.
+                t!(
+                    "在 Spool 里新建了私密项目〈{title}〉。用这个 thread_id 调 add_block 往里写;\
+                     连着 Spool 的 AI(包括你自己)读不到它,任何列表里也看不到它 —— 用户在 Spool 里看得见、可以取消私密。",
+                    "Created the private project \u{2039}{title}\u{203a} in Spool. Write into it with \
+                     add_block and this thread_id; no AI connected through Spool — you included — can \
+                     read it back or see it in any list. The user sees it in Spool and can make it \
+                     public again."
+                )
+            } else {
+                t!("在 Spool 里新建了项目〈{title}〉。", "Created the project \u{2039}{title}\u{203a} in Spool.")
+            })
+        }
         "add_block" => {
             let title = v.get("thread_title").and_then(Value::as_str).unwrap_or_default();
+            // P9E-2: into a private project — no title and no number to give, and the caller
+            // should know why it will not find this block again.
+            let private = v.get("private_project").and_then(Value::as_bool).unwrap_or(false);
+            if private && v.get("dry_run").and_then(Value::as_bool).unwrap_or(false) {
+                return Some(t!(
+                    "预演,还没有写进 Spool:这条会存进一个私密项目 —— 连着 Spool 的 AI 能往里写、读不到。\
+                     念给用户听,他点头之后去掉 dry_run 再调一次。",
+                    "Dry run — nothing was written: this would go into a private project, which AIs \
+                     connected through Spool can write into but not read. Read it back to the user, and \
+                     call again without dry_run once they say yes."
+                ));
+            }
             // §3.1-2: the dry run must never read like a write. It is the one headline
             // whose whole job is to say "this did NOT happen yet".
             if v.get("dry_run").and_then(Value::as_bool).unwrap_or(false) {
@@ -8297,6 +8513,11 @@ fn human_headline(name: &str, args: &Value, result: &str) -> Option<String> {
                 ));
             }
             let stored = match v.get("seq").and_then(Value::as_i64) {
+                _ if private => t!(
+                    "存进 Spool 了,在一个私密项目里 —— 连着 Spool 的 AI(包括你自己)读不回来。",
+                    "Stored in Spool, in a private project — no AI connected through Spool, you \
+                     included, can read it back."
+                ),
                 // The number is the point: it is what the user can find in the app.
                 Some(seq) => t!("存进 Spool 了,是〈{title}〉的 #{seq} 块。", "Stored in Spool as block #{seq} of \u{2039}{title}\u{203a}."),
                 None => t!("存进 Spool 了。", "Stored in Spool."),
@@ -8328,25 +8549,36 @@ fn human_headline(name: &str, args: &Value, result: &str) -> Option<String> {
         // says the same thing in the words the user will hear, and hands over the sentence
         // to use.
         "propose_blocks" => {
-            let projects = v
+            let mut named: Vec<String> = v
                 .get("projects")
                 .and_then(Value::as_array)
                 .map(|a| {
                     a.iter()
                         .filter_map(Value::as_str)
                         .map(|p| t!("〈{p}〉", "\u{2039}{p}\u{203a}"))
-                        .collect::<Vec<_>>()
-                        .join(ts!("、", ", "))
+                        .collect()
                 })
                 .unwrap_or_default();
+            // P9E-2: a private project is in the list only as that.
+            if v.get("private_project").and_then(Value::as_bool).unwrap_or(false) {
+                named.push(ts!("一个私密项目", "a private project").to_string());
+            }
+            let projects = named.join(ts!("、", ", "));
             // The passage is a block too, and it goes to a project that is not in
             // `projects`. Saying "2 waiting" and then storing 3 blocks in 3 places is the
             // same class of mis-sentence this headline exists to prevent, one step later.
-            let passage = match v.get("source_text_project").and_then(Value::as_str) {
+            let passage_to = match v.get("source_text_project").and_then(Value::as_str) {
+                Some(p) => Some(t!("〈{p}〉", "\u{2039}{p}\u{203a}")),
+                None if v.get("source_text_private_project").and_then(Value::as_bool).unwrap_or(false) => {
+                    Some(ts!("一个私密项目", "a private project").to_string())
+                }
+                None => None,
+            };
+            let passage = match passage_to {
                 Some(p) => t!(
-                    "另外,你传的那整段原文会存进〈{p}〉——来源标着「经你转来的用户原话」——\
+                    "另外,你传的那整段原文会存进{p}——来源标着「经你转来的用户原话」——\
                      并被每一条引用,所以他点头之后落库的是 {} 块。把这句也说给他听。",
-                    " The passage you passed is stored in \u{2039}{p}\u{203a} — labelled as the \
+                    " The passage you passed is stored in {p} — labelled as the \
                      user's own words, passed on by you — and cited by every item, so approving \
                      stores {} blocks in all. Tell them that too.",
                     n("blocks_on_approval")
@@ -8412,6 +8644,27 @@ fn human_headline(name: &str, args: &Value, result: &str) -> Option<String> {
         // attached until the user clicks, and the card is the only thing that changed.
         "propose_attach_file" | "propose_replace_file" => {
             let project = v.get("project").and_then(Value::as_str).unwrap_or_default();
+            // P9E-2: into a private project — which file, and which project, stay unsaid.
+            if v.get("private_project").and_then(Value::as_bool).unwrap_or(false) {
+                let file = base_name(v.get("path").and_then(Value::as_str).unwrap_or_default()).to_string();
+                return Some(if v.get("already_in_project").is_some() {
+                    t!(
+                        "没有排队:这个文件已经在那个项目里了,不用再提。",
+                        "Nothing queued: this file is already in that project — no need to propose it."
+                    )
+                } else {
+                    t!(
+                        "还没有挂上:把「{file}」挂进一个私密项目的提议已经排进 Spool 的待审面。\
+                         跟他说「Spool 里有一个文件等你点头」,别说已经挂好了 —— 他点同意之后才挂上。\
+                         {} 天内没处理就作废。",
+                        "Nothing is attached yet: the proposal to attach \u{201c}{file}\u{201d} to a \
+                         private project is queued on Spool's review screen. Tell the user \u{201c}there \
+                         is a file waiting for you in Spool\u{201d} — never that it is attached; it is \
+                         only once they approve. Unanswered proposals expire after {} days.",
+                        n("expires_in_days")
+                    )
+                });
+            }
             if let Some(already) = v.get("already_in_project") {
                 let label = already.get("label").and_then(Value::as_str).unwrap_or_default();
                 return Some(t!(
@@ -10314,12 +10567,17 @@ fn thread_health_report(
     }
     let mut stmt = conn
         .prepare(
-            "SELECT b.content, b.annotation, b.source, b.pinned, b.created_at, b.ref_block_id,
-                    EXISTS(SELECT 1 FROM blocks c WHERE c.id = b.ref_block_id),
-                    EXISTS(SELECT 1 FROM blocks c JOIN threads ct ON ct.id = c.thread_id
-                           WHERE c.id = b.ref_block_id AND ct.deleted_at IS NULL)
-             FROM blocks b WHERE b.thread_id = ?1
-             ORDER BY b.created_at ASC, b.rowid ASC",
+            // P9E-2: a citation into a private project counts as live — it is there, the
+            // AI just cannot see it; reporting it as broken would send the user to fix it.
+            &format!(
+                "SELECT b.content, b.annotation, b.source, b.pinned, b.created_at, b.ref_block_id,
+                        EXISTS(SELECT 1 FROM blocks c WHERE c.id = b.ref_block_id) OR {CITES_HIDDEN_SQL},
+                        EXISTS(SELECT 1 FROM blocks c JOIN threads ct ON ct.id = c.thread_id
+                               WHERE c.id = b.ref_block_id AND ct.deleted_at IS NULL)
+                          OR {CITES_HIDDEN_SQL}
+                 FROM blocks b WHERE b.thread_id = ?1
+                 ORDER BY b.created_at ASC, b.rowid ASC"
+            ),
         )
         .map_err(|e| e.to_string())?;
     let rows: Vec<HealthRow> = stmt
@@ -10583,6 +10841,9 @@ and what to call:\n\
 \"what have I been up to\" / \"最近在忙什么\" / \"sum up my week\" \u{2192} get_digest, then weekly_review\n\
 \"where am I stuck on X\" / \"我在 X 上定了什么\" \u{2192} search_blocks \u{2192} get_pack, or distill\n\
 \"save this back\" / \"记下来\" / \"存进去\" \u{2192} add_block (ask which project first)\n\
+\"这个项目别让别的 AI 看到\" / \"建一个私密项目\" / \"keep this project away from other AIs\" \
+\u{2192} create_thread with private=true, then add_block into it with the thread_id it returns \
+\u{2014} you can write into a private project but not read it back\n\
 \"这些分别存进不同项目\" / \"flux 相关的存 flux,其他存 Y\" / a pasted slab that belongs in \
 several projects \u{2192} propose_blocks, NOT one add_block per project (the user approves the \
 split in Spool)\n\
@@ -10874,7 +11135,7 @@ mod tests {
             )
             .unwrap();
         conn.execute(
-            "UPDATE blocks SET ref_block_id = ?1, ref_kind = 'corrects', corrected_quote = ?2 WHERE id = ?3",
+            "UPDATE main.blocks SET ref_block_id = ?1, ref_kind = 'corrects', corrected_quote = ?2 WHERE id = ?3",
             rusqlite::params![old_id, quote, new_id],
         )
         .unwrap();
@@ -11035,6 +11296,7 @@ mod tests {
                         annotation_is_ai: val["annotationIsAi"].as_bool().unwrap_or(false),
                         created_at: val["createdAt"].as_i64().unwrap(),
                         foreign_title: val["foreignTitle"].as_str().map(String::from),
+                        hidden: false,
                         // Absent reads as live — same default as the TS twin's optional
                         // `stale?: boolean`, so every pre-existing fixture entry is unchanged.
                         stale: val["stale"].as_bool().unwrap_or(false),
@@ -11375,13 +11637,13 @@ mod tests {
         let mut conn = open_db_rw(&tmp).unwrap();
 
         // create_thread: default workspace resolution + row shape.
-        let out = create_thread_json(&conn, None, "MCP 写入测试", Some("一句摘要")).unwrap();
+        let out = create_thread_json(&conn, None, "MCP 写入测试", Some("一句摘要"), false).unwrap();
         let v: Value = serde_json::from_str(&out).unwrap();
         let tid = v["thread_id"].as_str().unwrap().to_string();
         assert_eq!(tid.len(), 21);
         assert_eq!(v["workspace"], "收件箱");
         // unknown workspace errors and names the available ones
-        let err = create_thread_json(&conn, Some("不存在"), "x", None).unwrap_err();
+        let err = create_thread_json(&conn, Some("不存在"), "x", None, false).unwrap_err();
         assert!(err.contains("收件箱"));
 
         // add_block: appends attributed content and bumps the thread's updated_at.
@@ -11457,7 +11719,7 @@ mod tests {
         assert!(pack.contains("↩ cites: ["), "{pack}");
         assert!(pack.contains("被引的原始结论"));
         // Dangling: hard-delete the citee, the line degrades explicitly.
-        conn.execute("DELETE FROM blocks WHERE id = ?1", [&cited_id]).unwrap();
+        conn.execute("DELETE FROM main.blocks WHERE id = ?1", [&cited_id]).unwrap();
         let pack = build_pack(&conn, &tid, "all").unwrap().text;
         assert!(pack.contains("↩ cites: (cited block no longer exists)"), "{pack}");
         let page: Value = serde_json::from_str(
@@ -11475,7 +11737,7 @@ mod tests {
         // R6 debt 3: a citation pointing OUT of this project says so; a same-project one
         // is left alone. The fixture proves the renderer, this proves the derivation.
         let other: Value =
-            serde_json::from_str(&create_thread_json(&conn, None, "另一个项目", None).unwrap())
+            serde_json::from_str(&create_thread_json(&conn, None, "另一个项目", None, false).unwrap())
                 .unwrap();
         let other_tid = other["thread_id"].as_str().unwrap().to_string();
         let far: Value = serde_json::from_str(
@@ -11504,7 +11766,7 @@ mod tests {
         assert!(!local.contains("in project:"), "{local}");
         // A cross-project citee whose project is soft-deleted counts as gone, not foreign.
         conn.execute(
-            "UPDATE threads SET deleted_at = 1 WHERE id = ?1",
+            "UPDATE main.threads SET deleted_at = 1 WHERE id = ?1",
             [&other_tid],
         )
         .unwrap();
@@ -11567,7 +11829,7 @@ mod tests {
         drop(conn);
         let mut conn = open_db_rw(&tmp).unwrap();
         let tid: String = serde_json::from_str::<Value>(
-            &create_thread_json(&conn, None, "引用理由测试", None).unwrap(),
+            &create_thread_json(&conn, None, "引用理由测试", None, false).unwrap(),
         )
         .unwrap()["thread_id"]
             .as_str()
@@ -11629,7 +11891,7 @@ mod tests {
         drop(conn);
         let mut conn = open_db_rw(&tmp).unwrap();
         let tid: String = serde_json::from_str::<Value>(
-            &create_thread_json(&conn, None, "摘要测试", None).unwrap(),
+            &create_thread_json(&conn, None, "摘要测试", None, false).unwrap(),
         )
         .unwrap()["thread_id"]
             .as_str()
@@ -11674,7 +11936,7 @@ mod tests {
         assert_eq!(g, None);
 
         // ② 用户写的改不动,而且拒绝要说出退路。
-        conn.execute("UPDATE blocks SET gist = '我自己写的一句', gist_by = 'user' WHERE id = ?1", [&bid])
+        conn.execute("UPDATE main.blocks SET gist = '我自己写的一句', gist_by = 'user' WHERE id = ?1", [&bid])
             .unwrap();
         let err = set_block_gist_json(&conn, &bid, Some("我来改一下")).unwrap_err();
         assert!(err.contains("告诉用户"), "拒绝里没给退路: {err}");
@@ -11686,7 +11948,7 @@ mod tests {
         // ⭐ 用户把自己那句**清掉**之后,AI 又可以写了 —— `gist_by` 仍然是 'user'
         // (清空也是他的一个决定),但那一句已经不在了。
         // ⛔ 只认 `gist_by` 的话 AI 被永远锁在外面,而界面上没有任何一条路能解开。
-        conn.execute("UPDATE blocks SET gist = NULL WHERE id = ?1", [&bid]).unwrap();
+        conn.execute("UPDATE main.blocks SET gist = NULL WHERE id = ?1", [&bid]).unwrap();
         set_block_gist_json(&conn, &bid, Some("清空之后 AI 重新补的一句")).unwrap();
         let g: Option<String> = conn
             .query_row("SELECT gist FROM blocks WHERE id = ?1", [&bid], |r| r.get(0))
@@ -11724,7 +11986,7 @@ mod tests {
         drop(conn);
         let mut conn = open_db_rw(&tmp).unwrap();
         let tid: String = serde_json::from_str::<Value>(
-            &create_thread_json(&conn, None, "更正提示测试", None).unwrap(),
+            &create_thread_json(&conn, None, "更正提示测试", None, false).unwrap(),
         )
         .unwrap()["thread_id"]
             .as_str()
@@ -12059,7 +12321,7 @@ mod tests {
         let conn = open_db_rw(&tmp).unwrap();
 
         // create_thread with a summary stamps provenance 'mcp'.
-        let out = create_thread_json(&conn, None, "带摘要", Some("初始摘要")).unwrap();
+        let out = create_thread_json(&conn, None, "带摘要", Some("初始摘要"), false).unwrap();
         let tid = serde_json::from_str::<Value>(&out).unwrap()["thread_id"]
             .as_str()
             .unwrap()
@@ -12078,7 +12340,7 @@ mod tests {
 
         // The GUI hand-edit path (updateThread) stamps 'user' — MCP must refuse.
         conn.execute(
-            "UPDATE threads SET summary = '用户手写', summary_source = 'user' WHERE id = ?1",
+            "UPDATE main.threads SET summary = '用户手写', summary_source = 'user' WHERE id = ?1",
             [&tid],
         )
         .unwrap();
@@ -12087,7 +12349,7 @@ mod tests {
 
         // A legacy non-empty summary without provenance is protected the same way…
         conn.execute(
-            "UPDATE threads SET summary = '旧摘要', summary_source = NULL WHERE id = ?1",
+            "UPDATE main.threads SET summary = '旧摘要', summary_source = NULL WHERE id = ?1",
             [&tid],
         )
         .unwrap();
@@ -12095,7 +12357,7 @@ mod tests {
 
         // …but an emptied card is writable again (the user clearing it releases the lock).
         conn.execute(
-            "UPDATE threads SET summary = NULL, summary_source = NULL WHERE id = ?1",
+            "UPDATE main.threads SET summary = NULL, summary_source = NULL WHERE id = ?1",
             [&tid],
         )
         .unwrap();
@@ -12126,7 +12388,7 @@ mod tests {
         .unwrap();
         drop(conn);
         let mut conn = open_db_rw(&tmp).unwrap();
-        let out = create_thread_json(&conn, None, "检索目标", Some("摘要一句")).unwrap();
+        let out = create_thread_json(&conn, None, "检索目标", Some("摘要一句"), false).unwrap();
         let tid = serde_json::from_str::<Value>(&out).unwrap()["thread_id"]
             .as_str()
             .unwrap()
@@ -12167,14 +12429,14 @@ mod tests {
         // v14 (§9.3 拍板乙): the same hit, once the note is recorded as an AI's, must come
         // back under the other marker. A hit list is read by a model exactly like a pack is,
         // so leaving `note:` here would have left the authority hole open on this surface.
-        conn.execute("UPDATE blocks SET annotation_by = 'ai' WHERE annotation = '再核对'", [])
+        conn.execute("UPDATE main.blocks SET annotation_by = 'ai' WHERE annotation = '再核对'", [])
             .unwrap();
         let res: Value =
             serde_json::from_str(&search_blocks_json(&conn, "核对", None, None).unwrap()).unwrap();
         let snip = res["hits"][0]["snippet"].as_str().unwrap().to_string();
         assert!(snip.contains("ai note: "), "{snip}");
         assert!(!snip.contains("] note: "), "the user's marker must be gone: {snip}");
-        conn.execute("UPDATE blocks SET annotation_by = NULL WHERE annotation = '再核对'", [])
+        conn.execute("UPDATE main.blocks SET annotation_by = NULL WHERE annotation = '再核对'", [])
             .unwrap();
 
         // Short Latin query: word boundary required — "obtained" must not hit.
@@ -12206,7 +12468,7 @@ mod tests {
 
         // v2.4 (C5): page filters AND-combine, narrow `total`, echo back, and refuse
         // to mix with around_block_id.
-        conn.execute("UPDATE blocks SET pinned = 1 WHERE content LIKE 'AI %'", []).unwrap();
+        conn.execute("UPDATE main.blocks SET pinned = 1 WHERE content LIKE 'AI %'", []).unwrap();
         let f = |pinned, has_annotation, source_contains| BlockFilters {
             pinned,
             has_annotation,
@@ -12252,7 +12514,7 @@ mod tests {
 
         // v13 (DESIGN_CONTEXT_HYGIENE §3.1): the `stale` filter bit, and the two fields
         // every row now carries.
-        conn.execute("UPDATE blocks SET stale_at = 1750000000000 WHERE content LIKE 'AI %'", [])
+        conn.execute("UPDATE main.blocks SET stale_at = 1750000000000 WHERE content LIKE 'AI %'", [])
             .unwrap();
         let stale_f = |stale| BlockFilters {
             pinned: None,
@@ -12308,7 +12570,7 @@ mod tests {
         let pack = get_pack_text(&conn, &tid, "all").unwrap();
         assert!(!pack.contains("AI 分类器的结论"), "{pack}");
         assert!(pack.contains("1 block the user has marked as no longer valid"), "{pack}");
-        conn.execute("UPDATE blocks SET stale_at = NULL", []).unwrap();
+        conn.execute("UPDATE main.blocks SET stale_at = NULL", []).unwrap();
 
         // list_threads carries the one-liner summary + read-budget fields (v2.1).
         let listed: Vec<Value> =
@@ -12341,7 +12603,7 @@ mod tests {
         assert_eq!(res[0]["description"], "摘要一句");
 
         // Soft-deleted threads vanish from both search and resources.
-        conn.execute("UPDATE threads SET deleted_at = 2 WHERE id = ?1", [&tid]).unwrap();
+        conn.execute("UPDATE main.threads SET deleted_at = 2 WHERE id = ?1", [&tid]).unwrap();
         let gone: Value =
             serde_json::from_str(&search_blocks_json(&conn, "调参结论", None, None).unwrap()).unwrap();
         assert_eq!(gone["total"], 0);
@@ -12930,7 +13192,7 @@ mod tests {
         .unwrap();
         drop(conn);
         let mut conn = open_db_rw(&tmp).unwrap();
-        let out = create_thread_json(&conn, None, "拒绝测试", None).unwrap();
+        let out = create_thread_json(&conn, None, "拒绝测试", None, false).unwrap();
         let tid = serde_json::from_str::<Value>(&out).unwrap()["thread_id"]
             .as_str()
             .unwrap()
@@ -12993,11 +13255,11 @@ mod tests {
         assert_eq!(count(&conn), 1);
 
         // Same guard on the other two write tools.
-        let err = create_thread_json(&conn, None, "新题", Some("接 sbC2zgTo9dWyq_x1XPLNM 继续"))
+        let err = create_thread_json(&conn, None, "新题", Some("接 sbC2zgTo9dWyq_x1XPLNM 继续"), false)
             .unwrap_err();
         assert!(err.contains("没有写入任何东西"), "{err}");
         let clean: Value =
-            serde_json::from_str(&create_thread_json(&conn, None, "干净标题", None).unwrap())
+            serde_json::from_str(&create_thread_json(&conn, None, "干净标题", None, false).unwrap())
                 .unwrap();
         let sid = clean["thread_id"].as_str().unwrap();
         let err = set_thread_summary_json(&conn, sid, "总结见 sbC2zgTo9dWyq_x1XPLNM").unwrap_err();
@@ -13485,7 +13747,7 @@ mod tests {
 
         // Claim 4, the other half: once the user says yes (this is what the review screen
         // does), the same read comes back with the text — no second request needed.
-        conn.execute("UPDATE attachments SET ai_access = 1 WHERE id = 'att_locked'", []).unwrap();
+        conn.execute("UPDATE main.attachments SET ai_access = 1 WHERE id = 'att_locked'", []).unwrap();
         let read = get_blocks_json(
             &conn,
             "th1",
@@ -14397,7 +14659,7 @@ mod tests {
             suggest_follow_up_item_json(&conn, "th2", "盯 CMU 的截止日期有没有改  ", None, false, now)
                 .unwrap_err();
         assert!(err.contains("已经在跟进"), "{err}");
-        conn.execute("UPDATE follow_up_items SET status = 'answered' WHERE id = 'fu1'", [])
+        conn.execute("UPDATE main.follow_up_items SET status = 'answered' WHERE id = 'fu1'", [])
             .unwrap();
         let err =
             suggest_follow_up_item_json(&conn, "th2", "盯 CMU 的截止日期有没有改", None, false, now)
@@ -16041,5 +16303,530 @@ mod tests {
         assert_eq!(pack.matches("↩ replaces (that block no longer holds): [").count(), 1, "{pack}");
         drop(conn);
         let _ = std::fs::remove_dir_all(&raw_tmp);
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // P9E-2 (Ocean 2026-10-15 第 120 – 123 条) — the canary.
+    //
+    // Two libraries that differ ONLY in that one holds two private projects (and everything
+    // that hangs off them: blocks, a picture, a file, follow-up lines, queued proposals, a
+    // summary, a link and a correction pointing at the public project). Every surface an AI
+    // reaches — the 24 tools, the 9 prompt assemblies (MCP and headless), resources — is
+    // called the same way on both, including with the private projects' own ids and titles.
+    // ⇒ The answers must be the same, byte for byte: what an AI gets is exactly what it would
+    // get if the private projects did not exist — not their words, not their ids, not a count,
+    // and 「no such project」 in the same words as for an id that never existed.
+    // ---------------------------------------------------------------------------------------
+
+    const CANARY: &str = "Zq7canary";
+    const PRIVATE_IDS: &[&str] = &[
+        "PRIVthread1", "PRIVthread2", "PRIVb1", "PRIVb2", "PRIVb3", "PRIVb4", "PRIVimg1",
+        "PRIVatt1", "PRIVfu1", "PRIVfu2", "PRIVfp1", "PRIVbatch", "PRIVprop1", "PRIVsp1",
+        "PRIVfar1", "PRIVrun1",
+    ];
+
+    fn canary_library(dir: &std::path::Path, with_private: bool) {
+        let _ = std::fs::remove_dir_all(dir);
+        std::fs::create_dir_all(dir).unwrap();
+        std::fs::write(
+            dir.join("settings.json"),
+            r#"{"mcpEnabled":true,"mcpWriteEnabled":true,"resolvedLanguage":"en"}"#,
+        )
+        .unwrap();
+        let conn = Connection::open(dir.join("spool.db")).unwrap();
+        conn.execute_batch(include_str!("../../src/lib/db/schema.sql")).unwrap();
+        conn.execute_batch(&format!("PRAGMA user_version = {EXPECTED_SCHEMA_VERSION};")).unwrap();
+        let now = now_ms();
+        let day = 86_400_000_i64;
+        let (t0, t1, t2, t3) = (now - 40 * day, now - 3 * day, now - 2 * day, now - day);
+        let future = now + 5 * day;
+        conn.execute_batch(&format!(
+            "INSERT INTO workspaces (id, title, sort_order, created_at, updated_at) VALUES
+               ('wsStudio', 'Studio', 0, 1, 1), ('wsVault', 'Vault', 1, 1, 1);
+             INSERT INTO threads (id, workspace_id, title, summary, summary_source, status,
+                                  is_capture_target, created_at, updated_at) VALUES
+               ('pubGarden', 'wsStudio', 'Garden notes', 'Tomatoes and beans this season.', 'user',
+                'active', 1, {t0}, {t1});
+             INSERT INTO blocks (id, thread_id, kind, content, annotation, source, pinned, seq,
+                                 created_at, gist) VALUES
+               ('pubB1', 'pubGarden', 'text', 'Tomatoes need a lighthouse of sun: six hours a day.',
+                'checked with the nursery', NULL, 1, 1, {t1}, 'sun hours'),
+               ('pubB2', 'pubGarden', 'text', 'Beans climb the north fence; the lighthouse trellis works.',
+                NULL, 'Claude · MCP', 0, 2, {t2}, NULL);
+             INSERT INTO attachments (id, thread_id, kind, target, label, extracted_text,
+                                      include_in_pack, ai_access, created_at) VALUES
+               ('pubAtt1', 'pubGarden', 'file', '/Users/x/garden/plan.pdf', 'plan.pdf',
+                'Garden plan text, lighthouse corner', 1, 1, {t1});
+             INSERT INTO follow_up_items (id, thread_id, text, why, standing, fingerprint, status,
+                                          sort_order, created_at) VALUES
+               ('pubFu1', 'pubGarden', 'Frost date this year', 'planting', 1,
+                'frost date this year', 'open', 0, {t1});"
+        ))
+        .unwrap();
+        if with_private {
+            conn.execute_batch(&format!(
+                "INSERT INTO threads (id, workspace_id, title, summary, summary_source, digest, status,
+                                      created_at, updated_at, follow_up_brief,
+                                      follow_up_brief_suggested, private) VALUES
+                   ('PRIVthread1', 'wsVault', 'Zq7canary health', 'Zq7canary summary card', 'mcp',
+                    'Zq7canary digest', 'active', {t0}, {t3}, 'Zq7canary brief', 'Zq7canary suggested', 1),
+                   ('PRIVthread2', 'wsStudio', 'Zq7canary second', NULL, NULL, NULL, 'active',
+                    {t0}, {t3}, NULL, NULL, 1);
+                 INSERT INTO blocks (id, thread_id, kind, content, annotation, annotation_by, source,
+                                     pinned, seq, created_at, gist, source_url, retrieved_at,
+                                     recheck_after, ref_block_id, ref_kind, corrected_quote,
+                                     ref_thread_id) VALUES
+                   ('PRIVb1', 'PRIVthread1', 'text', 'Zq7canary blood test: lighthouse values normal.',
+                    'Zq7canary note', 'user', 'Zq7canary source', 1, 1, {t2}, 'Zq7canary gist',
+                    'https://zq7canary.example/a', {t0}, {t1}, NULL, NULL, NULL, NULL),
+                   ('PRIVb2', 'PRIVthread1', 'text',
+                    'Zq7canary x-ray, lighthouse clinic' || char(10) || '![Zq7canary caption](spool-image:PRIVimg1)',
+                    NULL, NULL, NULL, 0, 2, {t3}, NULL, NULL, NULL, NULL, 'PRIVb1', 'corrects',
+                    'Zq7canary blood test', NULL),
+                   ('PRIVb3', 'PRIVthread1', 'text', 'Zq7canary says the sun hours are wrong',
+                    NULL, NULL, NULL, 0, 3, {t3}, NULL, NULL, NULL, NULL, 'pubB1', 'corrects',
+                    'six hours a day', NULL),
+                   ('PRIVb4', 'PRIVthread2', 'ref', 'Garden notes', NULL, NULL, NULL, 0, 1, {t3},
+                    NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'pubGarden');
+                 INSERT INTO block_images (id, block_id, position, bytes, format, width, height,
+                                           size_bytes, created_at) VALUES
+                   ('PRIVimg1', 'PRIVb2', 0, x'89504E470D0A1A0A', 'png', 1, 1, 8, {t3});
+                 INSERT INTO attachments (id, thread_id, kind, target, label, extracted_text,
+                                          include_in_pack, ai_access, created_at) VALUES
+                   ('PRIVatt1', 'PRIVthread1', 'file', '/Users/x/Zq7canary/report.pdf',
+                    'Zq7canary report.pdf', 'Zq7canary extracted, lighthouse', 1, 1, {t2});
+                 INSERT INTO follow_up_items (id, thread_id, text, why, standing, fingerprint, status,
+                                              sort_order, created_at) VALUES
+                   ('PRIVfu1', 'PRIVthread1', 'Zq7canary next appointment', 'Zq7canary why', 0,
+                    'zq7canary next appointment', 'open', 0, {t2}),
+                   ('PRIVfu2', 'PRIVthread1', 'Zq7canary proposed line', NULL, 0,
+                    'zq7canary proposed line', 'proposed', 1, {t3});
+                 INSERT INTO file_proposals (id, kind, client, thread_id, path, size_bytes, why,
+                                             created_at, expires_at) VALUES
+                   ('PRIVfp1', 'attach', 'Codex · MCP', 'PRIVthread1', '/Users/x/Zq7canary/scan.pdf',
+                    10, 'Zq7canary why', {t3}, {future});
+                 INSERT INTO proposal_batches (id, client, note, source_text, source_thread_id,
+                                               created_at, expires_at) VALUES
+                   ('PRIVbatch', 'Codex · MCP', 'Zq7canary note', 'Zq7canary passage', 'PRIVthread1',
+                    {t3}, {future});
+                 INSERT INTO proposals (id, batch_id, thread_id, content, sort_order) VALUES
+                   ('PRIVprop1', 'PRIVbatch', 'PRIVthread1', 'Zq7canary proposed block', 0);
+                 INSERT INTO supersede_proposals (id, thread_id, stale_block_id, by_block_id, client,
+                                                  why, quote_stale, quote_new, created_at,
+                                                  expires_at) VALUES
+                   ('PRIVsp1', 'PRIVthread1', 'PRIVb1', 'PRIVb2', 'Codex · MCP', 'Zq7canary why',
+                    'Zq7canary blood test', 'Zq7canary x-ray', {t3}, {future});
+                 INSERT INTO file_access_requests (id, request_id, client, thread_id, attachment_id,
+                                                   why, created_at, expires_at) VALUES
+                   ('PRIVfar1', 'PRIVreq', 'Codex · MCP', 'PRIVthread1', 'PRIVatt1', 'Zq7canary why',
+                    {t3}, {future});
+                 INSERT INTO engine_runs (id, action, thread_id, engine, outcome, result_text,
+                                          started_at, finished_at) VALUES
+                   ('PRIVrun1', 'follow_up', 'PRIVthread1', 'codex', 'ok', 'Zq7canary result',
+                    {t3}, {t3});"
+            ))
+            .unwrap();
+        }
+    }
+
+    /// One AI-facing call against the library in `dir`, through the same entry point a client
+    /// (or Spool's own engine) uses. `kind` is a JSON-RPC method, or `guidance` / `headless`
+    /// for the two prompt-assembly functions.
+    fn ai_call(dir: &std::path::Path, kind: &str, params: &Value) -> String {
+        TEST_DATA_DIR.with(|d| *d.borrow_mut() = Some(dir.to_path_buf()));
+        store_lang(Lang::En);
+        let name = params["name"].as_str().unwrap_or("");
+        let args = params.get("arguments").cloned().unwrap_or_else(|| json!({}));
+        let out = match kind {
+            "guidance" => guidance_text(name, &args).unwrap_or_else(|e| format!("ERR {e}")),
+            "headless" => guidance_text_headless(name, &args).unwrap_or_else(|e| format!("ERR {e}")),
+            method => match handle_request(method, params) {
+                Ok(v) => v.to_string(),
+                Err((code, msg)) => format!("ERR {code} {msg}"),
+            },
+        };
+        TEST_DATA_DIR.with(|d| *d.borrow_mut() = None);
+        out.replace(&dir.display().to_string(), "<dir>")
+    }
+
+    fn canary_calls() -> Vec<(&'static str, Value)> {
+        let tool = |name: &str, args: Value| ("tools/call", json!({ "name": name, "arguments": args }));
+        let prompt = |name: &str, args: Value| ("prompts/get", json!({ "name": name, "arguments": args }));
+        let mut calls = vec![
+            tool("list_threads", json!({})),
+            tool("list_threads", json!({ "title_contains": "Zq7canary" })),
+            tool("list_threads", json!({ "title_contains": "health" })),
+            tool("get_digest", json!({})),
+            tool("get_digest", json!({ "since_days": 3650 })),
+            tool("get_digest", json!({ "workspace_title": "Vault", "since_days": 3650 })),
+            tool("get_digest", json!({ "workspace_title": "Studio", "since_days": 3650 })),
+            tool("search_blocks", json!({ "query": "lighthouse" })),
+            tool("search_blocks", json!({ "query": "Zq7canary" })),
+            tool("search_blocks", json!({ "query": "blood" })),
+            tool("search_blocks", json!({ "query": "report" })),
+            tool("search_blocks", json!({ "query": "li" })),
+            tool("check_library", json!({})),
+            tool("get_follow_up_brief", json!({ "thread_id": "pubGarden" })),
+            tool("get_follow_up_brief", json!({ "thread_id": "PRIVthread1" })),
+            tool("get_project_overview", json!({ "thread_id": "pubGarden" })),
+            tool("get_project_overview", json!({ "thread_id": "PRIVthread1" })),
+            tool("weekly_review", json!({})),
+            tool("weekly_review", json!({ "since_days": 90 })),
+            tool("thread_health", json!({})),
+            tool("thread_health", json!({ "project": "pubGarden" })),
+            tool("thread_health", json!({ "project": "PRIVthread1" })),
+            tool("thread_health", json!({ "project": "Zq7canary" })),
+            tool("distill", json!({ "project": "Garden" })),
+            tool("distill", json!({ "project": "PRIVthread1" })),
+            tool("find_similar_blocks", json!({})),
+            tool("find_similar_blocks", json!({ "thread_id": "PRIVthread1" })),
+            tool("find_similar_blocks", json!({ "workspace_title": "Vault" })),
+            tool("get_block_original", json!({ "block_id": "pubB1" })),
+            tool("get_block_original", json!({ "block_id": "PRIVb1" })),
+            tool("get_blocks", json!({ "thread_id": "pubGarden" })),
+            tool("get_blocks", json!({ "thread_id": "pubGarden", "include_extracted_text": true })),
+            tool("get_blocks", json!({ "thread_id": "pubGarden", "around_block_id": "PRIVb1" })),
+            tool("get_blocks", json!({ "thread_id": "PRIVthread1" })),
+            tool("get_blocks", json!({ "thread_id": "PRIVthread2", "include_extracted_text": true })),
+            tool("get_pack", json!({ "thread_id": "pubGarden", "include_ids": true })),
+            tool("get_pack", json!({ "thread_id": "PRIVthread1" })),
+            tool("get_pack", json!({ "thread_id": "PRIVthread1", "range": "pinned" })),
+            // The write tools that act on what is already there answer as if it were not.
+            tool("set_thread_summary", json!({ "thread_id": "PRIVthread1", "summary": "new card" })),
+            tool("set_block_gist", json!({ "block_id": "PRIVb1", "gist": "new gist" })),
+            tool("propose_supersede", json!({ "stale_block_id": "PRIVb1", "by_block_id": "pubB2",
+                "why": "w", "quote_stale": "blood", "quote_new": "Beans" })),
+            tool("propose_supersede", json!({ "stale_block_id": "pubB1", "by_block_id": "PRIVb3",
+                "why": "w", "quote_stale": "Tomatoes", "quote_new": "sun" })),
+            tool("request_file_access", json!({ "thread_id": "PRIVthread1",
+                "attachment_ids": ["PRIVatt1"], "why": "to check" })),
+            tool("request_file_access", json!({ "thread_id": "pubGarden",
+                "attachment_ids": ["PRIVatt1"], "why": "to check" })),
+            tool("propose_replace_file", json!({ "thread_id": "PRIVthread1",
+                "attachment_id": "PRIVatt1", "path": "/Users/x/new.pdf", "why": "newer" })),
+            tool("suggest_follow_up_item", json!({ "thread_id": "PRIVthread1", "text": "watch it" })),
+            tool("close_follow_up_item", json!({ "item_id": "PRIVfu1", "outcome": "done" })),
+            tool("close_follow_up_item", json!({ "item_id": "pubFu1", "outcome": "done",
+                "answer_block_id": "PRIVb1" })),
+            // A citation, a correction and its quote check never reach a private block.
+            tool("add_block", json!({ "thread_id": "pubGarden", "content": "x",
+                "ref_block_id": "PRIVb1", "ref_note": "because" })),
+            tool("add_block", json!({ "thread_id": "pubGarden", "content": "x",
+                "ref_block_id": "PRIVb1", "ref_kind": "corrects", "corrected_quote": "blood" })),
+            tool("add_block", json!({ "thread_id": "pubGarden", "content": "x",
+                "ref_block_id": "PRIVb1", "ref_kind": "corrects", "corrected_quote": "nothing like it" })),
+            tool("propose_blocks", json!({ "items": [{ "thread_id": "pubGarden", "content": "x",
+                "ref_block_id": "PRIVb1", "ref_kind": "corrects", "corrected_quote": "blood" }] })),
+            tool("create_thread", json!({ "workspace_title": "Nowhere", "title": "x" })),
+            ("resources/list", json!({})),
+            ("resources/read", json!({ "uri": "spool://thread/pubGarden" })),
+            ("resources/read", json!({ "uri": "spool://thread/PRIVthread1" })),
+            prompt("triage_conversation", json!({})),
+        ];
+        for name in ["compress_pack", "thread_health", "distill", "file_this", "catch_up"] {
+            for key in [None, Some("pubGarden"), Some("PRIVthread1"), Some("Zq7canary")] {
+                let args = match key {
+                    Some(k) => json!({ "project": k, "thread_id": k }),
+                    None => json!({}),
+                };
+                calls.push(prompt(name, args));
+            }
+        }
+        calls.push(prompt("weekly_review", json!({})));
+        calls.push(prompt("weekly_review", json!({ "workspace_title": "Vault", "since_days": 90 })));
+        for kind in ["guidance", "headless"] {
+            for name in [
+                "compress_pack", "weekly_review", "thread_health", "triage_conversation",
+                "file_this", "catch_up", "distill", "follow_up_brief", "follow_up",
+            ] {
+                for key in [None, Some("pubGarden"), Some("PRIVthread1")] {
+                    let args = match key {
+                        Some(k) => json!({ "project": k }),
+                        None => json!({}),
+                    };
+                    calls.push((kind, json!({ "name": name, "arguments": args })));
+                }
+            }
+        }
+        calls
+    }
+
+    #[test]
+    fn private_projects_are_invisible_on_every_ai_surface() {
+        let base = std::env::temp_dir().join(format!("spool-p9e-canary-{}", std::process::id()));
+        let with = base.join("with");
+        let without = base.join("without");
+        canary_library(&with, true);
+        canary_library(&without, false);
+
+        let calls = canary_calls();
+        assert!(calls.len() > 100, "{}", calls.len());
+        for (kind, params) in &calls {
+            // Same call, back to back on both — the follow-up reads stamp what they hand out,
+            // so the two libraries have to see the same sequence.
+            let mut a = ai_call(&with, kind, params);
+            let mut b = ai_call(&without, kind, params);
+            if a != b {
+                // A clock that ticked over a minute between the two is not a leak: once more.
+                a = ai_call(&with, kind, params);
+                b = ai_call(&without, kind, params);
+            }
+            assert_eq!(a, b, "{kind} {params} differs between the two libraries");
+            // …and, said directly: nothing of theirs, except what this call itself passed in.
+            let asked = params.to_string();
+            for needle in std::iter::once(CANARY).chain(PRIVATE_IDS.iter().copied()) {
+                if !asked.contains(needle) {
+                    assert!(!a.contains(needle), "{kind} {params} let {needle} out:\n{a}");
+                }
+            }
+        }
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    // P9E-2, the one thing a public project may legitimately still hold about a private one:
+    // the user's own citation of it. The citing block is public text and stays; what it cites
+    // is reported as there-but-not-visible — never its words, its project, its id, or the
+    // sentence a correction quoted out of it. A link block (kind = ref) to a private project
+    // goes altogether: its whole content is that project's title.
+    #[test]
+    fn a_public_block_citing_a_private_one_says_only_that_it_cannot_be_seen() {
+        let dir = std::env::temp_dir().join(format!("spool-p9e-cites-{}", std::process::id()));
+        canary_library(&dir, true);
+        {
+            let conn = Connection::open(dir.join("spool.db")).unwrap();
+            let now = now_ms();
+            conn.execute_batch(&format!(
+                "INSERT INTO blocks (id, thread_id, kind, content, pinned, seq, created_at,
+                                     ref_block_id, ref_kind, corrected_quote, ref_note, ref_thread_id) VALUES
+                   ('pubB3', 'pubGarden', 'text', 'Public: the earlier result was wrong.', 0, 3, {now},
+                    'PRIVb1', 'corrects', 'Zq7canary blood test', 'public reason', NULL),
+                   ('pubB4', 'pubGarden', 'text', 'Public: building on that.', 0, 4, {now},
+                    'PRIVb1', NULL, NULL, 'another public reason', NULL),
+                   ('pubB5', 'pubGarden', 'ref', 'Zq7canary health', 0, 5, {now},
+                    NULL, NULL, NULL, NULL, 'PRIVthread1');"
+            ))
+            .unwrap();
+        }
+
+        for (kind, params) in &canary_calls() {
+            let out = ai_call(&dir, kind, params);
+            let asked = params.to_string();
+            for needle in std::iter::once(CANARY).chain(PRIVATE_IDS.iter().copied()) {
+                if !asked.contains(needle) {
+                    assert!(!out.contains(needle), "{kind} {params} let {needle} out:\n{out}");
+                }
+            }
+        }
+
+        let call = |name: &str, args: Value| -> String {
+            let v: Value = serde_json::from_str(&ai_call(
+                &dir,
+                "tools/call",
+                &json!({ "name": name, "arguments": args }),
+            ))
+            .unwrap();
+            v["content"][0]["text"].as_str().unwrap().to_string()
+        };
+        // The pack: both citing blocks keep their own text and reason, and say the cited block
+        // cannot be seen — not that it is gone.
+        let pack = call("get_pack", json!({ "thread_id": "pubGarden" }));
+        assert_eq!(pack.matches(REF_BLOCK_HIDDEN).count(), 2, "{pack}");
+        assert!(!pack.contains(REF_BLOCK_MISSING), "{pack}");
+        assert!(pack.contains("Public: the earlier result was wrong.") && pack.contains("another public reason"), "{pack}");
+        // get_blocks: no id, no preview, no quote out of it; the link block is not there at all.
+        let text = call("get_blocks", json!({ "thread_id": "pubGarden" }));
+        let page: Value = serde_json::from_str(text.lines().skip_while(|l| !l.starts_with('{')).collect::<Vec<_>>().join("\n").as_str())
+            .unwrap_or_else(|_| panic!("{text}"));
+        let rows = page["blocks"].as_array().unwrap();
+        let row = |id: &str| rows.iter().find(|r| r["block_id"] == id).cloned();
+        assert!(row("pubB5").is_none(), "{text}");
+        for id in ["pubB3", "pubB4"] {
+            let r = row(id).unwrap();
+            assert_eq!(r["ref_block_id"], Value::Null, "{r}");
+            assert_eq!(r["ref_thread_id"], Value::Null, "{r}");
+            assert_eq!(r["corrected_quote"], Value::Null, "{r}");
+            assert_eq!(r["cited"]["visible"], json!(false), "{r}");
+        }
+        assert_eq!(row("pubB3").unwrap()["ref_kind"], json!("corrects"));
+        // Not dangling: the three reports that count broken citations leave these alone.
+        let overview: Value = serde_json::from_str(
+            call("get_project_overview", json!({ "thread_id": "pubGarden" }))
+                .lines()
+                .skip_while(|l| !l.starts_with('{'))
+                .collect::<Vec<_>>()
+                .join("\n")
+                .as_str(),
+        )
+        .unwrap();
+        assert_eq!(overview["needs_attention"]["dangling_citations"], json!(0), "{overview}");
+        let library = call("check_library", json!({}));
+        assert!(!library.contains("Public: the earlier"), "{library}");
+        let health = call("thread_health", json!({ "project": "pubGarden" }));
+        assert!(health.contains("## 2. Dangling citations (0)"), "{health}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // P9E-2 (Ocean 2026-10-15 第 120、121 条): an AI can write into a private project — and
+    // create one — and hears nothing back about what is in it: not its title, not a block
+    // number (that is a count of what is there), not its id, not which file is already there.
+    #[test]
+    fn an_ai_writes_into_a_private_project_and_hears_nothing_back_about_it() {
+        let raw_dir = std::env::temp_dir().join(format!("spool-p9e-writes-{}", std::process::id()));
+        canary_library(&raw_dir, true);
+        let dir = canonical_or_same(raw_dir.clone());
+        let call = |name: &str, args: Value| -> (String, bool) {
+            let v: Value =
+                serde_json::from_str(&ai_call(&dir, "tools/call", &json!({ "name": name, "arguments": args })))
+                    .unwrap();
+            (v["content"][0]["text"].as_str().unwrap().to_string(), v["isError"] == json!(true))
+        };
+        let receipt = |out: &str| -> Value {
+            serde_json::from_str(out.lines().skip_while(|l| !l.starts_with('{')).collect::<Vec<_>>().join("\n").as_str())
+                .unwrap_or_else(|_| panic!("{out}"))
+        };
+        // Nothing of theirs — and, in a receipt, not even the id the caller passed in.
+        let clean = |out: &str| {
+            for needle in std::iter::once(CANARY).chain(PRIVATE_IDS.iter().copied()) {
+                assert!(!out.contains(needle), "{needle} in:\n{out}");
+            }
+            assert!(!out.contains("#4") && !out.contains("seq"), "a block number is a count:\n{out}");
+        };
+        let raw = || Connection::open(dir.join("spool.db")).unwrap();
+
+        // add_block, rehearsed, then for real.
+        let (out, err) = call("add_block", json!({ "thread_id": "PRIVthread1", "content": "codex wrote this", "dry_run": true }));
+        assert!(!err, "{out}");
+        clean(&out);
+        assert_eq!(receipt(&out)["written"], json!(false));
+        assert!(out.contains("would go into a private project") && !out.contains("#0") && !out.contains("\u{2039}\u{203a}"), "{out}");
+        let (out, err) = call("add_block", json!({ "thread_id": "PRIVthread1", "content": "codex wrote this",
+            "annotation": "why it matters" }));
+        assert!(!err, "{out}");
+        clean(&out);
+        let id = receipt(&out)["block_id"].as_str().unwrap().to_string();
+        assert_eq!(receipt(&out)["private_project"], json!(true));
+        assert!(out.starts_with("Stored in Spool, in a private project"), "{out}");
+        let (seq, owner, by): (i64, String, String) = raw()
+            .query_row("SELECT seq, thread_id, annotation_by FROM blocks WHERE id = ?1", [&id], |r| {
+                Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+            })
+            .unwrap();
+        assert_eq!((seq, owner.as_str(), by.as_str()), (4, "PRIVthread1", "ai"), "numbered after the three already there");
+        // …and it still cannot read any of it back.
+        let (out, err) = call("get_blocks", json!({ "thread_id": "PRIVthread1" }));
+        assert!(err);
+        assert_eq!(out, call("get_blocks", json!({ "thread_id": "NOSUCHthread" })).0);
+        // It may cite a public block from inside a private project.
+        let (out, err) = call("add_block", json!({ "thread_id": "PRIVthread1", "content": "builds on the garden",
+            "ref_block_id": "pubB1", "ref_note": "same sun numbers" }));
+        assert!(!err, "{out}");
+        clean(&out);
+
+        // propose_blocks: one piece into the private project, one into the public one, and the
+        // passage into the private one. Only the public title comes back.
+        let before: i64 = raw().query_row("SELECT COUNT(*) FROM proposals WHERE thread_id = 'PRIVthread1'", [], |r| r.get(0)).unwrap();
+        let (out, err) = call("propose_blocks", json!({
+            "items": [{ "thread_id": "PRIVthread1", "content": "piece a" }, { "thread_id": "pubGarden", "content": "piece b" }],
+            "source_text": "the whole passage", "source_thread_id": "PRIVthread1" }));
+        assert!(!err, "{out}");
+        clean(&out);
+        let r = receipt(&out);
+        assert_eq!(r["projects"], json!(["Garden notes"]));
+        assert_eq!(r["source_text_project"], Value::Null);
+        assert_eq!(r["queued"], json!(2));
+        assert_eq!(r["blocks_on_approval"], json!(3));
+        assert!(out.contains("headed for \u{2039}Garden notes\u{203a}, a private project"), "{out}");
+        assert!(out.contains("The passage you passed is stored in a private project"), "{out}");
+        let after: i64 = raw().query_row("SELECT COUNT(*) FROM proposals WHERE thread_id = 'PRIVthread1'", [], |r| r.get(0)).unwrap();
+        assert_eq!(after, before + 1);
+
+        // propose_attach_file into the private project: queued; and a file already there is
+        // reported as already there without saying which one it is.
+        let home = dir.join("home");
+        std::fs::create_dir_all(home.join("Documents")).unwrap();
+        for f in ["Documents/scan.pdf", "Documents/report.pdf"] {
+            std::fs::write(home.join(f), "abcd").unwrap();
+        }
+        let at = |rel: &str| home.join(rel).to_string_lossy().into_owned();
+        raw().execute("UPDATE attachments SET target = ?1 WHERE id = 'PRIVatt1'", [at("Documents/report.pdf")]).unwrap();
+        let rules = PathGateRules {
+            home: home.clone(),
+            system_roots: vec![],
+            home_private: "Library",
+            home_private_open: &["Mobile Documents", "CloudStorage"],
+        };
+        let conn = open_db_rw(&dir).unwrap();
+        let out = propose_attach_file_json(&conn, &rules, "PRIVthread1", &at("Documents/scan.pdf"), Some("PRIVb1"), "the scan", now_ms()).unwrap();
+        clean(&out);
+        let r: Value = serde_json::from_str(&out).unwrap();
+        assert_eq!((r["queued"].clone(), r["private_project"].clone()), (json!(true), json!(true)), "{r}");
+        let out = propose_attach_file_json(&conn, &rules, "PRIVthread1", &at("Documents/report.pdf"), None, "the report", now_ms()).unwrap();
+        clean(&out);
+        let r: Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(r["queued"], json!(false), "{r}");
+        assert_eq!(r["already_in_project"], json!(true), "{r}");
+        let line = human_headline("propose_attach_file", &json!({}), &out).unwrap();
+        clean(&line);
+        assert!(line.contains("already in that project"), "{line}");
+        drop(conn);
+
+        // create_thread(private = true): the id comes back — it is what add_block needs — and
+        // from then on the project is invisible like any other private one.
+        let (out, err) = call("create_thread", json!({ "workspace_title": "Studio", "title": "Codex scratch", "private": true }));
+        assert!(!err, "{out}");
+        let r = receipt(&out);
+        assert_eq!(r["private"], json!(true));
+        assert!(out.starts_with("Created the private project \u{2039}Codex scratch\u{203a}"), "{out}");
+        let new_id = r["thread_id"].as_str().unwrap().to_string();
+        let flag: i64 = raw().query_row("SELECT private FROM threads WHERE id = ?1", [&new_id], |r| r.get(0)).unwrap();
+        assert_eq!(flag, 1);
+        assert!(!call("list_threads", json!({})).0.contains("Codex scratch"));
+        let (out, err) = call("add_block", json!({ "thread_id": new_id, "content": "first line" }));
+        assert!(!err, "{out}");
+        let (out, err) = call("get_pack", json!({ "thread_id": new_id }));
+        assert!(err, "{out}");
+        // Without it, a project is public, as before.
+        let (out, err) = call("create_thread", json!({ "workspace_title": "Studio", "title": "Codex open" }));
+        assert!(!err, "{out}");
+        assert_eq!(receipt(&out)["private"], json!(false));
+        assert!(call("list_threads", json!({})).0.contains("Codex open"));
+        let _ = std::fs::remove_dir_all(&raw_dir);
+    }
+
+    // P9E-2 (第 121 条 + mcp-tool-routing-required): an AI asked to keep a project away from
+    // other AIs has to be able to find out how — in the tool's schema AND in the routing text.
+    #[test]
+    fn create_thread_offers_private_and_the_routing_text_says_how() {
+        let tools = tools_descriptor();
+        let ct = tools.as_array().unwrap().iter().find(|t| t["name"] == "create_thread").unwrap();
+        assert_eq!(ct["inputSchema"]["properties"]["private"]["type"], json!("boolean"));
+        assert_eq!(ct["annotations"]["readOnlyHint"], json!(false), "annotations unchanged");
+        assert!(OPENERS.contains("create_thread with private=true"), "{OPENERS}");
+    }
+
+    // P9E-2: the layer the filter lives in. The USER moving blocks into a private project gets
+    // the duplicate check against what is already there (`open_db_whole`), while an AI's view of
+    // the same library (`open_db`) has nothing in that project to compare against.
+    #[test]
+    fn moving_blocks_into_a_private_project_still_checks_for_duplicates() {
+        let dir = std::env::temp_dir().join(format!("spool-p9e-move-{}", std::process::id()));
+        canary_library(&dir, true);
+        Connection::open(dir.join("spool.db"))
+            .unwrap()
+            .execute_batch(
+                "INSERT INTO blocks (id, thread_id, kind, content, pinned, seq, created_at) VALUES
+                   ('pubCopy', 'pubGarden', 'text', 'Zq7canary blood test: lighthouse values normal.', 0, 3, 1);",
+            )
+            .unwrap();
+        TEST_DATA_DIR.with(|d| *d.borrow_mut() = Some(dir.clone()));
+        let hits = crate::api_engine::forward_duplicate_check("PRIVthread1".into(), vec!["pubCopy".into()]);
+        TEST_DATA_DIR.with(|d| *d.borrow_mut() = None);
+        let hits = hits.unwrap();
+        assert_eq!(hits.len(), 1, "{:?}", hits.iter().map(|h| &h.match_block_id).collect::<Vec<_>>());
+        assert!(hits[0].same);
+        assert_eq!(hits[0].match_block_id, "PRIVb1");
+        let ai_view = forward_duplicates(&open_db(&dir).unwrap(), "PRIVthread1", &["pubCopy".to_string()]).unwrap();
+        assert!(ai_view.is_empty());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
