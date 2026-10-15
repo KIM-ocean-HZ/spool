@@ -16,9 +16,14 @@ import { getDb } from './client';
 //
 // ⚠️ 读坏了就当没有：插件读文件失败时自己就当空的（下一次写会盖掉坏文件），形状不对的条目在这里
 // 丢掉。后果只能是「这次没恢复出来」，⛔ 不能让 Spool 打不开。
+//
+// 两样东西：`blocks`（编辑面板，P9D-1）和 `composer`（项目底下输入框里没发出去的字，P9D-2）。
+// ⚠️ 输入框里粘进去还没发的**图不进这个文件**（Ocean 第 110 条：只留字，图不留）—— 它们照旧只在
+// draftStore 的内存里，退出就没了。
 
 const FILE = 'drafts.json';
 const BLOCKS_KEY = 'blocks';
+const COMPOSER_KEY = 'composer';
 
 /** 字停下来多久写一次盘。⚠️ 删（完成 / Esc）不等，当场写 —— 不然刚按了 Esc 就被停掉，
  *  下次打开它又回来了。 */
@@ -58,7 +63,21 @@ export const cleanBlockDrafts = (raw: unknown): Record<string, BlockDraft> => {
   return out;
 };
 
-/** 只留下块还在的那几条（块删了、项目删了，草稿就没有地方回去了）。 */
+/** 盘上的 `composer` → 干净的一份：只留「项目 id → 一段不是空的字」。 */
+export const cleanComposerDrafts = (raw: unknown): Record<string, string> => {
+  const out: Record<string, string> = {};
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return out;
+  for (const [id, v] of Object.entries(raw as Record<string, unknown>)) {
+    if (id && typeof v === 'string' && v.length > 0) out[id] = v;
+  }
+  return out;
+};
+
+/** 输入框里要落盘的那一份：只有字，空的不留。 */
+export const composerToSave = (byThread: Record<string, string>): Record<string, string> =>
+  Object.fromEntries(Object.entries(byThread).filter(([, v]) => v.length > 0));
+
+/** 只留下块（项目）还在的那几条（块删了、项目删了，草稿就没有地方回去了）。 */
 export const keepLive = <T>(drafts: Record<string, T>, live: ReadonlySet<string>): Record<string, T> =>
   Object.fromEntries(Object.entries(drafts).filter(([id]) => live.has(id)));
 
@@ -116,11 +135,13 @@ const writeNow = (): Promise<void> => {
     clearTimeout(timer);
     timer = undefined;
   }
-  const blocks = useDraftStore.getState().blockDrafts;
+  const { blockDrafts: blocks, byThread } = useDraftStore.getState();
+  const composer = composerToSave(byThread);
   chain = chain.then(async () => {
     try {
       const store = await getStore();
       await store.set(BLOCKS_KEY, blocks);
+      await store.set(COMPOSER_KEY, composer);
       await store.save();
     } catch (e) {
       console.warn('[drafts] save failed', e);
@@ -138,7 +159,20 @@ const schedule = (now: boolean): void => {
   timer = setTimeout(() => void writeNow(), DRAFT_SAVE_DELAY_MS);
 };
 
-const removedAny = (prev: object, next: object): boolean => Object.keys(prev).some((k) => !(k in next));
+/** 有一条没了（或者输入框被删空了）—— 这种要当场写。 */
+const removedAny = (prev: Record<string, unknown>, next: Record<string, unknown>): boolean =>
+  Object.keys(prev).some((k) => prev[k] !== '' && !next[k]);
+
+/** 盘上那份的项目 id 里，项目还在的那几个（删工作区时它底下的项目一起标了 deleted_at）。 */
+const liveThreadIds = async (ids: string[]): Promise<Set<string>> => {
+  if (ids.length === 0) return new Set();
+  const db = await getDb();
+  const rows = await db.select<{ id: string }[]>(
+    `SELECT id FROM threads WHERE deleted_at IS NULL AND id IN (${ids.map((_, i) => `$${i + 1}`).join(', ')})`,
+    ids,
+  );
+  return new Set(rows.map((r) => r.id));
+};
 
 /** 盘上那份的块 id 里，块还在、项目也还在的那几个。 */
 const liveBlockIds = async (ids: string[]): Promise<Set<string>> => {
@@ -158,29 +192,39 @@ let unsubscribe: (() => void) | null = null;
  *  ⚠️ 读完才开始写 —— 先写的话会拿空的那份把盘上的盖掉。 */
 export const loadDrafts = async (): Promise<void> => {
   let blocks: Record<string, BlockDraft> = {};
+  let composer: Record<string, string> = {};
   let dropped = false;
   try {
     const store = await getStore();
-    const raw: unknown = await store.get(BLOCKS_KEY);
-    const all = cleanBlockDrafts(raw);
-    blocks = keepLive(all, await liveBlockIds(Object.keys(all)));
-    dropped = raw !== undefined && JSON.stringify(raw) !== JSON.stringify(blocks);
+    const rawBlocks: unknown = await store.get(BLOCKS_KEY);
+    const rawComposer: unknown = await store.get(COMPOSER_KEY);
+    const allBlocks = cleanBlockDrafts(rawBlocks);
+    const allComposer = cleanComposerDrafts(rawComposer);
+    blocks = keepLive(allBlocks, await liveBlockIds(Object.keys(allBlocks)));
+    composer = keepLive(allComposer, await liveThreadIds(Object.keys(allComposer)));
+    dropped =
+      (rawBlocks !== undefined && JSON.stringify(rawBlocks) !== JSON.stringify(blocks)) ||
+      (rawComposer !== undefined && JSON.stringify(rawComposer) !== JSON.stringify(composer));
   } catch (e) {
     console.warn('[drafts] load failed', e);
   }
-  // 读盘这一小会儿里如果已经有面板写了草稿，那一份更新，留它的。
-  useDraftStore.setState((s) => ({ blockDrafts: { ...blocks, ...s.blockDrafts }, draftsLoaded: true }));
+  // 读盘这一小会儿里如果已经有人在面板 / 输入框里写了字，那一份更新，留它的。
+  useDraftStore.setState((s) => ({
+    blockDrafts: { ...blocks, ...s.blockDrafts },
+    byThread: { ...composer, ...composerToSave(s.byThread) },
+    draftsLoaded: true,
+  }));
   unsubscribe?.();
   unsubscribe = useDraftStore.subscribe((s, prev) => {
-    if (s.blockDrafts === prev.blockDrafts) return;
-    schedule(removedAny(prev.blockDrafts, s.blockDrafts));
+    if (s.blockDrafts === prev.blockDrafts && s.byThread === prev.byThread) return;
+    schedule(removedAny(prev.blockDrafts, s.blockDrafts) || removedAny(prev.byThread, s.byThread));
   });
   // 丢掉过东西（块不在了、条目坏了）的话，盘上那份也跟着改掉。
   if (dropped) await writeNow();
 };
 
-/** 「清除所有数据」：草稿也清掉（它们指着的块都没了）。 */
+/** 「清除所有数据」：草稿也清掉（它们指着的块和项目都没了）。 */
 export const clearDraftsFile = async (): Promise<void> => {
-  useDraftStore.setState({ blockDrafts: {} });
+  useDraftStore.setState({ blockDrafts: {}, byThread: {} });
   await writeNow();
 };

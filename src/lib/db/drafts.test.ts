@@ -73,7 +73,7 @@ describe('drafts.json：写了能读回，块不在了就丢', () => {
     threadId = (await createThread(ws.id, '个人网站素材')).id;
     b9 = (await createBlock({ threadId, content: '创作决策短文' })).id;
     disk.saved = {};
-    useDraftStore.setState({ blockDrafts: {}, draftsLoaded: false });
+    useDraftStore.setState({ blockDrafts: {}, byThread: {}, images: {}, draftsLoaded: false });
   });
   afterEach(() => {
     vi.useRealTimers();
@@ -124,10 +124,51 @@ describe('drafts.json：写了能读回，块不在了就丢', () => {
   });
 
   it('「清除所有数据」把草稿一起清掉', async () => {
-    disk.saved = { blocks: { [b9]: draft('x') } };
+    disk.saved = { blocks: { [b9]: draft('x') }, composer: { [threadId]: '没发的' } };
     await loadDrafts();
     await clearDraftsFile();
-    expect(disk.saved.blocks).toEqual({});
+    expect(disk.saved).toMatchObject({ blocks: {}, composer: {} });
+  });
+
+  // P9D-2（第 108、110 条）：项目底下输入框的字也留住；图不留。
+  it('输入框的字：写进盘，「重开」之后回到那个项目的输入框里；图没有', async () => {
+    await loadDrafts();
+    vi.useFakeTimers();
+    const s = useDraftStore.getState();
+    s.setDraft(threadId, '打了几个字');
+    s.addDraftImages(threadId, [{ id: 'img', bytes: new Uint8Array([1, 2, 3]), previewUrl: 'data:,' }]);
+    await vi.advanceTimersByTimeAsync(DRAFT_SAVE_DELAY_MS);
+    vi.useRealTimers();
+    expect(disk.saved.composer).toEqual({ [threadId]: '打了几个字' });
+    expect(JSON.stringify(disk.saved)).not.toContain('img');
+
+    useDraftStore.setState({ byThread: {}, images: {}, blockDrafts: {}, draftsLoaded: false });
+    await loadDrafts();
+    expect(useDraftStore.getState().byThread).toEqual({ [threadId]: '打了几个字' });
+    expect(useDraftStore.getState().images).toEqual({});
+  });
+
+  it('发出去（clearDraft）就从盘上删，当场', async () => {
+    disk.saved = { composer: { [threadId]: '要发的' } };
+    await loadDrafts();
+    useDraftStore.getState().clearDraft(threadId);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(disk.saved.composer).toEqual({});
+  });
+
+  it('删空了也算删；空的不落盘', async () => {
+    disk.saved = { composer: { [threadId]: 'abc' } };
+    await loadDrafts();
+    useDraftStore.getState().setDraft(threadId, '');
+    await new Promise((r) => setTimeout(r, 0));
+    expect(disk.saved.composer).toEqual({});
+  });
+
+  it('项目不在了：读回来时丢掉', async () => {
+    disk.saved = { composer: { [threadId]: '留着', gone: '项目已经删了' } };
+    await loadDrafts();
+    expect(useDraftStore.getState().byThread).toEqual({ [threadId]: '留着' });
+    expect(disk.saved.composer).toEqual({ [threadId]: '留着' });
   });
 });
 
