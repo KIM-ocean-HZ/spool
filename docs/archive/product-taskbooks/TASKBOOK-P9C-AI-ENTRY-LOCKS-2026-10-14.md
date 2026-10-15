@@ -1,6 +1,6 @@
 # 产品任务书 P9C —— AI 入口统一：没准备好的地方锁着，当场就能打开
 
-> **状态：COMPLETE —— 待 Ocean 验收。**（2026-10-14 下发、同日做完：四步 `1f7820e` `79cff78` `64ae228` `246a547` 已提交、已换装，回执在 §7。P9B 已验收通过 —— HANDOFF §9.2 第 92 条。）
+> **状态：COMPLETE —— Ocean 10-15 验收：其他七条通过，第一轮一条（周回顾「一个按钮、先选类型」）已改 `b87e86e`、已换装，等他看一眼**（HANDOFF §9.2 第 104 – 111 条，回执 §7.7）。（2026-10-14 下发、同日做完：四步 `1f7820e` `79cff78` `64ae228` `246a547` 已提交、已换装，回执在 §7。P9B 已验收通过 —— HANDOFF §9.2 第 92 条。）
 >
 > **唯一交付：** 下面 §3 的四步（P9C-1 – P9C-4），按顺序做完，每一步测试通过、单独一笔提交，并在 §7 写回执。
 >
@@ -325,6 +325,21 @@ cargo tree --manifest-path src-tauri/Cargo.toml -e normal | grep -iE "ureq|rustl
 
 - 偏离（都是措辞 / 做法，范围没扩）：小块里的按钮叫「现在打开」不叫「打开」（字典冲突，见 7.1）；P9C-2 第 2 条用弹出（见 7.2）；DeepSeek 那半多一个「正在看你存没存过 key…」的状态（见 7.1）；§6 验收单第 2、3、4、6 条跟着改了措辞（「现在打开」、第 3 条多一步弹出、第 6 条写了截图在哪）。`DISCOVERED-20261014-4` 是 Ocean 开工前同意并进来的，原来写在「不做」里。
 - 新发现：`DISCOVERED-20261014-6`（「AI 引擎」页还有两句和现状对不上：DeepSeek 那段在 Windows 上指向一个不存在的「下面那一节」；本机引擎那段开头「Spool 不存 API key」紧挨着 DeepSeek 的 key 框）记在 HANDOFF §9.9，没修。
+
+### 7.7 验收第一轮（Ocean 2026-10-15）
+
+- Ocean 原话：「回顾这一周（用 Codex）/ 回顾这一周（用 deepseek-v4-flash）这里重复了，入口按照类型区分API（方便后续扩展api入口，虽然当前只有deepseek）和本地CLI，CLI可选codex和Claude，这样的话即使没有本地CLI，用户也可以使用API继续使用。」问过两件（HANDOFF §9.2 第 104 – 105 条）：**一个按钮，先选类型**（选的类型同时就是每周自动跑的那一类）；**本机 CLI 这一类总在，API 没开就不出现**。其他七条通过（第 107 条）。API 那半的扩展、设置页 API 部分改成通用入口进了待办，宣传发版前先不做（第 106 条，HANDOFF `DISCOVERED-20261015-1`）。
+- 提交：`b87e86e fix(review): 周回顾一个按钮、先选类型（本机 CLI / API）；选的类型就是每周自动跑的那一类（P9C 验收第一轮）`
+- 改的文件：`src/components/ReviewBoard/index.tsx`、`src/components/ReviewBoard/reviewEntry.test.tsx`、`src/stores/settingsStore.ts`（只改注释）、`src/lib/i18n/index.ts`
+- 做成什么样：`[回顾这一周]  用 [本机 CLI | API]  [Claude Code ▾]  用哪个模型 [默认 ▾]  ○ 每周自动回顾一次`。
+  - 选的类型存进 `autoReviewRoute`（键名没改、不迁移）—— 原来单独的「自动那次用」选择器并掉了；自动那次**真走**哪条（选的那类走不通时会退到另一类）照旧写在第二行。
+  - 本机 CLI 里选用哪个 CLI 是 `aiEngine`，和跟进面板里「用哪个」同一个设置；只装了一个就只写名字。API 那一类写出模型名、带「查一下余额」。
+  - API 没开 ⇒ 没有选择器，写「用 本机 CLI」；Windows 上没有本机 CLI 这一类 ⇒「用 API」。本机 CLI 没装（DeepSeek 开着）⇒ 灰的「回顾这一周」+ 锁 +「要先装 Claude Code 或 Codex（不花钱）」+「怎么打开」；只差开关 ⇒ P9C-2 那个「用 Claude Code 回顾（不花钱）—— 先打开写入」。两类都不通 ⇒ 照 P9C-2 整条锁着。
+  - 新字：「用 / With」「本机 CLI / Local CLI」「要先装 Claude Code 或 Codex（不花钱） / Needs Claude Code or Codex installed first (no extra cost)」；字典里「回顾这一周（用 {engine}）」「自动那次用」两条跟着删了。
+- 验：tsc 干净；vitest 93 / 1080（`reviewKind` 抽成函数，三条测试）；cargo 192 · 5；sidecar 14；`(none missing)`；`--dead` 和开工逐行一样；`cargo tree` 空。
+- 截图（桌面 `Spool/P9C-screenshots-20261014/p9c-r1/`，各中英）：`r1-both-cli`、`r1-both-api`、`r1-click-api`（从 CLI 点到 API）、`r1-both-codex`（Codex 那句说明）、`r1-cli-only`（API 没开）、`r1-nocli-api-cli`（CLI 没装、锁着）、`r1-nocli-api-cli-pop`、`r1-nocli-api-api`、`r1-switch-apioff` / `r1-switch-apion`（只差开关）、`r1-switch-apion-done`、`r1-locked`、`r1-win-api`、`r1-both-cli_dark`。
+- 换装（Ocean 10-15「现在换装」；停之前问过没有没存的字）：在 `b87e86e` 上构建，命令同 §7.5；TSA 一遍过（01:04:43 – 44）；`--verify --deep --strict` 过；新二进制 `--mcp` 连真库副本 24 个工具。装前真库 v33 · ok · 工作区 29 / 项目 69 / 块 1115 · 正文 341013 · 批注 13748 / 文件 30 · 正文 150093 / 图片 4 张 764139 字节 / 跟进 19 / 回顾记录 26 / 待审 0；快照 25 个。停 GUI 71807、`--overlay` 71874（按 pid，第一次就退了；14 个 `--mcp` 没碰）。备份（桌面）`spool.before-p9c-r1-install-20261015-010728.db`、`settings.before-p9c-r1-install-20261015-010728.json`、`focus.before-p9c-r1-install-20261015-010728.json`；旧包 `~/Desktop/Spool/spool-pre-install/Spool-old-20261015-010728-pre-p9c-r1.app`。装后 sha256 `7347b717…` 和构建产物一致；主进程 91835、`--overlay` 91869 都是 01:07:29 起的，txt inode 80859824 就是新文件；`spctl` = `Unnotarized Developer ID`；stderr 只有 `[overlay] helper started` 和 `[double-tap] installed at HID/active`。真库逐项和装前一样（不迁移，快照仍 25 个）；`settings.json` 逐字节一样。没 push，没发版。
+- 待 Ocean 看一眼：周回顾那一条（他的电脑上 CLI 和 DeepSeek 都开着 ⇒ 看到的是 `r1-both-cli` 那个样子；点「API」整条换成 API 那一类，点回「本机 CLI」换回来）。
 
 ## 8. 收尾的文档动作（执行窗做）
 
