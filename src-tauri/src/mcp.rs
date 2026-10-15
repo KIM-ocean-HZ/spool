@@ -1942,10 +1942,11 @@ fn search_attachments(
         extraction_kind: Option<String>,
         readable: bool,
         extracted_text: String,
+        identity: Option<Vec<u8>>,
     }
     let cols = "a.id, a.thread_id, a.created_at, t.title, w.title,
                 a.label, a.target, a.extraction_kind, a.include_in_pack, a.ai_access,
-                a.extracted_text";
+                a.extracted_text, a.target_identity";
     let map = |r: &rusqlite::Row| -> rusqlite::Result<AttHit> {
         Ok(AttHit {
             id: r.get(0)?,
@@ -1959,6 +1960,7 @@ fn search_attachments(
             // 2026-08-19: ai_access alone. See the note above the get_blocks file gate.
             readable: r.get::<_, i64>(9)? == 1,
             extracted_text: r.get(10)?,
+            identity: r.get(11)?,
         })
     };
     // Same two paths as the block search: trigram FTS at ≥3 chars, a LIKE scan below
@@ -2000,6 +2002,7 @@ fn search_attachments(
             .collect::<Result<Vec<_>, _>>()
             .map_err(|e| e.to_string())?
     };
+    let rules = path_gate_rules();
     Ok(rows
         .into_iter()
         // The same word-boundary rule the block path uses: trigram matches substrings at
@@ -2013,6 +2016,15 @@ fn search_attachments(
             // snippet would make the permission decorative: ±80 chars around the exact phrase
             // is the part of a document somebody looking for it wants most.
             let locked = !h.readable;
+            let now = file_now(&h.target, &h.label, h.identity.as_deref(), h.readable, rules.as_ref());
+            let mut attachment = json!({
+                "label": if now.label.trim().is_empty() { &now.path } else { &now.label },
+                "target": now.path,
+                "extraction_kind": h.extraction_kind,
+            });
+            if let Some(note) = now.not_found {
+                attachment["not_found"] = json!(note);
+            }
             Some(json!({
                 "thread_id": h.thread_id,
                 "thread_title": h.thread_title,
@@ -2026,11 +2038,7 @@ fn search_attachments(
                 // broken. ⚠️ v15: a file the USER put in the project is the user's own
                 // choice of material, so it carries no source label to weigh; that is why
                 // there is no "source" here where a block hit has one.
-                "attachment": {
-                    "label": if h.label.trim().is_empty() { &h.target } else { &h.label },
-                    "target": h.target,
-                    "extraction_kind": h.extraction_kind,
-                },
+                "attachment": attachment,
                 "snippet": if locked { Value::Null } else { json!(snippet) },
                 "locked": if locked {
                     json!(t!(
@@ -3065,6 +3073,55 @@ fn get_block_original_json(conn: &Connection, block_id: &str) -> Result<String, 
     Ok(out.to_string())
 }
 
+// 2026-10-15 — where a project file is NOW, as an AI is told it (get_blocks / search_blocks).
+// Spool follows a file the user moved (P9, file_follow.rs), but only the GUI writes the follow
+// down, and only for the files it is showing; this process opens the library read-only. So
+// from a move until the user next opened that project, the column held the old path and this
+// server handed it out as it was: an AI that had just moved a dissertation's files into a
+// folder told Ocean fourteen of them were lost and offered to re-attach every one. This is the
+// look the GUI makes, without writing anything.
+struct FileNow {
+    path: String,
+    label: String,
+    /// Only for a file Spool cannot find; a moved one is simply at its new path.
+    not_found: Option<String>,
+}
+
+fn file_now(
+    target: &str,
+    label: &str,
+    identity: Option<&[u8]>,
+    ai_access: bool,
+    rules: Option<&PathGateRules>,
+) -> FileNow {
+    let s = crate::file_follow::seen(target, label, identity, ai_access, rules);
+    let not_found = match s.state {
+        "deleted" => Some(t!(
+            "这个文件已经被删掉了,不在这台电脑上。",
+            "This file has been deleted; it is no longer on this computer."
+        )),
+        "trash" => Some(t!(
+            "这个文件在废纸篓里。用户把它放回原处,Spool 就又找得到。",
+            "This file is in the Trash. Once the user puts it back, Spool finds it again."
+        )),
+        "offline" => Some(t!(
+            "这个文件在一块现在没接上的磁盘上。",
+            "This file is on a disk that is not connected right now."
+        )),
+        "held" => Some(t!(
+            "这个文件被挪进了不让 AI 碰的文件夹,要用户在 Spool 里点一下确认。",
+            "This file was moved into a folder AI is kept out of; the user confirms it in Spool."
+        )),
+        "unknown" => Some(t!(
+            "原来的位置上没有这个文件,Spool 也认不出它挪去了哪儿。用户在 Spool 里点开它,可以找一找或者重新选位置。",
+            "This file is not where it was, and Spool cannot tell where it went. The user can \
+             open it in Spool to search for it or pick its new place."
+        )),
+        _ => None,
+    };
+    FileNow { path: s.path, label: s.label, not_found }
+}
+
 fn get_blocks_json(
     conn: &Connection,
     thread_id: &str,
@@ -3337,11 +3394,15 @@ fn get_blocks_json(
     // a newer file replaced it — `superseded_by` + `superseded_at`. ⚠️ A replaced file is
     // still LISTED (it is still in the project, and the user can still open it); it is the
     // pack it leaves. `ai_readable` is still `ai_access` and nothing else.
+    //
+    // 2026-10-15: `target` / `label` are where the file is NOW (`file_follow::seen`), not the
+    // column as the GUI last wrote it — see `file_now`.
+    let rules = path_gate_rules();
     let mut att_stmt = conn
         .prepare(
             "SELECT a.id, a.kind, a.target, a.label, a.extraction_kind, a.include_in_pack,
                     a.ai_access, a.extracted_text, a.anchor_block_id, b.seq, a.added_by,
-                    a.superseded_by, a.superseded_at
+                    a.superseded_by, a.superseded_at, a.target_identity
              FROM attachments a
              LEFT JOIN blocks b ON b.id = a.anchor_block_id AND b.thread_id = a.thread_id
              WHERE a.thread_id = ?1 ORDER BY a.created_at ASC",
@@ -3353,13 +3414,20 @@ fn get_blocks_json(
             let inlined = r.get::<_, i64>(5)? == 1;
             let readable = r.get::<_, i64>(6)? == 1;
             let anchor_seq: Option<i64> = r.get(9)?;
+            let now = file_now(
+                &r.get::<_, String>(2)?,
+                &r.get::<_, String>(3)?,
+                r.get::<_, Option<Vec<u8>>>(13)?.as_deref(),
+                readable,
+                rules.as_ref(),
+            );
             let mut a = json!({
                 // The parameter request_file_access takes. Nothing else in the payload can
                 // name a file, so without this an AI could see a file and never ask for it.
                 "attachment_id": r.get::<_, String>(0)?,
                 "kind": r.get::<_, String>(1)?,
-                "target": r.get::<_, String>(2)?,
-                "label": r.get::<_, String>(3)?,
+                "target": now.path,
+                "label": now.label,
                 "extraction_kind": r.get::<_, Option<String>>(4)?,
                 "inlined_in_pack": inlined,
                 "extracted_chars": extracted.as_deref().map(|t| t.chars().count()),
@@ -3373,6 +3441,9 @@ fn get_blocks_json(
             if let Some(by) = r.get::<_, Option<String>>(11)? {
                 a["superseded_by"] = json!(by);
                 a["superseded_at"] = json!(r.get::<_, Option<i64>>(12)?.map(format_pack_time));
+            }
+            if let Some(note) = now.not_found {
+                a["not_found"] = json!(note);
             }
             if include_extracted_text {
                 a["extracted_text"] = match (&extracted, readable) {
@@ -3987,6 +4058,7 @@ fn thread_resources(conn: &Connection) -> Result<Vec<Value>, String> {
 // ⚠️ v31 (P6, 2026-10-07)：新建 `file_proposals`（AI 提的文件排队等点头），这边的两个新工具往里写。
 // ⚠️ v32 (P7, 2026-10-07)：`blocks.replaced_by_block_id`（旧块记住被谁取代）、`supersede_proposals.suggested_kind`、新表 `block_images`。
 // ⚠️ v33 (P9, 2026-10-10)：`attachments` 加 `target_identity` / `target_notice` 两个可空列；这边读文件的查询都是点名列的，只跟版本号。
+//   （10-15 起 get_blocks / search_blocks 也读 `target_identity`，报文件现在在哪 —— 见 `file_now`。）
 const EXPECTED_SCHEMA_VERSION: i64 = 33;
 
 // Name reported by the client at initialize (clientInfo.name); feeds the source label.
@@ -7368,7 +7440,7 @@ fn tools_descriptor() -> Value {
         },
         {
             "name": "get_blocks",
-            "description": "Page through one project's blocks in chronological order, as JSON (full content, annotation, source, pinned, timestamps, plus each block's attachments with the size of any extracted file text). The middle granularity between a search snippet and a full pack, and the way to read a project whose pack is over budget. To read around a search hit, pass its block_id as around_block_id (with optional context, default 3 each side) — this centers the page and returns anchor_position; offset/limit are ignored. Optional filters (pinned / has_annotation / source_contains / stale) AND-combine and narrow the page + total; they cannot be combined with around_block_id. Two v13 fields on every row: stale_at is set when the USER marked that block as no longer valid — packs and digests stop carrying it, this tool still returns it, and you must not relay it as a current fact; ref_kind says what the row's ref_block_id means — 'cites' (builds on it, the default and what null means), 'supersedes' (replaces it; that block is stale), 'corrects' (one point inside it is wrong, the rest of it still stands). A replacement the user approved is now recorded on the OLD block instead: a stale block a newer one replaced wholesale carries replaced_by {seq, block_id}, and the newer block keeps its own ref_kind (so one block can replace several and still correct another); 'supersedes' only remains on rows from before that change. A block holding pictures carries `images`: each one's path (a copy Spool keeps on this computer — open it if you can read local files), format, width, height and size_bytes; its content, like a pack, shows each picture where it sits in the text as a Markdown image, `![caption](<path>)`. Each file in `files` also says where it hangs (attached_to: \"#12\" or \"project\"), who added it (added_by: \"user\", or the label of the AI whose proposal the user approved), and — only once a newer version replaced it — superseded_by and superseded_at: a replaced file is still listed here, but it is no longer in packs.",
+            "description": "Page through one project's blocks in chronological order, as JSON (full content, annotation, source, pinned, timestamps, plus each block's attachments with the size of any extracted file text). The middle granularity between a search snippet and a full pack, and the way to read a project whose pack is over budget. To read around a search hit, pass its block_id as around_block_id (with optional context, default 3 each side) — this centers the page and returns anchor_position; offset/limit are ignored. Optional filters (pinned / has_annotation / source_contains / stale) AND-combine and narrow the page + total; they cannot be combined with around_block_id. Two v13 fields on every row: stale_at is set when the USER marked that block as no longer valid — packs and digests stop carrying it, this tool still returns it, and you must not relay it as a current fact; ref_kind says what the row's ref_block_id means — 'cites' (builds on it, the default and what null means), 'supersedes' (replaces it; that block is stale), 'corrects' (one point inside it is wrong, the rest of it still stands). A replacement the user approved is now recorded on the OLD block instead: a stale block a newer one replaced wholesale carries replaced_by {seq, block_id}, and the newer block keeps its own ref_kind (so one block can replace several and still correct another); 'supersedes' only remains on rows from before that change. A block holding pictures carries `images`: each one's path (a copy Spool keeps on this computer — open it if you can read local files), format, width, height and size_bytes; its content, like a pack, shows each picture where it sits in the text as a Markdown image, `![caption](<path>)`. Each file in `files` also says where it hangs (attached_to: \"#12\" or \"project\"), who added it (added_by: \"user\", or the label of the AI whose proposal the user approved), and — only once a newer version replaced it — superseded_by and superseded_at: a replaced file is still listed here, but it is no longer in packs. A file's `target` is where it is now: Spool follows a file the user moves or renames, so a moved file needs nothing re-attached or replaced; a file Spool cannot find carries `not_found`, saying why.",
             "annotations": { "readOnlyHint": true },
             "inputSchema": {
                 "type": "object",
@@ -7612,7 +7684,7 @@ fn tools_descriptor() -> Value {
         {
             // P6-2 (Ocean 2026-09-30 §9.2 第 10 条 + 10-06 第 34 条).
             "name": "propose_replace_file",
-            "description": "Propose that a NEW file on the user's computer replaces an OLDER file already in one of their projects — a v2 of the same document. This replaces NOTHING: it puts a card on Spool's review screen naming the old file and showing the new one's full path, size, who proposed it and your reason. If the user approves, the new file is attached where the old one hung (the same block, or the project) and readable to AI, and the old one is kept, marked as replaced: it leaves the pack, still shows in get_blocks with superseded_by, and the user can still open it. Tell the user a replacement is waiting for them in Spool; never that you replaced anything. The old file is named by its attachment_id (from get_blocks' `files`); the new one by its full path, refused under the same rules as propose_attach_file (folders, hidden folders, system folders, ~/Library except iCloud Drive and ~/Library/CloudStorage). Use request_file_access instead when all you want is to READ a file that is already there. Unanswered proposals expire after 7 days. Requires MCP writes enabled in Spool's settings.",
+            "description": "Propose that a NEW file on the user's computer replaces an OLDER file already in one of their projects — a v2 of the same document. This replaces NOTHING: it puts a card on Spool's review screen naming the old file and showing the new one's full path, size, who proposed it and your reason. If the user approves, the new file is attached where the old one hung (the same block, or the project) and readable to AI, and the old one is kept, marked as replaced: it leaves the pack, still shows in get_blocks with superseded_by, and the user can still open it. Tell the user a replacement is waiting for them in Spool; never that you replaced anything. The old file is named by its attachment_id (from get_blocks' `files`); the new one by its full path, refused under the same rules as propose_attach_file (folders, hidden folders, system folders, ~/Library except iCloud Drive and ~/Library/CloudStorage). Use request_file_access instead when all you want is to READ a file that is already there. Not for a file that only moved or was renamed: Spool follows it, and get_blocks already shows its new path. Unanswered proposals expire after 7 days. Requires MCP writes enabled in Spool's settings.",
             "annotations": { "readOnlyHint": false, "destructiveHint": false, "idempotentHint": false },
             "inputSchema": {
                 "type": "object",
@@ -13486,6 +13558,78 @@ mod tests {
         assert!(kept.contains("the long original"), "{kept}");
 
         assert!(get_block_original_json(&conn, "nope").is_err());
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    // 2026-10-15 — an AI moved a dissertation's files into a folder, asked Spool, was handed
+    // the paths the GUI had last written, and told Ocean fourteen files were lost. The listing
+    // and the search now say where each file is, and the library is left exactly as it was
+    // (the GUI writes the follow down the next time it shows the project).
+    #[cfg(any(target_os = "macos", windows))]
+    #[test]
+    fn a_moved_file_is_reported_where_it_is_now_without_writing_the_library() {
+        store_lang(Lang::Zh);
+        let tmp = std::env::temp_dir().join(format!("spool-file-now-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(tmp.join("Ethic")).unwrap();
+        let tmp = tmp.canonicalize().unwrap();
+        let old = tmp.join("CS_REC_1.docx");
+        let gone = tmp.join("CS_REC_2.docx");
+        std::fs::write(&old, "x").unwrap();
+        std::fs::write(&gone, "y").unwrap();
+        let conn = Connection::open(tmp.join("spool.db")).unwrap();
+        conn.execute_batch(include_str!("../../src/lib/db/schema.sql")).unwrap();
+        conn.execute_batch(&format!(
+            "PRAGMA user_version = {EXPECTED_SCHEMA_VERSION};
+             INSERT INTO workspaces (id, title, sort_order, created_at, updated_at)
+               VALUES ('ws1', '毕设', 0, 1, 1);
+             INSERT INTO threads (id, workspace_id, title, status, is_capture_target,
+                                  created_at, updated_at)
+               VALUES ('th1', 'ws1', '伦理申请', 'active', 0, 1, 1);
+             INSERT INTO attachments (id, thread_id, kind, target, label, extracted_text,
+                                      extraction_kind, ai_access, created_at)
+               VALUES ('a_moved', 'th1', 'file', '{old}', 'CS_REC_1.docx', '伦理审查表第一类', 'docx', 1, 1),
+                      ('a_gone', 'th1', 'file', '{gone}', 'CS_REC_2.docx', '伦理审查表第二类', 'docx', 1, 2),
+                      ('a_never', 'th1', 'file', '/x/没记过身份.pdf', '没记过身份.pdf', NULL, NULL, 0, 3);",
+            old = old.display(),
+            gone = gone.display()
+        ))
+        .unwrap();
+        for (id, p) in [("a_moved", &old), ("a_gone", &gone)] {
+            conn.execute(
+                "UPDATE attachments SET target_identity = ?1 WHERE id = ?2",
+                rusqlite::params![crate::file_identity::record(p).unwrap(), id],
+            )
+            .unwrap();
+        }
+        let library = |c: &Connection| -> Vec<String> {
+            let mut st = c
+                .prepare("SELECT id || '|' || target || '|' || label || '|' || IFNULL(target_notice, '') FROM attachments ORDER BY id")
+                .unwrap();
+            st.query_map([], |r| r.get(0)).unwrap().collect::<Result<_, _>>().unwrap()
+        };
+        let moved = tmp.join("Ethic").join("CS_REC_1.docx");
+        std::fs::rename(&old, &moved).unwrap();
+        std::fs::remove_file(&gone).unwrap();
+        let before = library(&conn);
+
+        let read: Value = serde_json::from_str(
+            &get_blocks_json(&conn, "th1", None, None, None, None, &NO_FILTERS, false).unwrap(),
+        )
+        .unwrap();
+        let file = |id: &str| read["files"].as_array().unwrap().iter().find(|f| f["attachment_id"] == id).unwrap().clone();
+        assert_eq!(file("a_moved")["target"], moved.display().to_string());
+        assert!(file("a_moved")["not_found"].is_null(), "a moved file is not a lost one");
+        assert_eq!(file("a_gone")["target"], gone.display().to_string());
+        assert!(file("a_gone")["not_found"].as_str().unwrap().contains("删掉"));
+        assert!(file("a_never")["not_found"].as_str().unwrap().contains("认不出"));
+
+        let found: Value = serde_json::from_str(&search_blocks_json(&conn, "伦理审查表第一类", None, None).unwrap()).unwrap();
+        let hit = &found["attachment_hits"][0]["attachment"];
+        assert_eq!(hit["target"], moved.display().to_string());
+        assert!(hit["not_found"].is_null());
+
+        assert_eq!(library(&conn), before, "reading wrote to the library");
         let _ = std::fs::remove_dir_all(&tmp);
     }
 

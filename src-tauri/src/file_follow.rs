@@ -105,15 +105,97 @@ fn follow_label(old: usize, new: usize) -> String {
     format!("label = CASE WHEN label = ?{old} THEN ?{new} ELSE label END")
 }
 
-/// Look at one file and write down what the look learnt (a first identity, a follow, a
-/// 「确认过」 that no longer holds). None when there is no such file in the library.
-///
-/// ⚠️ `held`: the P6 path gate (hidden folders, system folders, `~/Library`) is about paths an
+/// Where a file is now — the decision a look makes, before anything is written down.
+enum Where {
+    InPlace,
+    Offline,
+    Unknown,
+    Deleted,
+    Trash(std::path::PathBuf),
+    Held(std::path::PathBuf),
+    Moved(std::path::PathBuf),
+}
+
+/// ⚠️ `Held`: the P6 path gate (hidden folders, system folders, `~/Library`) is about paths an
 /// AI PROPOSES; a file the user attached is followed without it. The one case the taskbook
 /// stops at (第 3 条「有例外要停下来问」) is a file AI may read landing somewhere that gate
 /// keeps AI out of when it was not there before — following it would hand that path to the AI
 /// without anyone choosing it. Until Ocean decides, such a file is NOT followed: it is shown
 /// where it was found, and one click (「是这个」 → `relocate`) follows it.
+fn where_now(
+    path: &Path,
+    identity: Option<&[u8]>,
+    ai_access: bool,
+    rules: Option<&PathGateRules>,
+) -> Where {
+    if path.exists() {
+        return Where::InPlace;
+    }
+    // ⚠️ Before the identity: an unplugged disk is not a deleted file, and resolving a bookmark
+    // into a disk that is not there would answer 「删掉了」.
+    if file_identity::disk_offline(path) {
+        return Where::Offline;
+    }
+    let Some(identity) = identity.filter(|i| file_identity::usable(i)) else {
+        return Where::Unknown;
+    };
+    let found = match file_identity::resolve(identity) {
+        Resolved::Gone => return Where::Deleted,
+        Resolved::At(p) => p,
+    };
+    if file_identity::in_trash(&found) {
+        // Not followed: it is gone from where the user keeps things. 「放回原处」 brings it
+        // back to the recorded path, and the next look finds it in place.
+        return Where::Trash(found);
+    }
+    if let Some(rules) = rules {
+        let gated = |p: &Path| path_gate_stop(p, rules).is_some();
+        if ai_access && gated(&found) && !gated(path) {
+            return Where::Held(found);
+        }
+    }
+    Where::Moved(found)
+}
+
+/// A file as an AI is told about it (get_blocks, search_blocks): the same look, made without
+/// writing — the MCP server opens the library read-only, and the GUI writes the follow down
+/// the next time it shows the file. Until then the library still holds the old path, and an
+/// AI handed it told Ocean fourteen moved files were lost (2026-10-15).
+pub(crate) struct Seen {
+    /// Where the file is now: after a move, the new path; otherwise the recorded one.
+    pub path: String,
+    /// Follows a rename the way `look` does (`follow_label`): only a label that was the old name.
+    pub label: String,
+    /// `look`'s state names, minus `moved` (that one comes back as `in_place` at its new path).
+    pub state: &'static str,
+}
+
+pub(crate) fn seen(
+    target: &str,
+    label: &str,
+    identity: Option<&[u8]>,
+    ai_access: bool,
+    rules: Option<&PathGateRules>,
+) -> Seen {
+    let kept = |state| Seen { path: target.to_string(), label: label.to_string(), state };
+    match where_now(Path::new(target), identity, ai_access, rules) {
+        Where::InPlace => kept("in_place"),
+        Where::Offline => kept("offline"),
+        Where::Unknown => kept("unknown"),
+        Where::Deleted => kept("deleted"),
+        Where::Trash(_) => kept("trash"),
+        // ⛔ Not the found path: that is the place AI is kept out of.
+        Where::Held(_) => kept("held"),
+        Where::Moved(found) => {
+            let path = path_text(&found);
+            let label = if label == file_name_of(target) { file_name_of(&path) } else { label.to_string() };
+            Seen { path, label, state: "in_place" }
+        }
+    }
+}
+
+/// Look at one file and write down what the look learnt (a first identity, a follow, a
+/// 「确认过」 that no longer holds). None when there is no such file in the library.
 pub(crate) fn look(
     conn: &Connection,
     id: &str,
@@ -131,47 +213,32 @@ pub(crate) fn look(
         notice,
     };
 
-    if path.exists() {
-        // Recorded on first sight for a file from before v33 (or one the identity no longer
-        // describes — rewritten by an editor, or a different file put at that path).
-        let fresh = match identity {
-            Some(i) if file_identity::matches(path, i) => None,
-            _ => file_identity::record(path),
-        };
-        let found_again = notice == Some(Notice::Dismissed);
-        let notice_after = if found_again { None } else { row.notice.clone() };
-        if fresh.is_some() || found_again {
-            conn.execute(
-                "UPDATE attachments SET target_identity = COALESCE(?1, target_identity), target_notice = ?2 WHERE id = ?3",
-                params![fresh, notice_after, id],
-            )
-            .map_err(|e| e.to_string())?;
+    let found = match where_now(path, identity, row.ai_access, rules) {
+        Where::InPlace => {
+            // Recorded on first sight for a file from before v33 (or one the identity no longer
+            // describes — rewritten by an editor, or a different file put at that path).
+            let fresh = match identity {
+                Some(i) if file_identity::matches(path, i) => None,
+                _ => file_identity::record(path),
+            };
+            let found_again = notice == Some(Notice::Dismissed);
+            let notice_after = if found_again { None } else { row.notice.clone() };
+            if fresh.is_some() || found_again {
+                conn.execute(
+                    "UPDATE attachments SET target_identity = COALESCE(?1, target_identity), target_notice = ?2 WHERE id = ?3",
+                    params![fresh, notice_after, id],
+                )
+                .map_err(|e| e.to_string())?;
+            }
+            return Ok(Some(state("in_place", None, notice_after)));
         }
-        return Ok(Some(state("in_place", None, notice_after)));
-    }
-    // ⚠️ Before the identity: an unplugged disk is not a deleted file, and resolving a bookmark
-    // into a disk that is not there would answer 「删掉了」.
-    if file_identity::disk_offline(path) {
-        return Ok(Some(state("offline", None, row.notice.clone())));
-    }
-    let Some(identity) = identity else {
-        return Ok(Some(state("unknown", None, row.notice.clone())));
+        Where::Offline => return Ok(Some(state("offline", None, row.notice.clone()))),
+        Where::Unknown => return Ok(Some(state("unknown", None, row.notice.clone()))),
+        Where::Deleted => return Ok(Some(state("deleted", None, row.notice.clone()))),
+        Where::Trash(p) => return Ok(Some(state("trash", Some(path_text(&p)), row.notice.clone()))),
+        Where::Held(p) => return Ok(Some(state("held", Some(path_text(&p)), row.notice.clone()))),
+        Where::Moved(p) => p,
     };
-    let found = match file_identity::resolve(identity) {
-        Resolved::Gone => return Ok(Some(state("deleted", None, row.notice.clone()))),
-        Resolved::At(p) => p,
-    };
-    if file_identity::in_trash(&found) {
-        // Not followed: it is gone from where the user keeps things. 「放回原处」 brings it
-        // back to the recorded path, and the next look finds it in place.
-        return Ok(Some(state("trash", Some(path_text(&found)), row.notice.clone())));
-    }
-    if let Some(rules) = rules {
-        let gated = |p: &Path| path_gate_stop(p, rules).is_some();
-        if row.ai_access && gated(&found) && !gated(path) {
-            return Ok(Some(state("held", Some(path_text(&found)), row.notice.clone())));
-        }
-    }
     let from = match notice {
         Some(Notice::Moved { from }) => from,
         _ => row.target.clone(),
@@ -552,6 +619,50 @@ mod tests {
         // Not readable by AI: followed like any other file.
         conn.execute("UPDATE attachments SET ai_access = 0 WHERE id = 'a'", []).unwrap();
         assert_eq!(look(&conn, "a", Some(&rules)).unwrap().unwrap().state, "moved");
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    // 2026-10-15: what the MCP server reports. It has no connection to write with, so the
+    // follow it reports is the GUI's to write down later.
+    #[cfg(any(target_os = "macos", windows))]
+    #[test]
+    fn seen_reports_where_a_file_is_now_and_never_the_place_ai_is_kept_out_of() {
+        let home = temp("seen-home");
+        std::fs::create_dir_all(home.join("Desktop/dissertation-doc/Ethic")).unwrap();
+        std::fs::create_dir_all(home.join("Library/Caches")).unwrap();
+        let f = home.join("Desktop/CS_REC_1.docx");
+        std::fs::write(&f, b"x").unwrap();
+        let old = path_text(&f);
+        let identity = file_identity::record(&f);
+        let rules = PathGateRules {
+            home: home.clone(),
+            system_roots: vec![],
+            home_private: "Library",
+            home_private_open: &[],
+        };
+        let seen_now = |label: &str| seen(&old, label, identity.as_deref(), true, Some(&rules));
+
+        let s = seen_now("CS_REC_1.docx");
+        assert_eq!((s.path.as_str(), s.state), (old.as_str(), "in_place"));
+
+        let moved = home.join("Desktop/dissertation-doc/Ethic/CS_REC_1.docx");
+        std::fs::rename(&f, &moved).unwrap();
+        let s = seen_now("CS_REC_1.docx");
+        assert_eq!((s.path, s.label, s.state), (path_text(&moved), "CS_REC_1.docx".to_string(), "in_place"));
+
+        let renamed = home.join("Desktop/dissertation-doc/Ethic/伦理申请表.docx");
+        std::fs::rename(&moved, &renamed).unwrap();
+        assert_eq!(seen_now("CS_REC_1.docx").label, "伦理申请表.docx", "the label was the old file name");
+        assert_eq!(seen_now("第一张表").label, "第一张表", "a name the user typed stays");
+
+        let hidden = home.join("Library/Caches/伦理申请表.docx");
+        std::fs::rename(&renamed, &hidden).unwrap();
+        let s = seen_now("CS_REC_1.docx");
+        assert_eq!((s.path.as_str(), s.state), (old.as_str(), "held"), "the gated path is not handed out");
+
+        std::fs::remove_file(&hidden).unwrap();
+        let s = seen_now("CS_REC_1.docx");
+        assert_eq!((s.path.as_str(), s.state), (old.as_str(), "deleted"));
         let _ = std::fs::remove_dir_all(&home);
     }
 
