@@ -15,6 +15,7 @@ const th = (id: string, workspaceId: string): Thread => ({
   updatedAt: 0,
   completedAt: null,
   autoMaintain: null,
+  isPrivate: false,
 });
 
 const all = [th('a', '升学'), th('b', '升学'), th('c', '求职')];

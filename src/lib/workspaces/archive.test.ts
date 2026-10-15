@@ -31,6 +31,7 @@ const th = (
   updatedAt: 0,
   completedAt: null,
   autoMaintain: null,
+  isPrivate: false,
   ...extra,
 });
 

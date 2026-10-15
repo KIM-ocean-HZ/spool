@@ -66,7 +66,12 @@ CREATE TABLE IF NOT EXISTS threads (
   -- screen, and only their click moves it across.
   follow_up_brief_suggested    TEXT,
   follow_up_brief_suggested_by TEXT,     -- the client that proposed it, for the review card
-  follow_up_brief_suggested_at INTEGER
+  follow_up_brief_suggested_at INTEGER,
+  -- v34 (P9E, Ocean 2026-10-15 第 119 – 123 条): 1 = a private project. The AIs connected
+  -- through Spool's MCP cannot read it and are not told it exists (they may still write into
+  -- it), and none of Spool's own AI features touch it. The user sees and uses it as usual.
+  -- ⚠️ It keeps out what Spool hands to an AI — not an AI that reads this file off the disk.
+  private            INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE INDEX IF NOT EXISTS idx_threads_workspace

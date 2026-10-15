@@ -23,6 +23,7 @@ const thread = (patch: Partial<Thread>): Thread => ({
   updatedAt: NOW,
   completedAt: null,
   autoMaintain: null,
+  isPrivate: false,
   ...patch,
 });
 

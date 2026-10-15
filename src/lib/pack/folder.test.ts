@@ -28,6 +28,7 @@ const thread = (id: string, title: string, opts: Partial<Thread> = {}): Thread =
   status: 'active',
   isCaptureTarget: false,
   autoMaintain: null,
+  isPrivate: false,
   createdAt: NOW,
   updatedAt: NOW,
   completedAt: null,

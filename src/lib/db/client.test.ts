@@ -154,6 +154,15 @@ const sansV33Sql = (r: { name: string; sql: string | null }) => ({
   sql: r.sql?.replace(/, target_identity BLOB, target_notice TEXT/g, '') ?? null,
 });
 
+// v34's one column, off a `threads` row, and the text its ADD COLUMN appends to the CREATE
+// statement — every migration test that rewinds below v34 walks past it.
+const stripV34 = (r: Record<string, unknown>): Record<string, unknown> =>
+  Object.fromEntries(Object.entries(r).filter(([k]) => k !== 'private'));
+const sansV34Sql = (r: { name: string; sql: string | null }) => ({
+  name: r.name,
+  sql: r.sql?.replace(/, private INTEGER NOT NULL DEFAULT 0/g, '') ?? null,
+});
+
 // v19's three columns, off a `threads` row — the same job blocksSansV13 does for blocks:
 // a test that rewinds below v19 compares rows across a migration that legitimately added
 // them, and only these three may differ.
@@ -194,11 +203,22 @@ const downgradeToV13 = (handle: Sqlite): void => {
   `);
 };
 
+// Rewind past v34: no project could be kept from the AIs connected through Spool.
+// ⚠️ 这一句就是 v34 的「能回滚」——`add-thread-private` 只加了一个默认 0 的列，⛔ 一个字的既有
+// 数据都没动；退回来丢的只是「哪几个项目是私密的」（全部回到公开）。
+const downgradeToV33 = (handle: Sqlite): void => {
+  handle.exec(`
+    ALTER TABLE threads DROP COLUMN private;
+    PRAGMA user_version = 33;
+  `);
+};
+
 // Rewind past v33: a file was known by its path alone, and nothing remembered that Spool had
 // followed it somewhere or that the user had been told it was gone.
 // ⚠️ 这两句就是 v33 的「能回滚」——`add-attachment-identity-and-notice` 只加了两个可空列，
 // ⛔ 一个字的既有数据都没动；退回来丢的只是文件的身份和「跟上了 / 确认过」那两种标记。
 const downgradeToV32 = (handle: Sqlite): void => {
+  downgradeToV33(handle);
   handle.exec(`
     ALTER TABLE attachments DROP COLUMN target_identity;
     ALTER TABLE attachments DROP COLUMN target_notice;
@@ -766,7 +786,7 @@ describe('migrateSchema registry (§19.3)', () => {
       // step's business, asserted there.
       (handle.prepare('SELECT * FROM threads').all() as Record<string, unknown>[]).map((r) => {
         const { follow_up_brief, follow_up_state, auto_maintain, summary_at, ...rest } =
-          stripBriefSuggestion(r);
+          stripV34(stripBriefSuggestion(r));
         void follow_up_brief;
         void follow_up_state;
         void auto_maintain;
@@ -807,7 +827,7 @@ describe('migrateSchema registry (§19.3)', () => {
     expect(blocksSansV13(handle)).toEqual(blocksBefore);
     expect(
       (handle.prepare('SELECT * FROM threads').all() as Record<string, unknown>[]).map((r) => {
-        const { auto_maintain, summary_at, ...rest } = stripBriefSuggestion(r);
+        const { auto_maintain, summary_at, ...rest } = stripV34(stripBriefSuggestion(r));
         void auto_maintain;
         void summary_at;
         return rest;
@@ -987,7 +1007,7 @@ describe('migrateSchema registry (§19.3)', () => {
     expect(
       (handle.prepare('SELECT * FROM blocks').all() as Record<string, unknown>[]).map((r) => stripV32(stripV29(stripV28(r)))),
     ).toEqual(blocksBefore);
-    expect(handle.prepare('SELECT * FROM threads').all()).toEqual(threadsBefore);
+    expect(handle.prepare('SELECT * FROM threads').all().map(stripV34)).toEqual(threadsBefore);
   });
 
   // Q1 (WORKPLAN §2.Q1). Three nullable columns, no backfill, existing rows otherwise
@@ -1153,7 +1173,7 @@ describe('migrateSchema registry (§19.3)', () => {
         .get(),
     ).toEqual({ c: 1 });
     for (const t of tables) {
-      expect(handle.prepare(`SELECT * FROM ${t} ORDER BY rowid`).all().map(stripV32).map(stripV33), t).toEqual(
+      expect(handle.prepare(`SELECT * FROM ${t} ORDER BY rowid`).all().map(stripV32).map(stripV33).map(stripV34), t).toEqual(
         before[t],
       );
     }
@@ -1168,7 +1188,7 @@ describe('migrateSchema registry (§19.3)', () => {
           .all() as { name: string; sql: string | null }[]
       )
         .map(sansV32Sql)
-        .map(sansV33Sql),
+        .map(sansV33Sql).map(sansV34Sql),
     ).toEqual(schemaBefore);
   });
 
@@ -1221,7 +1241,7 @@ describe('migrateSchema registry (§19.3)', () => {
     // 每张表逐行相等（加了列的表去掉新列再比；v33 接着走过去，它那两列另有一条测试盯着）；
     // v32 以前那条 `supersedes` 一个字没动。
     for (const t of tables) {
-      expect(handle.prepare(`SELECT * FROM ${t} ORDER BY rowid`).all().map(stripV32).map(stripV33), t).toEqual(
+      expect(handle.prepare(`SELECT * FROM ${t} ORDER BY rowid`).all().map(stripV32).map(stripV33).map(stripV34), t).toEqual(
         before[t],
       );
     }
@@ -1232,7 +1252,7 @@ describe('migrateSchema registry (§19.3)', () => {
           name: string;
           sql: string | null;
         }[]
-      ).map(sansV33Sql),
+      ).map(sansV33Sql).map(sansV34Sql),
     ).toEqual(schemaBefore);
   });
 
@@ -1275,7 +1295,6 @@ describe('migrateSchema registry (§19.3)', () => {
 
     expect(fresh).toBe(false);
     expect(userVersion(handle)).toBe(CURRENT_SCHEMA_VERSION);
-    expect(CURRENT_SCHEMA_VERSION).toBe(33);
     const cols = columnNames(handle, 'attachments');
     expect(cols.slice(-2)).toEqual(V33_ATTACHMENT_COLS);
     expect(
@@ -1288,12 +1307,18 @@ describe('migrateSchema registry (§19.3)', () => {
     ).toEqual({ t: 'null' });
     // 每张表逐行相等（attachments 去掉两列新列再比）。
     for (const t of tables) {
-      expect(handle.prepare(`SELECT * FROM ${t} ORDER BY rowid`).all().map(stripV33), t).toEqual(before[t]);
+      expect(handle.prepare(`SELECT * FROM ${t} ORDER BY rowid`).all().map(stripV33).map(stripV34), t).toEqual(before[t]);
     }
     // ⛔ 只许两句 ADD COLUMN：别的表、索引、触发器的建表语句一个字没变，attachments 只在尾巴上多两列。
-    expect(handle.prepare("SELECT name, sql FROM sqlite_master WHERE name != 'attachments' ORDER BY name").all()).toEqual(
-      schemaBefore,
-    );
+    // （v34 接着走过去，threads 尾巴上那一列另有测试盯着，这里先抹掉。）
+    expect(
+      (
+        handle.prepare("SELECT name, sql FROM sqlite_master WHERE name != 'attachments' ORDER BY name").all() as {
+          name: string;
+          sql: string | null;
+        }[]
+      ).map(sansV34Sql),
+    ).toEqual(schemaBefore);
     expect(
       sansV33Sql({
         name: 'attachments',
@@ -1311,13 +1336,85 @@ describe('migrateSchema registry (§19.3)', () => {
 
     await __migrateSchemaForTest(db);
 
-    expect(userVersion(handle)).toBe(33);
+    expect(userVersion(handle)).toBe(CURRENT_SCHEMA_VERSION);
     expect(columnNames(handle, 'attachments').slice(-2)).toEqual(V33_ATTACHMENT_COLS);
   });
 
   it('a fresh install builds the two v33 columns straight from schema.sql', () => {
     applySchema(handle);
     expect(columnNames(handle, 'attachments').slice(-2)).toEqual(V33_ATTACHMENT_COLS);
+  });
+
+  // P9E-1 (Ocean 2026-10-15 第 119 条). 一句 ADD COLUMN，默认 0：迁移之后每个项目都是公开的
+  // （⛔ 迁移不替用户把任何项目藏起来），别的表、别的列一个字节没动。
+  it('v33 → v34 adds threads.private = 0 on every project and leaves every row as it was', async () => {
+    applySchema(handle);
+    downgradeToV33(handle);
+    seedUserData(handle);
+    handle.exec(
+      `INSERT INTO threads (id, workspace_id, title, status, created_at, updated_at, deleted_at)
+         VALUES ('t2', 'w1', 'done one', 'done', ${NOW}, ${NOW}, NULL),
+                ('t3', 'w1', 'deleted one', 'active', ${NOW}, ${NOW}, ${NOW})`,
+    );
+    const tables = (
+      handle
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE '%fts%' ORDER BY name")
+        .all() as { name: string }[]
+    ).map((r) => r.name);
+    const before = Object.fromEntries(
+      tables.map((t) => [t, handle.prepare(`SELECT * FROM ${t} ORDER BY rowid`).all()]),
+    );
+    const schemaBefore = handle
+      .prepare("SELECT name, sql FROM sqlite_master WHERE name != 'threads' ORDER BY name")
+      .all();
+    const threadsSqlBefore = handle
+      .prepare("SELECT sql FROM sqlite_master WHERE name = 'threads'")
+      .get() as { sql: string };
+
+    const fresh = await __migrateSchemaForTest(db);
+
+    expect(fresh).toBe(false);
+    expect(userVersion(handle)).toBe(CURRENT_SCHEMA_VERSION);
+    expect(CURRENT_SCHEMA_VERSION).toBe(34);
+    expect(columnNames(handle, 'threads').slice(-1)).toEqual(['private']);
+    expect(handle.prepare('SELECT id, private FROM threads ORDER BY rowid').all()).toEqual([
+      { id: 't1', private: 0 },
+      { id: 't2', private: 0 },
+      { id: 't3', private: 0 },
+    ]);
+    for (const t of tables) {
+      expect(handle.prepare(`SELECT * FROM ${t} ORDER BY rowid`).all().map(stripV34), t).toEqual(before[t]);
+    }
+    // ⛔ 只许一句 ADD COLUMN：别的表、索引、触发器的建表语句一个字没变，threads 只在尾巴上多一列。
+    expect(handle.prepare("SELECT name, sql FROM sqlite_master WHERE name != 'threads' ORDER BY name").all()).toEqual(
+      schemaBefore,
+    );
+    expect(
+      sansV34Sql({
+        name: 'threads',
+        sql: (handle.prepare("SELECT sql FROM sqlite_master WHERE name = 'threads'").get() as { sql: string }).sql,
+      }).sql,
+    ).toBe(threadsSqlBefore.sql);
+  });
+
+  it('v33 → v34 is re-runnable after a half-finished pass', async () => {
+    applySchema(handle);
+    downgradeToV33(handle);
+    seedUserData(handle);
+    // Half a pass: the column went in, the version stamp did not.
+    handle.exec('ALTER TABLE threads ADD COLUMN private INTEGER NOT NULL DEFAULT 0');
+
+    await __migrateSchemaForTest(db);
+
+    expect(userVersion(handle)).toBe(34);
+    expect(columnNames(handle, 'threads').filter((c) => c === 'private')).toEqual(['private']);
+  });
+
+  it('a fresh install builds threads.private straight from schema.sql, defaulting to 0', () => {
+    applySchema(handle);
+    expect(columnNames(handle, 'threads').slice(-1)).toEqual(['private']);
+    seedUserData(handle);
+    expect(handle.prepare("SELECT private FROM threads WHERE id = 't1'").get()).toEqual({ private: 0 });
   });
 
   // DESIGN_PROJECT_FILES §3.4 (phase three). The queue starts empty and grants nothing: a
@@ -1401,7 +1498,7 @@ describe('migrateSchema registry (§19.3)', () => {
     // ⚠️ The original text is still exactly where it was. Nothing in the app reads
     // `follow_up_brief` after this step, and it is deliberately not cleared: if the split
     // above is ever wrong, what the user actually approved is still sitting there.
-    expect(handle.prepare('SELECT * FROM threads').all()).toEqual(threadsBefore);
+    expect(handle.prepare('SELECT * FROM threads').all().map(stripV34)).toEqual(threadsBefore);
     expect(
       (handle.prepare('SELECT * FROM blocks').all() as Record<string, unknown>[]).map(
         (r: Record<string, unknown>) => stripV32(stripV29(stripV28(stripGist(stripCompression(r))))),

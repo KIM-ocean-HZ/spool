@@ -19,6 +19,7 @@ const thread: Thread = {
   status: 'active',
   isCaptureTarget: false,
   autoMaintain: null,
+  isPrivate: false,
   createdAt: NOW,
   updatedAt: NOW,
   completedAt: null,

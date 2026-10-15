@@ -19,6 +19,9 @@ export interface Thread {
   /** DESIGN_WORKBENCH §4.3: null = the user has not said, so the master switch decides;
    *  false = never maintain this project automatically, whatever the switch says. */
   autoMaintain: boolean | null;
+  /** v34 (P9E): the AIs connected through Spool cannot read this project or see that it
+   *  exists, and Spool's own AI features leave it alone. The user's own view is unchanged. */
+  isPrivate: boolean;
 }
 
 export type ThreadPatch = Partial<
@@ -31,6 +34,7 @@ export type ThreadPatch = Partial<
     | 'status'
     | 'workspaceId'
     | 'completedAt'
+    | 'isPrivate'
   >
 >;
 
@@ -47,6 +51,7 @@ interface Row {
   updated_at: number;
   completed_at: number | null;
   auto_maintain: number | null;
+  private: number;
 }
 
 const fromRow = (r: Row): Thread => ({
@@ -62,13 +67,14 @@ const fromRow = (r: Row): Thread => ({
   updatedAt: r.updated_at,
   completedAt: r.completed_at,
   autoMaintain: r.auto_maintain === null ? null : r.auto_maintain === 1,
+  isPrivate: r.private === 1,
 });
 
 // follow_up_state is deliberately NOT here: it is bookkeeping for the next run (§2.4's
 // "what did I already propose"), never something a view renders, and it can hold a long
 // list of URLs. The one reader loads it on its own.
 const SELECT_COLS =
-  'id, workspace_id, title, summary, digest, deadline, status, is_capture_target, created_at, updated_at, completed_at, auto_maintain';
+  'id, workspace_id, title, summary, digest, deadline, status, is_capture_target, created_at, updated_at, completed_at, auto_maintain, private';
 
 export const listAllThreads = async (): Promise<Thread[]> => {
   const db = await getDb();
@@ -124,6 +130,7 @@ export const createThread = async (workspaceId: string, title: string = ''): Pro
     status: 'active',
     isCaptureTarget: false,
     autoMaintain: null,
+    isPrivate: false,
     createdAt: now,
     updatedAt: now,
     completedAt: null,
@@ -170,10 +177,13 @@ export const updateThread = async (
     status: 'status',
     workspaceId: 'workspace_id',
     completedAt: 'completed_at',
+    isPrivate: 'private',
   };
   for (const k of Object.keys(patch) as (keyof ThreadPatch)[]) {
     sets.push(`${cols[k]} = $${i++}`);
-    values.push(patch[k] as unknown);
+    // ⚠️ tauri-plugin-sql binds a boolean as the JSON text 'true', which `private = 1` never
+    // matches — the project would read as private here and stay visible to every AI.
+    values.push(k === 'isPrivate' ? (patch[k] ? 1 : 0) : (patch[k] as unknown));
   }
   // Summary provenance: every GUI write is the user's (the app has no AI path since the
   // 2026-07-09 MCP-first pivot). A hand-written summary locks out MCP overwrites; clearing

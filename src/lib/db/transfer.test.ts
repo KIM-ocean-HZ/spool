@@ -5,7 +5,7 @@ import { createAttachment } from './attachments';
 import { createBlock } from './blocks';
 import { __setTestDb } from './client';
 import schemaSql from './schema.sql?raw';
-import { createThread } from './threads';
+import { createThread, updateThread } from './threads';
 import { mergeLibrary, MERGE_TABLES_FOR_TEST, type MergeReport } from './transfer';
 import { createWorkspace } from './workspaces';
 
@@ -317,6 +317,22 @@ describe('库的导出与导入 (DESIGN_LIBRARY_TRANSFER)', () => {
     expect(
       dst.handle.prepare('SELECT id, target, target_identity, target_notice FROM attachments').all(),
     ).toEqual([{ id: a.id, target: '/Users/a/v1.pdf', target_identity: null, target_notice: null }]);
+  });
+
+  // P9E-1: 私密跟着库走。换一台机器还得是私密的 —— 不然一导入，连着 Spool 的 AI 就全看见了。
+  it('私密项目导出再导入，还是私密的', async () => {
+    __setTestDb(asPluginSql(src.handle));
+    const ws = await createWorkspace('私事');
+    const hidden = await createThread(ws.id, '体检');
+    const open = await createThread(ws.id, '课表');
+    await updateThread(hidden.id, { isPrivate: true });
+    __setTestDb(null);
+
+    await mergeLibrary(asPluginSql(src.handle), asPluginSql(dst.handle));
+
+    const rows = dst.handle.prepare('SELECT id, private FROM threads').all();
+    expect(rows).toContainEqual({ id: hidden.id, private: 1 });
+    expect(rows).toContainEqual({ id: open.id, private: 0 });
   });
 
   // P7-2 (Ocean 2026-10-07 #5: 图片存进库文件里，导出 / 搬到新电脑照旧一个文件全带走).

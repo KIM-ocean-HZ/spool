@@ -38,7 +38,7 @@ export const setSeedLanguage = (lang: SeedLanguage): void => {
 // carries a database from the previous version to the new one. On startup the
 // database's PRAGMA user_version is compared against this and every applicable step
 // runs in sequence, each stamping user_version as its own checkpoint (§19.3).
-const SCHEMA_VERSION = 33;
+const SCHEMA_VERSION = 34;
 
 // Things a migration did to the user's data that the user is entitled to hear about.
 // v15 is the first migration that removes anything (the retired `url` attachments), and
@@ -1090,6 +1090,27 @@ const MIGRATIONS: Migration[] = [
         } catch (e) {
           console.info(`[db] attachments.${col}: not added (likely exists)`, e);
         }
+      }
+    },
+  },
+  {
+    // v34 (P9E 任务书 P9E-1, Ocean 2026-10-15 第 119 – 123 条)：私密项目。
+    // ⚠️⚠️ **只有一句 `ADD COLUMN`**，⛔ 别的表、别的列一个不动、⛔ 不往里填任何东西（默认 0 =
+    // 每个项目照旧公开，迁移不替用户藏任何东西）、⛔ 没有 rebuild 分支。`schema.sql` 那一段写了意思。
+    //   * 往回：`ALTER TABLE threads DROP COLUMN private` 一句退回 v33，⛔ 不丢任何 v33 就有的数据 ——
+    //     丢的只是「哪几个项目是私密的」。
+    //   * ⚠️ 选「库里加一列」而不是写进 settings.json，是因为 MCP 的版本闸是双向的：库一到 v34，
+    //     换装前就开着的旧 `--mcp` 进程每次调用都报「库比服务新」，不会因为不认识这一列而把私密
+    //     项目交出去。
+    // 半跑一次和跑完一次分不出来：撞上已存在的列会抛、catch 掉（v33 逐字同一个写法）。
+    from: 33,
+    to: 34,
+    name: 'add-thread-private',
+    run: async (db) => {
+      try {
+        await db.execute('ALTER TABLE threads ADD COLUMN private INTEGER NOT NULL DEFAULT 0');
+      } catch (e) {
+        console.info('[db] threads.private: not added (likely exists)', e);
       }
     },
   },
