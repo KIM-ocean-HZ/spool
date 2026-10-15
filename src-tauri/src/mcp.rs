@@ -6152,18 +6152,24 @@ fn file_already_in_project(
 ) -> Result<Option<(String, String)>, String> {
     let mut stmt = conn
         .prepare(
-            "SELECT id, label, target FROM attachments
+            "SELECT id, label, target, target_identity FROM attachments
               WHERE thread_id = ?1 AND superseded_by IS NULL",
         )
         .map_err(|e| e.to_string())?;
     let rows = stmt
-        .query_map([thread_id], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?)))
+        .query_map([thread_id], |r| {
+            Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?, r.get::<_, Option<Vec<u8>>>(3)?))
+        })
         .map_err(|e| e.to_string())?
         .collect::<Result<Vec<_>, _>>()
         .map_err(|e| e.to_string())?;
-    Ok(rows.into_iter().find_map(|(id, label, target)| {
+    Ok(rows.into_iter().find_map(|(id, label, target, identity)| {
+        // 2026-10-15: where it is now, too (`file_now`) — a file moved since the GUI last
+        // showed it is still this file, not a new one to attach or a new version to replace
+        // it with. Only compared, never handed out, so the path gate does not apply.
+        let now = crate::file_follow::seen(&target, &label, identity.as_deref(), false, None).path;
         let same = target == resolved
-            || std::fs::canonicalize(&target).is_ok_and(|c| plain_path(&c) == resolved);
+            || std::fs::canonicalize(&now).is_ok_and(|c| plain_path(&c) == resolved);
         same.then(|| {
             let name = if label.trim().is_empty() { base_name(&target).to_string() } else { label };
             (id, name)
@@ -13630,6 +13636,21 @@ mod tests {
         assert!(hit["not_found"].is_null());
 
         assert_eq!(library(&conn), before, "reading wrote to the library");
+
+        // And the moved file is still the one in the project: not a new version of itself.
+        let rules = PathGateRules {
+            home: tmp.clone(),
+            system_roots: vec![],
+            home_private: "Library",
+            home_private_open: &[],
+        };
+        let out: Value = serde_json::from_str(
+            &propose_replace_file_json(&conn, &rules, "th1", "a_moved", &moved.display().to_string(), "新版", 1)
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(out["queued"], false);
+        assert_eq!(out["already_in_project"]["attachment_id"], "a_moved");
         let _ = std::fs::remove_dir_all(&tmp);
     }
 
