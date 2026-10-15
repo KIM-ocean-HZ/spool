@@ -28,6 +28,7 @@ import {
   retranslateTutorial,
   setSeedLanguage,
 } from '@/lib/db/client';
+import { loadDrafts } from '@/lib/db/drafts';
 import { t } from '@/lib/i18n';
 import { toast } from '@/stores/toastStore';
 import { useAutoMaintain } from '@/hooks/useAutoMaintain';
@@ -144,6 +145,10 @@ export default function App() {
       setSeedLanguage(useSettingsStore.getState().language);
       await loadWorkspaces();
       await loadThreads();
+      // P9D: text not yet in the library (drafts.json). After the DB is open — a draft whose
+      // block is gone is dropped on read. Not awaited: nothing else waits on it, and a block drawn
+      // before it lands picks its draft up then.
+      void loadDrafts();
       // The review queue is filled by a different process entirely (an AI client's
       // `spool --mcp`), so the count is polled, never pushed. Once at startup, and again
       // on focus below.

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { clearAllData } from '@/lib/db/client';
+import { clearDraftsFile } from '@/lib/db/drafts';
 import { useT } from '@/lib/i18n';
 import { IS_MAC } from '@/lib/platform';
 import BrowserAutomation from './BrowserAutomation';
@@ -17,6 +18,8 @@ export default function AdvancedConfig() {
     setClearing(true);
     try {
       await clearAllData();
+      // P9D: unsaved text lives in drafts.json, not the library — it goes too.
+      await clearDraftsFile();
       // Every store is now stale; a reload re-hydrates them from the empty DB.
       window.location.reload();
     } catch (e) {

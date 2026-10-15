@@ -620,6 +620,11 @@ const EN: Record<string, string> = {
   '（这一块没有文字）': '(no text in this block)',
   // V3 二轮 (Ocean 2026-08-25 验收) — the block editing panel.
   '正在编辑这一块 · Esc 放弃': 'Editing this block · Esc to discard',
+  // P9D-1: the panel reopened on text that was never saved (Spool quit before 完成).
+  '这是上次没点「完成」的字。点「完成」存进去，按 Esc 不要了':
+    "You didn't press Done on this last time. Done saves it, Esc throws it away",
+  '这是上次没点「完成」的字。这一块后来被改过，点「完成」会用你这一份盖掉；按 Esc 不要了':
+    "You didn't press Done on this last time. The block has changed since — Done replaces it with this version; Esc throws it away",
   'AI 批注 · 你改过': 'AI note · you edited it',
   '改这条 AI 批注（不会变成你写的）': "Edit this AI note (it stays the AI's, not yours)",
   // 旧账 §5-3: dates found inside a block's own text (DateNotices).

@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import type { BlockDraft } from '@/lib/db/drafts';
 
 // 未发出的草稿，**按项目存**（2026-08-27，Ocean:「在输入框打字，按 ⌘F，草稿没了」）。
 //
@@ -35,6 +36,13 @@ interface DraftState {
   removeDraftImage: (threadId: string, id: string) => void;
   /** 发出去之后清掉（字和图一起）。⚠️ 只清这一个项目的，别的项目的草稿一个字都不动。 */
   clearDraft: (threadId: string) => void;
+  /** P9D-1：块的编辑面板里没点「完成」的字，按块存。落盘见 lib/db/drafts.ts（drafts.json）。 */
+  blockDrafts: Record<string, BlockDraft>;
+  /** drafts.json 读回来了没有。读回来之前块找不到自己的草稿，等它变 true 再找。 */
+  draftsLoaded: boolean;
+  /** 字和上一次一样就什么都不做（不写盘）。 */
+  setBlockDraft: (blockId: string, draft: BlockDraft) => void;
+  removeBlockDraft: (blockId: string) => void;
 }
 
 export const useDraftStore = create<DraftState>((set) => ({
@@ -54,6 +62,21 @@ export const useDraftStore = create<DraftState>((set) => ({
       delete byThread[threadId];
       delete images[threadId];
       return { byThread, images };
+    }),
+  blockDrafts: {},
+  draftsLoaded: false,
+  setBlockDraft: (blockId, draft) =>
+    set((s) => {
+      const cur = s.blockDrafts[blockId];
+      if (cur && cur.content === draft.content && cur.annotation === draft.annotation) return s;
+      return { blockDrafts: { ...s.blockDrafts, [blockId]: draft } };
+    }),
+  removeBlockDraft: (blockId) =>
+    set((s) => {
+      if (!(blockId in s.blockDrafts)) return s;
+      const blockDrafts = { ...s.blockDrafts };
+      delete blockDrafts[blockId];
+      return { blockDrafts };
     }),
 }));
 

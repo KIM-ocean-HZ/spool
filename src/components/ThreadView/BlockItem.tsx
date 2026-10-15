@@ -8,12 +8,13 @@ import { applyBlockFormat, formatAt, type BlockFormat } from '@/lib/blocks/forma
 import { MarkdownContent } from '@/lib/blocks/MarkdownContent';
 import { isHighlightable, rangeIsHighlighted, toggleHighlightRange } from '@/lib/blocks/highlight';
 import { locateQuote } from '@/lib/blocks/quoteFold';
-import { appendImageLines, parseImageLines, referencedImageIds } from '@/lib/blocks/imageLines';
+import { referencedImageIds } from '@/lib/blocks/imageLines';
 import { hasSegmentAnnotations } from '@/lib/blocks/segments';
 import { rawRangeFromSelection } from '@/lib/blocks/selectionRange';
 import { SegmentedContent } from '@/lib/blocks/SegmentedContent';
 import type { Attachment } from '@/lib/db/attachments';
 import type { Block, IncomingRef } from '@/lib/db/blocks';
+import { editorOpening } from '@/lib/db/drafts';
 import { addFilesFromPicker } from '@/lib/files/addFiles';
 import { fileLabel, openAttachment } from '@/lib/files/openFile';
 import { correctionsBySource, type Correction } from '@/lib/pack/assemble';
@@ -28,6 +29,7 @@ import { toast } from '@/stores/toastStore';
 import { buildHighlightUndo, useUndoStore } from '@/stores/undoStore';
 import { useCompressStore } from '@/stores/compressStore';
 import { askBeforeDeletingBlocks } from '@/stores/deleteFilesPromptStore';
+import { useDraftStore } from '@/stores/draftStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { selectThreadById, useThreadsStore } from '@/stores/threadsStore';
 import BlockActions from './BlockActions';
@@ -350,6 +352,15 @@ function TextBlockItem({
   /** The draft the panel opened with, and the pictures it named: closing without a change saves
    *  nothing, and a picture named then and not on 完成 was taken out (×). */
   const openedWith = useRef<{ draft: string; imageIds: string[] }>({ draft: '', imageIds: [] });
+  /** P9D-1：the note the panel opened with — with `openedWith.draft`, what "nothing changed" means. */
+  const openedAnnotation = useRef('');
+  /** P9D-1：the block as it was when this text was started (carried over from the draft on a restore),
+   *  written into the draft so the next restore can tell whether the block changed since. */
+  const draftBase = useRef({ content: '', annotation: '' });
+  /** P9D-1：this panel holds text left from last time (not 完成'd); `changed` = the block was edited
+   *  since. Drives the line at the top of the panel. */
+  const [restored, setRestored] = useState<{ changed: boolean } | null>(null);
+  const draftsLoaded = useDraftStore((s) => s.draftsLoaded);
 
   // DESIGN_CONTEXT_HYGIENE §3.1: whether the "which one does this correct" picker is open
   // on this block. Local, because only one block can be answering that question at a time
@@ -721,28 +732,41 @@ function TextBlockItem({
   // ⭐ Every way into edit mode goes through here: double-click on the content, double-click
   // on the note, the ✑ hover action, the toolbar's edit button. They differ ONLY in where the
   // cursor lands —「全部做到一个面板进行编辑」.
-  const openEditor = (field: 'content' | 'annotation'): void => {
+  // P9D-1：a block with text left from last time opens on THAT text, whichever way in — the panel
+  // never offers the block's own text over a draft the user has not let go of. `atMount` skips
+  // the scroll compensation (and its flushSync), which has nothing to compensate on first paint.
+  const openEditor = (field: 'content' | 'annotation', atMount = false): void => {
     setActive(block.id);
     setFocusField(field);
     // P7 验收第一轮：pictures the text does not place yet (blocks from before 图文混排) come in
     // as lines at the end, so every picture of the block is in the editor and can be taken out.
-    const withPictures = pictures.length > 0 || parseImageLines(block.content).length > 0;
-    const draft = withPictures
-      ? appendImageLines(block.content, unplaced.map((i) => i.id))
-      : block.content;
-    openedWith.current = { draft, imageIds: referencedImageIds(draft) };
-    enterEditMode(() => {
-      setPictureMode(withPictures);
-      setContentDraft(draft);
+    const o = editorOpening({
+      content: block.content,
+      annotation: block.annotation,
+      unplacedImageIds: unplaced.map((i) => i.id),
+      hasPictures: pictures.length > 0,
+      saved: useDraftStore.getState().blockDrafts[block.id],
+    });
+    openedWith.current = o.openedWith;
+    openedAnnotation.current = o.annotation;
+    draftBase.current = o.base;
+    const apply = (): void => {
+      setPictureMode(o.pictureMode);
+      setContentDraft(o.contentDraft);
+      setAnnotationDraft(o.annotationDraft);
+      setRestored(o.restored);
       setEditingContent(true);
       setEditingAnnotation(true);
-    });
+    };
+    if (atMount) apply();
+    else enterEditMode(apply);
   };
 
-  const commitContent = async (): Promise<void> => {
+  /** True when the content is in the library as the panel has it (saved, or nothing to save). */
+  const commitContent = async (): Promise<boolean> => {
     const next = contentDraft;
     setEditingContent(false);
-    if (next === block.content || next === openedWith.current.draft) return;
+    if (next === block.content || next === openedWith.current.draft) return true;
     try {
       await setContent(block.id, next);
       if (pictureMode) {
@@ -752,20 +776,24 @@ function TextBlockItem({
           openedWith.current.imageIds.filter((id) => !kept.has(id)),
         );
       }
+      return true;
     } catch (e) {
       console.error('[block] content save failed', e);
+      return false;
     }
   };
 
-  const commitAnnotation = async (): Promise<void> => {
+  const commitAnnotation = async (): Promise<boolean> => {
     const trimmed = annotationDraft.trim();
     const next = trimmed.length > 0 ? trimmed : null;
     setEditingAnnotation(false);
-    if (next === (block.annotation ?? null)) return;
+    if (next === (block.annotation ?? null)) return true;
     try {
       await setAnnotation(block.id, next);
+      return true;
     } catch (e) {
       console.error('[block] annotation save failed', e);
+      return false;
     }
   };
 
@@ -773,8 +801,11 @@ function TextBlockItem({
   // fields are open at once; Esc on either should drop both drafts and close both, so
   // they can't get out of step (one revert, one stale draft committed by a later blur).
   // Save both fields and close. The 完成 button, and a click outside the panel.
+  // ⚠️ P9D-1：the draft goes only once BOTH fields are in the library — a save that failed is
+  // exactly the text that has to survive.
   const commitAll = async (): Promise<void> => {
-    await Promise.all([commitContent(), commitAnnotation()]);
+    const [content, annotation] = await Promise.all([commitContent(), commitAnnotation()]);
+    if (content && annotation) useDraftStore.getState().removeBlockDraft(block.id);
   };
 
   const cancelAll = (): void => {
@@ -782,7 +813,39 @@ function TextBlockItem({
     setEditingContent(false);
     setAnnotationDraft(block.annotation ?? '');
     setEditingAnnotation(false);
+    // Esc = 放弃, the draft too.
+    useDraftStore.getState().removeBlockDraft(block.id);
   };
+
+  // P9D-1 (Ocean 第 108 条「边写边存」)：the panel's text goes into the draft as it changes —
+  // drafts.ts writes it to disk once the typing pauses. Back to how it opened = no draft.
+  useEffect(() => {
+    if (!editorOpen || readOnly) return;
+    const { setBlockDraft, removeBlockDraft } = useDraftStore.getState();
+    if (contentDraft === openedWith.current.draft && annotationDraft === openedAnnotation.current) {
+      removeBlockDraft(block.id);
+      return;
+    }
+    setBlockDraft(block.id, {
+      content: contentDraft,
+      annotation: annotationDraft,
+      baseContent: draftBase.current.content,
+      baseAnnotation: draftBase.current.annotation,
+      savedAt: Date.now(),
+    });
+  }, [editorOpen, readOnly, contentDraft, annotationDraft, block.id]);
+
+  // P9D-1：drawn with text left from last time ⇒ the panel is already open on it. Once per mount,
+  // after drafts.json is read: closing the panel afterwards means closed.
+  // ⚠️ Two such blocks in one project open two panels; they stack in the host and the user
+  // finishes them one at a time (each one's 完成 / Esc only closes its own).
+  const restoreChecked = useRef(false);
+  useEffect(() => {
+    if (readOnly || !draftsLoaded || restoreChecked.current) return;
+    restoreChecked.current = true;
+    if (useDraftStore.getState().blockDrafts[block.id]) openEditor('content', true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once, see above
+  }, [readOnly, draftsLoaded]);
 
   // v2.8 §20.5: capture the current selection and anchor the floating prompt to it.
   // Runs on mouseup so the selection is stable; ignores selections collapsed by the
@@ -1593,11 +1656,17 @@ function TextBlockItem({
             data-block-editor-panel
             className="pointer-events-auto absolute inset-0 flex flex-col bg-paper"
           >
-            <div className="flex items-center justify-between border-b border-line px-6 py-2.5">
-              <span className="font-ui text-[11px] text-muted">
-                {t('正在编辑这一块 · Esc 放弃')}
+            <div className="flex items-center justify-between gap-4 border-b border-line px-6 py-2.5">
+              {/* P9D-1：text left from last time says so, and says what 完成 / Esc will do with it.
+                  It is the long one, so it wraps (`min-w-0`) and the buttons keep their size. */}
+              <span className={`min-w-0 font-ui text-[11px] ${restored ? 'text-accent' : 'text-muted'}`}>
+                {restored === null
+                  ? t('正在编辑这一块 · Esc 放弃')
+                  : restored.changed
+                    ? t('这是上次没点「完成」的字。这一块后来被改过，点「完成」会用你这一份盖掉；按 Esc 不要了')
+                    : t('这是上次没点「完成」的字。点「完成」存进去，按 Esc 不要了')}
               </span>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-none items-center gap-2">
                 {/* ⚠️ The hover toolbar lives on the article, which this panel now covers, so
                     ==重点== had to come along or it would have quietly stopped being
                     reachable while editing — the one mode where you are most likely to want
