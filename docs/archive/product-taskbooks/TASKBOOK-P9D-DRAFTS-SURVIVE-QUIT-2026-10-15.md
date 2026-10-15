@@ -1,6 +1,8 @@
 # 产品任务书 P9D —— 丢字修复：编辑面板和输入框里的字边写边存，退出、换装、崩溃都丢不了
 
-> **状态：ACTIVE。**（2026-10-15 下发。P9C 已验收：其他七条通过，第一轮那一条（周回顾一个按钮、先选类型）已改 `b87e86e`、已换装，等 Ocean 看一眼 —— HANDOFF §9.2 第 104 – 111 条。）
+> **状态：COMPLETE —— 待 Ocean 验收。**（2026-10-15 做完、已换装：三步 `c0f1f27` `6d1bfc6` `a5a5ab7` + 补 `17c988e`，开工时插进来的合并块图片修复 `4b714d6` 一起装了；回执在 §7，验收单在 §6（七条）+ §7.5 末尾那一条合并的。）
+>
+> （2026-10-15 下发时：P9C 已验收：其他七条通过，第一轮那一条（周回顾一个按钮、先选类型）已改 `b87e86e`、已换装，等 Ocean 看一眼 —— HANDOFF §9.2 第 104 – 111 条。）
 >
 > **唯一交付：** 下面 §3 的三步（P9D-1 – P9D-3），按顺序做完，每一步测试通过、单独一笔提交，并在 §7 写回执。
 >
@@ -167,8 +169,74 @@ cargo tree --manifest-path src-tauri/Cargo.toml -e normal | grep -iE "ureq|rustl
 
 最后一段：换装（做了没有、装的是哪个 commit、`spctl` 结果、真库和 `settings.json` 的备份文件名、装前装后的核对）、Ocean 验收（还没有就写「待验收」）。
 
+### 7.0 开工
+
+- 起点：`b87e86e` 之后只多了下发本任务书那一笔 docs（`f745aa8`），§2.1 照旧成立，没重核。
+- Ocean 开工时说「上一窗口任务验收通过」⇒ P9C 全部通过（HANDOFF §9.2 第 112 条）。
+- **插进来一件 owner interruption**（第 113 条，P9D 还没动代码时）：〈个人网站素材〉#21 – 25 合并之后图片坏了。修在 `4b714d6`：带批注的块合并后走 `SegmentedContent`，它不认图片行，屏幕上露出 `![](spool-image:…)` 原文；现在接 `BlockItem` 同一个 `renderImage`，库里的字不动，pack 本来就对。真库只读查过，眼下没有处在坏状态的块。同类的另一条（来源不同时 `[from …]` 贴在图片行前面）没一起改，记成 HANDOFF `DISCOVERED-20261015-2`。Ocean 选了「等 P9D 做完一起装」（第 114 条）。
+
+### 7.1 P9D-1 · 草稿文件 + 编辑面板
+
+- 提交：`c0f1f27 feat(drafts): 编辑面板的字边写边存，退出、换装、崩溃之后再打开，面板开着、字还在（P9D-1）`
+- 改的文件：`src/lib/db/drafts.ts`（新）、`src/lib/db/drafts.test.ts`（新）、`src/stores/draftStore.ts`、`src/components/ThreadView/BlockItem.tsx`、`src/App.tsx`、`src/components/Settings/AdvancedConfig.tsx`、`src/lib/i18n/index.ts`
+- 自己定的：
+  - 文件叫 **`drafts.json`**，和 `focus.json` 同一个目录、同一种写法（plugin-store）。样子：`{"blocks": {"<块 id>": {"content", "annotation", "baseContent", "baseAnnotation", "savedAt"}}, "composer": {"<项目 id>": "字"}}`（`composer` 是 P9D-2 加的）。`base*` 是开面板那一刻块上的正文和批注。
+  - **字停下 300 毫秒写一次盘**（`DRAFT_SAVE_DELAY_MS`），每次写完 `save()`；删（「完成」两格都存进去之后、Esc、改回和打开时一样）**当场写**，不等。写盘排队，后一次不会被前一次盖回去。没变不写；开机读回来没丢东西也不写。
+  - 「被改过」比的是正文**和批注**（任务书写的是正文；批注也会被「完成」盖掉，所以一起比）。恢复之后再写，`base` 沿用草稿起笔时那一份，下一次恢复照样知道。
+  - 恢复走的是 `openEditor` 本身：**有草稿的块不管从哪儿打开（画出来时、双击、工具条），面板里都是草稿的字**，不会拿块上的字把草稿盖掉。`openedWith`（删图的依据）照旧按块上现在的样子算（`editorOpening`，有测试）。
+  - 开机读：库开好之后读（`App.tsx`，不 await，读不到也不挡启动）；块或项目不在了的丢掉，盘上那份跟着改。插件读坏文件时自己当空的，下一次写会盖掉。
+  - 「清除所有数据」：`clearAllData` 在 `client.ts` 里，`drafts.ts` 要用 `client.ts` 查库，反过来引会绕成圈 ⇒ 在设置页那个按钮里 `clearAllData()` 之后接着 `clearDraftsFile()`。
+  - 同一个项目里两块都有草稿：两个面板叠在一起，点完一个露出下一个（每个面板的「完成 / Esc」只管自己）。
+  - 恢复时面板顶上那句话（橙色，太长就折行，按钮不挤）：
+    - 没被改过：「这是上次没点「完成」的字。点「完成」存进去，按 Esc 不要了」/ "You didn't press Done on this last time. Done saves it, Esc throws it away"
+    - 被改过：「这是上次没点「完成」的字。这一块后来被改过，点「完成」会用你这一份盖掉；按 Esc 不要了」/ "You didn't press Done on this last time. The block has changed since — Done replaces it with this version; Esc throws it away"
+  - 顺带的变化：以前面板开着时用键盘跳到别的项目（查找、全局搜索），面板被卸掉、字没了；现在字留在草稿里，回到那个项目面板又开着。
+- 验：vitest `drafts.test.ts` 11 条（写了 300 毫秒后落盘、「重开」读回来；删当场写；块删了 / 项目删了读回来就丢；坏文件当没有；清除所有数据；`cleanBlockDrafts`；`editorOpening` 五条，含「openedWith 按块不按草稿」）。全量 tsc 干净、vitest 94 / 1094、`(none missing)`、`--dead` 87（和开工一样）。
+- 截图（桌面 `Spool/P9D-screenshots-20261015/`）：`p9d1-restored`（没被改过）、`p9d1-restored-changed`（被改过），各中英。
+
+### 7.2 P9D-2 · 项目输入框的字
+
+- 提交：`6d1bfc6 feat(drafts): 项目底下输入框没发出去的字也边写边存，图不留（P9D-2）`
+- 改的文件：`src/lib/db/drafts.ts`、`src/lib/db/drafts.test.ts`、`src/stores/draftStore.ts`（头注释照新规矩改写：原来的理由、第 108 条为什么推翻字那一半、第 110 条图那一半照旧）
+- 自己定的：输入框的字和面板草稿进同一个文件（`composer`），同一套写法；发出去（`clearDraft`）或删空了当场删；空的不落盘；开机读回来，项目不在了的丢掉（删工作区时它底下的项目也标了 `deleted_at`，所以只看项目表）。图只在内存里。没给输入框加提示（任务书「不做」）。
+- 验：vitest 加 4 条（写进盘、重开回到输入框且没有图；发出去当场删；删空也算删；项目不在了就丢）。全量 tsc 干净、vitest 94 / 1098、`(none missing)`。
+- 截图：`p9d2-composer`（重开之后输入框里的字）。
+
+### 7.3 P9D-3 · 打开时提示一句，点一下跳过去
+
+- 提交：`a5a5ab7 feat(drafts): 打开 Spool 时提示上次没点「完成」的块，「去看」一下跳过去（P9D-3）`；`17c988e fix(drafts): 点开机提示上的「去看」或 × 不算「点面板外面」…（P9D-3 补）`
+- 改的文件：`src/stores/draftPrompt.ts`（新）、`src/stores/draftPrompt.test.ts`（新）、`src/stores/toastStore.ts`、`src/components/ui/Toast.tsx`、`src/lib/db/drafts.ts`（`loadDrafts` 返回从盘上读回来的那几块）、`src/App.tsx`、`src/lib/i18n/index.ts`；补的那一笔改 `BlockItem.tsx`、`Toast.tsx`
+- 自己定的：
+  - 「一直留着」：现成的 toast 加一个 `sticky` —— 不计时、Esc（清别的 toast）也不清它，只有「去看」或 × 关得掉。开机自启时窗口藏着，提示条就在那儿等着，窗口一露出来就看得见。
+  - 只为**开机时从盘上读回来的**那几块提示（这一次打开之后才写的不提示）；块或项目不在了的、草稿已经了结的不算（每次提示前查库）。
+  - 一块：「〈{项目}〉#{编号} 上次没点「完成」，写的字还在」/ "You didn't press Done on “{title}” #{seq} last time — what you wrote is still there"（没有编号时：「〈{项目}〉里有一块……」）。好几块：「有 {n} 块上次没点「完成」，写的字还在」/ "You didn't press Done on {n} blocks last time — …"，「去看」到**最近写的那一块**；那一块点了「完成」或 Esc 之后，还剩的**再提示一次**（按 × 关掉的不再冒出来）。按钮「去看」/ "Show me"。
+  - 「去看」= 回到「内容」页签、选中那个项目、跳到那一块；面板由那一块画出来时自己开（P9D-1 的恢复）。
+  - **补的那一笔**：自己复查时发现，恢复出来的面板已经开着时去点那条提示，会先触发「点外面 = 存」—— 字被悄悄存掉、面板关了，「被改过」那句用户根本没看到。现在一直留着的提示条不算「外面」，别的 toast 照旧。截图台上真的按下（mousedown）「去看」验过：改之前面板关了（`check-without-fix`），改之后还开着（`check-prompt-go-open`）。
+- 验：vitest `draftPrompt.test.ts` 8 条（要不要提示、去哪一块；块删了 / 项目删了 / 草稿了结了都不算；一块的那句话、不计时、Esc 清不掉；「去看」选中项目、跳到那一块；好几块走一遍；× 之后不再冒出来；没有留下的不提示）。全量 tsc 干净、vitest 95 / 1106、`(none missing)`、`--dead` 87；cargo 192 过 · 5 跳过；sidecar 14；`cargo tree` 那条空。
+- 截图：`p9d3-prompt-one`、`p9d3-prompt-many`、`p9d3-prompt-go`（点了「去看」之后：跳到那个项目，面板开着、字在），各中英。
+
+### 7.4 还差什么、偏离、新发现
+
+- **已经完成的项目（done）里的块**：项目完成后默认画的是只读的摘要视图，那里不恢复面板，「去看」也只能把人带到摘要视图，要再点一下「看全部」才开。完成了的项目里改块很少见，没在这一份里改，记成 HANDOFF `DISCOVERED-20261015-3`。
+- 输入框「发出去」是先清草稿再存进库（P9D 之前就这样）；存进库失败的话那段字没了，现在盘上那份也是当场删的。没改（任务书写的是「发出去就删」），记成 HANDOFF `DISCOVERED-20261015-4`。
+- 写盘用的是插件的 `fs::write`（不是先写临时文件再换名）：正好在写的那一下被停掉，文件可能写坏 ⇒ 下次读当没有（照任务书「读坏了就当没有」）。窗口只有写盘那几毫秒。
+- 偏离：「被改过」多比了批注（见 7.1）；「清除所有数据」从设置页按钮清，不在 `clearAllData` 里（见 7.1）。
+
 ## 8. 收尾的文档动作（执行窗做）
 
 - 本任务书首屏改成 `COMPLETE —— 待 Ocean 验收`，`git mv` 进 `docs/archive/product-taskbooks/`。
 - HANDOFF：§9.3「丢字修复」那一行写「已完成，任务书在 archive/…」；§9.2 记换装那一问；§9.8 写唯一下一步（Ocean 验收 P9D ⇒ 发版一）；新发现进 §9.9。
 - `docs/README.md` 入口那一行跟着改（只暂存自己那一行，见 §2）。
+
+### 7.5 换装（Ocean 10-15 答「现在换装，没有没存的字」）
+
+- 构建：在 `17c988e` 上，`src` / `src-tauri` / `site` / `scripts` 没有未提交改动；命令同 P9C §7.5（`APPLE_SIGNING_IDENTITY` 走环境变量、公证变量全 unset、日志进文件、`tauri.conf.json` 没改）；「skipping app notarization」；TSA 一遍过（主程序 12:01:01、`spool-ai` 12:01:00）；`--verify --deep --strict` 过；新二进制 `--mcp` 连真库副本（`VACUUM INTO` 到 scratchpad）：24 个工具，和上一版一样。
+- 装前：Developer ID、`Unnotarized Developer ID`。真库 v33 · ok · 工作区 15 / 项目 53（都是没删的）/ 块 1130 · 正文 365523 · 批注 13802 / 文件 33 · 正文 224068 / 图片 18 张 9136780 字节 / 跟进 19 / 回顾记录 26 / 待审 0；快照 25 个；`settings.json` 26 个键；数据目录里还没有 `drafts.json`。
+- 停：GUI 91835、`--overlay` 91869 按 pid `kill -TERM`，第一次就退了；17 个 `--mcp` 一个没碰。
+- 备份（桌面）：`spool.before-p9d-install-20261015-120205.db`（v33 · ok · 1130 块 · 正文 365523）、`settings.before-p9d-install-20261015-120205.json`、`focus.before-p9d-install-20261015-120205.json`。旧包挪到 `~/Desktop/Spool/spool-pre-install/Spool-old-20261015-120205-pre-p9d.app`。新包 `ditto` 进 `/Applications`，`open --stdout … --stderr …` 起来。
+- 装后：sha256 `c190c3c6…` 和构建产物一致；主进程 59723、`--overlay` 59732 都是 12:02:24（换装之后）起的，txt inode 都是 81000145，就是新文件；`spctl` = `Unnotarized Developer ID`（和装前一样）；stderr 只有 `[overlay] helper started` 和 `[double-tap] installed at HID/active` 两行。真库上面那一串数逐项和装前一样（不迁移，快照仍 25 个）；`settings.json` 和装前逐字节一样。`drafts.json` 还没有 —— 第一次在面板或输入框里打字才写（读回来没丢东西不写）。
+- 这一次不改 MCP、不改库，旧的 `--mcp` 子进程照常能用，不用重启 AI 客户端。
+- ⚠️ 这一次停的还是旧版（没有边写边存），所以照旧先问了；从这一版起，下一次换装停 GUI 时没点「完成」的字也留得住。
+- commit、build、换装分开记在上面；**没 push，没发版**。
+- Ocean 验收：**待验收** —— §6 七条，外加开工时插进来的那一条：
+  8. 打开〈个人网站素材〉，选中 #21 – #25 合并 ⇒ 合并出来的那一块里五张图都画成图（在原来的位置，批注跟在各自那张图底下），⛔ 不出现 `![](spool-image:…)` 这样一行字。不想留就 ⌘Z 撤回。
