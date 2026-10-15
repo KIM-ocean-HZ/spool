@@ -139,6 +139,56 @@ describe('SegmentedContent, withOffsets', () => {
     );
     expect(out).toContain('data-o="4"');
   });
+
+  // 2026-10-15（Ocean:「个人网站素材项目的 21-25 block 无法合并，合并图片就会失效」）—— 那五块
+  // 每块一张图，前两块带批注；合并之后带 `↪ note:` 就走这一条路，而它以前把图片行当字画，
+  // 屏幕上是一行 `![](spool-image:…)`。图要画成图，和没批注的合并块（MarkdownContent）一样。
+  it('draws picture lines as pictures, not as their raw line', () => {
+    const content =
+      '![](spool-image:i1)\n↪ note: sign up\n\n![](spool-image:i2)\n↪ note: travel plan creation\n\n![](spool-image:i3)\nPersonalised exploration';
+    const out = renderToStaticMarkup(
+      <SegmentedContent
+        content={content}
+        withOffsets
+        renderImage={(id, caption) => (
+          <figure data-pic={id}>
+            <figcaption>{caption}</figcaption>
+          </figure>
+        )}
+      />,
+    );
+    expect(out).toContain('data-pic="i1"');
+    expect(out).toContain('data-pic="i2"');
+    expect(out).toContain('data-pic="i3"');
+    expect(out).not.toContain('spool-image');
+    expect(out).not.toContain('![');
+    // The notes and the text under a picture are still there, in order.
+    expect(out).toContain('sign up');
+    expect(out.indexOf('data-pic="i3"')).toBeLessThan(out.indexOf('Personalised exploration'));
+    // …and still map back onto the whole merged content (划词 in a merged block).
+    expect(out).toContain(`data-o="${content.indexOf('Personalised exploration')}"`);
+  });
+
+  it('a caption is drawn under its picture and keeps its offsets', () => {
+    const content = 'before\n![旧版](spool-image:i1)\nafter\n↪ note: n';
+    const out = renderToStaticMarkup(
+      <SegmentedContent
+        content={content}
+        withOffsets
+        renderImage={(id, caption) => <figure data-pic={id}>{caption}</figure>}
+      />,
+    );
+    expect(out).toContain(`data-o="${content.indexOf('旧版')}"`);
+    expect(out.indexOf('before')).toBeLessThan(out.indexOf('data-pic'));
+    expect(out.indexOf('data-pic')).toBeLessThan(out.indexOf('after'));
+  });
+
+  it('without a way to draw pictures it renders exactly as before', () => {
+    const content = '![](spool-image:i1)\n↪ note: x';
+    expect(renderToStaticMarkup(<SegmentedContent content={content} withOffsets />)).toContain(
+      'spool-image:i1',
+    );
+  });
 });
 
 // ⭐ S5（2026-08-24）：`afterBlock` —— 更正卡跟在它划的那一句所在的那一段底下。

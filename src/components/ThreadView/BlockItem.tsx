@@ -1295,7 +1295,7 @@ function TextBlockItem({
                 expanded, never as literal markers. EDIT mode (the textarea below) keeps
                 the raw == source on purpose: editing returns to source. */}
             {hasSegmentAnnotations(block.content) && !isNavTarget ? (
-              <SegmentedContent content={block.content} withOffsets />
+              <SegmentedContent content={block.content} withOffsets renderImage={renderImage} />
             ) : (
               // §10.1: content goes through the Markdown renderer; annotations above stay
               // on the plain tokenizer (they are one line of prose, never a document).

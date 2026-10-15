@@ -1,6 +1,53 @@
 import { Fragment, type ReactNode } from 'react';
 import { HighlightedContent } from './HighlightedContent';
+import { parseImageLines } from './imageLines';
 import { hasSegmentAnnotations, parseSegments, splitSegmentSource } from './segments';
+
+/** One segment's text with its picture lines drawn as pictures (2026-10-15, Ocean:「合并图片就会
+ *  失效」— a merged block with notes comes down this path, which used to print the raw line).
+ *  ⚠️ Every text piece keeps its offset into the whole content, so 划词 still maps back. The
+ *  newline on each side of a picture line is not drawn: the picture is its own row already, with
+ *  the same gap around it as in MarkdownContent (`gapFor`). */
+function SegmentBody({
+  body,
+  offset,
+  withOffsets,
+  renderImage,
+}: {
+  body: string;
+  offset: number;
+  withOffsets?: boolean;
+  renderImage: (id: string, caption: ReactNode | null) => ReactNode;
+}): ReactNode {
+  const lines = parseImageLines(body);
+  if (lines.length === 0) return <HighlightedContent content={body} withOffsets={withOffsets} offset={offset} />;
+  const parts: ReactNode[] = [];
+  const gap = (): string => (parts.length > 0 ? 'mt-[0.9em]' : '');
+  const text = (from: number, to: number): void => {
+    if (to <= from) return;
+    parts.push(
+      <div key={`t${from}`} className={gap()}>
+        <HighlightedContent content={body.slice(from, to)} withOffsets={withOffsets} offset={offset + from} />
+      </div>,
+    );
+  };
+  let pos = 0;
+  for (const l of lines) {
+    text(pos, l.start > pos && body[l.start - 1] === '\n' ? l.start - 1 : l.start);
+    const caption =
+      l.captionEnd > l.captionStart ? (
+        <HighlightedContent content={l.caption} withOffsets={withOffsets} offset={offset + l.captionStart} />
+      ) : null;
+    parts.push(
+      <div key={`i${l.start}`} className={gap()}>
+        {renderImage(l.id, caption)}
+      </div>,
+    );
+    pos = body[l.end] === '\n' ? l.end + 1 : l.end;
+  }
+  text(pos, body.length);
+  return <Fragment>{parts}</Fragment>;
+}
 
 // v2.8 §20.1 follow-up — display a merged block's content as a list of segments, each
 // with its own annotation attached visually. Falls back to a plain HighlightedContent
@@ -14,10 +61,13 @@ import { hasSegmentAnnotations, parseSegments, splitSegmentSource } from './segm
 export function SegmentedContent({
   content,
   withOffsets,
+  renderImage,
 }: {
   content: string;
   /** Stamp raw offsets so a selection in a merged block maps back like any other. */
   withOffsets?: boolean;
+  /** How to draw a picture line (the same one MarkdownContent takes). Without it the line stays text. */
+  renderImage?: (id: string, caption: ReactNode | null) => ReactNode;
 }): ReactNode {
   if (!hasSegmentAnnotations(content)) {
     // Fast path — un-merged block, or merged block with no annotations. Rendering
@@ -46,7 +96,11 @@ export function SegmentedContent({
                 {source}
               </span>
             )}
-            <HighlightedContent content={body} withOffsets={withOffsets} offset={seg.start + offset} />
+            {renderImage ? (
+              <SegmentBody body={body} offset={seg.start + offset} withOffsets={withOffsets} renderImage={renderImage} />
+            ) : (
+              <HighlightedContent content={body} withOffsets={withOffsets} offset={seg.start + offset} />
+            )}
           </div>
           {seg.annotation && (
             // Styling mirrors BlockItem's top-level annotation row (paper-2 tint,
