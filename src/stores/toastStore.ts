@@ -20,17 +20,24 @@ export interface Toast {
    *  confirmation dialog on purpose: a dialog charges every deletion for the one that was a
    *  mistake, and this list is meant to be pruned freely. */
   action?: { label: string; run: () => void };
+  /** P9D-3：stays until its button or × — no timer, and Esc (which clears the rest) leaves it.
+   *  For something said at launch: Spool often starts hidden (launch at login), and a toast that
+   *  times out is gone before the window is ever shown. */
+  sticky?: boolean;
 }
 
 interface ToastState {
   toasts: Toast[];
+  /** Returns the toast's id (for dismissing it later). */
   push: (
     message: string,
     kind?: ToastKind,
     detail?: string,
     action?: Toast['action'],
-  ) => void;
+    sticky?: boolean,
+  ) => number;
   dismiss: (id: number) => void;
+  /** Esc: every toast but the sticky ones. */
   clear: () => void;
 }
 
@@ -45,16 +52,17 @@ const UNDO_LIFETIME_MS = 7000;
 
 export const useToastStore = create<ToastState>((set, get) => ({
   toasts: [],
-  push: (message, kind = 'notice', detail, action) => {
+  push: (message, kind = 'notice', detail, action, sticky) => {
     const id = nextId++;
-    set((s) => ({ toasts: [...s.toasts, { id, kind, message, detail, action }] }));
+    set((s) => ({ toasts: [...s.toasts, { id, kind, message, detail, action, sticky }] }));
     // Something with a body to expand waits for the user (Esc or the × clears it).
-    if (detail === undefined) {
+    if (detail === undefined && !sticky) {
       setTimeout(() => get().dismiss(id), action ? UNDO_LIFETIME_MS : LIFETIME_MS[kind]);
     }
+    return id;
   },
   dismiss: (id) => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })),
-  clear: () => set({ toasts: [] }),
+  clear: () => set((s) => ({ toasts: s.toasts.filter((t) => t.sticky) })),
 }));
 
 // Convenience for non-component call sites (catch handlers, event listeners).
@@ -70,4 +78,7 @@ export const toast = {
    *  undo it is not — it borrows undo's longer lifetime, which is what a button needs. */
   action: (msg: string, label: string, run: () => void) =>
     useToastStore.getState().push(msg, 'notice', undefined, { label, run }),
+  /** P9D-3：a line with a button that waits for the user — see `Toast.sticky`. Returns its id. */
+  sticky: (msg: string, label: string, run: () => void): number =>
+    useToastStore.getState().push(msg, 'notice', undefined, { label, run }, true),
 };

@@ -12,7 +12,7 @@ export default function ToastRack() {
   const dismiss = useToastStore((s) => s.dismiss);
   const clear = useToastStore((s) => s.clear);
 
-  // Esc dismisses any showing toasts (§14.1). Listener is only mounted while a
+  // Esc dismisses any showing toasts (§14.1) but the sticky ones (P9D-3). Listener is only mounted while a
   // toast exists, so it never shadows other Esc handlers when the rack is empty.
   useEffect(() => {
     if (toasts.length === 0) return;

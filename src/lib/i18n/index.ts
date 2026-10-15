@@ -625,6 +625,14 @@ const EN: Record<string, string> = {
     "You didn't press Done on this last time. Done saves it, Esc throws it away",
   '这是上次没点「完成」的字。这一块后来被改过，点「完成」会用你这一份盖掉；按 Esc 不要了':
     "You didn't press Done on this last time. The block has changed since — Done replaces it with this version; Esc throws it away",
+  // P9D-3: said once at launch, until 去看 or × (Spool often starts hidden).
+  '〈{title}〉#{seq} 上次没点「完成」，写的字还在':
+    "You didn't press Done on “{title}” #{seq} last time — what you wrote is still there",
+  '〈{title}〉里有一块上次没点「完成」，写的字还在':
+    "You didn't press Done on a block in “{title}” last time — what you wrote is still there",
+  '有 {n} 块上次没点「完成」，写的字还在':
+    "You didn't press Done on {n} blocks last time — what you wrote is still there",
+  '去看': 'Show me',
   'AI 批注 · 你改过': 'AI note · you edited it',
   '改这条 AI 批注（不会变成你写的）': "Edit this AI note (it stays the AI's, not yours)",
   // 旧账 §5-3: dates found inside a block's own text (DateNotices).

@@ -189,8 +189,9 @@ const liveBlockIds = async (ids: string[]): Promise<Set<string>> => {
 let unsubscribe: (() => void) | null = null;
 
 /** 开机读一次（库开好之后）：读回来、丢掉块已经不在了的、放进 draftStore，然后开始边写边存。
- *  ⚠️ 读完才开始写 —— 先写的话会拿空的那份把盘上的盖掉。 */
-export const loadDrafts = async (): Promise<void> => {
+ *  ⚠️ 读完才开始写 —— 先写的话会拿空的那份把盘上的盖掉。
+ *  返回从盘上读回来的那几块（上次留下的，P9D-3 为它们提示）。 */
+export const loadDrafts = async (): Promise<string[]> => {
   let blocks: Record<string, BlockDraft> = {};
   let composer: Record<string, string> = {};
   let dropped = false;
@@ -221,6 +222,7 @@ export const loadDrafts = async (): Promise<void> => {
   });
   // 丢掉过东西（块不在了、条目坏了）的话，盘上那份也跟着改掉。
   if (dropped) await writeNow();
+  return Object.keys(blocks);
 };
 
 /** 「清除所有数据」：草稿也清掉（它们指着的块和项目都没了）。 */

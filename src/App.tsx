@@ -29,6 +29,7 @@ import {
   setSeedLanguage,
 } from '@/lib/db/client';
 import { loadDrafts } from '@/lib/db/drafts';
+import { startDraftPrompt } from '@/stores/draftPrompt';
 import { t } from '@/lib/i18n';
 import { toast } from '@/stores/toastStore';
 import { useAutoMaintain } from '@/hooks/useAutoMaintain';
@@ -147,8 +148,8 @@ export default function App() {
       await loadThreads();
       // P9D: text not yet in the library (drafts.json). After the DB is open — a draft whose
       // block is gone is dropped on read. Not awaited: nothing else waits on it, and a block drawn
-      // before it lands picks its draft up then.
-      void loadDrafts();
+      // before it lands picks its draft up then. Blocks left from last time get a line (P9D-3).
+      void loadDrafts().then(startDraftPrompt);
       // The review queue is filled by a different process entirely (an AI client's
       // `spool --mcp`), so the count is polled, never pushed. Once at startup, and again
       // on focus below.
