@@ -3,6 +3,7 @@ import type { MouseEvent, PointerEvent } from 'react';
 import { useEffect, useRef, useState } from 'react';
 import CountdownBadge from '@/components/ui/CountdownBadge';
 import MenuDeleteItem from '@/components/ui/MenuDeleteItem';
+import PrivateMark from '@/components/ui/PrivateMark';
 import StatusDot from '@/components/ui/StatusDot';
 import { useMenuPosition } from '@/components/ui/useMenuPosition';
 import type { Thread } from '@/lib/db/threads';
@@ -14,6 +15,7 @@ import { useCaptureStore } from '@/stores/captureStore';
 import { useCompressStore } from '@/stores/compressStore';
 import { useThreadsStore } from '@/stores/threadsStore';
 import { useWorkspacesStore } from '@/stores/workspacesStore';
+import MenuPrivateItem, { privateMenuTurnsOn } from './MenuPrivateItem';
 
 interface Props {
   thread: Thread;
@@ -56,6 +58,7 @@ export default function ThreadListItem({
   const clickRow = useThreadsStore((s) => s.clickRow);
   const moveMany = useThreadsStore((s) => s.moveMany);
   const removeMany = useThreadsStore((s) => s.removeMany);
+  const setPrivate = useThreadsStore((s) => s.setPrivate);
   const threadsByWs = useThreadsStore((s) => s.threadsByWorkspace);
 
   // Inline rename (§9.1 double-click pattern; §8.3 debounced save). Esc cancels (§14.1).
@@ -174,6 +177,13 @@ export default function ThreadListItem({
   const otherWorkspaces = workspaces.filter(
     (w) => !(actingWorkspaceIds.size === 1 && actingWorkspaceIds.has(w.id)),
   );
+  // P9E-4: one of them not private yet ⇒ the row makes them all private; all private ⇒ undoes it.
+  const privateTurnsOn = privateMenuTurnsOn(
+    Object.values(threadsByWs)
+      .flat()
+      .filter((th) => acting.includes(th.id))
+      .map((th) => th.isPrivate),
+  );
 
   return (
     <li
@@ -221,15 +231,19 @@ export default function ThreadListItem({
               className="w-full select-text bg-transparent text-sm text-ink outline-none"
             />
           ) : (
-            <span
-              onDoubleClick={(e) => {
-                e.stopPropagation();
-                enterRename();
-              }}
-              className="block truncate text-sm text-ink"
-              title={t('双击重命名')}
-            >
-              {title}
+            <span className="flex min-w-0 items-center gap-1">
+              <span
+                onDoubleClick={(e) => {
+                  e.stopPropagation();
+                  enterRename();
+                }}
+                className="block truncate text-sm text-ink"
+                title={t('双击重命名')}
+              >
+                {title}
+              </span>
+              {/* P9E-4: after the name, for a project the user or an AI made private. */}
+              {thread.isPrivate && <PrivateMark />}
             </span>
           )}
         </div>
@@ -328,6 +342,15 @@ export default function ThreadListItem({
               </button>
             ))
           )}
+          <div className="mt-1 border-t border-line pt-1">
+            <MenuPrivateItem
+              turnOn={privateTurnsOn}
+              onConfirm={() => {
+                void setPrivate(acting, privateTurnsOn);
+                setMenu(null);
+              }}
+            />
+          </div>
           <div className="mt-1 border-t border-line pt-1">
             <MenuDeleteItem
               label={acting.length > 1 ? t('删除这 {n} 个项目', { n: acting.length }) : t('删除项目')}

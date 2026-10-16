@@ -1384,6 +1384,21 @@ const EN: Record<string, string> = {
     'Private project: AIs connected through Spool can\u2019t read it, and Spool\u2019s own AI leaves it alone. To use this, right-click the project in the sidebar and choose \u201cTurn off private\u201d.',
   '私密项目：Spool 自带的 AI 不碰它': 'Private project: Spool\u2019s own AI leaves it alone',
   '私密项目，没有发给 AI': 'private project, not sent to the AI',
+  // P9E-4 — making a project private, and the mark it carries.
+  '私密项目：通过 Spool 连接的 AI 读不到': 'Private project: AIs connected through Spool can\u2019t read it',
+  '设为私密…': 'Make private…',
+  '取消私密…': 'Turn off private…',
+  '设为私密': 'Make private',
+  '取消私密': 'Turn off private',
+  '保持私密': 'Keep private',
+  '通过 Spool 连接的 AI（Claude、Codex……）读不到私密项目，也不知道它存在，但还能往里写。':
+    'AIs connected through Spool (Claude, Codex…) can\u2019t read a private project or tell that it exists \u2014 but they can still write into it.',
+  'Spool 自带的 AI 功能（周回顾、压缩、过期检测、跟进）也不碰它。你自己用起来和平常一样。':
+    'Spool\u2019s own AI features (weekly review, compress, stale check, follow-up) leave it alone too. For you, it works as usual.',
+  '管不了的一种：能直接读你电脑上文件的 AI，绕开 Spool 去读，还是读得到。':
+    'One thing this can\u2019t stop: an AI that reads files on your computer directly can still read it by going around Spool.',
+  '取消私密之后，通过 Spool 连接的 AI 又能读到它，Spool 自带的 AI 功能也能用了。':
+    'Once it\u2019s no longer private, AIs connected through Spool can read it again, and Spool\u2019s own AI features work on it again.',
   '现在打开': 'Turn on now',
   '没打开': 'Could not turn it on',
   '用本机的 Claude Code / Codex（不花钱）': 'Use Claude Code or Codex on this Mac (no extra cost)',

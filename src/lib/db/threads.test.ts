@@ -3,7 +3,7 @@ import type Database from '@tauri-apps/plugin-sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { __setTestDb } from './client';
 import schemaSql from './schema.sql?raw';
-import { createThread, listAllThreads, updateThread } from './threads';
+import { createThread, listAllThreads, setThreadPrivate } from './threads';
 import { createWorkspace } from './workspaces';
 
 const { DatabaseSync } = createRequire(import.meta.url)(
@@ -32,7 +32,7 @@ const asPluginSql = (handle: Sqlite): Database =>
   }) as unknown as Database;
 
 // P9E-1 (Ocean 2026-10-15 第 119 条): a project carries whether it is private, and the user's
-// own edit path can flip it both ways.
+// own edit path can flip it both ways (P9E-4: without moving it in the sidebar).
 describe('私密项目 (P9E-1)', () => {
   let handle: Sqlite;
 
@@ -58,12 +58,22 @@ describe('私密项目 (P9E-1)', () => {
     const ws = await createWorkspace('ws');
     const t = await createThread(ws.id, '体检');
 
-    await updateThread(t.id, { isPrivate: true });
+    await setThreadPrivate(t.id, true);
     expect(handle.prepare('SELECT private FROM threads WHERE id = ?').get(t.id)).toEqual({ private: 1 });
     expect((await listAllThreads())[0]?.isPrivate).toBe(true);
 
-    await updateThread(t.id, { isPrivate: false });
+    await setThreadPrivate(t.id, false);
     expect(handle.prepare('SELECT private FROM threads WHERE id = ?').get(t.id)).toEqual({ private: 0 });
     expect((await listAllThreads())[0]?.isPrivate).toBe(false);
+  });
+
+  // P9E-4: the sidebar sorts by updated_at — making a project private is not activity, and
+  // must not lift it to the top of its workspace.
+  it('设为私密不改 updated_at，项目在左栏不挪位置', async () => {
+    const ws = await createWorkspace('ws');
+    const t = await createThread(ws.id, '体检');
+    handle.prepare('UPDATE threads SET updated_at = 5 WHERE id = ?').run(t.id);
+    await setThreadPrivate(t.id, true);
+    expect(handle.prepare('SELECT updated_at FROM threads WHERE id = ?').get(t.id)).toEqual({ updated_at: 5 });
   });
 });

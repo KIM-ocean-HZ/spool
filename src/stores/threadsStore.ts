@@ -69,6 +69,8 @@ interface ThreadsState {
   removeMany: (ids: string[]) => Promise<void>;
   /** v23: move a whole multi-selection into one workspace. */
   moveMany: (ids: string[], workspaceId: string) => Promise<void>;
+  /** P9E-4: make these projects private, or not — the whole selection, like moveMany. */
+  setPrivate: (ids: string[], on: boolean) => Promise<void>;
   select: (id: string | null) => void;
   /** v23: one sidebar row click, VS Code rules. `ordered` is the list the row was drawn in,
    *  top to bottom — the only thing that can define what 「一段」 means for ⇧-click. */
@@ -237,6 +239,20 @@ export const useThreadsStore = create<ThreadsState>((set, get) => ({
   // statement so it goes through the same `patch` as a single drag — one path to keep right.
   moveMany: async (ids, workspaceId) => {
     for (const id of ids) await get().patch(id, { workspaceId });
+  },
+
+  // P9E-4 (Ocean 2026-10-15 第 119 条). Not through `patch`: that stamps updated_at, and the
+  // rail sorts by it — keeping a project away from AIs is not activity, so it stays put.
+  setPrivate: async (ids, on) => {
+    for (const id of ids) await db.setThreadPrivate(id, on);
+    const chosen = new Set(ids);
+    set((st) => {
+      const next: Record<string, Thread[]> = {};
+      for (const [ws, list] of Object.entries(st.threadsByWorkspace)) {
+        next[ws] = list.map((t) => (chosen.has(t.id) ? { ...t, isPrivate: on } : t));
+      }
+      return { threadsByWorkspace: next };
+    });
   },
 
   // Picking a project always leaves whichever pinned view was open — that IS what clicking a

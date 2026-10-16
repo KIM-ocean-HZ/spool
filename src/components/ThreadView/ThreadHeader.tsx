@@ -1,6 +1,7 @@
 import { CalendarDays, CheckCircle2, Package, RotateCcw, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { isImeComposing } from '@/lib/utils/ime';
+import PrivateMark from '@/components/ui/PrivateMark';
 import { CENTRE_HEADER_HEIGHT } from '@/lib/layout';
 import { useT } from '@/lib/i18n';
 import { IS_MAC } from '@/lib/platform';
@@ -252,6 +253,9 @@ export default function ThreadHeader({
       style={{ minHeight: CENTRE_HEADER_HEIGHT }}
     >
       <div className="flex items-center gap-3">
+        {/* P9E-4: beside the title. Before it rather than after — the title box runs the
+            full width, so a mark after it would sit over by the buttons, far from the name. */}
+        {thread.isPrivate && <PrivateMark size={16} />}
         <input
           value={title}
           onChange={(e) => setTitle(e.target.value)}

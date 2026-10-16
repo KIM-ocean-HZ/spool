@@ -5,7 +5,7 @@ import { createAttachment } from './attachments';
 import { createBlock } from './blocks';
 import { __setTestDb } from './client';
 import schemaSql from './schema.sql?raw';
-import { createThread, updateThread } from './threads';
+import { createThread, setThreadPrivate } from './threads';
 import { mergeLibrary, MERGE_TABLES_FOR_TEST, type MergeReport } from './transfer';
 import { createWorkspace } from './workspaces';
 
@@ -325,7 +325,7 @@ describe('库的导出与导入 (DESIGN_LIBRARY_TRANSFER)', () => {
     const ws = await createWorkspace('私事');
     const hidden = await createThread(ws.id, '体检');
     const open = await createThread(ws.id, '课表');
-    await updateThread(hidden.id, { isPrivate: true });
+    await setThreadPrivate(hidden.id, true);
     __setTestDb(null);
 
     await mergeLibrary(asPluginSql(src.handle), asPluginSql(dst.handle));

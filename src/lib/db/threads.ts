@@ -34,7 +34,6 @@ export type ThreadPatch = Partial<
     | 'status'
     | 'workspaceId'
     | 'completedAt'
-    | 'isPrivate'
   >
 >;
 
@@ -177,13 +176,10 @@ export const updateThread = async (
     status: 'status',
     workspaceId: 'workspace_id',
     completedAt: 'completed_at',
-    isPrivate: 'private',
   };
   for (const k of Object.keys(patch) as (keyof ThreadPatch)[]) {
     sets.push(`${cols[k]} = $${i++}`);
-    // ⚠️ tauri-plugin-sql binds a boolean as the JSON text 'true', which `private = 1` never
-    // matches — the project would read as private here and stay visible to every AI.
-    values.push(k === 'isPrivate' ? (patch[k] ? 1 : 0) : (patch[k] as unknown));
+    values.push(patch[k] as unknown);
   }
   // Summary provenance: every GUI write is the user's (the app has no AI path since the
   // 2026-07-09 MCP-first pivot). A hand-written summary locks out MCP overwrites; clearing
@@ -225,6 +221,17 @@ export const setAutoMaintain = async (id: string, on: boolean | null): Promise<v
     on === null ? null : on ? 1 : 0,
     id,
   ]);
+};
+
+/** v34 (P9E) — make a project private, or not. Like setThreadCompletion it does not stamp
+ *  updated_at: the sidebar sorts by it, and keeping a project away from AIs is not activity —
+ *  it must not jump to the top of its workspace. */
+export const setThreadPrivate = async (id: string, on: boolean): Promise<void> => {
+  const db = await getDb();
+  // ⚠️ 1 / 0, never the boolean: tauri-plugin-sql binds `true` as the JSON text 'true', which
+  // `private = 1` never matches — the project would read as private here and stay visible to
+  // every AI.
+  await db.execute('UPDATE threads SET private = $1 WHERE id = $2', [on ? 1 : 0, id]);
 };
 
 // 2026-08-11 — `findOrCreateReviewThread` used to live here: 周回顾 had no home, so it made
