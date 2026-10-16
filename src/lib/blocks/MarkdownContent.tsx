@@ -22,14 +22,12 @@ interface Props {
    *  the correcting block, so a click opens the one belonging to the sentence clicked. */
   corrected?: readonly (MdSpan & { id?: string })[];
   /** 2026-08-19: what clicking one of those sentences does. See ContentRuns. */
-  onCorrectedClick?: (correctionId: string | undefined) => void;
+  onCorrectedClick?: (
+    correctionId: string | undefined,
+    at: { x: number; top: number; bottom: number },
+  ) => void;
   /** Stamp raw offsets into the DOM so a selection can be mapped back. See ContentRuns. */
   withOffsets?: boolean;
-  /** ⭐ S5（2026-08-24，Ocean 选丙）：在**每一段结构块后面**插点东西 —— 更正卡片直接跟在
-   *  它划的那一句所在的那一段底下，而不是全部堆在整块的最后。
-   *  参数是这一段在 `content` 里的 `[start, end)`，⚠️ 和 `corrected` 用的是同一套坐标。
-   *  返回 `null` 就什么都不插 —— 每一个不传这个 prop 的调用点都一个像素不差。 */
-  afterBlock?: (start: number, end: number) => ReactNode;
   /** P7 验收第一轮：how to draw a picture line — the block feed passes one (the picture, its
    *  caption under it). Without it the line reads as an icon and the caption. */
   renderImage?: (id: string, caption: ReactNode | null) => ReactNode;
@@ -73,14 +71,15 @@ export function MarkdownContent({
   corrected,
   onCorrectedClick,
   withOffsets,
-  afterBlock,
   renderImage,
 }: Props): ReactNode {
   const doc: MdDoc = parseMarkdown(content);
   // Nothing structural in this block: render exactly what the old path rendered, down to
   // the node shape. Most blocks are this, and they must not shift by a pixel.
   if (isPlainParagraph(doc, content)) {
-    const runs = (
+    // ⛔ 原样返回这一个节点，不许顺手包一层 Fragment：上面那句「down to the node shape …
+    // must not shift by a pixel」说的就是这里。
+    return (
       <ContentRuns
         content={content}
         hits={hits}
@@ -90,15 +89,6 @@ export function MarkdownContent({
         onCorrectedClick={onCorrectedClick}
         withOffsets={withOffsets}
       />
-    );
-    // ⚠️ 没传 `afterBlock` 就原样返回那一个节点 —— ⛔ 不许顺手包一层 Fragment：
-    // 上面那句「down to the node shape … must not shift by a pixel」说的就是这里。
-    if (!afterBlock) return runs;
-    return (
-      <Fragment>
-        {runs}
-        {afterBlock(0, content.length)}
-      </Fragment>
     );
   }
   // The spine (heavier opening) is a plain-prose device. When the block opens with a
@@ -121,8 +111,7 @@ export function MarkdownContent({
     />
   );
 
-  // 一段结构块画成什么。⚠️ `key` 挪到外面那个 Fragment 上了 —— Fragment 不产生 DOM，
-  // 所以这一步对没传 `afterBlock` 的调用点是零变化。
+  // 一段结构块画成什么。⚠️ `key` 在外面那个 Fragment 上 —— Fragment 不产生 DOM。
   const nodeFor = (b: MdBlock, gap: string): ReactNode => {
     if (b.kind === 'heading') {
       return (
@@ -162,13 +151,7 @@ export function MarkdownContent({
   return (
     <Fragment>
       {doc.blocks.map((b, i) => (
-        // ⚠️ `b.text` 是这一段里**属于正文**的那一段范围，坐标仍然是**原始 `content` 的下标**
-        // （`markdown.ts`：这里只说哪一段是结构、哪一段是正文，⛔ 从不改写 content）——
-        // 和 `corrected` 是同一套坐标。两边不是同一套的话，卡片会挂到隔壁那一段底下去。
-        <Fragment key={i}>
-          {nodeFor(b, gapFor(b, doc.blocks[i - 1]))}
-          {afterBlock?.(b.text.start, b.text.end)}
-        </Fragment>
+        <Fragment key={i}>{nodeFor(b, gapFor(b, doc.blocks[i - 1]))}</Fragment>
       ))}
     </Fragment>
   );

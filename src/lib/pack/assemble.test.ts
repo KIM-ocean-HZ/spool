@@ -9,7 +9,6 @@ import {
   blockSeqMap,
   correctionsBySource,
   filterBlocksForRange,
-  foldedCorrectionIds,
   type PackImage,
 } from './assemble';
 import { INSTRUCTION_HEADER, PACK_BEGIN, PACK_END } from './templates';
@@ -707,10 +706,11 @@ describe('assemble', () => {
       expect(out).not.toContain('占总分 40%\u201d');
     });
 
-    // 2026-08-19 — which corrections the FEED folds under their target. The rule is reachability:
-    // the marked sentence is the only way to open a folded note, so a correction without a
-    // locatable quote must keep its own card or it disappears from the screen entirely.
-    it('folds only the corrections a reader could open from the marked sentence', () => {
+    // Which corrections can mark a sentence in their target (and so open a preview from it):
+    // only one whose quote still occurs there. The others keep only the pointer line.
+    // (2026-10-16: corrections are no longer folded out of the timeline — every one has its
+    // own card — but whether a sentence carries a mark is still decided here.)
+    it('locates a correction only where its sentence still occurs', () => {
       const long = '课程要求:复现一篇论文,占总分 40%';
       const blocks = [
         textBlock('b1', long, { seq: 1 }),
@@ -733,8 +733,12 @@ describe('assemble', () => {
         // Plain citation: not a correction, never folded.
         textBlock('b5', '接着说', { seq: 5, refBlockId: 'b1' }),
       ];
-      const folded = foldedCorrectionIds(blocks);
-      expect([...folded]).toEqual(['b2']);
+      const list = correctionsBySource(blocks).get('b1') ?? [];
+      expect(list.map((c) => [c.id, c.quote])).toEqual([
+        ['b2', '占总分 40%'],
+        ['b3', null],
+        ['b4', null],
+      ]);
     });
 
     // ⭐ 2026-08-25（Ocean:「批注不能被更正」）—— 一条更正划的句子在批注里也算数。
@@ -754,8 +758,6 @@ describe('assemble', () => {
       const [c] = correctionsBySource(blocks).get('b1') ?? [];
       expect(c?.quote).toBe('MIT 12/22');
       expect(c?.field).toBe('annotation');
-      // 划得到 = 点得开 = 折进去（正文那一格的合并块限制管不到批注）。
-      expect([...foldedCorrectionIds(blocks)]).toEqual(['b2']);
     });
 
     it('prefers the body when the same words sit in both fields', () => {
@@ -772,28 +774,13 @@ describe('assemble', () => {
       expect(correctionsBySource(blocks).get('b1')?.[0]?.field).toBe('content');
     });
 
-    it('does not fold under a merged block, which has no marks to click', () => {
-      // SegmentedContent renders these and takes no `corrected` spans, so the sentence
-      // carries no mark — a folded note there would be unreachable.
-      const blocks = [
-        textBlock('b1', '第一段\n↪ note: 我的批注\n\n占总分 40%', { seq: 1 }),
-        textBlock('b2', '占分是 30%', {
-          seq: 2,
-          refBlockId: 'b1',
-          refKind: 'corrects',
-          correctedQuote: '占总分 40%',
-        }),
-      ];
-      expect(foldedCorrectionIds(blocks).size).toBe(0);
-    });
-
     // ⛔⛔ 2026-08-30 Ocean 报的 bug 的回归测试：「block 25 无法显示，点关系待审能看到
     // 一秒钟，然后仍然会消失」。真库就是 `#25 corrects #21`，而 `#21` 已经退役。
     //
     // 成因：08-30 的「退役块自动折到一行」把目标的正文整段藏了 ⇒ 被折走的更正**唯一的门**
     // （正文里那个可点的记号）没了 ⇒ 它在屏幕上哪儿都不存在。「一秒钟」是 `BlockFeed` 那个
     // `b.id === highlightBlockId` 的例外临时给的卡片。
-    it('⛔ 目标已经退役时，更正不许被折走 —— 折进去就再也点不到了', () => {
+    it('⛔ 目标已经退役时，更正不挂到它的句子上 —— 那一句已经不画了', () => {
       const blocks = [
         textBlock('b1', '占总分 40%', { seq: 1, staleAt: 111 }),
         textBlock('b2', '占分是 30%', {
@@ -803,7 +790,6 @@ describe('assemble', () => {
           correctedQuote: '占总分 40%',
         }),
       ];
-      expect(foldedCorrectionIds(blocks).size).toBe(0);
       // 退回「只能指着整块说话」那一档 ⇒ 目标那边画 CorrectedByLine 指过去，
       // 正文里不再画一个点了没反应的记号，而 b2 在时间线上留着自己的卡片
       //（引用行和三个动作都长在那张卡片上）。
@@ -811,7 +797,7 @@ describe('assemble', () => {
       expect(c?.quote).toBeNull();
       expect(c?.field).toBeNull();
 
-      // ⚠️ 对照：目标没退役时照旧折走 —— ⛔ 这一条别被上面那条顺手改宽。
+      // ⚠️ 对照：目标没退役时照旧挂得上 —— ⛔ 这一条别被上面那条顺手改宽。
       const live = [
         textBlock('b1', '占总分 40%', { seq: 1 }),
         textBlock('b2', '占分是 30%', {
@@ -821,21 +807,7 @@ describe('assemble', () => {
           correctedQuote: '占总分 40%',
         }),
       ];
-      expect([...foldedCorrectionIds(live)]).toEqual(['b2']);
-    });
-
-    it('does not fold a correction whose target is not in the list', () => {
-      // Cross-project corrections resolve to nothing here; folding one would hide a block
-      // whose target is not even on screen.
-      const blocks = [
-        textBlock('b2', '占分是 30%', {
-          seq: 2,
-          refBlockId: 'somewhere-else',
-          refKind: 'corrects',
-          correctedQuote: '占总分 40%',
-        }),
-      ];
-      expect(foldedCorrectionIds(blocks).size).toBe(0);
+      expect(correctionsBySource(live).get('b1')?.[0]?.quote).toBe('占总分 40%');
     });
 
     it('does not warn about a correction the user has since retired', () => {

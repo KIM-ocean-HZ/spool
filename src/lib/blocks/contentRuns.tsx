@@ -253,8 +253,13 @@ interface ContentRunsProps extends TokenizeOptions {
   /** 2026-08-19: what a click on a corrected span does. Ocean 2026-08-19:「点击它会出现修正后的信息」—
    *  the marked sentence IS the affordance, so the handler lives on the run, not on a
    *  separate line underneath. Absent (digest, weekly review, read-only surfaces) leaves
-   *  the wash exactly as it was: visible, inert. */
-  onCorrectedClick?: (correctionId: string | undefined) => void;
+   *  the wash exactly as it was: visible, inert.
+   *  2026-10-16: `at` is where the clicked sentence is on screen, for the preview panel to open
+   *  beside it without covering it. */
+  onCorrectedClick?: (
+    correctionId: string | undefined,
+    at: { x: number; top: number; bottom: number },
+  ) => void;
 }
 
 // Display-only renderer (§2.6 — no rich text). Maps each run to a styled node: the
@@ -282,21 +287,26 @@ export function ContentRuns({
   // sentence is clickable whether or not a search hit or a ==highlight== also covers it.
   // A <span role="button"> rather than a <button>: this sits mid-sentence, and a real button
   // would break the line box it lives in.
+  const sentenceAt = (el: Element) => {
+    const r = el.getBoundingClientRect();
+    return { x: r.left, top: r.top, bottom: r.bottom };
+  };
   const clickable = (node: ReactNode, key: number, id: string | undefined): ReactNode =>
     onCorrectedClick ? (
       <span
         key={key}
         role="button"
         tabIndex={0}
+        data-correction-mark=""
         onClick={(e) => {
           e.stopPropagation();
-          onCorrectedClick(id);
+          onCorrectedClick(id, sentenceAt(e.currentTarget));
         }}
         onKeyDown={(e) => {
           if (e.key !== 'Enter' && e.key !== ' ') return;
           e.preventDefault();
           e.stopPropagation();
-          onCorrectedClick(id);
+          onCorrectedClick(id, sentenceAt(e.currentTarget));
         }}
         className="cursor-pointer"
       >

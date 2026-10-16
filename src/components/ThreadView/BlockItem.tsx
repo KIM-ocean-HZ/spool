@@ -36,6 +36,7 @@ import BlockActions from './BlockActions';
 import CitationLine from './CitationLine';
 import CorrectedByLine from './CorrectedByLine';
 import CorrectionNote from './CorrectionNote';
+import CorrectionPopover, { type SentenceRect } from './CorrectionPopover';
 import BlockImages, { PictureThumb, PictureViewer, useBlockPictures } from './BlockImages';
 import { PictureEditor, segmentText, withSegmentText } from './PictureEditor';
 import ProvenanceLine from './ProvenanceLine';
@@ -198,20 +199,16 @@ function TextBlockItem({
   // this block, and correctionsBySource has already dropped any quote that no longer occurs
   // here. Every occurrence is marked; an identical sentence twice in one block says the
   // same wrong thing twice, and picking one of them would be arbitrary.
-  // 2026-08-19: the two halves get two presentations, and never both for one correction.
-  // A correction whose quote still occurs here is drawn UNDER this block as a note the
-  // marked sentence opens (and BlockFeed keeps it out of the timeline). One whose quote
-  // never matched has nothing to click, so it keeps its card and this block keeps the old
-  // pointer line — the reader can still get to it.
-  // ⚠️ Same condition as foldedCorrectionIds, and it has to stay the same: a correction the
-  // feed folded away must be drawn here, and one it kept must NOT be drawn twice.
+  // ⛔ 2026-10-16 (Ocean 甲 + 预览): every correction has its own card in the timeline now
+  // (BlockFeed). A correction whose quote still occurs here marks that sentence, and the
+  // mark opens a PREVIEW of it (CorrectionPopover) — nothing is drawn under the sentence any
+  // more, so there is never a second copy. One whose quote never matched has nothing to
+  // click, and this block keeps the old pointer line to it.
   const foldable = !hasSegmentAnnotations(block.content);
   // 压过、而且压缩前的原文还留着。⚠️ 两个条件都要 —— 关了「备份原文」那一次是不可逆的，
   // 那时候 `compressedAt` 有值而 `originalContent` 是空的（`blocks.ts` 上写着）。
   const hasOriginal = block.compressedAt != null && block.originalContent != null;
-  /** 这一条更正挂不挂得到某一句上（挂得上 = 画在那一句底下；挂不上 = 只能指着整块说）。
-   *  ⚠️ 必须和 `assemble.ts` 的 `foldedCorrectionIds` 同一条件：那边从时间线上折走的，
-   *  这边必须画出来，⛔ 少一条就是一块存在于库里、屏幕上哪儿都看不到的更正。
+  /** 这一条更正挂不挂得到某一句上（挂得上 = 那一句上有记号、点开预览；挂不上 = 只能指着整块说）。
    *  ⭐ 2026-08-25：划在**批注**里的不受合并块那条限制 —— 批注永远走 ContentRuns，记号照画。 */
   const isAttached = useCallback(
     (c: Correction): boolean => !!c.quote && (c.field === 'annotation' || foldable),
@@ -228,6 +225,7 @@ function TextBlockItem({
   const correctionBlocks = useMemo(
     () =>
       attachedCorrections
+        .filter((c) => c.field === 'content')
         .map((c) => (siblings ?? []).find((b) => b.id === c.id))
         .filter((b): b is Block => !!b),
     [attachedCorrections, siblings],
@@ -262,21 +260,8 @@ function TextBlockItem({
     [spansIn, block.annotation],
   );
 
-  // ⭐ S5（2026-08-24，Ocean 选丙）—— **一块上多条更正，要配得上对。**
-  //
-  // 之前是「一次只开一条」：从「句子 → 更正」通（点一句只开那一句的更正，这是有意的），
-  // **反方向没有** —— 卡片上没有任何东西指回它划的是哪一句。⚠️ 一条更正的时候够用，
-  // 两条就不够：真库 seq 21 上挂着两条，Ocean 只能点一次、记住、再点一次、再比对。
-  // **它随更正条数变差。**
-  //
-  // 丙：不再一次只开一条，**每条直接跟在它划的那一句底下**，按那一句在正文里的先后排。
-  // ⛔ 两条别弄坏的：① 折走的那几条**只在这一处画**（`BlockFeed` 把它们挡在时间线外）——
-  // 不许出现「时间线一份、块底下一份」的双份；② `correctedSpans` 上那个 `id` 是配对的
-  // **唯一依据**（2026-08-19 加的），⛔ 别在重构里丢掉。
-  //
-  // ⚠️ 定位不到的更正**到不了这儿**：`correctionsBySource` 已经把对不上的 `quote` 置空，
-  // 而 `attachedCorrections` 只收有 quote 的 —— 对不上的那几条留在时间线上有自己的卡片
-  // （`foldedCorrectionIds` 同一个条件）。所以下面每一条都一定有 span。
+  // ⭐ S5（2026-08-24，Ocean 选丙）：一块上多条更正时，`correctedSpans` 上那个 `id` 是「点的是哪一句 ⇒
+  // 开哪一条」的**唯一依据**（2026-08-19 加的），⛔ 别在重构里丢掉。
   /** 每条更正划的是哪一句 —— 卡片上要指回去。⚠️ 同一段里挂着两条的时候，位置本身
    *  分不出谁是谁（两条都跟在同一段底下），⛔ 所以这一句不许省。 */
   const correctionQuote = useMemo(
@@ -293,20 +278,6 @@ function TextBlockItem({
         .filter((b): b is Block => !!b),
     [attachedCorrections, siblings],
   );
-  const correctionAt = useMemo(() => {
-    const firstSpan = new Map<string, number>();
-    for (const sp of correctedSpans) {
-      const at = firstSpan.get(sp.id);
-      if (at === undefined || sp.start < at) firstSpan.set(sp.id, sp.start);
-    }
-    return correctionBlocks
-      .flatMap((c) => {
-        const at = firstSpan.get(c.id);
-        return at === undefined ? [] : [{ block: c, at }];
-      })
-      .sort((x, y) => x.at - y.at);
-  }, [correctedSpans, correctionBlocks]);
-
   // Action-bar reveal is JS-driven (not CSS group-hover): mouseleave deterministically
   // clears it, so the bar can't get stuck visible when the cursor moves to the block
   // below. See PLAN_EN.md §9.3.
@@ -429,13 +400,17 @@ function TextBlockItem({
   const manuallyExpanded = useRef(false);
   const [needsTruncation, setNeedsTruncation] = useState(false);
 
-  // 2026-08-19: which correction is open, by the correcting block's id. Closed until the reader
-  // asks for it by clicking the marked sentence — the mark itself is always visible, so
-  // nothing is hidden; what is deferred is the correction's text, which is a second voice
-  // in the middle of the user's own block. One id rather than a set, because opening a
-  // second sentence's correction while the first is open reads as the panel following the
-  // click.
-  const [openCorrectionId, setOpenCorrectionId] = useState<string | null>(null);
+  // 2026-10-16: the correction being previewed, and where its sentence is on screen. Opened by
+  // clicking the marked sentence; a click on another mark moves the preview there, a second
+  // click on the same mark closes it.
+  const [preview, setPreview] = useState<({ id: string } & SentenceRect) | null>(null);
+  const togglePreview = useCallback(
+    (id: string | undefined, at: SentenceRect) =>
+      setPreview((cur) => (!id || cur?.id === id ? null : { id, ...at })),
+    [],
+  );
+  const closePreview = useCallback(() => setPreview(null), []);
+  const previewed = preview ? (siblings ?? []).find((b) => b.id === preview.id) : undefined;
   // The manual entry point: the sentence the user selected, waiting for what is right.
   const [correcting, setCorrecting] = useState<string | null>(null);
   const [correctionDraft, setCorrectionDraft] = useState('');
@@ -1101,34 +1076,8 @@ function TextBlockItem({
         activeHitIndex={navHitIndex}
         withOffsets
         corrected={noteCorrectedSpans}
-        onCorrectedClick={
-          noteCorrectionBlocks.length > 0
-            ? (id) => setOpenCorrectionId((cur) => (cur === id ? null : (id ?? null)))
-            : undefined
-        }
+        onCorrectedClick={noteCorrectionBlocks.length > 0 ? togglePreview : undefined}
       />
-    </div>
-  );
-  /** 批注上那几条更正的卡片。⚠️ 画在批注**外面**：批注那个 div 是 15px / font-medium 的标题
-   *  样式，卡片长在里面会连字重一起继承过去。 */
-  const noteCorrectionCards = noteCorrectionBlocks.length > 0 && (
-    <div className="mb-1.5">
-      {noteCorrectionBlocks.map((c) => (
-        <CorrectionNote
-          key={c.id}
-          correction={c}
-          quote={correctionQuote.get(c.id) ?? null}
-          dimmed={openCorrectionId !== null && openCorrectionId !== c.id}
-          onRemove={
-            readOnly
-              ? undefined
-              : () => {
-                  setOpenCorrectionId(null);
-                  void removeAsking(c.id);
-                }
-          }
-        />
-      ))}
     </div>
   );
   // ⛔ 这里以前还有一个「被压到正文底下」的 AI 批注视图（`aiAnnotationView`）。
@@ -1314,7 +1263,6 @@ function TextBlockItem({
       {!staleFolded && (
         <>
       {annotationAsTitle && annotationView}
-      {annotationAsTitle && noteCorrectionCards}
 
       {/* ⭐ 2026-08-25 (Ocean, V3 验收): read mode is now the ONLY thing a block draws inline.
           The editor moved out to a pane-filling panel (see the portal at the bottom of this
@@ -1378,47 +1326,7 @@ function TextBlockItem({
                 corrected={correctedSpans}
                 withOffsets
                 renderImage={renderImage}
-                onCorrectedClick={
-                  correctionBlocks.length > 0
-                    ? (id) =>
-                        setOpenCorrectionId((cur) => (cur === id ? null : (id ?? null)))
-                    : undefined
-                }
-                // ⭐ S5：更正卡跟在**它划的那一句所在的那一段**底下。⛔ 这是它们**唯一**
-                // 被画出来的地方 —— `BlockFeed` 把这几块挡在时间线外，多画一处就是双份。
-                afterBlock={
-                  correctionAt.length === 0
-                    ? undefined
-                    : (start, end) => {
-                        const here = correctionAt.filter(
-                          (c) => c.at >= start && c.at < end,
-                        );
-                        if (here.length === 0) return null;
-                        return here.map(({ block: c }) => (
-                          <CorrectionNote
-                            key={c.id}
-                            correction={c}
-                            quote={correctionQuote.get(c.id) ?? null}
-                            dimmed={openCorrectionId !== null && openCorrectionId !== c.id}
-                            onRemove={
-                              readOnly
-                                ? undefined
-                                : () => {
-                                    setOpenCorrectionId(null);
-                                    // ⭐ 2026-08-25（Ocean）:「取消更正后，更正的内容会变成
-                                    // 一个 block，修复，直接消失。」
-                                    // ⛔ 以前这里只是**解开关系**（`clearSupersession`）——
-                                    // 那一块本身留在时间线上，成了一条没头没尾的孤块：
-                                    // 它的全部内容就是「这句话应该是……」，脱离了它更正的那
-                                    // 一句之后没人读得懂。现在整块删掉。
-                                    // ⚠️ 走的是普通删除那条路，所以它进撤销栈 —— ⌘Z 能拿回来。
-                                    void removeAsking(c.id);
-                                  }
-                            }
-                          />
-                        ));
-                      }
-                }
+                onCorrectedClick={correctionBlocks.length > 0 ? togglePreview : undefined}
               />
             )}
           </div>
@@ -1532,11 +1440,26 @@ function TextBlockItem({
           ⚠️ 挨着上面那条出向引用行放：一出一进是同一件事的两个方向，分开两处会读不出来。 */}
       <ProvenanceLine block={block} incoming={incoming} />
 
-      {/* 2026-08-19 — the corrections attached to this block, under the sentence they are about,
-          joined to it by the dashed rule in CorrectionNote.
-          ⭐ S5（2026-08-24）：它们**搬到正文里面去了**（`MarkdownContent` 的 `afterBlock`），
-          每条跟在它划的那一句所在的那一段底下 —— ⛔ 所以这里不许再画一遍。
-          点一句仍然有用：那一句的卡片亮起来，别的暗下去（`dimmed`）。 */}
+      {/* 2026-10-16 — the correction a marked sentence points at, previewed beside it. Its own
+          card is in the timeline; this is a look at it without leaving the sentence. */}
+      {preview && previewed && (
+        <CorrectionPopover anchor={preview} onClose={closePreview}>
+          <CorrectionNote
+            correction={previewed}
+            quote={correctionQuote.get(previewed.id) ?? null}
+            onRemove={
+              readOnly
+                ? undefined
+                : () => {
+                    setPreview(null);
+                    // ⭐ 2026-08-25（Ocean）:「取消更正后，更正的内容会变成一个 block，修复，直接消失。」
+                    // 整块删掉，走普通删除那条路 —— 进撤销栈，⌘Z 拿得回来。
+                    void removeAsking(previewed.id);
+                  }
+            }
+          />
+        </CorrectionPopover>
+      )}
 
       {/* The manual entry point's second half: the user has picked the wrong sentence and
           now says what is right. Shown under the block for the same reason the note is —

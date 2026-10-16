@@ -1,5 +1,4 @@
 import { annotationIsAi } from '@/lib/blocks/annotationAuthor';
-import { hasSegmentAnnotations } from '@/lib/blocks/segments';
 import type { Attachment } from '@/lib/db/attachments';
 import type { Block } from '@/lib/db/blocks';
 import type { Thread } from '@/lib/db/threads';
@@ -433,18 +432,12 @@ export const correctionsBySource = (blocks: Block[]): Map<string, Correction[]> 
     // ⛔⛔ 2026-08-30（Ocean 报的 bug：「block 25 无法显示，点关系待审能看到一秒钟，然后消失」）——
     // **被更正的那一块已经退役 ⇒ 这条更正挂不到它身上。**
     //
-    // 为什么：一条更正只有在**能锚进目标正文的某一句**时，`foldedCorrectionIds` 才把它
-    // 从时间线上折走 —— 折走的前提是「读者仍然点得到那一句」（见那个函数上面那段，
-    // 它自己把这条叫 a safety condition）。08-30 的「退役块自动折到一行」把那个前提打掉了：
-    // 目标的正文整段不画 ⇒ 那一句没了 ⇒ 折走的更正**在屏幕上哪儿都不存在**，
-    // 正是那段注释写明不许出现的状态（"a block that exists, sits in the pack, and cannot be
-    // seen anywhere on screen"）。真库 `#25 corrects #21` 就是这一条，而 `#21` 已退役。
-    // ⚠️ 「看到一秒钟」是 `BlockFeed` 那个例外（`b.id === highlightBlockId` 时临时给张卡片），
-    // 闪一下就没 —— 而这条边正是「关系待审」要用户去处理的，动作还长在那张卡片上。
+    // 为什么：08-30 起退役块自动折到一行，正文整段不画 ⇒ 那一句没了，上面画不出可点的记号。
+    // 真库 `#25 corrects #21` 就是这一条，而 `#21` 已退役。
     //
     // ⇒ 目标退役时，这条更正退回「只能指着整块说话」那一档（`quote: null`），于是自动地：
-    // 时间线上留着自己的卡片（点得到、引用行在、三个动作在）、目标那边画 `CorrectedByLine`
-    // 指过去、目标正文里不再画一个点了没反应的记号。⛔ 三处各自判断会立刻走散，所以只在这里判。
+    // 目标那边画 `CorrectedByLine` 指过去、目标正文里不再画一个点了没反应的记号。
+    // （2026-10-16 起每条更正本来就在时间线上有自己的卡片。）⛔ 各处各自判断会立刻走散，所以只在这里判。
     //
     // ⚠️ **pack 一个字都不会变**：pack 传进来的 `blocks` 已经滤掉退役块（见 buildPack），
     // 退役的目标本来就 `target === undefined` ⇒ 本来就是 `quote: null`。这一条只对界面生效。
@@ -465,37 +458,6 @@ export const correctionsBySource = (blocks: Block[]): Map<string, Correction[]> 
     const list = out.get(b.refBlockId);
     if (list) list.push(entry);
     else out.set(b.refBlockId, [entry]);
-  }
-  return out;
-};
-
-// 2026-08-19 (Ocean) — corrections the FEED folds into the block they correct instead of
-// giving them a card of their own. The rule is one condition, and it is a safety condition:
-// fold only what the reader can still get to. A correction is reachable when its quote is
-// still locatable in its target (the same test correctionsBySource already applies), because
-// the marked sentence is the only thing that opens it. A correction whose quote never matched,
-// or whose target lives in another project, keeps its place in the timeline — the alternative
-// is a block that exists, sits in the pack, and cannot be seen anywhere on screen.
-//
-// ⚠️ Feed presentation only. The pack, the digest, seq numbering and the row itself are
-// untouched: this hides no content from any reader, it moves where one is drawn.
-export const foldedCorrectionIds = (blocks: Block[]): Set<string> => {
-  const out = new Set<string>();
-  for (const [targetId, list] of correctionsBySource(blocks).entries()) {
-    // ⚠️ A merged block renders through SegmentedContent, which takes no `corrected` spans
-    // — so its sentences carry no mark and there is nothing to click. Folding a correction
-    // under one would put it behind a door with no handle, the same defect
-    // DESIGN_MCP_INTENT_ROUTING §2.1 named on the file side.
-    const target = blocks.find((b) => b.id === targetId);
-    if (!target) continue;
-    for (const c of list) {
-      if (!c.quote) continue;
-      // ⚠️ 合并块（SegmentedContent）不吃 `corrected` 记号，所以**划在正文里**的那种没有
-      // 可点的记号 —— 折进去等于藏在一扇没有把手的门后面。
-      // ⚠️ 划在**批注**里的不受这一条影响：批注永远走 ContentRuns，记号照常画。
-      if (c.field === 'content' && hasSegmentAnnotations(target.content)) continue;
-      out.add(c.id);
-    }
   }
   return out;
 };

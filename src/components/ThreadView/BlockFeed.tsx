@@ -1,7 +1,6 @@
-import { Fragment, type RefObject, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, type RefObject, useEffect, useRef, useState } from 'react';
 import { formatAccelerator } from '@/lib/capture/shortcut';
 import type { Block } from '@/lib/db/blocks';
-import { foldedCorrectionIds } from '@/lib/pack/assemble';
 import {
   mountedBlockIds,
   scrollBlockIntoView,
@@ -97,7 +96,6 @@ export default function BlockFeed({ threadId, scrollRef }: Props) {
   const blocks = useBlocksStore((s) => s.byThread[threadId] ?? EMPTY);
   const overEmpty = useDropStore((s) => s.overThread);
   const highlightBlockId = useSearchStore((s) => s.highlightBlockId);
-  const navBlockId = useSearchStore((s) => s.activeNavigationBlockId);
   // 拍板点 2/5: the empty state forks on the capture grant, and the capture that takes a
   // new user to three gets a one-time line under it.
   const inputMonitoring = usePermissionStore((s) => s.inputMonitoring);
@@ -157,22 +155,13 @@ export default function BlockFeed({ threadId, scrollRef }: Props) {
     void load(threadId);
   }, [threadId, load]);
 
-  const ordered = useMemo(() => {
-    // 2026-08-19: a correction the reader opens from the marked sentence is drawn under that
-    // sentence (CorrectionNote), so it must not ALSO get a card here — that duplicate is
-    // what Ocean read as 「多条重复信息」 the first time MCP corrected three blocks at once.
-    // ⚠️ 搜索落点是例外：「跳到命中处」必须落得下去。
-    // ⚠️ P1B A3：查找停在它上面的整段时间都算（`navBlockId`），⛔ 不只是闪一下的那 1.2 秒 ——
-    // 只认 `highlightBlockId` 的话，按回车走进一条更正，它闪一下就又折回去了，命中跟着消失。
-    const folded = foldedCorrectionIds(blocks);
-    const shown =
-      folded.size === 0
-        ? blocks
-        : blocks.filter(
-            (b) => !folded.has(b.id) || b.id === highlightBlockId || b.id === navBlockId,
-          );
-    return shown;
-  }, [blocks, highlightBlockId, navBlockId]);
+  // ⛔⛔ 2026-10-16（Ocean，发 P9E 之前插进来的）：**每一块都在时间线上，更正也一样。**
+  // 08-19 起一条更正不占自己的卡片，折进它更正的那一句底下（S5 丙：每条跟在那一句的段落下面）。
+  // 〈Memo产品复活｜Claude独立调研〉#20 是整份最终方案（2700 字），只因为它更正了 #14 里一句话，
+  // 就只剩 #14 底下一块小字，按块号找不到；而 #21 更正的是 #20 里的一句 —— 折进去的那一份不画
+  // 记号，#21 在屏幕上哪儿都没有。Ocean 选甲：更正块回到时间线，被更正的那一句点一下在浮窗里
+  // 预览（CorrectionPopover），不来回跳。⛔ 别再按「是不是更正」从这里滤块。
+  const ordered = blocks;
 
   // If a search result targets a block outside the current tail window, widen so it's
   // mounted before the scrollIntoView below runs. Runs before the highlight effect so
