@@ -2,11 +2,13 @@ import { X } from 'lucide-react';
 import { nanoid } from 'nanoid';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ClipboardEvent, KeyboardEvent } from 'react';
+import type { Block } from '@/lib/db/blocks';
 import { isImeComposing } from '@/lib/utils/ime';
-import { useT } from '@/lib/i18n';
+import { t, useT } from '@/lib/i18n';
 import { useBlocksStore } from '@/stores/blocksStore';
 import { selectDraft, selectDraftImages, useDraftStore, type DraftImage } from '@/stores/draftStore';
 import { selectThreadById, useThreadsStore } from '@/stores/threadsStore';
+import { toast } from '@/stores/toastStore';
 
 interface Props {
   threadId: string;
@@ -41,6 +43,47 @@ const isEditable = (el: EventTarget | null): boolean =>
   el instanceof HTMLElement &&
   (el.isContentEditable || el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT');
 
+/** Projects whose draft is being stored right now. Module-level, not a ref: LogView is mounted
+ *  with `key={thread.id}`, so this component can be rebuilt in the middle of a save. */
+const sending = new Set<string>();
+
+/** P9H-1（DISCOVERED-20261015-4）：the draft is cleared only once the block is in the library —
+ *  it used to be cleared first, so a failed write lost the words with nothing said. A second
+ *  Enter while it is being stored sends nothing. Whatever was typed or pasted in the meantime
+ *  stays in the box. */
+export const sendDraft = async (threadId: string): Promise<Block | null> => {
+  if (sending.has(threadId)) return null;
+  const draft = useDraftStore.getState();
+  const typed = draft.byThread[threadId] ?? '';
+  const content = typed.trim();
+  const images = draft.images[threadId] ?? [];
+  if (images.length === 0 && !content) return null;
+  sending.add(threadId);
+  try {
+    const blocks = useBlocksStore.getState();
+    const block =
+      images.length > 0
+        ? await blocks.appendWithImages(threadId, content, { bytes: images.map((i) => i.bytes) })
+        : await blocks.append({ threadId, kind: 'text', content });
+    const now = useDraftStore.getState();
+    const rest = (now.byThread[threadId] ?? '').startsWith(typed)
+      ? (now.byThread[threadId] ?? '').slice(typed.length)
+      : (now.byThread[threadId] ?? '');
+    const sent = new Set(images.map((i) => i.id));
+    const laterImages = (now.images[threadId] ?? []).filter((i) => !sent.has(i.id));
+    now.clearDraft(threadId);
+    if (rest) now.setDraft(threadId, rest);
+    if (laterImages.length > 0) now.addDraftImages(threadId, laterImages);
+    return block;
+  } catch (e) {
+    console.error('[composer] send failed', e);
+    toast.error(t('没存上，字还在输入框里。'));
+    return null;
+  } finally {
+    sending.delete(threadId);
+  }
+};
+
 export default function Composer({ threadId, onSubmitted }: Props) {
   const t = useT();
   // ⚠️⚠️ 草稿存在 store 里，**不是** useState —— LogView 是 `key={thread.id}` 挂的，
@@ -50,7 +93,6 @@ export default function Composer({ threadId, onSubmitted }: Props) {
   const [activeIdx, setActiveIdx] = useState(0);
 
   const append = useBlocksStore((s) => s.append);
-  const appendWithImages = useBlocksStore((s) => s.appendWithImages);
   // P7-7 (Ocean 2026-10-07 #6): pictures pasted into the box ride with the block it sends —
   // several at once go into the same block, next to whatever was typed.
   const images = useDraftStore(selectDraftImages(threadId));
@@ -113,18 +155,8 @@ export default function Composer({ threadId, onSubmitted }: Props) {
   }, [mention?.query, candidates.length]);
 
   const submit = async (): Promise<void> => {
-    const content = value.trim();
-    if (images.length > 0) {
-      const bytes = images.map((i) => i.bytes);
-      useDraftStore.getState().clearDraft(threadId);
-      const block = await appendWithImages(threadId, content, { bytes });
-      if (block) onSubmitted?.(block.id);
-      return;
-    }
-    if (!content) return;
-    useDraftStore.getState().clearDraft(threadId);
-    const block = await append({ threadId, kind: 'text', content });
-    onSubmitted?.(block.id);
+    const block = await sendDraft(threadId);
+    if (block) onSubmitted?.(block.id);
   };
 
   const pickMention = async (i: number): Promise<void> => {

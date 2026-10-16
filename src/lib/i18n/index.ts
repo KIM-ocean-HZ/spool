@@ -1096,6 +1096,8 @@ const EN: Record<string, string> = {
   '这个项目在 {date} 拆成了 {n} 个子项目：{list}': 'This project was split into {n} sub-projects on {date}: {list}',
   '〈{title}〉': '‹{title}›',
   '、': ', ',
+  // P9H-1 (DISCOVERED-20261015-4): the composer keeps the words when the library write fails.
+  '没存上，字还在输入框里。': 'That did not save. Your text is still in the box.',
 
   // DESIGN_FOLLOW_UP §8.4 — an AI proposing ONE line for a project's follow-up list. This is
   // approval of a line that will tell the NEXT conversation what to go looking for, so it is

@@ -54,6 +54,10 @@ interface ThreadsState {
   /** Where a ⇧-click measures from: the last row clicked without ⇧. */
   selectionAnchorId: string | null;
   pinnedView: PinnedView;
+  /** P9H-1（DISCOVERED-20261015-3）：a finished project to show as 「看全部」 this one time, not
+   *  the digest it opens on — the startup draft prompt's 「去看」 lands on a block whose panel
+   *  only opens in the full view. Picking any other project clears it. */
+  logViewFor: string | null;
   loading: boolean;
   error: string | null;
   loadAll: () => Promise<void>;
@@ -72,6 +76,8 @@ interface ThreadsState {
   /** P9E-4: make these projects private, or not — the whole selection, like moveMany. */
   setPrivate: (ids: string[], on: boolean) => Promise<void>;
   select: (id: string | null) => void;
+  /** Open this (finished) project straight onto 「看全部」 — see `logViewFor`. */
+  showLogView: (id: string) => void;
   /** v23: one sidebar row click, VS Code rules. `ordered` is the list the row was drawn in,
    *  top to bottom — the only thing that can define what 「一段」 means for ⇧-click. */
   clickRow: (id: string, ordered: string[], mods: { meta: boolean; shift: boolean }) => void;
@@ -108,6 +114,7 @@ export const useThreadsStore = create<ThreadsState>((set, get) => ({
   selectedIds: new Set<string>(),
   selectionAnchorId: null,
   pinnedView: null,
+  logViewFor: null,
   loading: true,
   error: null,
 
@@ -257,7 +264,10 @@ export const useThreadsStore = create<ThreadsState>((set, get) => ({
 
   // Picking a project always leaves whichever pinned view was open — that IS what clicking a
   // card in the matrix means (§9.4: 「点击可以跳转到项目即可」).
-  select: (id) => set({ activeId: id, pinnedView: null }),
+  select: (id) =>
+    set((s) => ({ activeId: id, pinnedView: null, logViewFor: s.logViewFor === id ? id : null })),
+
+  showLogView: (id) => set({ logViewFor: id }),
 
   // VS Code's three clicks, and nothing more:
   //   plain — this row alone is selected, and it opens (the old behaviour, unchanged);
@@ -287,7 +297,13 @@ export const useThreadsStore = create<ThreadsState>((set, get) => ({
       set({ selectedIds: next, selectionAnchorId: id });
       return;
     }
-    set({ selectedIds: new Set([id]), selectionAnchorId: id, activeId: id, pinnedView: null });
+    set((s) => ({
+      selectedIds: new Set([id]),
+      selectionAnchorId: id,
+      activeId: id,
+      pinnedView: null,
+      logViewFor: s.logViewFor === id ? id : null,
+    }));
   },
 
   clearSelection: () => set({ selectedIds: new Set<string>(), selectionAnchorId: null }),

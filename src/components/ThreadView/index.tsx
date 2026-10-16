@@ -22,10 +22,20 @@ import ThreadHeader, { type ThreadViewMode } from './ThreadHeader';
 const EMPTY: readonly Block[] = [];
 const EMPTY_ATTACHMENTS: readonly Attachment[] = [];
 
+/** A finished project opens on its digest unless the user flipped it this visit, or something
+ *  asked for 「看全部」 this one time (P9H-1: the startup draft prompt's 「去看」, `logViewFor`). */
+export const threadViewMode = (
+  thread: { id: string; status: string },
+  override: ThreadViewMode | null,
+  logViewFor: string | null,
+): ThreadViewMode =>
+  thread.status === 'done' ? override ?? (logViewFor === thread.id ? 'log' : 'digest') : 'log';
+
 export default function ThreadView() {
   const activeId = useThreadsStore((s) => s.activeId);
   const thread = useThreadsStore(selectThreadById(activeId));
   const reopen = useThreadsStore((s) => s.reopen);
+  const logViewFor = useThreadsStore((s) => s.logViewFor);
 
   const blocks = useBlocksStore((s) =>
     activeId ? s.byThread[activeId] ?? EMPTY : EMPTY,
@@ -127,8 +137,7 @@ export default function ThreadView() {
     );
   }
 
-  const viewMode: ThreadViewMode =
-    thread.status === 'done' ? viewOverride ?? 'digest' : 'log';
+  const viewMode = threadViewMode(thread, viewOverride, logViewFor);
 
   const handleReopen = (): void => {
     void reopen(thread.id);

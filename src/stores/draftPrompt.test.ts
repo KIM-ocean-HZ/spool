@@ -5,8 +5,9 @@ import { createBlock, deleteBlock } from '@/lib/db/blocks';
 import { __setTestDb } from '@/lib/db/client';
 import type { BlockDraft } from '@/lib/db/drafts';
 import schemaSql from '@/lib/db/schema.sql?raw';
-import { createThread, softDeleteThread } from '@/lib/db/threads';
+import { createThread, softDeleteThread, updateThread } from '@/lib/db/threads';
 import { createWorkspace } from '@/lib/db/workspaces';
+import { threadViewMode } from '@/components/ThreadView';
 import { draftPromptFor, leftDrafts, startDraftPrompt, type LeftDraft } from './draftPrompt';
 import { useDraftStore } from './draftStore';
 import { useSearchStore } from './searchStore';
@@ -103,6 +104,28 @@ describe('开机提示（真 SQLite）', () => {
     useToastStore.getState().toasts[0]!.action!.run();
     expect(useThreadsStore.getState().activeId).toBe(threadId);
     expect(useSearchStore.getState().highlightBlockId).toBe(b9);
+  });
+
+  // P9H-1（DISCOVERED-20261015-3）：已完成的项目默认画只读的摘要视图，面板在那里开不了。
+  it('已完成的项目：「去看」这一次画「看全部」；换到别的项目再回来，照旧是摘要', async () => {
+    await updateThread(threadId, { status: 'done' });
+    const other = (await createThread((await createWorkspace('W2')).id, '别的')).id;
+    const done = { id: threadId, status: 'done' };
+    useThreadsStore.getState().select(other);
+    expect(threadViewMode(done, null, useThreadsStore.getState().logViewFor)).toBe('digest');
+
+    useDraftStore.setState({ blockDrafts: { [b9]: draft(1) } });
+    startDraftPrompt([b9]);
+    await settle();
+    useToastStore.getState().toasts[0]!.action!.run();
+    expect(useThreadsStore.getState().activeId).toBe(threadId);
+    expect(threadViewMode(done, null, useThreadsStore.getState().logViewFor)).toBe('log');
+    // 人自己点了「摘要」：听他的。
+    expect(threadViewMode(done, 'digest', useThreadsStore.getState().logViewFor)).toBe('digest');
+
+    useThreadsStore.getState().select(other);
+    useThreadsStore.getState().select(threadId);
+    expect(threadViewMode(done, null, useThreadsStore.getState().logViewFor)).toBe('digest');
   });
 
   it('好几块：先说几块；「去看」的那一块点了完成之后，剩下的再提示一次；全了结就不再提示', async () => {

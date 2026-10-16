@@ -4,6 +4,7 @@ import {
   SHOW_UNDO_OVERLAY_COMMAND,
   type OverlayUndoPayload,
 } from '@/lib/capture/overlayProtocol';
+import { IS_MAC } from '@/lib/platform';
 import { useBlocksStore } from '@/stores/blocksStore';
 import { previewForEntry, threadIdForEntry, useUndoStore } from '@/stores/undoStore';
 import { useThreadsStore } from '@/stores/threadsStore';
@@ -93,19 +94,28 @@ export const runRedo = async (): Promise<void> => {
   });
 };
 
-// Registers the Cmd+Z / Ctrl+Z shortcut on the main window (§14.1). The global,
-// works-from-any-app variant is registered in Rust only while a toast is up.
+type UndoKey = Pick<KeyboardEvent, 'metaKey' | 'ctrlKey' | 'shiftKey' | 'altKey' | 'key'>;
+
+/** Which of the two the key is. P9H-1（DISCOVERED-20261016-7, Ocean 10-16 第 142 条: one ⌘Z too
+ *  many and 「不知道怎么取消撤回」— the only redo was the card's button, gone in 2.5 s): ⌘⇧Z /
+ *  Ctrl+Shift+Z is redo everywhere, and Ctrl+Y as well off the Mac (the Windows convention). */
+export const undoKeyIntent = (e: UndoKey, isMac: boolean): 'undo' | 'redo' | null => {
+  if (e.altKey || !(e.metaKey || e.ctrlKey)) return null;
+  const k = e.key.toLowerCase();
+  if (k === 'z') return e.shiftKey ? 'redo' : 'undo';
+  if (k === 'y' && !isMac && e.ctrlKey && !e.metaKey && !e.shiftKey) return 'redo';
+  return null;
+};
+
+// Registers the Cmd+Z / Ctrl+Z shortcut (and redo, above) on the main window (§14.1). The
+// global, works-from-any-app variant is registered in Rust only while a toast is up.
 export function useUndo(): void {
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
-      const isUndo =
-        (e.metaKey || e.ctrlKey) &&
-        !e.shiftKey &&
-        !e.altKey &&
-        (e.key === 'z' || e.key === 'Z');
-      if (!isUndo) return;
-      // Let the browser's native text undo win inside an editable field — but only while
-      // there is text in it to undo.
+      const intent = undoKeyIntent(e, IS_MAC);
+      if (!intent) return;
+      // Let the browser's native text undo (and redo) win inside an editable field — but only
+      // while there is text in it.
       //
       // ⚠️ Ocean, Windows 验收 2026-08-18 #1: 「自己写入的 block 无法撤销（写入撤销和删除撤销
       // 都不行）」. The gap that recorded nothing is fixed in blocksStore.append; this is the
@@ -129,7 +139,7 @@ export function useUndo(): void {
         if (typed.length > 0) return;
       }
       e.preventDefault();
-      void runUndo();
+      void (intent === 'undo' ? runUndo() : runRedo());
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);

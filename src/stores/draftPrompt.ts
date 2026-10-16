@@ -59,10 +59,12 @@ const messageFor = ({ count, target }: { count: number; target: LeftDraft }): st
     : t('〈{title}〉#{seq} 上次没点「完成」，写的字还在', { title, seq: target.seq });
 };
 
-/** 「去看」：选中那个项目、回到「内容」页签、跳到那一块。面板由那一块自己开（画出来时有草稿）。 */
+/** 「去看」：选中那个项目、回到「内容」页签、跳到那一块。面板由那一块自己开（画出来时有草稿）。
+ *  P9H-1（DISCOVERED-20261015-3）：已完成的项目默认画只读的摘要视图，面板在那里开不了 ⇒ 这一次画「看全部」。 */
 const goTo = (d: LeftDraft): void => {
   useCompressStore.getState().setTab(d.threadId, 'content');
   useThreadsStore.getState().select(d.threadId);
+  useThreadsStore.getState().showLogView(d.threadId);
   useSearchStore.getState().highlight(d.blockId);
 };
 
