@@ -247,7 +247,7 @@
 - 改的文件：`src/components/ui/useMenuPosition.ts`（+ 新测试 `useMenuPosition.test.ts`）、`src/components/Sidebar/ThreadListItem.tsx`、`src/components/Sidebar/MenuPrivateItem.tsx`。
 - 做法：① 菜单大小一变就按同一个锚点重新摆（`ResizeObserver`），往左 / 往上挪到整块都在窗口里 —— 左栏两种右键菜单和「AI 引擎」小块都用这一个；② 说明展开时它就是整个菜单：「移动到工作区」和「删除」先收起来，只剩说明和两个按钮（多选时顶上照旧写选中了几个），点「取消 / 保持私密」回到原来的菜单。
 - 验：`clampMenu` 三条测试；全量 tsc 干净、vitest 101 / 1121、`(none missing)`、`--dead` 87。截图（桌面 `Spool/P9E-screenshots-20261016/`）：`p9e-r1-after-make-private-zh` / `-en`、`p9e-r1-after-turn-off-zh`（600×380，最下面一行）、`p9e-r1-after-very-short-window`（600×270，说明放不下时菜单整体上移，按钮照样看得见）。
-- 换装：先问（不改库、不改 MCP，AI 客户端不用重启）。
+- **已换装**（Ocean 10-16「换装」，HANDOFF §9.2 第 133 条；停之前 `drafts.json` 是空的，没有没存的字）：在 `711c2ab` 上构建（`src` / `src-tauri` 没有未提交改动），命令同 §7.6；TSA 一遍过（主程序和 `spool-ai` 都是 13:55:11）；`--verify --deep --strict` 过；新二进制 `--mcp` 连真库最新副本 24 个工具。装前 sha256 `b470e343…`（P9E 那版），真库 v34 · ok · 工作区 30 / 项目 75（私密 0）/ 块 1197 · 正文 477160 / 文件 65 / 图片 18 / 跟进 23；快照 26 个；`settings.json` 26 个键。GUI 89254、`--overlay` 89345 按 pid 停，1 秒内都退了；21 个 `--mcp` 一个没碰（装后逐个核过还活着）。备份（桌面）`spool.before-p9e-r1-install-20261016-135535.db` 和同名的 `settings` / `focus` / `drafts` 三个 json；旧包 `~/Desktop/Spool/spool-pre-install/Spool-old-20261016-135535-pre-p9e-r1.app`。装后 sha256 `09cd60d6…` 和构建产物一致；主进程 91817、`--overlay` 91831 都是 13:55:35 起的，txt inode 81428250 = 新文件；`spctl` = `Unnotarized Developer ID`；stderr 只有 `[overlay] helper started` 和 `[double-tap] installed at HID/active`。真库逐项和装前一样（不迁移，快照仍 26 个）；`settings.json` 逐键一样。没 push、没发版。
 
 ## 8. 收尾的文档动作（执行窗做）
 
