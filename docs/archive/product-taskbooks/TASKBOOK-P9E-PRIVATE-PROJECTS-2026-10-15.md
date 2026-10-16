@@ -249,6 +249,16 @@
 - 验：`clampMenu` 三条测试；全量 tsc 干净、vitest 101 / 1121、`(none missing)`、`--dead` 87。截图（桌面 `Spool/P9E-screenshots-20261016/`）：`p9e-r1-after-make-private-zh` / `-en`、`p9e-r1-after-turn-off-zh`（600×380，最下面一行）、`p9e-r1-after-very-short-window`（600×270，说明放不下时菜单整体上移，按钮照样看得见）。
 - **已换装**（Ocean 10-16「换装」，HANDOFF §9.2 第 133 条；停之前 `drafts.json` 是空的，没有没存的字）：在 `711c2ab` 上构建（`src` / `src-tauri` 没有未提交改动），命令同 §7.6；TSA 一遍过（主程序和 `spool-ai` 都是 13:55:11）；`--verify --deep --strict` 过；新二进制 `--mcp` 连真库最新副本 24 个工具。装前 sha256 `b470e343…`（P9E 那版），真库 v34 · ok · 工作区 30 / 项目 75（私密 0）/ 块 1197 · 正文 477160 / 文件 65 / 图片 18 / 跟进 23；快照 26 个；`settings.json` 26 个键。GUI 89254、`--overlay` 89345 按 pid 停，1 秒内都退了；21 个 `--mcp` 一个没碰（装后逐个核过还活着）。备份（桌面）`spool.before-p9e-r1-install-20261016-135535.db` 和同名的 `settings` / `focus` / `drafts` 三个 json；旧包 `~/Desktop/Spool/spool-pre-install/Spool-old-20261016-135535-pre-p9e-r1.app`。装后 sha256 `09cd60d6…` 和构建产物一致；主进程 91817、`--overlay` 91831 都是 13:55:35 起的，txt inode 81428250 = 新文件；`spctl` = `Unnotarized Developer ID`；stderr 只有 `[overlay] helper started` 和 `[double-tap] installed at HID/active`。真库逐项和装前一样（不迁移，快照仍 26 个）；`settings.json` 逐键一样。没 push、没发版。
 
+### 7.8 验收第二轮（Ocean 2026-10-16）
+
+- Ocean 原话：「还有一个bug，设为隐私后的项目如果点击已完成，再去右键关闭隐私，弹窗会变成半透明，无法点击。」（HANDOFF §9.2 第 134 条）
+- 复现（截图脚本，真组件）：私密项目标成已完成、右键、「取消私密…」—— 菜单半透明；在「取消私密」按钮正中间问 `document.elementFromPoint` 最上面是谁，答案是下面那一行「毕业论文」（`p9e-r2-before-done-row-menu.png`）。
+- 原因（和私密无关，所有已完成项目的右键菜单一直如此）：已完成的项目那一行是 `opacity-50`，右键菜单画在这一行**里面** ⇒ 跟着半透明；`opacity` 让这一行自成一层，菜单的 `z-50` 只在这一层里算数，下面几行盖在菜单上、把点击接走。
+- 提交：`a54406d fix(sidebar): 已完成的项目右键菜单不再半透明、点得动（P9E 验收第二轮…）`
+- 改的文件：`src/components/Sidebar/ThreadListItem.tsx`（菜单用 `createPortal` 画到 `document.body`；这一行自己的样子不变）。
+- 验：单元测试测不出（node 里没有排版和层叠），用真组件截图脚本做命中测试 —— 改后按钮正中间就是按钮本身（`p9e-r2-after-done-row-menu-zh` / `-en`）；照真手指的顺序 mousedown → mouseup → click：菜单没被「点外面就关」误关，私密取消、小眼睛消失、菜单关上（`p9e-r2-after-press-turns-off.png`）。上一轮「菜单长高了往上挪」照样成立。全量 tsc 干净、vitest 101 / 1121、`(none missing)`。
+- 换装：先问（不改库、不改 MCP，AI 客户端不用重启）。
+
 ## 8. 收尾的文档动作（执行窗做）
 
 - 首屏改成 `COMPLETE —— 待 Ocean 验收`，移进 `docs/archive/product-taskbooks/`。
