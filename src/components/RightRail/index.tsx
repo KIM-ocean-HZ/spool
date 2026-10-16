@@ -2,6 +2,7 @@ import { ChevronDown, ChevronRight, Globe, Inbox } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import CompressRail from "@/components/Compress/CompressRail";
 import LockedAiEntry from "@/components/AiSetup/LockedAiEntry";
+import PrivateAiEntry from "@/components/AiSetup/PrivateAiEntry";
 import LiveRun from "./LiveRun";
 import McpBar from "./McpBar";
 import ProjectFiles from "./ProjectFiles";
@@ -147,7 +148,14 @@ export default function RightRail({ thread, onCollapse, onEditBrief }: Props) {
   const searchEntry =
     status === null
       ? null
-      : aiEntryState({ ready: engineReady, route: "cli", showAi: actionsEnabled, isMac: IS_MAC });
+      : aiEntryState({
+          ready: engineReady,
+          route: "cli",
+          showAi: actionsEnabled,
+          isMac: IS_MAC,
+          // P9E-3（第 122 条）：私密项目里不联网去查 —— Spool 自带的 AI 不碰它。
+          privateProject: thread?.isPrivate === true,
+        });
   const disabled = engineActionsDisabled(gate);
 
   // §3.1 — this is the "user agrees" the prompts have always asked for. The block goes in
@@ -320,10 +328,16 @@ export default function RightRail({ thread, onCollapse, onEditBrief }: Props) {
                     </li>
                   ))}
                 </ul>
-              ) : (
+              ) : searchEntry === "private" ? null : (
                 <p className="px-3 text-[12px] leading-relaxed text-muted">
                   {t("还没定。定几行「要跟进什么」，之后才能让 AI 出去查。")}
                 </p>
+              )}
+              {/* P9E-3: a private project — whether or not it has lines, no AI goes looking. */}
+              {searchEntry === "private" && (
+                <div className="mt-2 px-3">
+                  <PrivateAiEntry label={t("联网搜索")} />
+                </div>
               )}
               {/* §7.8.5-2 — the button is withheld, not disabled, on an engine that cannot
                   carry this action; a greyed control invites a hunt for the switch that turns

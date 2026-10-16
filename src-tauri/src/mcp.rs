@@ -16829,4 +16829,26 @@ mod tests {
         assert!(ai_view.is_empty());
         let _ = std::fs::remove_dir_all(&dir);
     }
+
+    // P9E-3 (Ocean 2026-10-15 第 122 条): Spool's OWN weekly review leaves private projects
+    // out too. The API road reads `weekly_material_for_api`; the CLI road is the CLI's AI
+    // calling this server, which the canary above already covers (the `headless` calls).
+    #[test]
+    fn spools_own_weekly_review_reads_no_private_project() {
+        let dir = std::env::temp_dir().join(format!("spool-p9e-weekly-{}", std::process::id()));
+        canary_library(&dir, true);
+        TEST_DATA_DIR.with(|d| *d.borrow_mut() = Some(dir.clone()));
+        let material = weekly_material_for_api(Some(90));
+        TEST_DATA_DIR.with(|d| *d.borrow_mut() = None);
+        let (digest, fresh) = material.unwrap();
+        let (system, user) = weekly_messages_for_api(&digest, &fresh);
+        // The public project is in it — so an empty answer cannot pass for a filtered one.
+        assert!(user.contains("Garden notes") && user.contains("lighthouse"), "{user}");
+        for text in [&digest, &fresh, &system, &user] {
+            for needle in std::iter::once(CANARY).chain(PRIVATE_IDS.iter().copied()) {
+                assert!(!text.contains(needle), "{needle} in:\n{text}");
+            }
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

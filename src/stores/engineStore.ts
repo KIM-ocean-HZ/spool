@@ -22,7 +22,7 @@ import { toolCaption } from '@/lib/engine/progress';
 import { t } from '@/lib/i18n';
 import { reloadOutsideWrites } from './outsideWrites';
 import { useSettingsStore } from './settingsStore';
-import { useThreadsStore } from './threadsStore';
+import { selectThreadById, useThreadsStore } from './threadsStore';
 import { toast } from './toastStore';
 
 // DESIGN_AI_ENGINE §1.1–§1.3 — running the "让 AI 维护" actions.
@@ -489,6 +489,12 @@ export const useEngineStore = create<EngineState>((set, get) => {
 
     enqueue: (threadId, threadTitle, action, timeoutSecs, onResult) => {
       const { current, queue } = get();
+      // P9E-3（第 122 条）：私密项目不交给本机 AI。界面上那几处是锁着的，这里是后面那道门。
+      // （周回顾的 threadId 是空的 —— 它读整个库，私密的那几个在 MCP 那一侧就看不见。）
+      if (threadId && selectThreadById(threadId)(useThreadsStore.getState())?.isPrivate) {
+        toast.notice(t('私密项目：Spool 自带的 AI 不碰它'));
+        return false;
+      }
       // Same thread twice would distil the same material into two blocks. Same action on
       // a different thread is fine — it just waits.
       const busyOnThisThread =

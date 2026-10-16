@@ -1281,8 +1281,9 @@ function TextBlockItem({
             onDelete={() => onDelete?.()}
             // §9.6.6：单块压缩。⚠️ 只在 API 引擎开着、而且这一块所在的项目还在的时候出现 ——
             // 默认关闭（§6.2 约束 5），一个点了只会说「你还没配」的按钮不如没有。
+            // P9E-3：私密项目里的块不给这个入口（Spool 自带的 AI 不碰私密项目；页签上那一句说了为什么）。
             onCompress={
-              apiEngineEnabled && compressThread
+              apiEngineEnabled && compressThread && !compressThread.isPrivate
                 ? () => void openCompressBlock(compressThread, block)
                 : undefined
             }

@@ -1379,6 +1379,11 @@ const EN: Record<string, string> = {
   '关掉之后，所有要用 AI 的按钮和锁都藏起来，每周自动回顾和夜里的自动压缩也不跑；已经写好的回顾、AI 写的块照旧在。':
     'When off, every button that uses an AI — and every lock — is hidden, and the weekly auto-review and the nightly auto-compress do not run. Reviews already written and blocks an AI wrote stay as they are.',
   '怎么打开': 'How to turn it on',
+  // P9E-3 — an AI entry inside a private project.
+  '私密项目：通过 Spool 连接的 AI 读不到它，Spool 自带的 AI 也不碰它。要用这里，先在左栏右键这个项目，点「取消私密」。':
+    'Private project: AIs connected through Spool can\u2019t read it, and Spool\u2019s own AI leaves it alone. To use this, right-click the project in the sidebar and choose \u201cTurn off private\u201d.',
+  '私密项目：Spool 自带的 AI 不碰它': 'Private project: Spool\u2019s own AI leaves it alone',
+  '私密项目，没有发给 AI': 'private project, not sent to the AI',
   '现在打开': 'Turn on now',
   '没打开': 'Could not turn it on',
   '用本机的 Claude Code / Codex（不花钱）': 'Use Claude Code or Codex on this Mac (no extra cost)',

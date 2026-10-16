@@ -1,6 +1,7 @@
 import { Check, Globe, Loader2, RotateCcw, Trash2, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import LockedAiEntry from '@/components/AiSetup/LockedAiEntry';
+import PrivateAiEntry from '@/components/AiSetup/PrivateAiEntry';
 import EngineBar from '@/components/RightRail/EngineBar';
 import { aiEntryState } from '@/lib/engine/gate';
 import { isImeComposing } from '@/lib/utils/ime';
@@ -53,7 +54,14 @@ export default function FollowUpPanel({ thread, onClose }: Props) {
   const draftEntry =
     engineStatus === null
       ? null
-      : aiEntryState({ ready: engineAvailable, route: 'cli', showAi, isMac: IS_MAC });
+      : aiEntryState({
+          ready: engineAvailable,
+          route: 'cli',
+          showAi,
+          isMac: IS_MAC,
+          // P9E-3（第 122 条）：私密项目里 Spool 自带的 AI 不去读它。
+          privateProject: thread.isPrivate,
+        });
 
   const load = useFollowUpStore((s) => s.load);
   const items = useFollowUpStore((s) => s.items);
@@ -193,7 +201,11 @@ export default function FollowUpPanel({ thread, onClose }: Props) {
               work, they are just carried out by whatever AI the user talks to through MCP — which
               is what the sentence says. P9C: on a Mac the button is there, locked, with that
               sentence under it; on Windows only the sentence; with 「显示 AI 功能」 off neither. */}
-          {draftEntry === 'ready' ? (
+          {draftEntry === 'private' ? (
+            <div className="mt-2">
+              <PrivateAiEntry label={t('让 AI 看看还缺什么')} />
+            </div>
+          ) : draftEntry === 'ready' ? (
             <div className="mt-2 flex items-center gap-2">
               <button
                 type="button"
@@ -206,7 +218,7 @@ export default function FollowUpPanel({ thread, onClose }: Props) {
               </button>
               <span className="text-[10px] text-muted">{t('这一步只读你库里的东西，不联网。')}</span>
             </div>
-          ) : draftEntry !== null && showAi ? (
+          ) : draftEntry !== null && showAi && !thread.isPrivate ? (
             <div className="mt-2 space-y-1.5">
               {draftEntry === 'locked' && (
                 <LockedAiEntry

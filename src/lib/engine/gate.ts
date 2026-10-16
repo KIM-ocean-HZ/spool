@@ -51,7 +51,8 @@ export const engineActionsDisabled = (g: EngineGateInput): boolean =>
 /** Which road an AI entry runs on. `any` = a local CLI or DeepSeek, whichever is there. */
 export type AiRoute = 'any' | 'cli' | 'api';
 
-export type AiEntryState = 'ready' | 'locked' | 'hidden';
+/** `private` (P9E-3) = the entry is in a private project: closed whatever the engine says. */
+export type AiEntryState = 'ready' | 'locked' | 'hidden' | 'private';
 
 export interface AiEntryInput {
   /** Whether the entry is usable today — computed at each place exactly as before P9C. */
@@ -60,11 +61,17 @@ export interface AiEntryInput {
   /** 「显示 AI 功能」 (`aiEngineActionsEnabled`). */
   showAi: boolean;
   isMac: boolean;
+  /** P9E-3 (Ocean 2026-10-15 第 122 条): the entry acts on a private project. Spool's own AI
+   *  features leave those alone, so the entry is closed whether or not the engine is ready —
+   *  and its way out is making the project not private, not the 「AI 引擎」 piece. */
+  privateProject?: boolean;
 }
 
 /** P9C — what one AI entry draws. See the header for where each branch comes from. */
-export const aiEntryState = ({ ready, route, showAi, isMac }: AiEntryInput): AiEntryState => {
+export const aiEntryState = ({ ready, route, showAi, isMac, privateProject }: AiEntryInput): AiEntryState => {
   if (!showAi) return 'hidden';
+  if (route === 'cli' && !isMac && privateProject) return 'hidden';
+  if (privateProject) return 'private';
   if (ready) return 'ready';
   if (route === 'cli' && !isMac) return 'hidden';
   return 'locked';

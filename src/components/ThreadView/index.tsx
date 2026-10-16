@@ -1,6 +1,7 @@
 import { Lock } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { AiSetupPanel } from '@/components/AiSetup/AiSetupPanel';
+import { PrivateAiPage, PrivateTabMark } from '@/components/AiSetup/PrivateAiEntry';
 import type { Attachment } from '@/lib/db/attachments';
 import type { Block } from '@/lib/db/blocks';
 import { aiEntryState, type AiEntryState } from '@/lib/engine/gate';
@@ -72,16 +73,21 @@ export default function ThreadView() {
   const showAi = useSettingsStore((s) => s.aiEngineActionsEnabled);
   /** P9C（第 94、98、99 条）：「压缩」页签。DeepSeek 开着 ⇒ 照旧；没开 ⇒ 名字后面一把锁，点进去当场打开；
    *  「显示 AI 功能」关着 ⇒ 不画。 */
+  // P9E-3（第 122 条）：私密项目里两个页签都关着，不管引擎准备好没有。
+  const privateProject = thread?.isPrivate === true;
   const compressEntry: AiEntryState = aiEntryState({
     ready: engineOn,
     route: 'api',
     showAi,
     isMac: IS_MAC,
+    privateProject,
   });
   /** 「过期检测」页签：同上，⚠️ 但之前扫出来的还没点完时照出、不锁 —— 那是等他决定的东西，
    *  不是入口（「显示 AI 功能」关着也照出）。⛔ P7-5（Ocean 2026-10-07）：AI 提的不在这里了 —— 在待审里。 */
   const staleEntry: AiEntryState =
-    staleAny > 0 ? 'ready' : aiEntryState({ ready: engineOn, route: 'api', showAi, isMac: IS_MAC });
+    staleAny > 0 && !privateProject
+      ? 'ready'
+      : aiEntryState({ ready: engineOn, route: 'api', showAi, isMac: IS_MAC, privateProject });
   // ⭐⭐ Q4（2026-08-25）：**页签条从此永远画。**
   // 「摘要」是 AI 通过 MCP 写进来的，和本地引擎开没开**毫无关系** —— 一个从没开过引擎的
   // 用户照样会有一库摘要，而在这之前 `showTabs` 是整条页签排的总闸，`false` 的时候
@@ -161,6 +167,7 @@ export default function ThreadView() {
                 ? t('压缩（1）')
                 : t('压缩')}
             {compressEntry === 'locked' && <TabLock />}
+            {compressEntry === 'private' && <PrivateTabMark />}
           </Tab>
           )}
           {/* ⭐ 2026-08-23 Ocean 改的名：「『查旧块』名字改成『过期检测』，更加贴切」。
@@ -173,6 +180,7 @@ export default function ThreadView() {
                 ? t('过期检测（{n}）', { n: staleLeft })
                 : t('过期检测')}
             {staleEntry === 'locked' && <TabLock />}
+            {staleEntry === 'private' && <PrivateTabMark />}
           </Tab>
           )}
           {/* ⭐ Q4：和「内容」一样永远在。 */}
@@ -202,6 +210,8 @@ export default function ThreadView() {
         <LockedApiPage
           text={t('压缩：让 DeepSeek 把这个项目写短一点、合并重复的话。你一块对一块核对过之前，库里一个字都不动。这一步按字数花钱，用你自己的 DeepSeek key。')}
         />
+      ) : compressEntry === 'private' && tab === 'compress' ? (
+        <PrivateAiPage label={t('压缩')} />
       ) : staleEntry === 'ready' && tab === 'stale' ? (
         <div className="min-h-0 flex-1">
           <StaleReview threadId={thread.id} />
@@ -210,6 +220,8 @@ export default function ThreadView() {
         <LockedApiPage
           text={t('过期检测：让 DeepSeek 读一遍这个项目，找出已经被后面的块整条取代了的旧块。换不换由你一条一条定，你不点，库里一个字都不动。这一步按字数花钱，用你自己的 DeepSeek key。')}
         />
+      ) : staleEntry === 'private' && tab === 'stale' ? (
+        <PrivateAiPage label={t('过期检测')} />
       ) : viewMode === 'digest' ? (
         <DigestView
           key={thread.id}

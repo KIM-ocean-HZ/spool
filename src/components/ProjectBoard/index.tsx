@@ -288,8 +288,9 @@ export default function ProjectBoard() {
                 </div>
               )}
             </span>
-            {/* ⚠️ 已完成的项目不排队：压一个不再往前走的项目，钱花得没有道理。 */}
-            {engineOn && !isDone && (
+            {/* ⚠️ 已完成的项目不排队：压一个不再往前走的项目，钱花得没有道理。
+                P9E-3：私密项目也不排（排进去之后才设成私密的，夜里那一批跳过它、早上说一声）。 */}
+            {engineOn && !isDone && !th.isPrivate && (
               <RowAction
                 icon={<Moon size={12} />}
                 label={queued ? t('已排进今晚自动压缩') : t('排进今晚自动压缩')}

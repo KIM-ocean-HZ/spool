@@ -559,6 +559,8 @@ export const useCompressStore = create<CompressState>((set, get) => ({
   run: async (threadId) => {
     const session = get().sessions[threadId];
     if (!session || get().running) return;
+    // P9E-3（第 122 条）：私密项目不发给 AI —— 页签锁着，这里是锁后面那道门（变成私密之前开着的整理稿也一样）。
+    if (threadById(threadId)?.isPrivate) return;
     const s = useSettingsStore.getState();
     // 定格：这一次用的是**现在**设置里的值，之后改设置不再影响这一次的记录。
     const frozen: CompressSession = {
@@ -783,6 +785,13 @@ export const useCompressStore = create<CompressState>((set, get) => ({
         set((st) => ({ failures: [...st.failures, { title: id, why: t('这个项目已经不在了') }] }));
         continue;
       }
+      // P9E-3：排进队之后才设成私密的，也不发 —— 早上的单子上说一声为什么没压。
+      if (thread.isPrivate) {
+        set((st) => ({
+          failures: [...st.failures, { title: thread.title, why: t('私密项目，没有发给 AI') }],
+        }));
+        continue;
+      }
       try {
         const s = useSettingsStore.getState();
         const { text, blocks, skippedCompressed } = await buildThreadPack(thread, true);
@@ -867,7 +876,8 @@ export const useCompressStore = create<CompressState>((set, get) => ({
       for (const th of list) byId.set(th.id, th);
     }
     const thread = byId.get(threadId);
-    if (!thread) return;
+    // P9E-3：私密项目不发给 AI。
+    if (!thread || thread.isPrivate) return;
     set((st) => ({
       running: true,
       runningThreadId: threadId,

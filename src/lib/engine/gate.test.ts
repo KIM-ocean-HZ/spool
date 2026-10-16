@@ -119,6 +119,22 @@ describe('aiEntryState (P9C)', () => {
     expect(aiEntryState({ ready: false, route: 'any', showAi: true, isMac: false })).toBe('locked');
     expect(aiEntryState({ ready: false, route: 'api', showAi: true, isMac: false })).toBe('locked');
   });
+
+  // P9E-3 (第 122 条): in a private project an AI entry is closed whether or not it is ready —
+  // and it is not the P9C lock, whose way out (turn the engine on) would not help here.
+  it('in a private project: closed for being private, ready or not', () => {
+    for (const route of ['any', 'api'] as AiRoute[])
+      for (const ready of [true, false])
+        for (const isMac of [true, false])
+          expect(aiEntryState({ ready, route, showAi: true, isMac, privateProject: true })).toBe('private');
+    // A CLI-only entry on Windows has nothing to show either way.
+    expect(aiEntryState({ ready: true, route: 'cli', showAi: true, isMac: true, privateProject: true })).toBe('private');
+    expect(aiEntryState({ ready: true, route: 'cli', showAi: true, isMac: false, privateProject: true })).toBe('hidden');
+    // 「显示 AI 功能」 off still wins: nothing AI is drawn at all.
+    expect(aiEntryState({ ready: true, route: 'api', showAi: false, isMac: true, privateProject: true })).toBe('hidden');
+    // Not private: exactly as before.
+    expect(aiEntryState({ ready: true, route: 'api', showAi: true, isMac: true, privateProject: false })).toBe('ready');
+  });
 });
 
 describe('aiSetupPlan (P9C)', () => {
