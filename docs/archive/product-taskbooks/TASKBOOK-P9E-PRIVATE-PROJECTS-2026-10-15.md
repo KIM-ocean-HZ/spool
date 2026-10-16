@@ -1,6 +1,6 @@
 # 产品任务书 P9E —— 私密项目：右键设为私密，连着 Spool 的 AI 读不到它
 
-> **状态：COMPLETE —— 待 Ocean 验收**（2026-10-16 四步做完：`b725625` `74ffd87` `058e305` `b0bbad2`；**还没换装**，换装要先问 —— 回执 §7.6）
+> **状态：COMPLETE —— 待 Ocean 验收**（2026-10-16 四步做完：`b725625` `74ffd87` `058e305` `b0bbad2`；换装前插进来的更正块修复 `5b9b226`；**10-16 已换装，真库已迁到 v34** —— 回执 §7.6）
 >
 > （2026-10-15 下发时：**ACTIVE**）
 >
@@ -229,7 +229,14 @@
 
 ### 7.6 换装
 
-- 还没换。先问 Ocean（§5）：这次会把真库从 v33 迁到 v34；装完所有已经开着的 AI 客户端都要重启，旧的会一直报「库比服务新」（故意的）。
+- **已换装**（Ocean 10-16「换装」，HANDOFF §9.2 第 126 条；换装前问过有没有没点「完成」的字，他没另说，`drafts.json` 停之前是空的 `{"blocks": {}, "composer": {}}`）：
+  - 构建：在 `3047bf5` 上（`src` / `src-tauri` 没有未提交改动；P9E 四步 + `5b9b226` 更正块修复都在里面），命令同 P9C §7.5（`APPLE_SIGNING_IDENTITY` 走环境变量、公证变量全 unset、日志进文件、`tauri.conf.json` 没改）；「skipping app notarization」；TSA 一遍过（主程序和 `spool-ai` 都是 13:14:13）；`--verify --deep --strict` 过。新二进制 `--mcp` 连真库最新副本（`VACUUM INTO`、scratchpad 里先跑真迁移 v33 → v34，24 张表每列条数和总长不变）：24 个工具、`create_thread` 有 `private`、列表 58 个项目。
+  - 装前：`spool` sha256 `4c7757be…`（10-15 那版）、`Unnotarized Developer ID`。真库 v33 · ok · 工作区 30 / 项目 75 / 块 1197 · 正文 477160 · 批注 14528 / 文件 65 · 正文 714597 / 图片 18 张 9136780 字节 / 跟进 23 / 引擎记录 26 / 待审 0；快照 25 个；`settings.json` 26 个键。
+  - 停：GUI 36895、`--overlay` 36903 按 pid `kill -TERM`，1 秒内都退了；20 个 `--mcp` 一个没碰（装后逐个核过还活着）。
+  - 备份（桌面）：`spool.before-p9e-install-20261016-131529.db`（v33 · ok · 数字和上面逐项一样）、`settings.before-p9e-install-20261016-131529.json`、`focus.before-…json`、`drafts.before-…json`。旧包挪到 `~/Desktop/Spool/spool-pre-install/Spool-old-20261016-131529-pre-p9e.app`；新包先 `ditto` 成 `Spool.app.new` 再改名换进去，`open --stdout … --stderr …` 起来。
+  - 装后：sha256 `b470e343…` 和构建产物一致；主进程 89254（13:15:37）、`--overlay` 89345（13:15:38），txt inode 都是 81411119 = 新文件；`spctl` = `Unnotarized Developer ID`（和装前一样）；stderr 只有 `[overlay] helper started` 和 `[double-tap] installed at HID/active`。**真库 v34** · ok，上面那一串数逐项和装前一样，75 个项目 `private` 全是 0；快照 25 → 26，多的是 `spool.pre-migration-v33-2026-10-16T12-15-38-666Z.db`；`settings.json` 逐键一样（26 个）。
+  - ⚠️ 开着的 AI 客户端（Claude Code、Codex、Claude 桌面版）要重启，没重启的会一直报「库比服务新」（故意的）。
+  - commit、build、换装分开记在上面；**没 push、没发版**。
 - 换装前 Ocean 插进来一件（HANDOFF §9.2 第 124 – 125 条，owner interruption）：〈Memo产品复活｜Claude独立调研〉#20 看不到 —— 更正块被折进了被更正那一句底下。已修 `5b9b226`（更正块回到时间线，点被更正那一句在浮窗里预览），**跟 P9E 一起装**。验收时多看一条：打开这个项目，#16、#19、#20、#21 都在时间线上；点 #14 里那句有底色的话，旁边弹出 #20；点 #20 里那句，弹出 #21。
 
 ## 8. 收尾的文档动作（执行窗做）
