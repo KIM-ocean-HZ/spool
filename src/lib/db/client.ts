@@ -38,7 +38,7 @@ export const setSeedLanguage = (lang: SeedLanguage): void => {
 // carries a database from the previous version to the new one. On startup the
 // database's PRAGMA user_version is compared against this and every applicable step
 // runs in sequence, each stamping user_version as its own checkpoint (§19.3).
-const SCHEMA_VERSION = 34;
+const SCHEMA_VERSION = 35;
 
 // Things a migration did to the user's data that the user is entitled to hear about.
 // v15 is the first migration that removes anything (the retired `url` attachments), and
@@ -1112,6 +1112,32 @@ const MIGRATIONS: Migration[] = [
       } catch (e) {
         console.info('[db] threads.private: not added (likely exists)', e);
       }
+    },
+  },
+  {
+    // v35 (P9G 任务书 P9G-1, Ocean 2026-10-16 第 125 – 131 条)：AI 提议把一个太长的项目拆成几个
+    // 子项目，排队等用户在待审里点头。
+    // ⚠️⚠️ **只有 `CREATE TABLE IF NOT EXISTS` + 它自己的索引**，⛔ 已有的表一列不动、没有回填、
+    // ⛔ 没有 rebuild 分支 —— 和 v31（`file_proposals`）同一条路。`schema.sql` 那一段写了每一列的意思。
+    //   * 往前：老库没有这张表 = 没有待审的拆分提议，也就是 v34 的行为。
+    //   * 往回：`DROP TABLE split_proposals` 一句退回 v34，⛔ 不丢任何 v34 就有的数据 ——
+    //     丢的只是还没点头的拆分提议（它们本来 7 天后也会自己过期）。
+    // 半跑一次和跑完一次分不出来：`IF NOT EXISTS` 再跑一遍什么都不会发生。
+    from: 34,
+    to: 35,
+    name: 'add-split-proposals',
+    run: async (db) => {
+      await db.execute(`CREATE TABLE IF NOT EXISTS split_proposals (
+        id          TEXT PRIMARY KEY,
+        thread_id   TEXT NOT NULL REFERENCES threads(id) ON DELETE CASCADE,
+        client      TEXT NOT NULL DEFAULT '',
+        why         TEXT NOT NULL,
+        plan        TEXT NOT NULL,
+        created_at  INTEGER NOT NULL,
+        expires_at  INTEGER NOT NULL
+      )`);
+      await db.execute(`CREATE INDEX IF NOT EXISTS idx_split_proposals_thread
+        ON split_proposals(thread_id, created_at ASC)`);
     },
   },
 ];

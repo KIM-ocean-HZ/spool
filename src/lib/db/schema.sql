@@ -740,3 +740,31 @@ CREATE TABLE IF NOT EXISTS read_positions (
   last_block_at INTEGER NOT NULL,  -- 离开那一刻最新一块的 created_at
   updated_at    INTEGER NOT NULL   -- 30 天的起算点
 );
+
+-- v35 (P9G, Ocean 2026-10-16 第 125 – 131 条) —— AI 提「把这个项目拆成几个子项目」，排队等点头。
+--
+-- 和 `file_proposals` / `supersede_proposals` 同一个形状：**它只排队，从不生效**。MCP 那一侧
+-- （`propose_split`）只往这里写一行，一块都不挪；真正的拆分只在用户在待审卡上点「拆分」那一下
+-- 发生，在 GUI 里。
+--
+-- `plan` 是 AI 提的拆法，JSON：
+--   { "groups": [{ "title", "summary", "block_ids": [...] }, …],   -- 2 – 8 组
+--     "files": [{ "attachment_id", "group" }, …],                  -- AI 建议没挂在块上的项目文件去哪一组
+--     "follow_ups": [{ "item_id", "group" }, …] }                  -- 跟进行同上；`group` 是组的下标，从 0 起
+-- 没分进任何一组的块、没提到的文件和跟进行，都留在原项目。⚠️ 存的是 AI 提的样子：用户在卡上改的
+-- 分组不写回这里，点「拆分」时卡上的样子直接拿去拆，拆完这一行删掉。
+-- ⛔ 外键只指 `threads`。⛔ 不跟着库搬（`transfer.ts` 的 `MERGE_TABLES` 不列它）：和别的待审提议一样，
+-- 等人点头的提议搬到别的库里没有意义。
+-- 不拆 = 删掉那一行、什么都不留；过期（7 天）同样删掉。同一个项目同时只有一份（MCP 那一侧核）。
+CREATE TABLE IF NOT EXISTS split_proposals (
+  id          TEXT PRIMARY KEY,                -- one call = one row = one card
+  thread_id   TEXT NOT NULL REFERENCES threads(id) ON DELETE CASCADE,  -- the project to split
+  client      TEXT NOT NULL DEFAULT '',        -- `<client> · MCP` source label, stored as-is
+  why         TEXT NOT NULL,                   -- the AI's one line on why, top of the card
+  plan        TEXT NOT NULL,                   -- JSON, see above
+  created_at  INTEGER NOT NULL,
+  expires_at  INTEGER NOT NULL                 -- same 7 days as the other queues
+);
+
+CREATE INDEX IF NOT EXISTS idx_split_proposals_thread
+  ON split_proposals(thread_id, created_at ASC);

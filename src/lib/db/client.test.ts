@@ -163,6 +163,11 @@ const sansV34Sql = (r: { name: string; sql: string | null }) => ({
   sql: r.sql?.replace(/, private INTEGER NOT NULL DEFAULT 0/g, '') ?? null,
 });
 
+const V35_SPLIT_PROPOSAL_COLS = ['id', 'thread_id', 'client', 'why', 'plan', 'created_at', 'expires_at'];
+// v35's table and its index, off a list of sqlite_master rows — every test that rewinds below
+// v35 and compares the schema across the migration walks past them.
+const notV35 = (r: { name: string }): boolean => !r.name.includes('split_proposals');
+
 // v19's three columns, off a `threads` row — the same job blocksSansV13 does for blocks:
 // a test that rewinds below v19 compares rows across a migration that legitimately added
 // them, and only these three may differ.
@@ -203,10 +208,21 @@ const downgradeToV13 = (handle: Sqlite): void => {
   `);
 };
 
+// Rewind past v35: an AI had no way to suggest splitting a project.
+// ⚠️ 这一句 DROP 就是 v35 的「能回滚」——`add-split-proposals` 只加了一张新表，⛔ 一个字的既有
+// 数据都没动；退回来丢的只是还没点头的拆分提议。
+const downgradeToV34 = (handle: Sqlite): void => {
+  handle.exec(`
+    DROP TABLE IF EXISTS split_proposals;
+    PRAGMA user_version = 34;
+  `);
+};
+
 // Rewind past v34: no project could be kept from the AIs connected through Spool.
 // ⚠️ 这一句就是 v34 的「能回滚」——`add-thread-private` 只加了一个默认 0 的列，⛔ 一个字的既有
 // 数据都没动；退回来丢的只是「哪几个项目是私密的」（全部回到公开）。
 const downgradeToV33 = (handle: Sqlite): void => {
+  downgradeToV34(handle);
   handle.exec(`
     ALTER TABLE threads DROP COLUMN private;
     PRAGMA user_version = 33;
@@ -1188,7 +1204,7 @@ describe('migrateSchema registry (§19.3)', () => {
           .all() as { name: string; sql: string | null }[]
       )
         .map(sansV32Sql)
-        .map(sansV33Sql).map(sansV34Sql),
+        .map(sansV33Sql).map(sansV34Sql).filter(notV35),
     ).toEqual(schemaBefore);
   });
 
@@ -1252,7 +1268,7 @@ describe('migrateSchema registry (§19.3)', () => {
           name: string;
           sql: string | null;
         }[]
-      ).map(sansV33Sql).map(sansV34Sql),
+      ).map(sansV33Sql).map(sansV34Sql).filter(notV35),
     ).toEqual(schemaBefore);
   });
 
@@ -1317,7 +1333,7 @@ describe('migrateSchema registry (§19.3)', () => {
           name: string;
           sql: string | null;
         }[]
-      ).map(sansV34Sql),
+      ).map(sansV34Sql).filter(notV35),
     ).toEqual(schemaBefore);
     expect(
       sansV33Sql({
@@ -1375,7 +1391,6 @@ describe('migrateSchema registry (§19.3)', () => {
 
     expect(fresh).toBe(false);
     expect(userVersion(handle)).toBe(CURRENT_SCHEMA_VERSION);
-    expect(CURRENT_SCHEMA_VERSION).toBe(34);
     expect(columnNames(handle, 'threads').slice(-1)).toEqual(['private']);
     expect(handle.prepare('SELECT id, private FROM threads ORDER BY rowid').all()).toEqual([
       { id: 't1', private: 0 },
@@ -1386,9 +1401,12 @@ describe('migrateSchema registry (§19.3)', () => {
       expect(handle.prepare(`SELECT * FROM ${t} ORDER BY rowid`).all().map(stripV34), t).toEqual(before[t]);
     }
     // ⛔ 只许一句 ADD COLUMN：别的表、索引、触发器的建表语句一个字没变，threads 只在尾巴上多一列。
-    expect(handle.prepare("SELECT name, sql FROM sqlite_master WHERE name != 'threads' ORDER BY name").all()).toEqual(
-      schemaBefore,
-    );
+    // （v35 接着走过去，那张新表另有测试盯着，这里先抹掉。）
+    expect(
+      (handle.prepare("SELECT name, sql FROM sqlite_master WHERE name != 'threads' ORDER BY name").all() as {
+        name: string;
+      }[]).filter(notV35),
+    ).toEqual(schemaBefore);
     expect(
       sansV34Sql({
         name: 'threads',
@@ -1406,7 +1424,7 @@ describe('migrateSchema registry (§19.3)', () => {
 
     await __migrateSchemaForTest(db);
 
-    expect(userVersion(handle)).toBe(34);
+    expect(userVersion(handle)).toBe(CURRENT_SCHEMA_VERSION);
     expect(columnNames(handle, 'threads').filter((c) => c === 'private')).toEqual(['private']);
   });
 
@@ -1415,6 +1433,74 @@ describe('migrateSchema registry (§19.3)', () => {
     expect(columnNames(handle, 'threads').slice(-1)).toEqual(['private']);
     seedUserData(handle);
     expect(handle.prepare("SELECT private FROM threads WHERE id = 't1'").get()).toEqual({ private: 0 });
+  });
+
+  // P9G-1 (Ocean 2026-10-16 第 125 – 131 条). 一张新表 + 它自己的索引，⛔ 已有的表一行一列不动。
+  it('v34 → v35 adds an empty split_proposals and leaves every other table byte-identical', async () => {
+    applySchema(handle);
+    downgradeToV34(handle);
+    seedUserData(handle);
+    handle.exec(
+      `INSERT INTO threads (id, workspace_id, title, status, created_at, updated_at, private)
+         VALUES ('t2', 'w1', 'private one', 'active', ${NOW}, ${NOW}, 1);
+       INSERT INTO attachments (id, thread_id, kind, target, label, ai_access, created_at)
+         VALUES ('a1', 't1', 'file', '/tmp/kept.pdf', 'kept.pdf', 1, ${NOW});
+       INSERT INTO file_proposals (id, kind, client, thread_id, path, size_bytes, why, created_at, expires_at)
+         VALUES ('fp1', 'attach', 'Codex · MCP', 't1', '/tmp/new.pdf', 10, 'why', ${NOW}, ${NOW + 1})`,
+    );
+    const tables = (
+      handle
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE '%fts%' ORDER BY name")
+        .all() as { name: string }[]
+    ).map((r) => r.name);
+    expect(tables).not.toContain('split_proposals');
+    const before = Object.fromEntries(
+      tables.map((t) => [t, handle.prepare(`SELECT * FROM ${t} ORDER BY rowid`).all()]),
+    );
+    const schemaBefore = handle.prepare('SELECT name, sql FROM sqlite_master ORDER BY name').all();
+
+    const fresh = await __migrateSchemaForTest(db);
+
+    expect(fresh).toBe(false);
+    expect(userVersion(handle)).toBe(CURRENT_SCHEMA_VERSION);
+    expect(CURRENT_SCHEMA_VERSION).toBe(35);
+    expect(columnNames(handle, 'split_proposals')).toEqual(V35_SPLIT_PROPOSAL_COLS);
+    expect(handle.prepare('SELECT COUNT(*) AS c FROM split_proposals').get()).toEqual({ c: 0 });
+    expect(
+      handle
+        .prepare("SELECT COUNT(*) AS c FROM sqlite_master WHERE type='index' AND name='idx_split_proposals_thread'")
+        .get(),
+    ).toEqual({ c: 1 });
+    for (const t of tables) {
+      expect(handle.prepare(`SELECT * FROM ${t} ORDER BY rowid`).all(), t).toEqual(before[t]);
+    }
+    // ⛔ 只许 CREATE TABLE + 它自己的索引：别的表、索引、触发器的建表语句一个字没变。
+    expect(
+      (handle.prepare('SELECT name, sql FROM sqlite_master ORDER BY name').all() as { name: string }[]).filter(
+        notV35,
+      ),
+    ).toEqual(schemaBefore);
+  });
+
+  it('v34 → v35 is re-runnable after a half-finished pass', async () => {
+    applySchema(handle);
+    downgradeToV34(handle);
+    seedUserData(handle);
+    // Half a pass: the table went in, the version stamp did not.
+    handle.exec(`CREATE TABLE split_proposals (
+      id TEXT PRIMARY KEY, thread_id TEXT NOT NULL REFERENCES threads(id) ON DELETE CASCADE,
+      client TEXT NOT NULL DEFAULT '', why TEXT NOT NULL, plan TEXT NOT NULL,
+      created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL)`);
+
+    await __migrateSchemaForTest(db);
+
+    expect(userVersion(handle)).toBe(35);
+    expect(columnNames(handle, 'split_proposals')).toEqual(V35_SPLIT_PROPOSAL_COLS);
+  });
+
+  it('a fresh install builds split_proposals straight from schema.sql', () => {
+    applySchema(handle);
+    expect(columnNames(handle, 'split_proposals')).toEqual(V35_SPLIT_PROPOSAL_COLS);
   });
 
   // DESIGN_PROJECT_FILES §3.4 (phase three). The queue starts empty and grants nothing: a

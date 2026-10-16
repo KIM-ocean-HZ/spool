@@ -4179,7 +4179,9 @@ fn thread_resources(conn: &Connection) -> Result<Vec<Value>, String> {
 //   （10-15 起 get_blocks / search_blocks 也读 `target_identity`，报文件现在在哪 —— 见 `file_now`。）
 // ⚠️ v34 (P9E, 2026-10-15)：`threads.private`（私密项目）。⛔ 这一列不是只跟版本号：私密项目在这边
 //   要当「没有这个项目」（P9E-2）。
-const EXPECTED_SCHEMA_VERSION: i64 = 34;
+// ⚠️ v35 (P9G, 2026-10-16)：新建 `split_proposals`（AI 提议把一个项目拆成几个子项目，排队等点头），
+//   这边的 `propose_split` 往里写。
+const EXPECTED_SCHEMA_VERSION: i64 = 35;
 
 // Name reported by the client at initialize (clientInfo.name); feeds the source label.
 static CLIENT_NAME: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
