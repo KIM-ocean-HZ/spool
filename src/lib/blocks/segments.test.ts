@@ -114,6 +114,15 @@ describe('splitSegmentSource', () => {
     });
   });
 
+  // P9H-2（第 146 条甲）：这一版起记号单独占一行，换行算在记号里 —— 后面那一行（可能是图片行）原样留给正文。
+  it('reads the marker on a line of its own, newline included', () => {
+    expect(splitSegmentSource('[from Finder]\n![截图](spool-image:img_1)')).toEqual({
+      source: 'Finder',
+      body: '![截图](spool-image:img_1)',
+      offset: '[from Finder]\n'.length,
+    });
+  });
+
   it('leaves an ordinary segment untouched', () => {
     expect(splitSegmentSource('他说要先交表')).toEqual({
       source: null,

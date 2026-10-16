@@ -16815,6 +16815,13 @@ mod tests {
         );
         assert_eq!(render_image_lines("plain", &[]), "plain");
         assert_eq!(render_image_lines("", &[img("i2", "/c/i2.png")]), "![](/c/i2.png)");
+        // P9H-2 (DISCOVERED-20261015-2, 甲): a merge of two sources puts `[from …]` on a line of its
+        // own, so a segment that opens with a picture keeps its picture line — the pack shows the
+        // path (the old glued form left the line unread and the id for hide_image_ids to catch).
+        assert_eq!(
+            render_image_lines("先记一句\n\n[from Finder]\n![截图](spool-image:i1)\n后面的字", &[img("i1", "/c/i1.png")]),
+            "先记一句\n\n[from Finder]\n![截图](/c/i1.png)\n后面的字"
+        );
         assert_eq!(image_lines_as_text("a\n![ cap ](spool-image:i1)\n![](spool-image:i2)"), "a\n[image] cap\n[image]");
         assert_eq!(head_anchor("![cap](spool-image:i1)"), "[image] cap");
         assert_eq!(

@@ -225,6 +225,15 @@ describe('合并留下的来源记号', () => {
     for (const r of runs) expect(content.slice(r.start, r.end)).toBe(r.text);
   });
 
+  // P9H-2（第 146 条甲）：这一版起记号单独占一行。换行留着当正文，下一行照常画。
+  it('reads the marker on a line of its own', () => {
+    const content = '第一段\n\n[from Finder]\n第二段';
+    const runs = tokenizeContent(content);
+    expect(runs.map((r) => r.text).join('')).toBe('第一段\n\nFinder\n第二段');
+    expect(runs.find((r) => r.mark === 'source')?.text).toBe('Finder');
+    for (const r of runs) expect(content.slice(r.start, r.end)).toBe(r.text);
+  });
+
   it('only reads the marker at the start of a line', () => {
     const content = '他说 [from chatgpt] 是这么讲的';
     const runs = tokenizeContent(content);

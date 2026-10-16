@@ -29,6 +29,7 @@ import {
   togglePin,
   updateBlockGist,
 } from './blocks';
+import { parseImageLines, renderImageLines } from '@/lib/blocks/imageLines';
 import { isMcpSource } from '@/lib/blocks/sourceIcon';
 import { __setTestDb } from './client';
 import schemaSql from './schema.sql?raw';
@@ -95,8 +96,23 @@ describe('computeMergedFields (§20.1)', () => {
       block('b3', 300, { content: 'c', source: 'Chrome' }),
     ];
     expect(computeMergedFields(blocks).content).toBe(
-      'a\n\n[from Notion] b\n\n[from Chrome] c',
+      'a\n\n[from Notion]\nb\n\n[from Chrome]\nc',
     );
+  });
+
+  // P9H-2（DISCOVERED-20261015-2，第 146 条甲）：记号原来贴在那一段第一行前面 —— 那一段以图片开头时
+  // 第一行变成 `[from Finder] ![](spool-image:…)`，屏幕和 pack 都认不出那是一张图，pack 还露出图片 id。
+  it('a segment that opens with a picture keeps the picture line whole — on screen and in the pack', () => {
+    const blocks = [
+      block('b1', 100, { content: '先记一句', source: null }),
+      block('b2', 200, { content: '![截图](spool-image:img_1)\n后面的字', source: 'Finder' }),
+    ];
+    const { content } = computeMergedFields(blocks);
+    expect(content).toBe('先记一句\n\n[from Finder]\n![截图](spool-image:img_1)\n后面的字');
+    expect(parseImageLines(content).map((l) => [l.id, l.caption])).toEqual([['img_1', '截图']]);
+    const pack = renderImageLines(content, [{ id: 'img_1', path: '/Users/a/Library/images/img_1.png' }]);
+    expect(pack).toBe('先记一句\n\n[from Finder]\n![截图](/Users/a/Library/images/img_1.png)\n后面的字');
+    expect(pack).not.toContain('spool-image:');
   });
 
   it('emits no source prefix when every block shares the same source', () => {
@@ -223,7 +239,7 @@ describe('mergeBlocks against a real SQLite engine (§20.1)', () => {
     // Sources differ → non-survivor segments are prefixed; b1's annotation rides
     // inside its segment as a `↪ note:` line.
     expect(survivor.content).toBe(
-      'first\n↪ note: note A\n\n[from Chrome] second\n\n[from (无来源)] third',
+      'first\n↪ note: note A\n\n[from Chrome]\nsecond\n\n[from (无来源)]\nthird',
     );
 
     // Survivor keeps its source, gains pinned from b2. Top-level annotation is null

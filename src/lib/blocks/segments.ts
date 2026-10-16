@@ -67,7 +67,10 @@ export const hasSegmentAnnotations = (content: string): boolean =>
 // ⚠️⚠️ **存的字节一个都不动。** pack 里那一份还带着它 —— 收件 AI 就是靠它分辨这一段是谁说的；
 // 而且划词、`==重点`、更正全都按 `content` 的字符下标定位，改写它等于把所有下标挪位。
 // 这里只做**画的时候**的事：把它摘出来,当一枚小标签画,而不是当正文（15px、和上下文一样黑）。
-export const SEGMENT_SOURCE_RE = /^\[from ([^\]\n]+)\] /;
+//
+// P9H-2（第 146 条甲）：从这一版起记号单独占一行（`[from chatgpt]` + 换行）；之前合并的块还是贴在
+// 正文前面那一种（`[from chatgpt] `）。两种都认，换行算在记号里。
+export const SEGMENT_SOURCE_RE = /^\[from ([^\]\n]+)\](?: |\n)/;
 
 /** 把一段的来源记号摘下来。`offset` 是记号本身占的字符数 —— 调用方要把它加到偏移上，
  *  否则划词会落到前面几个字上。 */

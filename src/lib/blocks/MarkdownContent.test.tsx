@@ -2,6 +2,10 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { MarkdownContent } from './MarkdownContent';
 import { SegmentedContent } from './SegmentedContent';
+import { computeMergedFields, type Block } from '@/lib/db/blocks';
+
+const mergeBlock = (id: string, createdAt: number, content: string, source: string | null, annotation: string | null): Block =>
+  ({ id, createdAt, content, source, annotation, pinned: false }) as Block;
 
 // DESIGN_WORKBENCH §10.1. The parser and the tokenizer are unit-tested next door; this is
 // the one thing they cannot answer — what actually comes out the other end. No DOM needed
@@ -213,5 +217,34 @@ describe('MarkdownContent, pictures', () => {
     const bare = html('![曲线](spool-image:i1)');
     expect(bare).toContain('曲线');
     expect(bare).not.toContain('spool-image');
+  });
+});
+
+// P9H-2（DISCOVERED-20261015-2，第 146 条甲）：来源不同、后一块以图片开头的两块合并之后，图在原位、
+// 来源是一枚小标签、不露原文。真的 computeMergedFields 出来的字，两条画法都过一遍（有批注走分段那条）。
+describe('merged blocks whose second block opens with a picture', () => {
+  const pic = (id: string) => <figure data-pic={id} />;
+  const merged = (annotation: string | null) =>
+    computeMergedFields([
+      mergeBlock('b1', 100, '先记一句', null, annotation),
+      mergeBlock('b2', 200, '![](spool-image:img_1)\n后面的字', 'Finder', null),
+    ]).content;
+
+  it('draws the picture in place on both paths, with the source as a label', () => {
+    for (const content of [merged(null), merged('我的批注')]) {
+      const out = renderToStaticMarkup(
+        content.includes('↪ note:') ? (
+          <SegmentedContent content={content} withOffsets renderImage={pic} />
+        ) : (
+          <MarkdownContent content={content} renderImage={pic} />
+        ),
+      );
+      expect(out).toContain('data-pic="img_1"');
+      expect(out).not.toContain('spool-image');
+      expect(out).not.toContain('[from');
+      expect(out).toContain('Finder');
+      expect(out.indexOf('先记一句')).toBeLessThan(out.indexOf('data-pic'));
+      expect(out.indexOf('data-pic')).toBeLessThan(out.indexOf('后面的字'));
+    }
   });
 });

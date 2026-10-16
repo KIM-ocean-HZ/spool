@@ -7,6 +7,7 @@ import type { Attachment, RevivedVersion } from '@/lib/db/attachments';
 import type { ImagePlace } from '@/lib/db/blockImages';
 import type { Block } from '@/lib/db/blocks';
 import type { ThreadStatus } from '@/lib/db/threads';
+import type { KeptIdentity } from '@/lib/files/locate';
 
 export type UndoOpKind =
   | 'capture'
@@ -59,6 +60,9 @@ export interface DeletePayload {
   /** P7-1: older versions that taking those files out brought back into use. Undo marks
    *  each replaced again by the file it puts back. */
   revived?: RevivedVersion[];
+  /** P9H-2: those files' identity and notice (v33), which `files` cannot carry — only Rust can
+   *  read the BLOB. Written back after the rows are. */
+  identities?: KeptIdentity[];
 }
 
 export interface MergePayload {

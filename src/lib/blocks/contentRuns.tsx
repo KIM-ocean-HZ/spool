@@ -63,8 +63,9 @@ export interface ContentRun {
 // (「3 * 4」, footnote stars), so it only counts when it hugs its text and follows a
 // boundary — a false italic silently eats two characters of the user's text.
 /** 行首的 `[from <来源>] `，见 segments.ts。⚠️ 那边那一条是判断单独一段用的（`^` 不带 `m`），
- *  这里要在整串里扫，所以是它的 `gm` 双生。改一处必须改另一处。 */
-const SOURCE_MARK_RE = /^\[from ([^\]\n]+)\] /gm;
+ *  这里要在整串里扫，所以是它的 `gm` 双生。改一处必须改另一处。
+ *  P9H-2：也认单独占一行的 `[from <来源>]`（这一版起合并就这么写）—— 换行不在匹配里，留着当正文。 */
+const SOURCE_MARK_RE = /^\[from ([^\]\n]+)\](?: |$)/gm;
 const SOURCE_OPEN = '[from ';
 
 const INLINE_MARKS: { mark: InlineMark; re: RegExp; cap: number }[] = [
@@ -165,11 +166,13 @@ export function tokenizeContent(content: string, opts: TokenizeOptions = {}): Co
     const e = s + m[0].length;
     if (!free(s, e)) continue;
     claimed.push({ start: s, end: e });
+    // The `]` — the label cannot contain one, so it sits right after the label.
+    const close = s + SOURCE_OPEN.length + m[1]!.length;
     intervals.push({ kind: 'cap', start: s, end: s + SOURCE_OPEN.length });
-    intervals.push({ kind: 'mark', start: s + SOURCE_OPEN.length, end: e - 2, mark: 'source' });
+    intervals.push({ kind: 'mark', start: s + SOURCE_OPEN.length, end: close, mark: 'source' });
     // ⚠️ 只藏 `]`,记号末尾那个空格留着当普通正文 —— `plainText()`（搜索预览、引用行、
     // 刻度条的悬浮预览都用它）拿到的是「chatgpt 第二段」而不是「chatgpt第二段」。
-    intervals.push({ kind: 'cap', start: e - 2, end: e - 1 });
+    intervals.push({ kind: 'cap', start: close, end: close + 1 });
   }
   // Structural markers (`## `, `- `, the fences) are hidden exactly like a == cap.
   for (const h of opts.hidden ?? []) intervals.push({ kind: 'cap', start: h.start, end: h.end });

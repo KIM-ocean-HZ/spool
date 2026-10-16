@@ -60,3 +60,19 @@ export const findSameName = (id: string): Promise<SameNameCandidate[]> =>
 /** The user said where it is. Rejects with `missing` / `wrong_kind` / `no_file`. */
 export const relocateFile = (id: string, path: string): Promise<FileState> =>
   invoke<FileState>('relocate_file', { id, path });
+
+/** P9H-2（DISCOVERED-20261010-6）：a file's identity and 「知道了」 as they were when its block was
+ *  deleted with 「一起去掉」, kept in that undo entry so ⌘Z puts them back with the row. `identity`
+ *  is the BLOB as hex: Rust reads it and Rust writes it — this side only holds the string. */
+export interface KeptIdentity {
+  id: string;
+  identity: string | null;
+  notice: string | null;
+}
+
+export const keepFileIdentities = (ids: string[]): Promise<KeptIdentity[]> =>
+  ids.length === 0 ? Promise.resolve([]) : invoke<KeptIdentity[]>('keep_file_identities', { ids });
+
+/** After the rows are back (`restoreAttachment` writes the other fifteen columns). */
+export const restoreFileIdentities = (kept: KeptIdentity[]): Promise<void> =>
+  kept.length === 0 ? Promise.resolve() : invoke<void>('restore_file_identities', { kept });

@@ -1341,8 +1341,11 @@ export const computeMergedFields = (blocks: Block[]): MergedFields => {
 
   const segments = ordered.map((b, idx) => {
     const isSurvivor = idx === 0;
+    // P9H-2（DISCOVERED-20261015-2，Ocean 10-16 第 146 条甲）：the mark is a line of its own. Glued to
+    // the segment's first line it turned a picture line into `[from Finder] ![](spool-image:…)`,
+    // which neither the screen nor the pack reads as a picture. Older merges keep the old form.
     const prefix = sourcesDiffer && !isSurvivor
-      ? `[from ${b.source ?? MERGE_NO_SOURCE_LABEL}] `
+      ? `[from ${b.source ?? MERGE_NO_SOURCE_LABEL}]\n`
       : '';
     return {
       text: `${prefix}${b.content}`,

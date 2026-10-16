@@ -385,8 +385,81 @@ pub(crate) fn find_same_name_in(conn: &Connection, id: &str) -> Result<Vec<Candi
     Ok(same_name(&name, row.kind == "folder", recorded))
 }
 
-// ⚠️ All three `(async)`: they stat, resolve bookmarks, run Spotlight and write the library —
+/// P9H-2 (DISCOVERED-20261010-6) — a file's two v33 columns as they were, carried through an
+/// undo. Deleting a block with 「一起从项目里去掉」 deletes its files' rows, and ⌘Z puts them back
+/// from the webview — whose SQL plugin cannot carry a BLOB. So the identity rides in the undo
+/// entry as hex, and only this side turns it back into bytes. Without it a file that had moved
+/// came back as 「不知道挪到哪了」, and 「知道了」 had to be pressed again.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct KeptIdentity {
+    pub id: String,
+    /// `target_identity` as hex; None = it had none yet.
+    pub identity: Option<String>,
+    pub notice: Option<String>,
+}
+
+fn to_hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+fn from_hex(s: &str) -> Result<Vec<u8>, String> {
+    if !s.len().is_multiple_of(2) {
+        return Err("bad_identity".into());
+    }
+    (0..s.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(s.get(i..i + 2).ok_or("bad_identity")?, 16).map_err(|_| "bad_identity".to_string()))
+        .collect()
+}
+
+/// Before the rows go. Unknown ids are left out.
+pub(crate) fn keep_identities(conn: &Connection, ids: &[String]) -> Result<Vec<KeptIdentity>, String> {
+    let mut out = Vec::with_capacity(ids.len());
+    for id in ids {
+        let row: Option<(Option<Vec<u8>>, Option<String>)> = conn
+            .query_row(
+                "SELECT target_identity, target_notice FROM attachments WHERE id = ?1",
+                [id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()
+            .map_err(|e| e.to_string())?;
+        if let Some((identity, notice)) = row {
+            out.push(KeptIdentity { id: id.clone(), identity: identity.map(|b| to_hex(&b)), notice });
+        }
+    }
+    Ok(out)
+}
+
+/// After the rows are back (the webview re-inserts the other columns).
+pub(crate) fn restore_identities(conn: &Connection, kept: &[KeptIdentity]) -> Result<(), String> {
+    for k in kept {
+        let bytes = k.identity.as_deref().map(from_hex).transpose()?;
+        conn.execute(
+            "UPDATE attachments SET target_identity = ?1, target_notice = ?2 WHERE id = ?3",
+            params![bytes, k.notice, k.id],
+        )
+        .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+// ⚠️ All of these `(async)`: they stat, resolve bookmarks, run Spotlight and write the library —
 // ⛔ never on the main thread (a resolve against a slow disk would freeze the whole window).
+
+/// P9H-2: see `KeptIdentity`.
+#[tauri::command(async)]
+pub fn keep_file_identities(app: tauri::AppHandle, ids: Vec<String>) -> Result<Vec<KeptIdentity>, String> {
+    let conn = crate::images::open_library(&app)?;
+    keep_identities(&conn, &ids)
+}
+
+/// P9H-2: see `KeptIdentity`.
+#[tauri::command(async)]
+pub fn restore_file_identities(app: tauri::AppHandle, kept: Vec<KeptIdentity>) -> Result<(), String> {
+    let conn = crate::images::open_library(&app)?;
+    restore_identities(&conn, &kept)
+}
 
 /// Look at these files (the right rail of the project on screen, a file about to be opened,
 /// the export list) and say where each one is. Unknown ids are left out.
@@ -757,5 +830,52 @@ mod tests {
             ],
             "Spotlight had not indexed both files after 2 minutes"
         );
+    }
+
+    // P9H-2 (DISCOVERED-20261010-6): delete a block with 「一起去掉」 → ⌘Z. The webview re-inserts
+    // the row without these two columns (its SQL plugin cannot carry the BLOB); they ride in the
+    // undo entry as hex and come back byte for byte.
+    #[test]
+    fn kept_identities_come_back_byte_for_byte_after_the_row_is_reinserted() {
+        let conn = library();
+        // Zeros, 0x80 and 0xff — where a trip through text would break.
+        let identity: Vec<u8> = vec![0x62, 0x6f, 0x6f, 0x6b, 0x00, 0x00, 0xff, 0x10, 0x7f, 0x80, 0x00, 0x01];
+        let notice = write_notice(&Notice::Dismissed);
+        conn.execute(
+            "INSERT INTO attachments (id, thread_id, kind, target, extracted_text, target_identity, target_notice)
+             VALUES ('a', 't', 'file', '/x/方案.pdf', 'the text', ?1, ?2), ('b', 't', 'file', '/x/旧.pdf', 'the text', NULL, NULL)",
+            params![identity, notice],
+        )
+        .unwrap();
+        let before = (row(&conn, "a"), row(&conn, "b"));
+
+        let ids = vec!["a".to_string(), "b".to_string(), "gone".to_string()];
+        let kept = keep_identities(&conn, &ids).unwrap();
+        assert_eq!(kept.len(), 2, "an id with no row is left out");
+        assert_eq!(kept[0].identity.as_deref(), Some("626f6f6b0000ff107f800001"));
+        assert_eq!(kept[1], KeptIdentity { id: "b".into(), identity: None, notice: None });
+
+        // The delete, then the webview's re-insert: every column but the two.
+        conn.execute("DELETE FROM attachments", []).unwrap();
+        conn.execute(
+            "INSERT INTO attachments (id, thread_id, kind, target, extracted_text)
+             VALUES ('a', 't', 'file', '/x/方案.pdf', 'the text'), ('b', 't', 'file', '/x/旧.pdf', 'the text')",
+            [],
+        )
+        .unwrap();
+        // Through JSON, as it crosses to the webview and back.
+        let kept: Vec<KeptIdentity> = serde_json::from_str(&serde_json::to_string(&kept).unwrap()).unwrap();
+        restore_identities(&conn, &kept).unwrap();
+        assert_eq!((row(&conn, "a"), row(&conn, "b")), before);
+        let kind: String = conn
+            .query_row("SELECT typeof(target_identity) FROM attachments WHERE id = 'a'", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(kind, "blob");
+
+        assert!(restore_identities(
+            &conn,
+            &[KeptIdentity { id: "a".into(), identity: Some("abc".into()), notice: None }]
+        )
+        .is_err());
     }
 }

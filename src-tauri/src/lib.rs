@@ -392,6 +392,8 @@ pub fn run() {
             file_follow::locate_files,
             file_follow::find_same_name,
             file_follow::relocate_file,
+            file_follow::keep_file_identities,
+            file_follow::restore_file_identities,
             transfer::export_library,
             transfer::stage_import_db,
             transfer::discard_import_staging,

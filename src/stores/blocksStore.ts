@@ -16,7 +16,7 @@ import {
   type ImagePlace,
 } from '@/lib/db/blockImages';
 import { addImageBytes, addImagesFromPaths, imageErrorMessage } from '@/lib/images/blockImageIo';
-import { locateFiles, relocateFile, type FileState } from '@/lib/files/locate';
+import { keepFileIdentities, locateFiles, relocateFile, type FileState, type KeptIdentity } from '@/lib/files/locate';
 import { appendImageLines, remapImageIds } from '@/lib/blocks/imageLines';
 import type { Block, CreateBlockArgs, IncomingRef, RefKind } from '@/lib/db/blocks';
 import { quoteIsInBlock } from '@/lib/blocks/quoteFold';
@@ -475,13 +475,22 @@ export const useBlocksStore = create<BlocksState>((set, get) => {
       // back on the project (its default for every other path). P7-1: an older version one of
       // them had replaced comes back into use; undo marks it replaced again.
       const revived: adb.RevivedVersion[] = [];
-      if (removedFiles) for (const f of files) revived.push(...(await adb.deleteAttachment(f.id)));
+      // P9H-2: what the rows cannot carry (the identity is a BLOB), read before they go. A failed
+      // read costs only that: the file still comes back, and is recognised again on next sight.
+      let identities: KeptIdentity[] = [];
+      if (removedFiles) {
+        identities = await keepFileIdentities(files.map((f) => f.id)).catch((e: unknown) => {
+          console.warn('[delete] could not keep the files\u2019 identities', e);
+          return [];
+        });
+        for (const f of files) revived.push(...(await adb.deleteAttachment(f.id)));
+      }
       await db.deleteBlock(id);
 
       if (snapshot) {
         useUndoStore
           .getState()
-          .pushUndo(buildDeleteUndo({ block: snapshot, files, removedFiles, revived }));
+          .pushUndo(buildDeleteUndo({ block: snapshot, files, removedFiles, revived, identities }));
       }
 
       const state = get();

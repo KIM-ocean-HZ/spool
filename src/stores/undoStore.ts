@@ -7,6 +7,7 @@ import {
   setAttachmentSuperseded,
 } from '@/lib/db/attachments';
 import { restoreImagePlaces } from '@/lib/db/blockImages';
+import { restoreFileIdentities } from '@/lib/files/locate';
 import { imageLinesAsText } from '@/lib/blocks/imageLines';
 import { t } from '@/lib/i18n';
 import {
@@ -326,13 +327,20 @@ const reverseAndBuildRedo = async (
       };
     }
     case 'delete': {
-      const { block, files = [], removedFiles = false, revived = [] } = entry.payload;
+      const { block, files = [], removedFiles = false, revived = [], identities = [] } = entry.payload;
       await restoreBlock(block);
       // v30 (P5-3): the files that hung off it go back on it — re-inserted verbatim if the
       // user took them out of the project with the block, re-hung if they were left on it.
       for (const f of files) {
         if (removedFiles) await restoreAttachment(f);
         else await setAttachmentAnchor(f.id, block.id);
+      }
+      // P9H-2: …with the identity and notice they had (Rust writes the BLOB). If that fails the
+      // file is still back — it is recognised again the next time it is seen in place.
+      if (removedFiles) {
+        await restoreFileIdentities(identities).catch((e: unknown) =>
+          console.warn('[undo] could not put the files\u2019 identities back', e),
+        );
       }
       // P7-1: the older versions they had replaced go back under them. Redo needs nothing
       // extra — deleteAttachment brings them back into use again.
