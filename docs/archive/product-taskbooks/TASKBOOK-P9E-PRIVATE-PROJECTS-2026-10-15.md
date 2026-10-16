@@ -257,7 +257,7 @@
 - 提交：`a54406d fix(sidebar): 已完成的项目右键菜单不再半透明、点得动（P9E 验收第二轮…）`
 - 改的文件：`src/components/Sidebar/ThreadListItem.tsx`（菜单用 `createPortal` 画到 `document.body`；这一行自己的样子不变）。
 - 验：单元测试测不出（node 里没有排版和层叠），用真组件截图脚本做命中测试 —— 改后按钮正中间就是按钮本身（`p9e-r2-after-done-row-menu-zh` / `-en`）；照真手指的顺序 mousedown → mouseup → click：菜单没被「点外面就关」误关，私密取消、小眼睛消失、菜单关上（`p9e-r2-after-press-turns-off.png`）。上一轮「菜单长高了往上挪」照样成立。全量 tsc 干净、vitest 101 / 1121、`(none missing)`。
-- 换装：先问（不改库、不改 MCP，AI 客户端不用重启）。
+- **已换装**（Ocean 10-16「换装」，HANDOFF §9.2 第 135 条；停之前 `drafts.json` 是空的）：在 `b9ce6cd` 上构建（`src` / `src-tauri` 没有未提交改动），命令同 §7.6；TSA 一遍过（主程序和 `spool-ai` 都是 14:18:54）；`--verify --deep --strict` 过；新二进制 `--mcp` 连真库最新副本：24 个工具，**列表 57 个项目 —— 库里活着的 58 个里有 1 个是 Ocean 验收时设成私密的，AI 那边看不到它**（真数据上又核了一遍私密）。装前 sha256 `09cd60d6…`（第一轮那版），真库 v34 · ok · 30 / 75 / 1197 · 正文 477160 / 文件 65 / 图片 18 / 跟进 23，私密 1 个；快照 26 个；`settings.json` 26 个键。GUI 91817、`--overlay` 91831 按 pid 停，1 秒内都退了；24 个 `--mcp` 一个没碰（装后逐个核过还活着）。备份（桌面）`spool.before-p9e-r2-install-20261016-141915.db` 和同名的 `settings` / `focus` / `drafts` 三个 json；旧包 `~/Desktop/Spool/spool-pre-install/Spool-old-20261016-141915-pre-p9e-r2.app`。装后 sha256 `1454e210…` 和构建产物一致；主进程 50386（14:19:15）、`--overlay` 50459（14:19:16），txt inode 81435140 = 新文件；`spctl` = `Unnotarized Developer ID`；stderr 只有 `[overlay] helper started` 和 `[double-tap] installed at HID/active`。真库逐项和装前一样（不迁移，快照仍 26 个），私密那个项目还是私密；`settings.json` 逐键一样。没 push、没发版。
 
 ## 8. 收尾的文档动作（执行窗做）
 
