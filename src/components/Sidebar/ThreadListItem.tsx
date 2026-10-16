@@ -15,7 +15,7 @@ import { useCaptureStore } from '@/stores/captureStore';
 import { useCompressStore } from '@/stores/compressStore';
 import { useThreadsStore } from '@/stores/threadsStore';
 import { useWorkspacesStore } from '@/stores/workspacesStore';
-import MenuPrivateItem, { privateMenuTurnsOn } from './MenuPrivateItem';
+import MenuPrivateItem, { PrivateConfirm, privateMenuTurnsOn } from './MenuPrivateItem';
 
 interface Props {
   thread: Thread;
@@ -118,6 +118,11 @@ export default function ThreadListItem({
   // viewport coords so the menu anchors to the cursor regardless of sidebar scroll.
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const menuPos = useMenuPosition(menu);
+  // P9E-4: the 「设为私密 / 取消私密」 explanation is open — it is then the whole menu.
+  const [privateAsk, setPrivateAsk] = useState(false);
+  useEffect(() => {
+    if (!menu) setPrivateAsk(false);
+  }, [menu]);
   useEffect(() => {
     if (!menu) return;
     const close = () => setMenu(null);
@@ -322,45 +327,54 @@ export default function ThreadListItem({
               {t('选中的 {n} 个项目', { n: acting.length })}
             </div>
           )}
-          <div className="px-3 py-1 text-[13px] text-muted">{t('移动到工作区')}</div>
-          {otherWorkspaces.length === 0 ? (
-            <div className="px-3 py-1 text-xs text-muted">{t('没有其他工作区')}</div>
-          ) : (
-            otherWorkspaces.map((ws) => (
-              <button
-                key={ws.id}
-                type="button"
-                role="menuitem"
-                onClick={() => {
-                  if (acting.length > 1) void moveMany(acting, ws.id);
-                  else void patchThread(thread.id, { workspaceId: ws.id });
-                  setMenu(null);
-                }}
-                className="block w-full px-3 py-1 text-left text-xs text-ink hover:bg-paper-2"
-              >
-                {ws.title || t('未命名')}
-              </button>
-            ))
-          )}
-          <div className="mt-1 border-t border-line pt-1">
-            <MenuPrivateItem
+          {/* P9E-4: while 「设为私密 / 取消私密」 asks, its explanation is the whole menu — moving
+              and deleting are out of the way, and the menu stays short enough to fit. */}
+          {privateAsk ? (
+            <PrivateConfirm
               turnOn={privateTurnsOn}
               onConfirm={() => {
                 void setPrivate(acting, privateTurnsOn);
                 setMenu(null);
               }}
+              onCancel={() => setPrivateAsk(false)}
             />
-          </div>
-          <div className="mt-1 border-t border-line pt-1">
-            <MenuDeleteItem
-              label={acting.length > 1 ? t('删除这 {n} 个项目', { n: acting.length }) : t('删除项目')}
-              onConfirm={() => {
-                if (acting.length > 1) void removeMany(acting);
-                else onDelete();
-                setMenu(null);
-              }}
-            />
-          </div>
+          ) : (
+            <>
+              <div className="px-3 py-1 text-[13px] text-muted">{t('移动到工作区')}</div>
+              {otherWorkspaces.length === 0 ? (
+                <div className="px-3 py-1 text-xs text-muted">{t('没有其他工作区')}</div>
+              ) : (
+                otherWorkspaces.map((ws) => (
+                  <button
+                    key={ws.id}
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      if (acting.length > 1) void moveMany(acting, ws.id);
+                      else void patchThread(thread.id, { workspaceId: ws.id });
+                      setMenu(null);
+                    }}
+                    className="block w-full px-3 py-1 text-left text-xs text-ink hover:bg-paper-2"
+                  >
+                    {ws.title || t('未命名')}
+                  </button>
+                ))
+              )}
+              <div className="mt-1 border-t border-line pt-1">
+                <MenuPrivateItem turnOn={privateTurnsOn} onAsk={() => setPrivateAsk(true)} />
+              </div>
+              <div className="mt-1 border-t border-line pt-1">
+                <MenuDeleteItem
+                  label={acting.length > 1 ? t('删除这 {n} 个项目', { n: acting.length }) : t('删除项目')}
+                  onConfirm={() => {
+                    if (acting.length > 1) void removeMany(acting);
+                    else onDelete();
+                    setMenu(null);
+                  }}
+                />
+              </div>
+            </>
+          )}
         </div>
       )}
     </li>

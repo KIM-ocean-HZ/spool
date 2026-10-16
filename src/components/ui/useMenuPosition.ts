@@ -13,6 +13,17 @@ import { useLayoutEffect, useRef, useState } from 'react';
 
 const MARGIN_PX = 8;
 
+/** Where a menu of `size` opened at `anchor` goes so all of it is on screen: left / up as far
+ *  as needed, never past the top-left margin. */
+export const clampMenu = (
+  anchor: { x: number; y: number },
+  size: { width: number; height: number },
+  view: { width: number; height: number },
+): { x: number; y: number } => ({
+  x: Math.max(MARGIN_PX, Math.min(anchor.x, view.width - size.width - MARGIN_PX)),
+  y: Math.max(MARGIN_PX, Math.min(anchor.y, view.height - size.height - MARGIN_PX)),
+});
+
 export function useMenuPosition(anchor: { x: number; y: number } | null): {
   ref: React.RefObject<HTMLDivElement>;
   style: React.CSSProperties;
@@ -21,15 +32,22 @@ export function useMenuPosition(anchor: { x: number; y: number } | null): {
   const [placed, setPlaced] = useState<{ x: number; y: number } | null>(null);
 
   useLayoutEffect(() => {
-    if (!anchor || !ref.current) {
+    const el = ref.current;
+    if (!anchor || !el) {
       setPlaced(null);
       return;
     }
-    const r = ref.current.getBoundingClientRect();
-    setPlaced({
-      x: Math.max(MARGIN_PX, Math.min(anchor.x, window.innerWidth - r.width - MARGIN_PX)),
-      y: Math.max(MARGIN_PX, Math.min(anchor.y, window.innerHeight - r.height - MARGIN_PX)),
-    });
+    const place = () => {
+      const r = el.getBoundingClientRect();
+      setPlaced(clampMenu(anchor, r, { width: window.innerWidth, height: window.innerHeight }));
+    };
+    place();
+    // ⛔ 2026-10-16 (Ocean, P9E 验收第一轮): a menu can GROW after it opens — 「设为私密…」 opens
+    // its explanation inside the menu — and placed only once, it ran off the bottom of the window
+    // with its buttons. Re-placed whenever its size changes, measured from the same anchor.
+    const ro = new ResizeObserver(place);
+    ro.observe(el);
+    return () => ro.disconnect();
     // The anchor object is rebuilt every render; its two numbers are what actually changed.
   }, [anchor?.x, anchor?.y]);
 

@@ -1,10 +1,12 @@
 import { EyeOff } from 'lucide-react';
-import { useState } from 'react';
 import { useT } from '@/lib/i18n';
 
 // P9E-4 (Ocean 2026-10-15 第 119 条) — 「设为私密 / 取消私密」 as a row of a project's right-click
-// menu, acting on the whole selection like 「移到工作区」. Two steps, the shape of MenuDeleteItem:
-// the first click opens a short explanation in place, the second makes it so.
+// menu, acting on the whole selection like 「移到工作区」. Two steps: the first click opens a
+// short explanation, the second makes it so.
+// ⛔ 2026-10-16 (P9E 验收第一轮,「菜单窗口太长，导致用户无法看见底部信息」): while the explanation
+// is open it is ALL the menu shows (ThreadListItem swaps the rest out), and the menu re-places
+// itself as it grows (useMenuPosition) — its buttons were below the bottom of the window.
 // ⚠️ The explanation says what it is honestly (task book §2.2): it keeps the project out of
 // what Spool hands an AI — not out of reach of an AI that reads files on the disk itself.
 
@@ -46,23 +48,14 @@ export function PrivateConfirm({
   );
 }
 
-export default function MenuPrivateItem({
-  turnOn,
-  onConfirm,
-}: {
-  turnOn: boolean;
-  onConfirm: () => void;
-}) {
+/** The menu row itself; `onAsk` swaps the menu for PrivateConfirm. */
+export default function MenuPrivateItem({ turnOn, onAsk }: { turnOn: boolean; onAsk: () => void }) {
   const t = useT();
-  const [asking, setAsking] = useState(false);
-  if (asking) {
-    return <PrivateConfirm turnOn={turnOn} onConfirm={onConfirm} onCancel={() => setAsking(false)} />;
-  }
   return (
     <button
       type="button"
       role="menuitem"
-      onClick={() => setAsking(true)}
+      onClick={onAsk}
       className="flex w-full items-center gap-1.5 px-3 py-1 text-left text-xs text-ink hover:bg-paper-2"
     >
       <EyeOff size={11} className="flex-none text-muted" />
