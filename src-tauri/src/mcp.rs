@@ -1111,12 +1111,30 @@ struct RenderOpts<'a> {
     // DESIGN_CONTEXT_HYGIENE §3.3: render the dropped blocks as a one-line catalogue
     // instead of a bare count. Ignored when omit == 0, so the plain path is untouched.
     catalog: bool,
+    // P9G-2: follow the line that says what was dropped with PACK_SPLIT_HINT. Only get_pack
+    // sets it, and only for a project over the default read. Ignored when omit == 0.
+    split_hint: bool,
 }
 
 impl RenderOpts<'_> {
     fn plain() -> Self {
-        RenderOpts { omit: 0, extract_cap: EXTRACT_CHAR_CAP, scope: None, catalog: false }
+        RenderOpts { omit: 0, extract_cap: EXTRACT_CHAR_CAP, scope: None, catalog: false, split_hint: false }
     }
+}
+
+// P9G-2 (Ocean 2026-10-16 第 125、131 条): the 50k read stays as it is; what changes is that an
+// AI handed a cut-down pack of a project that is simply too long is told to ask the user about
+// splitting it — 「识别到文字过多，主动问用户要不要拆分成子项目」. The only place it is said:
+// `list_threads` does not suggest it (第 131 条: only an AI that actually read a cut-down pack
+// asks). ⚠️ MCP side only, like REF_BLOCK_HIDDEN: a pack the user copies out of Spool has no
+// budget and no AI to ask, so `templates.ts` has nothing to mirror.
+fn pack_split_hint() -> String {
+    format!(
+        "[This project is long \u{2014} its pack runs past the {PACK_DEFAULT_MAX_CHARS} characters \
+         one default read holds, which is why its oldest entries are cut down to one line. Ask \
+         the user whether to split it into a few sub-projects; on a yes, propose the groups with \
+         propose_split \u{2014} it only queues a proposal for them to approve in Spool.]"
+    )
 }
 
 pub fn assemble_pack(
@@ -1152,7 +1170,7 @@ fn assemble_pack_with(
     now_ms: i64,
     opts: &RenderOpts,
 ) -> String {
-    let RenderOpts { omit, extract_cap, scope, catalog } = *opts;
+    let RenderOpts { omit, extract_cap, scope, catalog, split_hint } = *opts;
     let date_str = format_pack_date(now_ms);
     let mut out: Vec<String> = Vec::new();
 
@@ -1258,6 +1276,9 @@ fn assemble_pack_with(
                  or raise max_chars ...]",
                 if hidden == 1 { "entry is" } else { "entries are" }
             ));
+            if split_hint {
+                out.push(pack_split_hint());
+            }
             for b in &dropped {
                 out.push(render_catalog_line(b));
             }
@@ -1267,6 +1288,9 @@ fn assemble_pack_with(
                  chars of unpinned content{pinned_note}) — page the thread's older blocks \
                  with get_blocks, narrow range, or raise max_chars ...]"
             ));
+            if split_hint {
+                out.push(pack_split_hint());
+            }
         }
     }
     if blocks.is_empty() {
@@ -3757,12 +3781,20 @@ const EXTRACT_CAP_LADDER: [usize; 4] = [EXTRACT_CHAR_CAP, 2000, 500, 120];
 // whole budget on the catalogue's own length and get a floor message instead of a pack,
 // which is strictly worse than the behaviour this feature is improving on.
 fn budgeted_pack(built: &PackBuilt, max_chars: i64) -> Option<(String, usize)> {
+    budgeted_pack_hinted(built, max_chars, false)
+}
+
+/// …with PACK_SPLIT_HINT after the line that says what was dropped (P9G-2) — get_pack's
+/// version. The hint is part of what is measured against max_chars.
+fn budgeted_pack_hinted(built: &PackBuilt, max_chars: i64, split_hint: bool) -> Option<(String, usize)> {
     [true, false].iter().find_map(|&catalog| {
-        EXTRACT_CAP_LADDER.iter().find_map(|&cap| budgeted_pack_at(built, max_chars, cap, catalog))
+        EXTRACT_CAP_LADDER
+            .iter()
+            .find_map(|&cap| budgeted_pack_at(built, max_chars, cap, catalog, split_hint))
     })
 }
 
-fn render_at(built: &PackBuilt, omit: usize, extract_cap: usize, catalog: bool) -> String {
+fn render_at(built: &PackBuilt, omit: usize, extract_cap: usize, catalog: bool, split_hint: bool) -> String {
     assemble_pack_with(
         &built.title,
         &built.blocks,
@@ -3770,7 +3802,7 @@ fn render_at(built: &PackBuilt, omit: usize, extract_cap: usize, catalog: bool) 
         &built.ref_titles,
         &built.ref_blocks,
         built.now_ms,
-        &RenderOpts { omit, extract_cap, scope: built.scope(), catalog },
+        &RenderOpts { omit, extract_cap, scope: built.scope(), catalog, split_hint },
     )
 }
 
@@ -3779,12 +3811,13 @@ fn budgeted_pack_at(
     max_chars: i64,
     extract_cap: usize,
     catalog: bool,
+    split_hint: bool,
 ) -> Option<(String, usize)> {
     let n = built.blocks.len();
-    let fits =
-        |omit: usize| render_at(built, omit, extract_cap, catalog).chars().count() as i64 <= max_chars;
+    let render = |omit: usize| render_at(built, omit, extract_cap, catalog, split_hint);
+    let fits = |omit: usize| render(omit).chars().count() as i64 <= max_chars;
     if fits(0) {
-        return Some((render_at(built, 0, extract_cap, catalog), 0));
+        return Some((render(0), 0));
     }
     if !fits(n) {
         return None;
@@ -3802,7 +3835,7 @@ fn budgeted_pack_at(
             lo = mid;
         }
     }
-    Some((render_at(built, hi, extract_cap, catalog), hi))
+    Some((render(hi), hi))
 }
 
 // One get_pack call used to return 70k+ chars (field report A1) — over the tool-result
@@ -3841,7 +3874,7 @@ fn pack_guard_message(built: &PackBuilt, range: &str) -> Option<String> {
 // bounded by this budget at all.
 fn pack_floor_message(built: &PackBuilt, max_chars: i64) -> String {
     let floor =
-        render_at(built, built.blocks.len(), EXTRACT_CAP_LADDER[EXTRACT_CAP_LADDER.len() - 1], false)
+        render_at(built, built.blocks.len(), EXTRACT_CAP_LADDER[EXTRACT_CAP_LADDER.len() - 1], false, false)
             .chars()
             .count();
     t!(
@@ -5605,6 +5638,327 @@ fn propose_supersede_json(
     Ok(serde_json::json!({
         "queued": true,
         "written": false,
+        "expires_in_days": PROPOSAL_TTL_DAYS,
+    })
+    .to_string())
+}
+
+// ⭐ P9G-2 (Ocean 2026-10-16 第 125 – 131 条) —— propose_split.
+//
+// A project that has grown past what one get_pack holds (the 50k default) gets cut down for the
+// AI that reads it; Ocean's answer was not a bigger read but a smaller project: 「提示用户自己或者让
+// AI 做一次拆分，把大项目拆成几个子项目」. The AI asks the user, and on a yes proposes the groups
+// here. ⛔ It only queues (第 129 条「AI 只能提议」): one row in `split_proposals`, not a block
+// moved. The split happens in the GUI, at the user's click on the review card, where they can
+// regroup first.
+//
+// Checked before anything is queued:
+//  - the project, through the AI's view: a private project is no project (P9E);
+//  - every block_id is in that project — also through the view, so a block of another project,
+//    of a private one and an id that names nothing get the same answer — and in one group only.
+//    Blocks in no group stay in the project; the receipt says how many;
+//  - 2 – 8 groups, each with a title (none empty, no two alike — the GUI's rule: blanks and case
+//    do not count), a one-line summary and at least one block; `why` given and one line long;
+//  - one proposal per project at a time;
+//  - files / follow_ups (optional): only the project's files that hang off no block and are not
+//    an older version (those travel with their block / their newer version), and its follow-up
+//    lines that are not still waiting for the user. Each named once, to a group named by title.
+// ⚠️ ③: a correction or a replacement whose two blocks would land in different places is NOT
+// refused — the receipt names the pair by number and says what is lost (the corrected sentence's
+// mark is drawn only when both blocks are in one project). The card says it again.
+// ⚠️ Errors name positions, never ids: an error body is what a client reads out (§3.1-3).
+const SPLIT_GROUPS_MIN: usize = 2;
+const SPLIT_GROUPS_MAX: usize = 8;
+const SPLIT_SUMMARY_CHAR_CAP: usize = GIST_CHAR_CAP;
+
+fn propose_split_json(
+    conn: &Connection,
+    thread_id: &str,
+    groups: &[Value],
+    why: &str,
+    files: &[Value],
+    follow_ups: &[Value],
+    now: i64,
+) -> Result<String, String> {
+    use rusqlite::OptionalExtension;
+    let title = live_thread_title(conn, thread_id)?;
+    let why = why.trim();
+    if why.is_empty() {
+        return Err(t!(
+            "缺少 why —— 待审卡片最上面那一句就是它,用户靠它判断要不要拆。",
+            "why is missing — it is the line at the top of the review card, and what the user \
+             decides by."
+        ));
+    }
+    let why_len = why.chars().count();
+    if why_len > FILE_REQUEST_WHY_CAP {
+        return Err(t!(
+            "why 太长了({why_len} 字,上限 {FILE_REQUEST_WHY_CAP})。卡片上的一句话,说清为什么要拆就够了。",
+            "why is too long ({why_len} chars, limit {FILE_REQUEST_WHY_CAP}). It is one line on a \
+             card — saying why the project should be split is enough."
+        ));
+    }
+    if !(SPLIT_GROUPS_MIN..=SPLIT_GROUPS_MAX).contains(&groups.len()) {
+        return Err(t!(
+            "groups 要有 {SPLIT_GROUPS_MIN} – {SPLIT_GROUPS_MAX} 组(现在是 {} 组)。没分进任何一组的块本来就留在原项目,不用单列一组。",
+            "groups must hold {SPLIT_GROUPS_MIN} – {SPLIT_GROUPS_MAX} groups (this has {}). Blocks \
+             you put in no group stay in the project anyway — they need no group of their own.",
+            groups.len()
+        ));
+    }
+
+    // The groups: title, summary, blocks — each block checked against this project.
+    let mut plan_groups: Vec<Value> = Vec::new();
+    let mut titles: Vec<String> = Vec::new();
+    let mut group_of: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    let mut surfaces: Vec<(String, String)> = vec![("why".into(), why.to_string())];
+    for (gi, g) in groups.iter().enumerate() {
+        let n = gi + 1;
+        let gtitle = g.get("title").and_then(Value::as_str).map(str::trim).unwrap_or("");
+        if gtitle.is_empty() {
+            return Err(t!("第 {n} 组没有组名(title)。", "Group {n} has no title."));
+        }
+        let key = gtitle.to_lowercase();
+        if let Some(first) = titles.iter().position(|k| *k == key) {
+            return Err(t!(
+                "第 {n} 组和第 {} 组同名(「{gtitle}」)。每个子项目要一个自己的名字。",
+                "Groups {} and {n} share a title (\u{201c}{gtitle}\u{201d}). Each sub-project needs a name of its own.",
+                first + 1
+            ));
+        }
+        titles.push(key);
+        let summary = g.get("summary").and_then(Value::as_str).map(str::trim).unwrap_or("");
+        if summary.is_empty() {
+            return Err(t!(
+                "第 {n} 组没有 summary —— 一句话说这个子项目是什么,卡片上显示、拆完就是它的摘要。",
+                "Group {n} has no summary — one line on what this sub-project is; it is shown on the \
+                 card and becomes the sub-project's summary."
+            ));
+        }
+        let summary_len = summary.chars().count();
+        if summary_len > SPLIT_SUMMARY_CHAR_CAP {
+            return Err(t!(
+                "第 {n} 组的 summary 太长了({summary_len} 字,上限 {SPLIT_SUMMARY_CHAR_CAP})。一句话就够。",
+                "Group {n}'s summary is too long ({summary_len} chars, limit {SPLIT_SUMMARY_CHAR_CAP}). One line is enough."
+            ));
+        }
+        let ids = g.get("block_ids").and_then(Value::as_array).cloned().unwrap_or_default();
+        if ids.is_empty() {
+            return Err(t!(
+                "第 {n} 组没有块(block_ids 是空的)。没有块的组不成一个子项目。",
+                "Group {n} has no blocks (block_ids is empty). A group with no blocks is not a sub-project."
+            ));
+        }
+        let mut block_ids: Vec<String> = Vec::new();
+        for (bi, id) in ids.iter().enumerate() {
+            let k = bi + 1;
+            let id = id.as_str().unwrap_or_default();
+            let here: Option<i64> = conn
+                .query_row(
+                    "SELECT 1 FROM blocks WHERE id = ?1 AND thread_id = ?2",
+                    rusqlite::params![id, thread_id],
+                    |r| r.get(0),
+                )
+                .optional()
+                .map_err(|e| e.to_string())?;
+            if here.is_none() {
+                return Err(t!(
+                    "第 {n} 组的第 {k} 个 block_id 不是这个项目里的块。用 get_blocks(thread_id) 一页一页读,\
+                     拿这个项目自己的 block_id。",
+                    "Block {k} of group {n} is not a block of this project. Page through \
+                     get_blocks(thread_id) for this project's own block_ids."
+                ));
+            }
+            if let Some(&other) = group_of.get(id) {
+                return Err(t!(
+                    "第 {n} 组的第 {k} 个块已经在第 {} 组里了。一块只能进一组。",
+                    "Block {k} of group {n} is already in group {}. A block goes into one group only.",
+                    other + 1
+                ));
+            }
+            group_of.insert(id.to_string(), gi);
+            block_ids.push(id.to_string());
+        }
+        surfaces.push((format!("groups[{gi}].title"), gtitle.to_string()));
+        surfaces.push((format!("groups[{gi}].summary"), summary.to_string()));
+        plan_groups.push(json!({ "title": gtitle, "summary": summary, "block_ids": block_ids }));
+    }
+    // D-1: the titles and summaries become sub-project names and summaries the user reads.
+    reject_raw_ids(conn, &surfaces.iter().map(|(a, b)| (a.as_str(), b.as_str())).collect::<Vec<_>>())?;
+
+    // Where a file / line goes: a group named by its title, the GUI's way of comparing names.
+    let group_named = |name: &str| titles.iter().position(|k| *k == name.trim().to_lowercase());
+
+    let mut plan_files: Vec<Value> = Vec::new();
+    let mut seen_files: HashSet<String> = HashSet::new();
+    for (fi, f) in files.iter().enumerate() {
+        let k = fi + 1;
+        let id = f.get("attachment_id").and_then(Value::as_str).unwrap_or_default();
+        let row: Option<(Option<String>, Option<String>)> = conn
+            .query_row(
+                "SELECT anchor_block_id, superseded_by FROM attachments WHERE id = ?1 AND thread_id = ?2",
+                rusqlite::params![id, thread_id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()
+            .map_err(|e| e.to_string())?;
+        match row {
+            None => {
+                return Err(t!(
+                    "files 里第 {k} 个不是这个项目的文件。用 get_blocks(thread_id) 看这个项目有哪些文件。",
+                    "File {k} in files is not a file of this project. get_blocks(thread_id) lists this project's files."
+                ))
+            }
+            Some((Some(_), _)) => {
+                return Err(t!(
+                    "files 里第 {k} 个挂在某一块上,它跟着那一块走 —— 不用单独指定,从 files 里拿掉。",
+                    "File {k} in files hangs off a block and goes wherever that block goes — leave it out of files."
+                ))
+            }
+            Some((None, Some(_))) => {
+                return Err(t!(
+                    "files 里第 {k} 个是被新版取代的旧版,它跟着新版走 —— 从 files 里拿掉,只指定新版。",
+                    "File {k} in files is an older version that a newer one replaced; it goes with the newer \
+                     one — leave it out and name only the newer file."
+                ))
+            }
+            Some((None, None)) => {}
+        }
+        if !seen_files.insert(id.to_string()) {
+            return Err(t!("files 里第 {k} 个前面已经指定过了。一个文件只能去一个地方。", "File {k} in files was already named above. A file goes to one place."));
+        }
+        let Some(group) = f.get("group").and_then(Value::as_str).and_then(group_named) else {
+            return Err(t!(
+                "files 里第 {k} 个的 group 要写成某一组的组名(title)。",
+                "File {k} in files needs group set to the title of one of the groups."
+            ));
+        };
+        plan_files.push(json!({ "attachment_id": id, "group": group }));
+    }
+
+    let mut plan_follow_ups: Vec<Value> = Vec::new();
+    let mut seen_items: HashSet<String> = HashSet::new();
+    for (ii, item) in follow_ups.iter().enumerate() {
+        let k = ii + 1;
+        let id = item.get("item_id").and_then(Value::as_str).unwrap_or_default();
+        let status: Option<String> = conn
+            .query_row(
+                "SELECT status FROM follow_up_items WHERE id = ?1 AND thread_id = ?2",
+                rusqlite::params![id, thread_id],
+                |r| r.get(0),
+            )
+            .optional()
+            .map_err(|e| e.to_string())?;
+        match status.as_deref() {
+            None => {
+                return Err(t!(
+                    "follow_ups 里第 {k} 条不是这个项目的跟进行。用 get_follow_up_brief(thread_id) 看有哪几条。",
+                    "Line {k} in follow_ups is not a follow-up line of this project. get_follow_up_brief(thread_id) lists them."
+                ))
+            }
+            Some("proposed") => {
+                return Err(t!(
+                    "follow_ups 里第 {k} 条还在待审里等用户点头,不能指定去处 —— 从 follow_ups 里拿掉。",
+                    "Line {k} in follow_ups is still waiting for the user's approval, so it cannot be \
+                     placed yet — leave it out of follow_ups."
+                ))
+            }
+            Some(_) => {}
+        }
+        if !seen_items.insert(id.to_string()) {
+            return Err(t!("follow_ups 里第 {k} 条前面已经指定过了。一条只能去一个地方。", "Line {k} in follow_ups was already named above. A line goes to one place."));
+        }
+        let Some(group) = item.get("group").and_then(Value::as_str).and_then(group_named) else {
+            return Err(t!(
+                "follow_ups 里第 {k} 条的 group 要写成某一组的组名(title)。",
+                "Line {k} in follow_ups needs group set to the title of one of the groups."
+            ));
+        };
+        plan_follow_ups.push(json!({ "item_id": id, "group": group }));
+    }
+
+    // One waiting at a time: a second would be a second card about the same project.
+    let pending: Option<i64> = conn
+        .query_row(
+            "SELECT 1 FROM main.split_proposals WHERE thread_id = ?1 AND expires_at > ?2 LIMIT 1",
+            rusqlite::params![thread_id, now],
+            |r| r.get(0),
+        )
+        .optional()
+        .map_err(|e| e.to_string())?;
+    if pending.is_some() {
+        return Err(t!(
+            "〈{title}〉已经有一份拆分提议在 Spool 的待审里等用户了。等用户处理完(拆或不拆)再提新的;\
+             要改分组,用户在那张卡上就能改。",
+            "\u{2039}{title}\u{203a} already has a split proposal waiting for the user in Spool's \
+             review. Wait until they have dealt with it (split or not) before proposing another — \
+             they can regroup on that card themselves."
+        ));
+    }
+
+    // ③ The pairs a split would separate: a correction or replacement inside this project whose
+    // two blocks land in different places (a group, another group, or staying behind).
+    let mut stmt = conn
+        .prepare(
+            "SELECT n.id, n.seq, o.id, o.seq, n.ref_kind FROM blocks n JOIN blocks o ON o.id = n.ref_block_id
+              WHERE n.thread_id = ?1 AND o.thread_id = ?1 AND n.ref_kind IN ('corrects', 'supersedes')
+             UNION ALL
+             SELECT n.id, n.seq, o.id, o.seq, 'supersedes' FROM blocks o JOIN blocks n ON n.id = o.replaced_by_block_id
+              WHERE o.thread_id = ?1 AND n.thread_id = ?1
+             ORDER BY 2, 4",
+        )
+        .map_err(|e| e.to_string())?;
+    let pairs = stmt
+        .query_map([thread_id], |r| {
+            Ok((r.get::<_, String>(0)?, r.get::<_, Option<i64>>(1)?, r.get::<_, String>(2)?, r.get::<_, Option<i64>>(3)?, r.get::<_, String>(4)?))
+        })
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+    let place = |id: &str| -> Value {
+        match group_of.get(id) {
+            Some(&g) => plan_groups[g]["title"].clone(),
+            None => Value::Null,
+        }
+    };
+    let mut seen_pairs: HashSet<(String, String)> = HashSet::new();
+    let split_pairs: Vec<Value> = pairs
+        .into_iter()
+        .filter(|(n, _, o, _, _)| group_of.get(n) != group_of.get(o) && seen_pairs.insert((n.clone(), o.clone())))
+        .map(|(n, nseq, o, oseq, kind)| {
+            json!({
+                "kind": if kind == "corrects" { "corrects" } else { "replaces" },
+                "block": nseq,
+                "points_at": oseq,
+                "block_goes_to": place(&n),
+                "points_at_goes_to": place(&o),
+            })
+        })
+        .collect();
+
+    let total: i64 = conn
+        .query_row("SELECT COUNT(*) FROM blocks WHERE thread_id = ?1", [thread_id], |r| r.get(0))
+        .map_err(|e| e.to_string())?;
+    let plan = json!({ "groups": plan_groups, "files": plan_files, "follow_ups": plan_follow_ups });
+    conn.execute(
+        "INSERT INTO main.split_proposals (id, thread_id, client, why, plan, created_at, expires_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+        rusqlite::params![new_id()?, thread_id, mcp_source_label(), why, plan.to_string(), now, now + PROPOSAL_TTL_MS],
+    )
+    .map_err(|e| t!("写入失败: {e}", "Write failed: {e}"))?;
+
+    Ok(json!({
+        "queued": true,
+        "written": false,
+        "project": title,
+        "groups": plan["groups"].as_array().unwrap().iter().map(|g| json!({
+            "title": g["title"],
+            "blocks": g["block_ids"].as_array().map_or(0, Vec::len),
+        })).collect::<Vec<_>>(),
+        "staying_in_project": total - group_of.len() as i64,
+        "files_placed": plan["files"].as_array().map_or(0, Vec::len),
+        "follow_ups_placed": plan["follow_ups"].as_array().map_or(0, Vec::len),
+        "split_pairs": split_pairs,
         "expires_in_days": PROPOSAL_TTL_DAYS,
     })
     .to_string())
@@ -7805,6 +8159,63 @@ fn tools_descriptor() -> Value {
             }
         },
         {
+            // P9G-2 (Ocean 2026-10-16 第 125 – 131 条). Queues, never splits.
+            "name": "propose_split",
+            "description": "Queue a proposal to split ONE long project into a few sub-projects, for the user to approve in Spool. This does NOT split anything: no block moves until the user presses Split on the review card, where they can regroup first. The moment for it is a get_pack that came back cut down because the project is long (it says its oldest entries are listed one line each) \u{2014} ask the user whether to split the project, and only on a yes, propose the groups here. Pass 2\u{2013}8 groups, each a sub-project: a title, a one-line summary (shown on the card, and that sub-project's summary once split) and the block_ids that move into it. Take the ids from get_blocks(thread_id), paging with offset/limit \u{2014} a cut-down pack does not carry every block's id. Blocks in no group stay in the original project, which keeps its name and gains one overview block linking to each sub-project. Moved blocks keep their number, their files and pictures, and every citation to them. The project's files that hang off no block, and its follow-up lines, stay put unless you place them with files / follow_ups (each to a group, named by title). Keep a correction and the block it corrects in one group: split apart, the corrected sentence loses its mark \u{2014} the receipt names any such pair. Say a split is waiting for them in Spool, never that the project is split. One proposal per project at a time; unreviewed ones expire after 7 days. Requires MCP writes enabled in Spool's settings.",
+            "annotations": { "readOnlyHint": false, "destructiveHint": false, "idempotentHint": false },
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "thread_id": { "type": "string", "description": "Id of the project to split (list_threads)." },
+                    "groups": {
+                        "type": "array",
+                        "minItems": 2,
+                        "maxItems": 8,
+                        "description": "The sub-projects, 2\u{2013}8, in the order the user should read them.",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "title": { "type": "string", "description": "The sub-project's name, in the user's language. No two groups alike." },
+                                "summary": { "type": "string", "description": "One line on what this sub-project is, in the user's language (max 200 chars). Shown on the card; becomes the sub-project's summary." },
+                                "block_ids": { "type": "array", "items": { "type": "string" }, "description": "The blocks that move into this sub-project (block_id from get_blocks). Each block in one group at most." }
+                            },
+                            "required": ["title", "summary", "block_ids"],
+                            "additionalProperties": false
+                        }
+                    },
+                    "why": { "type": "string", "description": "One line, in the user's language, at the top of the review card: why this project should be split, and along what lines. Max 300 chars." },
+                    "files": {
+                        "type": "array",
+                        "description": "Optional: where the project's files that hang off no block should go (attachment_id from get_blocks). A file on a block goes with that block; files you leave out stay in the original project.",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "attachment_id": { "type": "string" },
+                                "group": { "type": "string", "description": "The title of one of the groups." }
+                            },
+                            "required": ["attachment_id", "group"],
+                            "additionalProperties": false
+                        }
+                    },
+                    "follow_ups": {
+                        "type": "array",
+                        "description": "Optional: where the project's follow-up lines should go (item_id from get_follow_up_brief). Lines you leave out stay with the original project.",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "item_id": { "type": "string" },
+                                "group": { "type": "string", "description": "The title of one of the groups." }
+                            },
+                            "required": ["item_id", "group"],
+                            "additionalProperties": false
+                        }
+                    }
+                },
+                "required": ["thread_id", "groups", "why"],
+                "additionalProperties": false
+            }
+        },
+        {
             "name": "get_follow_up_brief",
             "description": "Read one project's follow-up list — the lines it is watching for, which the user approved and every follow-up run searches by. Returns {project, follow_up, following_up, waiting_for_user}. Each line carries item_id, line, why, since, standing and raised_today. `standing` is the one to read carefully: a standing line is a watch that never completes ('whether this deadline moves') and stays on the list after you answer it once; a non-standing line is an open question that retires once answered. An EMPTY list and following_up:false mean this project follows nothing up — that is the off switch, there is no separate enabled flag, and an empty list is never 'watching nothing while switched on'. raised_today:true means these lines already came up with the user today; bringing them up again unasked is nagging. waiting_for_user counts lines you proposed that nobody has ruled on yet. Read this when the user asks what Spool is keeping an eye on, before proposing a line with suggest_follow_up_item, and at the start of a conversation about a project that has any.",
             "annotations": { "readOnlyHint": true },
@@ -8122,7 +8533,10 @@ fn handle_tool_call(params: &Value) -> Value {
                 // C2 + R6 B-1: over budget degrades to a partial pack (oldest timeline
                 // entries first, then tighter per-file extraction) — a message only when
                 // even the tightest floor overflows.
-                match budgeted_pack(&built, max_chars) {
+                // P9G-2: and when the project itself is past the default read, the line that
+                // says what was dropped is followed by the suggestion to ask about a split.
+                let long = chars > PACK_DEFAULT_MAX_CHARS;
+                match budgeted_pack_hinted(&built, max_chars, long) {
                     Some((text, omit)) => Ok(with_ids(text, omit)),
                     None => Ok(pack_floor_message(&built, max_chars)),
                 }
@@ -8138,7 +8552,7 @@ fn handle_tool_call(params: &Value) -> Value {
             // 项目文件, the 跟进 panel), so the switch closes nothing off to the user.
             "create_thread" | "add_block" | "set_thread_summary" | "set_block_gist"
             | "propose_blocks" | "propose_supersede" | "request_file_access"
-            | "propose_attach_file" | "propose_replace_file"
+            | "propose_attach_file" | "propose_replace_file" | "propose_split"
             | "suggest_follow_up_item" | "close_follow_up_item" => {
                 if !mcp_write_enabled(&dir) {
                     // propose_blocks stores nothing, so a caller could reasonably read the
@@ -8148,9 +8562,11 @@ fn handle_tool_call(params: &Value) -> Value {
                     // ⭐ S2:`propose_supersede` 同样一个字都不写,但用户点头就会让一块
                     // 退出以后每一份 pack —— 那是这条开关管着的**最重**的一件事。
                     // P6-2:两个文件提议同理 —— 点头就把一个文件挂进库、让 AI 读得到。
+                    // P9G-2:拆分提议同理 —— 点头就把一个项目拆成几个。
                     let why = if matches!(
                         name,
                         "propose_blocks" | "propose_supersede" | "propose_attach_file" | "propose_replace_file"
+                            | "propose_split"
                     ) {
                         ts!(
                             "(它本身不写入,但用户点头就会改库 —— 同一个开关管着它。)",
@@ -8204,6 +8620,21 @@ fn handle_tool_call(params: &Value) -> Value {
                         need("why")?,
                         need("quote_stale")?,
                         need("quote_new")?,
+                        now_ms(),
+                    )
+                } else if name == "propose_split" {
+                    let list = |k: &str| args.get(k).and_then(Value::as_array).cloned().unwrap_or_default();
+                    propose_split_json(
+                        &conn,
+                        args.get("thread_id")
+                            .and_then(Value::as_str)
+                            .ok_or_else(|| t!("缺少 thread_id 参数。", "Missing the thread_id argument."))?,
+                        args.get("groups")
+                            .and_then(Value::as_array)
+                            .ok_or_else(|| t!("缺少 groups 参数(要一个数组)。", "Missing the groups argument (an array)."))?,
+                        args.get("why").and_then(Value::as_str).unwrap_or(""),
+                        &list("files"),
+                        &list("follow_ups"),
                         now_ms(),
                     )
                 } else if name == "request_file_access" {
@@ -8597,6 +9028,76 @@ fn human_headline(name: &str, args: &Value, result: &str) -> Option<String> {
                  Spool. Unreviewed batches expire after {} days.{passage}",
                 n("queued"),
                 n("queued"),
+                n("expires_in_days")
+            ))
+        }
+        // P9G-2. The sentence to head off is "I split your project": nothing moves until the user
+        // presses 拆分 on the card, and they may regroup it first.
+        "propose_split" => {
+            let project = v.get("project").and_then(Value::as_str).unwrap_or_default();
+            let names = v
+                .get("groups")
+                .and_then(Value::as_array)
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|g| g.get("title").and_then(Value::as_str))
+                        .map(|g| t!("〈{g}〉", "\u{2039}{g}\u{203a}"))
+                        .collect::<Vec<_>>()
+                        .join(ts!("、", ", "))
+                })
+                .unwrap_or_default();
+            let staying = n("staying_in_project");
+            let pairs = v.get("split_pairs").and_then(Value::as_array).cloned().unwrap_or_default();
+            let num = |p: &Value, k: &str| p.get(k).and_then(Value::as_i64).map_or("#?".to_string(), |s| format!("#{s}"));
+            let list = pairs
+                .iter()
+                .map(|p| {
+                    let (b, o) = (num(p, "block"), num(p, "points_at"));
+                    if p["kind"] == "corrects" {
+                        t!("{b} 更正了 {o}", "{b} corrects {o}")
+                    } else {
+                        t!("{b} 整条取代了 {o}", "{b} replaced {o}")
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join(ts!(";", "; "));
+            let corrects = pairs.iter().any(|p| p["kind"] == "corrects");
+            let replaces = pairs.iter().any(|p| p["kind"] == "replaces");
+            let pair_note = if pairs.is_empty() {
+                String::new()
+            } else {
+                let mut note = t!(
+                    " 注意,这几对会被分到不同的地方:{list}。",
+                    " Note: these pairs would land in different places: {list}."
+                );
+                if corrects {
+                    note.push_str(ts!(
+                        "更正和被更正的那一块分开之后,被更正那一句上的底色记号就没了(两块都还在)。",
+                        " A correction split from the block it corrects loses the mark on the corrected sentence (both blocks stay)."
+                    ));
+                }
+                if replaces {
+                    note.push_str(ts!(
+                        "整条取代跨项目照样指得过去。",
+                        " A replacement still links across projects."
+                    ));
+                }
+                note.push_str(ts!(
+                    "告诉用户 —— 他在卡上能把一对挪进同一组。",
+                    " Tell the user \u{2014} on the card they can move a pair into one group."
+                ));
+                note
+            };
+            Some(t!(
+                "还没拆:把〈{project}〉拆成 {} 个子项目({names})的提议已经排进 Spool 的待审面,等用户过目;\
+                 另有 {staying} 块会留在〈{project}〉。跟他说「Spool 里有一份拆分等你看」—— 现在一块都没动,\
+                 他在卡上能改分组,点「拆分」之后才会拆。{} 天内没处理就自动作废。{pair_note}",
+                "Nothing was split yet: a proposal to split \u{2039}{project}\u{203a} into {} sub-projects \
+                 ({names}) is queued in Spool's review screen, waiting for the user; {staying} block(s) \
+                 would stay in \u{2039}{project}\u{203a}. Tell them \u{201c}there is a split waiting for \
+                 you in Spool\u{201d} \u{2014} nothing has moved: they can regroup it on the card, and \
+                 nothing moves until they press Split. Unreviewed proposals expire after {} days.{pair_note}",
+                arr("groups"),
                 n("expires_in_days")
             ))
         }
@@ -10890,6 +11391,10 @@ and re-check one, write the new answer back with retrieved_at and a fresh rechec
 \"这条结论不对了\" / \"更正一下\" / \"that conclusion is wrong now\" \u{2192} add_block with ref_block_id naming the old block and ref_kind \u{2014} your choice: \"corrects\" (one point in it is wrong) or \"supersedes\" (your block replaces it wholesale) \u{2014} plus corrected_quote holding the sentence in it that no longer holds, copied word for word. Find that block first (search_blocks / get_blocks), never just open the new block's text with 更正. It is only a suggestion: the block is stored, and the user decides correct / replace / leave it in Spool's review \u{2014} say it is waiting for them there, never that it is done\n\
 \"这一块的摘要不对了\" / \"给这些块补一句说明\" / \"that one-line summary is out of date\" \u{2192} set_block_gist(block_id, gist) \u{2014} it is the only way to touch a gist after the block exists; an empty gist clears the line, which beats leaving a wrong one up\n\
 \"这个名单/计划整个重做了\" / \"新的那版把旧的整个换掉了\" / \"that whole list has been redone\" \u{2192} writing the new version now: add_block with ref_kind:\"supersedes\" (the line above); both blocks already there: propose_supersede naming the two. Either way it asks the user in Spool's review \u{2014} correct / replace / leave it \u{2014} and retires nothing. Choose replace ONLY when the newer block covers the older one WHOLESALE; if just one point inside is wrong, or the two readings are close, choose corrects\n\
+\"这个项目太长了\" / \"拆成几个子项目\" / \"split this project\" / a get_pack that came back cut \
+down because the project is long \u{2192} ask the user whether to split it into a few sub-projects; \
+on a yes, propose_split (the groups and their block_ids, from get_blocks) \u{2014} it only queues a \
+proposal they approve in Spool, so say a split is waiting for them there, never that it is done\n\
 \"is X getting messy\" / \"有没有重复\" \u{2192} thread_health\n\
 \"体检一下\" / \"check my library\" \u{2192} check_library\n\
 If this is your first turn with Spool connected and the user has not asked for anything \
@@ -11401,6 +11906,8 @@ mod tests {
                 "add_block",
                 "propose_blocks",
                 "propose_supersede",
+                // P9G-2：拆分提议同样只排队，但用户点头就把一个项目拆成几个。
+                "propose_split",
                 "request_file_access",
                 // P6-2：两个文件提议同样只排队，但用户点头就挂上一个文件、让 AI 读得到。
                 "propose_attach_file",
@@ -15572,7 +16079,7 @@ mod tests {
         // Pre-condition = the reported bug: with file text outside the budget, even
         // dropping the whole timeline leaves the floor over the cap, so the old single-
         // dimension search gave up and the caller got a stats message.
-        assert!(budgeted_pack_at(&built, CAP, EXTRACT_CHAR_CAP, false).is_none());
+        assert!(budgeted_pack_at(&built, CAP, EXTRACT_CHAR_CAP, false, false).is_none());
 
         // The reported case: CAP must yield a real pack, not a message.
         let (pack, _) = budgeted_pack(&built, CAP).expect("CAP must produce a partial pack");
@@ -16313,7 +16820,7 @@ mod tests {
     // Two libraries that differ ONLY in that one holds two private projects (and everything
     // that hangs off them: blocks, a picture, a file, follow-up lines, queued proposals, a
     // summary, a link and a correction pointing at the public project). Every surface an AI
-    // reaches — the 24 tools, the 9 prompt assemblies (MCP and headless), resources — is
+    // reaches — the 25 tools, the 9 prompt assemblies (MCP and headless), resources — is
     // called the same way on both, including with the private projects' own ids and titles.
     // ⇒ The answers must be the same, byte for byte: what an AI gets is exactly what it would
     // get if the private projects did not exist — not their words, not their ids, not a count,
@@ -16519,6 +17026,28 @@ mod tests {
                 "ref_block_id": "PRIVb1", "ref_kind": "corrects", "corrected_quote": "nothing like it" })),
             tool("propose_blocks", json!({ "items": [{ "thread_id": "pubGarden", "content": "x",
                 "ref_block_id": "PRIVb1", "ref_kind": "corrects", "corrected_quote": "blood" }] })),
+            // P9G-2: a split of a private project, or one that reaches into it, is refused the
+            // way a missing project / block / file / line is — and the one that goes through
+            // reports only what the AI can see.
+            tool("propose_split", json!({ "thread_id": "PRIVthread1", "why": "too long",
+                "groups": [{ "title": "A", "summary": "a", "block_ids": ["PRIVb1"] },
+                           { "title": "B", "summary": "b", "block_ids": ["PRIVb2"] }] })),
+            tool("propose_split", json!({ "thread_id": "pubGarden", "why": "too long",
+                "groups": [{ "title": "A", "summary": "a", "block_ids": ["pubB1"] },
+                           { "title": "B", "summary": "b", "block_ids": ["PRIVb1"] }] })),
+            tool("propose_split", json!({ "thread_id": "pubGarden", "why": "too long",
+                "groups": [{ "title": "A", "summary": "a", "block_ids": ["pubB1"] },
+                           { "title": "B", "summary": "b", "block_ids": ["pubB2"] }],
+                "files": [{ "attachment_id": "PRIVatt1", "group": "A" }] })),
+            tool("propose_split", json!({ "thread_id": "pubGarden", "why": "too long",
+                "groups": [{ "title": "A", "summary": "a", "block_ids": ["pubB1"] },
+                           { "title": "B", "summary": "b", "block_ids": ["pubB2"] }],
+                "follow_ups": [{ "item_id": "PRIVfu1", "group": "A" }] })),
+            tool("propose_split", json!({ "thread_id": "pubGarden", "why": "too long",
+                "groups": [{ "title": "A", "summary": "a", "block_ids": ["pubB1"] },
+                           { "title": "B", "summary": "b", "block_ids": ["pubB2"] }],
+                "files": [{ "attachment_id": "pubAtt1", "group": "A" }],
+                "follow_ups": [{ "item_id": "pubFu1", "group": "B" }] })),
             tool("create_thread", json!({ "workspace_title": "Nowhere", "title": "x" })),
             ("resources/list", json!({})),
             ("resources/read", json!({ "uri": "spool://thread/pubGarden" })),
@@ -16851,6 +17380,364 @@ mod tests {
                 assert!(!text.contains(needle), "{needle} in:\n{text}");
             }
         }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // P9G-2 (Ocean 2026-10-16 第 125 – 131 条) — propose_split only queues. Nothing in the
+    // library moves until the user presses 「拆分」 in Spool.
+
+    fn split_library(dir: &std::path::Path, write_enabled: bool, lang: &str) {
+        let _ = std::fs::remove_dir_all(dir);
+        std::fs::create_dir_all(dir).unwrap();
+        std::fs::write(
+            dir.join("settings.json"),
+            format!(r#"{{"mcpEnabled":true,"mcpWriteEnabled":{write_enabled},"resolvedLanguage":"{lang}"}}"#),
+        )
+        .unwrap();
+        let conn = Connection::open(dir.join("spool.db")).unwrap();
+        conn.execute_batch(include_str!("../../src/lib/db/schema.sql")).unwrap();
+        conn.execute_batch(&format!("PRAGMA user_version = {EXPECTED_SCHEMA_VERSION};")).unwrap();
+        conn.execute_batch(
+            "INSERT INTO workspaces (id, title, sort_order, created_at, updated_at) VALUES ('wsWork', 'Work', 0, 1, 1);
+             INSERT INTO threads (id, workspace_id, title, created_at, updated_at, private) VALUES
+               ('thLong', 'wsWork', 'Long project', 1, 1, 0),
+               ('thOther', 'wsWork', 'Other project', 1, 1, 0),
+               ('thSecret', 'wsWork', 'Secret project', 1, 1, 1);
+             INSERT INTO blocks (id, thread_id, kind, content, seq, created_at, ref_block_id, ref_kind,
+                                 corrected_quote, replaced_by_block_id, stale_at) VALUES
+               ('blkOne', 'thLong', 'text', 'Budget: two thousand.', 1, 10, NULL, NULL, NULL, NULL, NULL),
+               ('blkTwo', 'thLong', 'text', 'The venue is the old hall.', 2, 20, NULL, NULL, NULL, NULL, NULL),
+               ('blkThree', 'thLong', 'text', 'Speakers: three confirmed.', 3, 30, NULL, NULL, NULL, NULL, NULL),
+               ('blkFour', 'thLong', 'text', 'Schedule draft one.', 4, 40, NULL, NULL, NULL, 'blkSix', 45),
+               ('blkFive', 'thLong', 'text', 'Correction: the venue is the new hall.', 5, 50, 'blkTwo',
+                'corrects', 'the old hall', NULL, NULL),
+               ('blkSix', 'thLong', 'text', 'Schedule draft two, replacing draft one.', 6, 60, NULL, NULL,
+                NULL, NULL, NULL),
+               ('blkOther', 'thOther', 'text', 'Somewhere else entirely.', 1, 70, NULL, NULL, NULL, NULL, NULL),
+               ('blkSecret', 'thSecret', 'text', 'Private words.', 1, 80, NULL, NULL, NULL, NULL, NULL);
+             INSERT INTO attachments (id, thread_id, kind, target, label, created_at, anchor_block_id,
+                                      superseded_by) VALUES
+               ('fileProj', 'thLong', 'file', '/Users/x/plan.pdf', 'plan.pdf', 1, NULL, NULL),
+               ('fileOld', 'thLong', 'file', '/Users/x/plan-v0.pdf', 'plan-v0.pdf', 1, NULL, 'fileProj'),
+               ('fileAnch', 'thLong', 'file', '/Users/x/hall.pdf', 'hall.pdf', 1, 'blkTwo', NULL),
+               ('fileOther', 'thOther', 'file', '/Users/x/else.pdf', 'else.pdf', 1, NULL, NULL),
+               ('fileSecret', 'thSecret', 'file', '/Users/x/secret.pdf', 'secret.pdf', 1, NULL, NULL);
+             INSERT INTO follow_up_items (id, thread_id, text, standing, fingerprint, status, sort_order,
+                                          created_at) VALUES
+               ('fuOpen', 'thLong', 'Does the hall take deposits?', 0, 'does the hall take deposits?',
+                'open', 0, 1),
+               ('fuProposed', 'thLong', 'Ask about catering', 0, 'ask about catering', 'proposed', 1, 1),
+               ('fuSecret', 'thSecret', 'Private line', 0, 'private line', 'open', 0, 1);",
+        )
+        .unwrap();
+    }
+
+    /// Every row of every table but the split queue — what must not move when a split is proposed.
+    fn library_dump(dir: &std::path::Path) -> String {
+        let conn = Connection::open(dir.join("spool.db")).unwrap();
+        let tables: Vec<String> = conn
+            .prepare(
+                "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE '%fts%'
+                   AND name != 'split_proposals' ORDER BY name",
+            )
+            .unwrap()
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        let mut out = String::new();
+        for t in tables {
+            let mut stmt = conn.prepare(&format!("SELECT * FROM {t} ORDER BY rowid")).unwrap();
+            let n = stmt.column_count();
+            let rows = stmt
+                .query_map([], |r| {
+                    Ok((0..n).map(|i| format!("{:?}", r.get_ref(i).unwrap())).collect::<Vec<_>>().join("|"))
+                })
+                .unwrap();
+            for row in rows {
+                out.push_str(&format!("{t}: {}\n", row.unwrap()));
+            }
+        }
+        out
+    }
+
+    fn split_rows(dir: &std::path::Path) -> Vec<(String, String, String, String, i64)> {
+        let conn = Connection::open(dir.join("spool.db")).unwrap();
+        let mut stmt = conn
+            .prepare("SELECT thread_id, client, why, plan, expires_at - created_at FROM split_proposals")
+            .unwrap();
+        stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap()
+    }
+
+    /// (isError, text) of one propose_split call.
+    fn split_call(dir: &std::path::Path, args: Value) -> (bool, String) {
+        let out = ai_call(dir, "tools/call", &json!({ "name": "propose_split", "arguments": args }));
+        let v: Value = serde_json::from_str(&out).unwrap_or_else(|_| panic!("{out}"));
+        (v["isError"].as_bool().unwrap_or(false), v["content"][0]["text"].as_str().unwrap_or_default().to_string())
+    }
+
+    fn split_payload(text: &str) -> Value {
+        let json = text.lines().skip_while(|l| !l.starts_with('{')).collect::<Vec<_>>().join("\n");
+        serde_json::from_str(&json).unwrap_or_else(|_| panic!("{text}"))
+    }
+
+    const SPLIT_WHY: &str = "It has grown past what one read holds; venue and schedule are separate threads now.";
+
+    fn two_groups() -> Value {
+        json!([
+            { "title": "Venue", "summary": "Where it happens.", "block_ids": ["blkTwo", "blkFive"] },
+            { "title": "Schedule", "summary": "When it happens.", "block_ids": ["blkFour", "blkSix"] }
+        ])
+    }
+
+    #[test]
+    fn propose_split_queues_one_proposal_and_moves_nothing() {
+        let dir = std::env::temp_dir().join(format!("spool-p9g-queue-{}", std::process::id()));
+        split_library(&dir, true, "en");
+        let before = library_dump(&dir);
+
+        let (err, text) = split_call(&dir, json!({
+            "thread_id": "thLong",
+            "why": format!("  {SPLIT_WHY}  "),
+            "groups": two_groups(),
+            "files": [{ "attachment_id": "fileProj", "group": "venue" }],
+            "follow_ups": [{ "item_id": "fuOpen", "group": "Schedule" }]
+        }));
+        assert!(!err, "{text}");
+        // The headline says it is waiting; nothing anywhere says it is done.
+        assert!(text.starts_with("Nothing was split"), "{text}");
+        let lower = text.to_lowercase();
+        for claim in ["has been split", "is now split", "are now sub-projects", "split it into"] {
+            assert!(!lower.contains(claim), "{claim:?} in:\n{text}");
+        }
+        assert!(text.contains("waiting for the user") || text.contains("waiting for them"), "{text}");
+        let v = split_payload(&text);
+        assert_eq!(v["queued"], json!(true));
+        assert_eq!(v["written"], json!(false));
+        assert_eq!(v["project"], json!("Long project"));
+        assert_eq!(v["groups"], json!([{ "title": "Venue", "blocks": 2 }, { "title": "Schedule", "blocks": 2 }]));
+        assert_eq!(v["staying_in_project"], json!(2)); // #1 and #3
+        assert_eq!(v["split_pairs"], json!([]));
+        assert_eq!(v["expires_in_days"], json!(PROPOSAL_TTL_DAYS));
+
+        // One row, the plan normalised (group referenced by its place, from 0), why trimmed.
+        let rows = split_rows(&dir);
+        assert_eq!(rows.len(), 1);
+        let (thread, client, why, plan, ttl) = &rows[0];
+        assert_eq!(thread, "thLong");
+        assert!(client.ends_with("MCP"), "{client}"); // CLIENT_NAME is process-wide; other tests set it
+        assert_eq!(why, SPLIT_WHY);
+        assert_eq!(*ttl, PROPOSAL_TTL_MS);
+        assert_eq!(
+            serde_json::from_str::<Value>(plan).unwrap(),
+            json!({
+                "groups": [
+                    { "title": "Venue", "summary": "Where it happens.", "block_ids": ["blkTwo", "blkFive"] },
+                    { "title": "Schedule", "summary": "When it happens.", "block_ids": ["blkFour", "blkSix"] }
+                ],
+                "files": [{ "attachment_id": "fileProj", "group": 0 }],
+                "follow_ups": [{ "item_id": "fuOpen", "group": 1 }]
+            })
+        );
+        // ⛔ Not a block, a file or a follow-up line moved: every other table is byte-identical.
+        assert_eq!(library_dump(&dir), before);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn propose_split_says_in_chinese_that_nothing_is_split_yet() {
+        let dir = std::env::temp_dir().join(format!("spool-p9g-zh-{}", std::process::id()));
+        split_library(&dir, true, "zh");
+        let (err, text) = split_call(&dir, json!({ "thread_id": "thLong", "why": SPLIT_WHY, "groups": two_groups() }));
+        assert!(!err, "{text}");
+        assert!(text.starts_with("还没拆"), "{text}");
+        for claim in ["拆好了", "已经拆", "拆完了"] {
+            assert!(!text.contains(claim), "{claim} in:\n{text}");
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // ③: a correction (or a replacement) and the block it points at, sent to two different places,
+    // is not refused — the receipt names the pair by number and says what is lost.
+    #[test]
+    fn propose_split_names_the_pairs_it_would_separate() {
+        let dir = std::env::temp_dir().join(format!("spool-p9g-pairs-{}", std::process::id()));
+        split_library(&dir, true, "en");
+        let (err, text) = split_call(&dir, json!({
+            "thread_id": "thLong",
+            "why": SPLIT_WHY,
+            "groups": [
+                { "title": "Venue", "summary": "Where.", "block_ids": ["blkTwo"] },
+                // #5 corrects #2 (now in Venue); #6 replaced #4 (staying behind).
+                { "title": "Later", "summary": "Later notes.", "block_ids": ["blkFive", "blkSix"] }
+            ]
+        }));
+        assert!(!err, "{text}");
+        let v = split_payload(&text);
+        assert_eq!(
+            v["split_pairs"],
+            json!([
+                { "kind": "corrects", "block": 5, "points_at": 2, "block_goes_to": "Later", "points_at_goes_to": "Venue" },
+                { "kind": "replaces", "block": 6, "points_at": 4, "block_goes_to": "Later", "points_at_goes_to": null }
+            ])
+        );
+        let head = text.lines().next().unwrap();
+        assert!(head.contains("#5") && head.contains("#2") && head.contains("#6") && head.contains("#4"), "{head}");
+        assert!(head.contains("mark"), "{head}");
+        assert_eq!(split_rows(&dir).len(), 1, "queued all the same");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn propose_split_refuses_what_it_cannot_queue() {
+        let dir = std::env::temp_dir().join(format!("spool-p9g-refuse-{}", std::process::id()));
+        split_library(&dir, true, "en");
+        let before = library_dump(&dir);
+        let with = |groups: Value| json!({ "thread_id": "thLong", "why": SPLIT_WHY, "groups": groups });
+        let g = |title: &str, ids: &[&str]| json!({ "title": title, "summary": "One line.", "block_ids": ids });
+        let refused = |args: Value| -> String {
+            let (err, text) = split_call(&dir, args.clone());
+            assert!(err, "expected a refusal for {args}:\n{text}");
+            assert!(split_rows(&dir).is_empty(), "{args} queued something");
+            assert_eq!(library_dump(&dir), before, "{args} changed the library");
+            // An error is what a client reads out — the ids it was handed never come back.
+            for id in ["thLong", "thSecret", "blkOther", "blkSecret", "blkOne", "fileAnch", "fileOld",
+                       "fileOther", "fileSecret", "fuProposed", "fuSecret", "nowhereId"] {
+                assert!(!text.contains(id), "{id} echoed in:\n{text}");
+            }
+            text
+        };
+
+        // A private project is no project at all — word for word.
+        let private = refused(json!({ "thread_id": "thSecret", "why": SPLIT_WHY,
+            "groups": [g("A", &["blkSecret"]), g("B", &["blkSecret"])] }));
+        let missing = refused(json!({ "thread_id": "nowhereId", "why": SPLIT_WHY,
+            "groups": [g("A", &["blkOne"]), g("B", &["blkTwo"])] }));
+        assert_eq!(private, missing);
+        // A block of another project, of a private project, or no block at all: one answer.
+        let other = refused(with(json!([g("A", &["blkOne"]), g("B", &["blkOther"])])));
+        let secret = refused(with(json!([g("A", &["blkOne"]), g("B", &["blkSecret"])])));
+        let none = refused(with(json!([g("A", &["blkOne"]), g("B", &["nowhereId"])])));
+        assert_eq!(other, secret);
+        assert_eq!(other, none);
+        assert!(other.contains("group 2"), "{other}");
+        // One block, two groups (or twice in one).
+        refused(with(json!([g("A", &["blkOne"]), g("B", &["blkOne"])])));
+        refused(with(json!([g("A", &["blkOne", "blkOne"]), g("B", &["blkTwo"])])));
+        // 2 – 8 groups, each with a block, a title of its own and a summary.
+        refused(with(json!([g("A", &["blkOne"])])));
+        refused(with(json!((0..9).map(|i| g(&format!("G{i}"), &[["blkOne", "blkTwo", "blkThree", "blkFour",
+            "blkFive", "blkSix", "blkOne", "blkTwo", "blkThree"][i]])).collect::<Vec<_>>())));
+        refused(with(json!([g("A", &["blkOne"]), g("B", &[])])));
+        refused(with(json!([g("   ", &["blkOne"]), g("B", &["blkTwo"])])));
+        refused(with(json!([g("Venue", &["blkOne"]), g(" venue ", &["blkTwo"])])));
+        refused(with(json!([g("A", &["blkOne"]), { "title": "B", "summary": " ", "block_ids": ["blkTwo"] }])));
+        // why: required, one line on a card.
+        refused(json!({ "thread_id": "thLong", "why": "  ", "groups": [g("A", &["blkOne"]), g("B", &["blkTwo"])] }));
+        refused(json!({ "thread_id": "thLong", "why": "w".repeat(FILE_REQUEST_WHY_CAP + 1),
+            "groups": [g("A", &["blkOne"]), g("B", &["blkTwo"])] }));
+        // Files: only the project's own, not hung on a block, not an older version; to a named group.
+        let two = json!([g("A", &["blkOne"]), g("B", &["blkTwo"])]);
+        for (file, group) in [("fileAnch", "A"), ("fileOld", "A"), ("fileOther", "A"), ("fileSecret", "A"),
+                              ("fileProj", "Nowhere")] {
+            refused(json!({ "thread_id": "thLong", "why": SPLIT_WHY, "groups": two.clone(),
+                "files": [{ "attachment_id": file, "group": group }] }));
+        }
+        refused(json!({ "thread_id": "thLong", "why": SPLIT_WHY, "groups": two.clone(),
+            "files": [{ "attachment_id": "fileProj", "group": "A" }, { "attachment_id": "fileProj", "group": "B" }] }));
+        // Follow-up lines: the project's own, and not one still waiting for the user.
+        for item in ["fuProposed", "fuSecret", "nowhereId"] {
+            refused(json!({ "thread_id": "thLong", "why": SPLIT_WHY, "groups": two.clone(),
+                "follow_ups": [{ "item_id": item, "group": "A" }] }));
+        }
+
+        // One waiting per project: the second is refused, and says one is already waiting.
+        let (err, _) = split_call(&dir, with(two.clone()));
+        assert!(!err);
+        let (err, again) = split_call(&dir, with(two.clone()));
+        assert!(err, "{again}");
+        assert!(again.contains("already"), "{again}");
+        assert_eq!(split_rows(&dir).len(), 1);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // ④: it changes nothing itself, but what it queues splits a project the moment the user
+    // approves — so it rides the same consent switch as the other proposals.
+    #[test]
+    fn propose_split_needs_the_write_switch() {
+        let dir = std::env::temp_dir().join(format!("spool-p9g-switch-{}", std::process::id()));
+        split_library(&dir, false, "en");
+        let (err, text) = split_call(&dir, json!({ "thread_id": "thLong", "why": SPLIT_WHY, "groups": two_groups() }));
+        assert!(err, "{text}");
+        assert!(text.contains("Let AI write") && text.contains("writes nothing itself"), "{text}");
+        assert!(split_rows(&dir).is_empty());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn propose_split_is_declared_and_routed() {
+        let tools = tools_descriptor();
+        let t = tools.as_array().unwrap().iter().find(|t| t["name"] == "propose_split").expect("listed");
+        assert_eq!(t["annotations"]["readOnlyHint"], json!(false));
+        assert_eq!(t["annotations"]["destructiveHint"], json!(false));
+        assert_eq!(t["inputSchema"]["required"], json!(["thread_id", "groups", "why"]));
+        assert!(OPENERS.contains("propose_split"), "{OPENERS}");
+        // list_threads does not suggest it (第 131 条): only an AI that actually read a cut-down
+        // pack is told to ask.
+        let lt = tools.as_array().unwrap().iter().find(|t| t["name"] == "list_threads").unwrap();
+        assert!(!lt.to_string().contains("propose_split"));
+    }
+
+    // ⑤: an AI whose get_pack came back cut down because the project is over the default read is
+    // told — on the line that says what was dropped — to ask the user about splitting it. A
+    // caller that merely asked for a small max_chars on a small project is not.
+    #[test]
+    fn an_over_budget_pack_suggests_asking_about_a_split() {
+        let dir = std::env::temp_dir().join(format!("spool-p9g-pack-{}", std::process::id()));
+        split_library(&dir, true, "en");
+        {
+            let conn = Connection::open(dir.join("spool.db")).unwrap();
+            conn.execute_batch(
+                "INSERT INTO threads (id, workspace_id, title, created_at, updated_at) VALUES
+                   ('thHuge', 'wsWork', 'Huge project', 1, 1), ('thMid', 'wsWork', 'Mid project', 1, 1);",
+            )
+            .unwrap();
+            for i in 1..=40 {
+                conn.execute(
+                    "INSERT INTO blocks (id, thread_id, content, seq, created_at) VALUES (?1, 'thHuge', ?2, ?3, ?3)",
+                    rusqlite::params![format!("huge{i}"), format!("Entry {i}: {}", "word ".repeat(400)), i],
+                )
+                .unwrap();
+            }
+            for i in 1..=10 {
+                conn.execute(
+                    "INSERT INTO blocks (id, thread_id, content, seq, created_at) VALUES (?1, 'thMid', ?2, ?3, ?3)",
+                    rusqlite::params![format!("mid{i}"), format!("Note {i}: {}", "word ".repeat(150)), i],
+                )
+                .unwrap();
+            }
+        }
+        let pack = |args: Value| -> String {
+            let out = ai_call(&dir, "tools/call", &json!({ "name": "get_pack", "arguments": args }));
+            let v: Value = serde_json::from_str(&out).unwrap();
+            v["content"][0]["text"].as_str().unwrap().to_string()
+        };
+        let huge = pack(json!({ "thread_id": "thHuge" }));
+        assert!(huge.contains("older timeline"), "the budget bit:\n{huge}");
+        assert_eq!(huge.matches("propose_split").count(), 1, "{huge}");
+        let lines: Vec<&str> = huge.lines().collect();
+        let at = lines.iter().position(|l| l.contains("older timeline")).unwrap();
+        assert!(lines[at + 1].contains("propose_split"), "right after the line that says what was dropped:\n{}", lines[at + 1]);
+        // A smaller read of a project that is not long: the line is there, the suggestion is not.
+        let mid = pack(json!({ "thread_id": "thMid", "max_chars": 12000 }));
+        assert!(mid.contains("older timeline"), "{mid}");
+        assert!(!mid.contains("propose_split"), "{mid}");
+        // Under budget: nothing at all.
+        assert!(!pack(json!({ "thread_id": "thLong" })).contains("propose_split"));
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
