@@ -1,6 +1,6 @@
 # 产品任务书 P9G —— 拆项目：项目太长时，AI 提议拆成几个子项目，用户在待审里点头才拆
 
-> **状态：COMPLETE —— 待 Ocean 验收**（2026-10-16 执行完三步：`1800586` `009722d` `37a1631`；**还没换装**，换装会把真库迁到 v35，先问 Ocean，§5）。回执在 §7。
+> **状态：COMPLETE —— 待 Ocean 验收**（2026-10-16 执行完三步：`1800586` `009722d` `37a1631`；**10-16 已换装，真库已迁到 v35** —— 回执 §7.5）。回执在 §7。
 >
 > 原来的状态：QUEUED（2026-10-16 下发）—— P9E 验收之后开工，发版一之前做完（Ocean 10-16，HANDOFF §9.2 第 126 条）。Ocean 10-16「读TASKBOOK-P9G-PROJECT-SPLIT-2026-10-16.md，开始任务」开的工（HANDOFF §9.2 第 136 条）。
 >
@@ -178,7 +178,14 @@
 
 ### 7.5 换装
 
-（还没换装。做完三步先问 Ocean：这次换装会把真库从 v34 迁到 v35，装完开着的 AI 客户端都要重启，旧的会一直报「库比服务新」。）
+- **已换装**（Ocean 10-16「P9E 验收过了吗：通过，现在换装」，HANDOFF §9.2 第 137 – 138 条；停 GUI 之前又问了一次有没有没点「完成」的字，答「没有，直接换」，`drafts.json` 停之前是空的）：
+  - 构建：在 `09042b8` 上（`src` / `src-tauri` / `site` / `scripts` 没有未提交改动，`tauri.conf.json` 没改；P9G 三步都在里面），命令同 P9C §7.5（`APPLE_SIGNING_IDENTITY` 走环境变量、公证变量全 unset、日志进文件）；「skipping app notarization」；TSA 一遍过（`spool` 22:25:12、`spool-ai` 22:25:11）；`--verify --deep --strict` 过。真库最新副本（`VACUUM INTO` 到 scratchpad）先跑真迁移：v34 → v35、`fresh` = false、ok、14 张表每列条数和总长不变、新表空。新二进制 `--mcp` 连迁过的副本：**25 个工具**（含 `propose_split`）、列表 58 个项目（活着的 59 个里那 1 个私密的照旧看不到）。
+  - 装前：`spool` sha256 `1454e210…`（P9E 第二轮那版）、`Unnotarized Developer ID`。真库 v34 · ok · 工作区 30 / 项目 76（私密 1）/ 块 1206 · 正文 486664 · 批注 14800 / 文件 66 · 正文 718253 / 图片 18 张 9136780 字节 / 跟进 27 / 引擎记录 26 / 待审 0；迁移快照 26 个；`settings.json` 26 个键。
+  - 备份（桌面）：`spool.before-p9g-install-20261016-222533.db`（数字和上面逐项一样）、`settings.before-p9g-install-20261016-222533.json`、`focus.before-…json`、`drafts.before-…json`。
+  - 停：GUI 50386、`--overlay` 50459 按 pid `kill -TERM`，半秒内都退了；**17 个 `--mcp` 一个没碰**（装后逐个核过还活着）。旧包挪到 `~/Desktop/Spool/spool-pre-install/Spool-old-20261016-222533-pre-p9g.app`；新包先 `ditto` 成 `Spool.app.new` 再改名换进去，`open --stdout … --stderr …` 起来。
+  - 装后：sha256 `404e2caf…` 和构建产物一致；主进程 25128（22:32:06）、`--overlay` 25209（22:32:07），txt inode 都是 81550555 = 新文件；`spctl` = `Unnotarized Developer ID`（和装前一样）；stderr 只有 `[overlay] helper started` 和 `[double-tap] installed at HID/active` 两行。**真库 v35** · ok，上面那一串数逐项和装前一样，`split_proposals` 0 行；快照 26 → 27，多的是 `spool.pre-migration-v34-2026-10-16T21-32-08-251Z.db`；`settings.json` 逐键一样（26 个）。
+  - ⚠️ 开着的 AI 客户端（Claude Code、Codex、Claude 桌面版）要重启，没重启的会一直报「库比服务新」（故意的）。
+  - commit、build、换装分开记在上面；**没 push、没发版**。
 
 ## 8. 收尾的文档动作（执行窗做）
 
