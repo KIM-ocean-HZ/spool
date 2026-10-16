@@ -16903,6 +16903,14 @@ mod tests {
     ];
 
     fn canary_library(dir: &std::path::Path, with_private: bool) {
+        canary_library_at(dir, with_private, now_ms());
+    }
+
+    /// P9H-0 (DISCOVERED-20261013-3): the two libraries the canary compares are seeded from ONE
+    /// clock reading. Each used to read its own, and when a minute ticked over between the two
+    /// seedings every rendered time differed by a minute — on every retry, so the canary went red
+    /// with nothing private in sight (caught on a full run, `last_block_at` 23:47 vs 23:48).
+    fn canary_library_at(dir: &std::path::Path, with_private: bool, now: i64) {
         let _ = std::fs::remove_dir_all(dir);
         std::fs::create_dir_all(dir).unwrap();
         std::fs::write(
@@ -16913,7 +16921,6 @@ mod tests {
         let conn = Connection::open(dir.join("spool.db")).unwrap();
         conn.execute_batch(include_str!("../../src/lib/db/schema.sql")).unwrap();
         conn.execute_batch(&format!("PRAGMA user_version = {EXPECTED_SCHEMA_VERSION};")).unwrap();
-        let now = now_ms();
         let day = 86_400_000_i64;
         let (t0, t1, t2, t3) = (now - 40 * day, now - 3 * day, now - 2 * day, now - day);
         let future = now + 5 * day;
@@ -17155,8 +17162,9 @@ mod tests {
         let base = std::env::temp_dir().join(format!("spool-p9e-canary-{}", std::process::id()));
         let with = base.join("with");
         let without = base.join("without");
-        canary_library(&with, true);
-        canary_library(&without, false);
+        let now = now_ms();
+        canary_library_at(&with, true, now);
+        canary_library_at(&without, false, now);
 
         let calls = canary_calls();
         assert!(calls.len() > 100, "{}", calls.len());

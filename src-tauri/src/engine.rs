@@ -2335,10 +2335,30 @@ mod tests {
     // own budget, and reported as a cancel rather than as a failure. A grandchild is in
     // the tree on purpose: `claude` spawns MCP servers, and killing only the process the
     // parent knows about would leave one of them holding the user's library open.
+    //
+    // P9H-0 (DISCOVERED-20261013-3): about one run in a hundred, and only the first run of a freshly
+    // built test binary, the child shell was gone ~120 ms after spawn — before it had run a single
+    // line of its script (an instrumented copy printed nothing), and with nothing in this crate
+    // aiming a signal at it. Such an attempt says nothing about cancelling, so it is tried again;
+    // three in a row still fail. ⚠️ It used to panic BEFORE joining the stopper, which then fired
+    // its cancel 250 ms later into whichever run held the lock next — that was the second red.
     #[test]
     #[cfg(unix)]
     fn a_run_can_be_cancelled_and_takes_its_children_with_it() {
         let _serial = one_run_at_a_time();
+        for attempt in 1..=3 {
+            match cancel_attempt() {
+                Ok(()) => return,
+                Err(why) if attempt < 3 => eprintln!("attempt {attempt} said nothing about cancelling: {why}"),
+                Err(why) => panic!("three attempts in a row ended before the cancel arrived; the last: {why}"),
+            }
+        }
+    }
+
+    /// One try. Err = the run was over before the cancel was sent (see above); every other way
+    /// of going wrong is a failed assertion.
+    #[cfg(unix)]
+    fn cancel_attempt() -> Result<(), String> {
         use std::os::unix::process::CommandExt;
         let marker = std::env::temp_dir()
             .join(format!("spool-cancel-probe-{}-{:?}", std::process::id(), std::thread::current().id()));
@@ -2359,25 +2379,38 @@ mod tests {
                 Ok(())
             });
         }
+        let started = std::time::Instant::now();
         // The cancel arrives from another thread, exactly as the Tauri command does.
-        let stopper = std::thread::spawn(|| {
+        let stopper = std::thread::spawn(move || {
             // Long enough for the run to have published its pid, short enough that a
             // broken cancel is caught by the assertion below instead of by the budget.
             std::thread::sleep(Duration::from_millis(250));
-            assert!(request_cancel(), "there was a run to cancel");
+            (request_cancel(), started.elapsed())
         });
-        let started = std::time::Instant::now();
-        let err = stream_with_timeout(cmd, Duration::from_secs(20), Arc::new(|_: &str| {}))
-            .err()
-            .expect("a cancelled run must not report success");
-        stopper.join().unwrap();
+        let res = stream_with_timeout(cmd, Duration::from_secs(20), Arc::new(|_: &str| {}));
+        let returned_at = started.elapsed();
+        // ⚠️ Joined before anything is asserted — see the test above.
+        let (sent, sent_at) = stopper.join().unwrap();
+        if !sent {
+            let _ = std::fs::remove_file(&marker);
+            return Err(match res {
+                Ok(o) => format!(
+                    "the run ended on its own after {returned_at:?} (success={}, stdout={:?}, stderr={:?}); \
+                     the cancel went out at {sent_at:?} to nothing",
+                    o.success, o.stdout, o.stderr
+                ),
+                Err(e) => format!("the run ended after {returned_at:?} with {e:?} before the cancel at {sent_at:?}"),
+            });
+        }
+        let err = res.err().expect("a cancelled run must not report success");
         assert_eq!(err, CANCELLED_MARKER, "a cancel is not a failure to apologise for");
-        assert!(started.elapsed() < Duration::from_secs(5), "the cancel did not take effect");
+        assert!(returned_at < Duration::from_secs(5), "the cancel did not take effect");
         // The published pid is cleared, so the next cancel cannot aim at a dead process.
         assert!(!request_cancel(), "nothing should still be registered as running");
         // Give the leaked grandchild every chance to prove it survived.
         std::thread::sleep(Duration::from_millis(1200));
         assert!(!marker.exists(), "a child of the cancelled run outlived the kill");
         let _ = std::fs::remove_file(&marker);
+        Ok(())
     }
 }
