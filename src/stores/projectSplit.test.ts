@@ -245,6 +245,21 @@ describe('拆项目：待审卡上点「拆分」(P9G-3)', () => {
     expect(one('SELECT thread_id FROM blocks WHERE id = ?', late.id)!.thread_id).toBe(origin);
   });
 
+  // P9G follow-up (Ocean 2026-10-16): 〈填空〉 was finished and archived, and a split brought it back
+  // out. A finished project is not split; the card waits until the user reopens it.
+  it('a finished project is not split: the click changes nothing and the card waits', async () => {
+    sqlite.prepare("UPDATE threads SET status = 'done', completed_at = 1 WHERE id = ?").run(origin);
+    await propose(plan());
+    const dump = () => ['threads', 'blocks', 'attachments', 'follow_up_items'].map((t) => all(`SELECT * FROM ${t} ORDER BY rowid`));
+    const before = dump();
+    const { item, draft } = await card();
+    expect(item.thread.status).toBe('done');
+    await store().approveSplit('sp1', draft);
+    expect(dump()).toEqual(before);
+    expect(all('SELECT id FROM split_proposals')).toEqual([{ id: 'sp1' }]);
+    expect(useUndoStore.getState().entries).toEqual([]);
+  });
+
   it('a private project splits into private sub-projects', async () => {
     await setThreadPrivate(origin, true);
     await propose(plan());

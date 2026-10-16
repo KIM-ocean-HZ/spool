@@ -44,7 +44,7 @@ import type { SplitPayload } from '@/lib/undo/undoLog';
 /** Everything the card needs about one proposal, read fresh from the library. */
 export interface SplitReviewItem {
   proposal: SplitProposal;
-  thread: Pick<Thread, 'id' | 'title' | 'workspaceId' | 'isPrivate'>;
+  thread: Pick<Thread, 'id' | 'title' | 'workspaceId' | 'isPrivate' | 'status'>;
   /** Every block of the project, oldest first — including any the AI cannot see. */
   blocks: Block[];
   /** Its files that hang off no block and are not an older version: the ones the card places. */
@@ -76,7 +76,7 @@ export const listSplitReview = async (now: number): Promise<SplitReviewItem[]> =
     ]);
     out.push({
       proposal,
-      thread: { id: th.id, title: th.title, workspaceId: th.workspaceId, isPrivate: th.isPrivate },
+      thread: { id: th.id, title: th.title, workspaceId: th.workspaceId, isPrivate: th.isPrivate, status: th.status },
       blocks,
       files: attachments.filter((a) => a.anchorBlockId === null && a.supersededBy === null),
       followUps: lines.filter((l) => l.status !== 'proposed'),
@@ -170,7 +170,11 @@ export type SplitOutcome =
   /** The proposal or its project is gone — the card is cleared. */
   | { kind: 'gone' }
   /** No group has a block: nothing to split, nothing done. */
-  | { kind: 'empty' };
+  | { kind: 'empty' }
+  /** P9G follow-up (Ocean 2026-10-16): the project is finished — nothing done, the card stays
+   *  until the user reopens it. Splitting it would bring live sub-projects (and an archived
+   *  workspace) back out. */
+  | { kind: 'done'; title: string };
 
 const emptyPayload = (originThreadId: string, originTitle: string): SplitPayload => ({
   originThreadId,
@@ -198,6 +202,7 @@ export const applySplit = async (
     await deleteSplitProposal(proposalId);
     return { kind: 'gone' };
   }
+  if (origin.status === 'done') return { kind: 'done', title: origin.title };
   const blocks = await listBlocksByThread(origin.id);
   const attachments = await listAttachmentsByThread(origin.id);
   const lines = await listFollowUpItems(origin.id);

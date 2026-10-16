@@ -33,7 +33,7 @@ const item = (groups: { title: string; summary: string; blockIds: string[] }[]):
     createdAt: now,
     expiresAt: now + 7 * 86_400_000,
   },
-  thread: { id: 'big', title: '大项目', workspaceId: 'w', isPrivate: false },
+  thread: { id: 'big', title: '大项目', workspaceId: 'w', isPrivate: false, status: 'active' },
   blocks: [
     block('b1', 1, '第一轮调研笔记'),
     block('b2', 2, '场地定在老礼堂。'),
@@ -91,6 +91,16 @@ describe('待审面的「拆分」卡 (P9G-3)', () => {
     expect(html).toContain('这一组没有块，拆的时候不会建这个子项目。');
     expect(html).toContain('拆分（1 个子项目）');
     expect(html).not.toContain('底色记号'); // #4 and #2 are together
+  });
+
+  it('a finished project: the card says to reopen it first, and 「拆分」 cannot be pressed', () => {
+    const it0 = item([
+      { title: '调研', summary: '最早的调研。', blockIds: ['b1', 'b2'] },
+      { title: '方案', summary: '后来的方案。', blockIds: ['b3'] },
+    ]);
+    const html = render({ ...it0, thread: { ...it0.thread, status: 'done' } });
+    expect(html).toContain('〈大项目〉已经完成了。要拆，先打开它、点项目头上的「重新打开」，再回来点「拆分」。');
+    expect(html).toMatch(/<button[^>]*disabled=""[^>]*>.*?拆分（2 个子项目）/);
   });
 
   it('English', () => {

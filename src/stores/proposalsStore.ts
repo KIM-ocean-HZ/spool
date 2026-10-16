@@ -395,6 +395,8 @@ export const useProposalsStore = create<ProposalsState>((set, get) => ({
         toast.notice(t('拆成了 {n} 个子项目。按 ⌘Z 能一次撤回。', { n: outcome.payload.children.length }));
       } else if (outcome.kind === 'gone') {
         toast.notice(t('这条提议说的项目已经不在了，清掉了。'));
+      } else if (outcome.kind === 'done') {
+        toast.notice(t('〈{title}〉已经完成了，没有拆。要拆先重新打开它。', { title: outcome.title }));
       } else {
         toast.notice(t('每一组都没有块，没有拆。'));
       }

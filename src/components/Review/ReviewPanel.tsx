@@ -571,6 +571,8 @@ function SplitCard({
   const pairs = separatedPairs(item.blocks, draft);
   const made = counts.filter((c) => c > 0).length;
   const title = item.thread.title || t('（无标题）');
+  // P9G follow-up (Ocean 2026-10-16): a finished project is reopened before it is split.
+  const finished = item.thread.status === 'done';
   const groupName = (i: number): string =>
     draft.groups[i]?.title.trim() || item.proposal.plan.groups[i]?.title || t('（无标题）');
   const place = (map: Record<string, number | null>, id: string): number | null => map[id] ?? null;
@@ -710,6 +712,12 @@ function SplitCard({
         </div>
       )}
 
+      {finished && (
+        <p className="mt-2 border-l-2 border-[var(--notice-warm-edge)] pl-2 text-[11px] leading-snug text-ink-2">
+          {t('〈{title}〉已经完成了。要拆，先打开它、点项目头上的「重新打开」，再回来点「拆分」。', { title })}
+        </p>
+      )}
+
       <p className="mt-2 text-[10px] leading-relaxed text-muted">
         {t('拆分之后：每一组在同一个工作区里建成一个子项目，块连同编号、挂在块上的文件和图片一起挪过去；〈{title}〉名字不变，里面留一块总览，链接到每个子项目。按 ⌘Z 能一次撤回。', { title })}
       </p>
@@ -717,7 +725,7 @@ function SplitCard({
       <div className="mt-2.5 flex items-center gap-2">
         <button
           type="button"
-          disabled={busy || made === 0}
+          disabled={busy || made === 0 || finished}
           onClick={() => onSplit(draft)}
           className="flex flex-1 items-center justify-center gap-1.5 rounded-md border border-accent/60 px-3 py-1.5 text-xs font-medium text-accent transition-colors enabled:hover:border-accent enabled:hover:bg-accent/15 disabled:opacity-40"
         >

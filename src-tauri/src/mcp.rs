@@ -1384,6 +1384,29 @@ thread_local! {
     static TEST_DATA_DIR: std::cell::RefCell<Option<PathBuf>> = const { std::cell::RefCell::new(None) };
 }
 
+// P9G follow-up (Ocean 2026-10-16, §9.2 第 141 条): 「AI engine 只能管理周回顾和 Follow up，这是他们的
+// 限定任务，不能让引擎提出 split 要求，这只能让 MCP 或者用户手动操作」. Spool's own engine starts this
+// server with `--engine-run` beside `--mcp` (engine.rs, all three CLIs), and is not handed the tools
+// below at all: not listed, refused if called anyway, and no pack tells it to ask about a split.
+// ⚠️ Not listing them is the part that matters for claude: its `--allowedTools` whitelist still
+// shows the model every tool the server lists, and a call the whitelist then denies ends the run
+// asking for a permission nobody is there to give.
+pub(crate) const ENGINE_RUN_FLAG: &str = "--engine-run";
+pub(crate) const ENGINE_EXCLUDED_TOOLS: [&str; 1] = ["propose_split"];
+
+#[cfg(test)]
+thread_local! {
+    static TEST_ENGINE_RUN: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+fn serving_engine() -> bool {
+    #[cfg(test)]
+    if TEST_ENGINE_RUN.with(|e| e.get()) {
+        return true;
+    }
+    std::env::args().any(|a| a == ENGINE_RUN_FLAG)
+}
+
 pub(crate) fn app_data_dir() -> Option<PathBuf> {
     #[cfg(test)]
     if let Some(dir) = TEST_DATA_DIR.with(|d| d.borrow().clone()) {
@@ -5667,6 +5690,13 @@ fn propose_supersede_json(
 // refused — the receipt names the pair by number and says what is lost (the corrected sentence's
 // mark is drawn only when both blocks are in one project). The card says it again.
 // ⚠️ Errors name positions, never ids: an error body is what a client reads out (§3.1-3).
+/// Whether a project is marked finished (`status = 'done'`). Read through the AI's view, so a
+/// private project is simply not there (false).
+fn thread_is_done(conn: &Connection, thread_id: &str) -> bool {
+    conn.query_row("SELECT status FROM threads WHERE id = ?1", [thread_id], |r| r.get::<_, String>(0))
+        .is_ok_and(|s| s == "done")
+}
+
 const SPLIT_GROUPS_MIN: usize = 2;
 const SPLIT_GROUPS_MAX: usize = 8;
 const SPLIT_SUMMARY_CHAR_CAP: usize = GIST_CHAR_CAP;
@@ -5682,6 +5712,18 @@ fn propose_split_json(
 ) -> Result<String, String> {
     use rusqlite::OptionalExtension;
     let title = live_thread_title(conn, thread_id)?;
+    // P9G follow-up (Ocean 2026-10-16): a finished project — its workspace may be in the archive —
+    // is not split. Splitting it would bring live sub-projects (and the workspace) back out.
+    if thread_is_done(conn, thread_id) {
+        return Err(t!(
+            "〈{title}〉已经标成完成了,完成的项目不拆。用户要拆的话,先提醒他在 Spool 里打开这个项目、\
+             点项目头上的「重新打开」(会清掉完成时间和结论),重新打开之后再提。",
+            "\u{2039}{title}\u{203a} is marked finished, and a finished project is not split. If the \
+             user wants it split, remind them to open it in Spool and press \u{201c}Reopen\u{201d} in \
+             the project header first (that clears its completion time and conclusion), then propose \
+             it again."
+        ));
+    }
     let why = why.trim();
     if why.is_empty() {
         return Err(t!(
@@ -8161,7 +8203,7 @@ fn tools_descriptor() -> Value {
         {
             // P9G-2 (Ocean 2026-10-16 第 125 – 131 条). Queues, never splits.
             "name": "propose_split",
-            "description": "Queue a proposal to split ONE long project into a few sub-projects, for the user to approve in Spool. This does NOT split anything: no block moves until the user presses Split on the review card, where they can regroup first. The moment for it is a get_pack that came back cut down because the project is long (it says its oldest entries are listed one line each) \u{2014} ask the user whether to split the project, and only on a yes, propose the groups here. Pass 2\u{2013}8 groups, each a sub-project: a title, a one-line summary (shown on the card, and that sub-project's summary once split) and the block_ids that move into it. Take the ids from get_blocks(thread_id), paging with offset/limit \u{2014} a cut-down pack does not carry every block's id. Blocks in no group stay in the original project, which keeps its name and gains one overview block linking to each sub-project. Moved blocks keep their number, their files and pictures, and every citation to them. The project's files that hang off no block, and its follow-up lines, stay put unless you place them with files / follow_ups (each to a group, named by title). Keep a correction and the block it corrects in one group: split apart, the corrected sentence loses its mark \u{2014} the receipt names any such pair. Say a split is waiting for them in Spool, never that the project is split. One proposal per project at a time; unreviewed ones expire after 7 days. Requires MCP writes enabled in Spool's settings.",
+            "description": "Queue a proposal to split ONE long project into a few sub-projects, for the user to approve in Spool. This does NOT split anything: no block moves until the user presses Split on the review card, where they can regroup first. The moment for it is a get_pack that came back cut down because the project is long (it says its oldest entries are listed one line each) \u{2014} ask the user whether to split the project, and only on a yes, propose the groups here. Pass 2\u{2013}8 groups, each a sub-project: a title, a one-line summary (shown on the card, and that sub-project's summary once split) and the block_ids that move into it. Take the ids from get_blocks(thread_id), paging with offset/limit \u{2014} a cut-down pack does not carry every block's id. Blocks in no group stay in the original project, which keeps its name and gains one overview block linking to each sub-project. Moved blocks keep their number, their files and pictures, and every citation to them. The project's files that hang off no block, and its follow-up lines, stay put unless you place them with files / follow_ups (each to a group, named by title). Keep a correction and the block it corrects in one group: split apart, the corrected sentence loses its mark \u{2014} the receipt names any such pair. Say a split is waiting for them in Spool, never that the project is split. A project marked finished (status done) is not split: if the user asks, remind them to reopen it in Spool first. One proposal per project at a time; unreviewed ones expire after 7 days. Requires MCP writes enabled in Spool's settings.",
             "annotations": { "readOnlyHint": false, "destructiveHint": false, "idempotentHint": false },
             "inputSchema": {
                 "type": "object",
@@ -8395,6 +8437,16 @@ fn handle_tool_call(params: &Value) -> Value {
     }
     let name = params.get("name").and_then(Value::as_str).unwrap_or("");
     let args = params.get("arguments").cloned().unwrap_or_else(|| json!({}));
+    if serving_engine() && ENGINE_EXCLUDED_TOOLS.contains(&name) {
+        return tool_result_text(
+            t!(
+                "Spool 自己的后台任务(周回顾、跟进)不提议拆项目 —— 拆不拆由用户在对话里提出。",
+                "Spool's own background runs (weekly review, follow-up) do not propose splitting a \
+                 project — that is raised by the user, in a conversation."
+            ),
+            true,
+        );
+    }
 
     // R6 B-9: a numeric argument that arrived as 3.5 or "20" used to fall through
     // as_i64 and silently become the DEFAULT — the caller's intent vanished without a
@@ -8534,8 +8586,12 @@ fn handle_tool_call(params: &Value) -> Value {
                 // entries first, then tighter per-file extraction) — a message only when
                 // even the tightest floor overflows.
                 // P9G-2: and when the project itself is past the default read, the line that
-                // says what was dropped is followed by the suggestion to ask about a split.
-                let long = chars > PACK_DEFAULT_MAX_CHARS;
+                // says what was dropped is followed by the suggestion to ask about a split —
+                // never for a finished project (it would have to be reopened first), and never
+                // to Spool's own engine (P9G follow-up, Ocean 10-16).
+                let long = chars > PACK_DEFAULT_MAX_CHARS
+                    && !serving_engine()
+                    && !thread_is_done(&conn, thread_id);
                 match budgeted_pack_hinted(&built, max_chars, long) {
                     Some((text, omit)) => Ok(with_ids(text, omit)),
                     None => Ok(pack_floor_message(&built, max_chars)),
@@ -11394,7 +11450,8 @@ and re-check one, write the new answer back with retrieved_at and a fresh rechec
 \"这个项目太长了\" / \"拆成几个子项目\" / \"split this project\" / a get_pack that came back cut \
 down because the project is long \u{2192} ask the user whether to split it into a few sub-projects; \
 on a yes, propose_split (the groups and their block_ids, from get_blocks) \u{2014} it only queues a \
-proposal they approve in Spool, so say a split is waiting for them there, never that it is done\n\
+proposal they approve in Spool, so say a split is waiting for them there, never that it is done. \
+A project marked done is not split: remind the user to reopen it in Spool first\n\
 \"is X getting messy\" / \"有没有重复\" \u{2192} thread_health\n\
 \"体检一下\" / \"check my library\" \u{2192} check_library\n\
 If this is your first turn with Spool connected and the user has not asked for anything \
@@ -11434,7 +11491,15 @@ fn handle_request(method: &str, params: &Value) -> Result<Value, (i64, String)> 
             }))
         }
         "ping" => Ok(json!({})),
-        "tools/list" => Ok(json!({ "tools": tools_descriptor() })),
+        "tools/list" => {
+            let mut tools = tools_descriptor();
+            if serving_engine() {
+                if let Some(list) = tools.as_array_mut() {
+                    list.retain(|t| !ENGINE_EXCLUDED_TOOLS.contains(&t["name"].as_str().unwrap_or("")));
+                }
+            }
+            Ok(json!({ "tools": tools }))
+        }
         "tools/call" => {
             touch_client_seen();
             Ok(handle_tool_call(params))
@@ -15440,10 +15505,13 @@ mod tests {
         for t in tools.as_array().unwrap() {
             served.push(t["name"].as_str().unwrap());
         }
+        // P9G follow-up (Ocean 10-16): except the ones Spool's own engine must never have —
+        // splitting a project is proposed from a conversation, never by a background run.
+        served.retain(|n| !ENGINE_EXCLUDED_TOOLS.contains(n));
         let mut allowed = crate::engine::ALLOWED_TOOL_NAMES.to_vec();
         served.sort_unstable();
         allowed.sort_unstable();
-        assert_eq!(allowed, served, "engine.rs ALLOWED_TOOL_NAMES must list every tool mcp.rs serves");
+        assert_eq!(allowed, served, "engine.rs ALLOWED_TOOL_NAMES must list every tool mcp.rs serves to the engine");
     }
 
     // ⚠️⚠️ TWIN of followUpFingerprint in src/lib/engine/followUp.ts. Both sides write this
@@ -17738,6 +17806,102 @@ mod tests {
         assert!(!mid.contains("propose_split"), "{mid}");
         // Under budget: nothing at all.
         assert!(!pack(json!({ "thread_id": "thLong" })).contains("propose_split"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // P9G follow-up (Ocean 2026-10-16, §9.2 第 141 条): 〈填空〉 had been finished for two weeks and
+    // its whole workspace sat in the archive; a split proposal still reached it, and approving it
+    // brought two live sub-projects — and the workspace — back out. 「已经完成的项目需要重新打开才能
+    // split，如果用户提出要求，AI 需要提醒用户重新打开项目」, and Spool's own engine (weekly review,
+    // follow-up) never proposes a split at all: 「这只能让 MCP 或者用户手动操作」.
+
+    fn mark_done(dir: &std::path::Path, thread: &str) {
+        Connection::open(dir.join("spool.db"))
+            .unwrap()
+            .execute("UPDATE threads SET status = 'done', completed_at = 1 WHERE id = ?1", [thread])
+            .unwrap();
+    }
+
+    #[test]
+    fn propose_split_refuses_a_finished_project_and_says_to_reopen_it() {
+        let dir = std::env::temp_dir().join(format!("spool-p9g-done-{}", std::process::id()));
+        split_library(&dir, true, "en");
+        mark_done(&dir, "thLong");
+        let before = library_dump(&dir);
+        let (err, text) = split_call(&dir, json!({ "thread_id": "thLong", "why": SPLIT_WHY, "groups": two_groups() }));
+        assert!(err, "{text}");
+        assert!(text.contains("finished") && text.contains("Reopen"), "{text}");
+        assert!(!text.contains("thLong"), "{text}");
+        assert!(split_rows(&dir).is_empty());
+        assert_eq!(library_dump(&dir), before);
+        let _ = std::fs::remove_dir_all(&dir);
+
+        split_library(&dir, true, "zh");
+        mark_done(&dir, "thLong");
+        let (err, text) = split_call(&dir, json!({ "thread_id": "thLong", "why": SPLIT_WHY, "groups": two_groups() }));
+        assert!(err && text.contains("重新打开"), "{text}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The long project of `an_over_budget_pack_suggests_asking_about_a_split`, on its own.
+    fn huge_project(dir: &std::path::Path) {
+        let conn = Connection::open(dir.join("spool.db")).unwrap();
+        conn.execute_batch(
+            "INSERT INTO threads (id, workspace_id, title, created_at, updated_at) VALUES
+               ('thHuge', 'wsWork', 'Huge project', 1, 1);",
+        )
+        .unwrap();
+        for i in 1..=40 {
+            conn.execute(
+                "INSERT INTO blocks (id, thread_id, content, seq, created_at) VALUES (?1, 'thHuge', ?2, ?3, ?3)",
+                rusqlite::params![format!("huge{i}"), format!("Entry {i}: {}", "word ".repeat(400)), i],
+            )
+            .unwrap();
+        }
+    }
+
+    fn pack_text(dir: &std::path::Path, thread: &str) -> String {
+        let out = ai_call(dir, "tools/call", &json!({ "name": "get_pack", "arguments": { "thread_id": thread } }));
+        let v: Value = serde_json::from_str(&out).unwrap();
+        v["content"][0]["text"].as_str().unwrap().to_string()
+    }
+
+    #[test]
+    fn a_finished_project_is_not_suggested_for_a_split() {
+        let dir = std::env::temp_dir().join(format!("spool-p9g-donepack-{}", std::process::id()));
+        split_library(&dir, true, "en");
+        huge_project(&dir);
+        assert!(pack_text(&dir, "thHuge").contains("propose_split"), "control: a live long project is");
+        mark_done(&dir, "thHuge");
+        let pack = pack_text(&dir, "thHuge");
+        assert!(pack.contains("older timeline"), "still cut down:\n{pack}");
+        assert!(!pack.contains("propose_split"), "{pack}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn spools_own_engine_is_never_handed_propose_split() {
+        let dir = std::env::temp_dir().join(format!("spool-p9g-engine-{}", std::process::id()));
+        split_library(&dir, true, "en");
+        huge_project(&dir);
+        let listed = |dir: &std::path::Path| -> Vec<String> {
+            let v: Value = serde_json::from_str(&ai_call(dir, "tools/list", &json!({}))).unwrap();
+            v["tools"].as_array().unwrap().iter().map(|t| t["name"].as_str().unwrap().to_string()).collect()
+        };
+        // A conversation (an MCP client) has it.
+        assert!(listed(&dir).iter().any(|n| n == "propose_split"));
+        TEST_ENGINE_RUN.with(|e| e.set(true));
+        let names = listed(&dir);
+        let pack = pack_text(&dir, "thHuge");
+        let (err, text) = split_call(&dir, json!({ "thread_id": "thLong", "why": SPLIT_WHY, "groups": two_groups() }));
+        TEST_ENGINE_RUN.with(|e| e.set(false));
+        // An engine run does not see it, is not told to ask about it, and cannot call it.
+        assert!(!names.iter().any(|n| n == "propose_split"), "{names:?}");
+        assert_eq!(names.len(), tools_descriptor().as_array().unwrap().len() - ENGINE_EXCLUDED_TOOLS.len());
+        assert!(pack.contains("older timeline") && !pack.contains("propose_split"), "{pack}");
+        assert!(err, "{text}");
+        assert!(split_rows(&dir).is_empty());
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

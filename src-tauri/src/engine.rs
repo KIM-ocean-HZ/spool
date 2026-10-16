@@ -72,7 +72,9 @@ const MCP_SERVER_NAME: &str = "spool";
 // (HANDOFF DISCOVERED-20260923-1), so mcp.rs's `the_engine_whitelist_is_every_spool_tool`
 // fails the moment the two differ. Consent still lives in each tool: the write switch, the
 // review screen, and the refusal to touch what the user wrote.
-pub(crate) const ALLOWED_TOOL_NAMES: [&str; 25] = [
+// P9G follow-up (Ocean 2026-10-16): except the tools this engine must never have
+// (`mcp::ENGINE_EXCLUDED_TOOLS` — `propose_split`); the test allows for exactly those.
+pub(crate) const ALLOWED_TOOL_NAMES: [&str; 24] = [
     "add_block",
     "check_library",
     "close_follow_up_item",
@@ -89,7 +91,6 @@ pub(crate) const ALLOWED_TOOL_NAMES: [&str; 25] = [
     "propose_attach_file",
     "propose_blocks",
     "propose_replace_file",
-    "propose_split",
     "propose_supersede",
     "request_file_access",
     "search_blocks",
@@ -591,7 +592,7 @@ pub fn detect(preferred: Option<EngineKind>, manual: Option<&str>) -> EngineStat
 // surface opened here.
 pub fn mcp_config_json(exe: &str) -> String {
     serde_json::json!({
-        "mcpServers": { MCP_SERVER_NAME: { "command": exe, "args": ["--mcp"] } }
+        "mcpServers": { MCP_SERVER_NAME: { "command": exe, "args": ["--mcp", crate::mcp::ENGINE_RUN_FLAG] } }
     })
     .to_string()
 }
@@ -777,7 +778,8 @@ fn codex_config_overrides(exe: &str, web: bool) -> Vec<String> {
         // reach the open web is Spool's decision to make, not a default's to drift.
         format!("tools.web_search={web}"),
         format!("mcp_servers.{MCP_SERVER_NAME}.command={}", toml_string(exe)),
-        format!("mcp_servers.{MCP_SERVER_NAME}.args=[\"--mcp\"]"),
+        // P9G follow-up: `--engine-run` tells the server it is serving this engine (mcp.rs).
+        format!("mcp_servers.{MCP_SERVER_NAME}.args=[\"--mcp\",\"{}\"]", crate::mcp::ENGINE_RUN_FLAG),
         format!("mcp_servers.{MCP_SERVER_NAME}.enabled_tools=[{tools}]"),
         // ⚠️⚠️ P9F F6 (DISCOVERED-20260924-1, Ocean 2026-10-11 #80「Codex 必须能写回」).
         // `approval_policy="never"` alone does NOT let a tool through: codex treats every MCP
@@ -785,7 +787,7 @@ fn codex_config_overrides(exe: &str, web: bool) -> Vec<String> {
         // call ends as `user cancelled MCP tool call` before it reaches Spool — annotations
         // correct or not. This per-server setting pre-approves Spool's own tools (and only
         // those: `enabled_tools` above is still the list). Same grant claude's `--allowedTools`
-        // gives the same 25 tools (§2.2). Values codex 0.147 accepts: auto / prompt / writes /
+        // gives the same 24 tools (§2.2). Values codex 0.147 accepts: auto / prompt / writes /
         // approve. Verified on a copy of the real library, 2026-10-13: with this line
         // close_follow_up_item, propose_blocks and add_block all completed; without it, all
         // three were cancelled. ⛔ Not a reason to mark tools read-only, and ⛔ never trade
@@ -851,7 +853,7 @@ pub fn gemini_settings_json(exe: &str, web: bool) -> String {
         "mcpServers": {
             MCP_SERVER_NAME: {
                 "command": exe,
-                "args": ["--mcp"],
+                "args": ["--mcp", crate::mcp::ENGINE_RUN_FLAG],
                 "trust": true,
                 "includeTools": ALLOWED_TOOL_NAMES,
             }
@@ -1835,7 +1837,8 @@ mod tests {
         assert!(overrides
             .iter()
             .any(|o| o.starts_with("mcp_servers.spool.command=\"/Applications/Spool.app")));
-        assert!(overrides.iter().any(|o| o.as_str() == "mcp_servers.spool.args=[\"--mcp\"]"));
+        // P9G follow-up: the server is told it is serving Spool's own engine.
+        assert!(overrides.iter().any(|o| o.as_str() == "mcp_servers.spool.args=[\"--mcp\",\"--engine-run\"]"));
         // The whitelist, same constant as claude's — a tool absent from it cannot be
         // reached, and one added to mcp.rs without being added there simply will not work.
         let tools = overrides
@@ -1937,7 +1940,7 @@ mod tests {
             serde_json::from_str(&gemini_settings_json("/Applications/Spool.app/x", false)).unwrap();
         let server = &v["mcpServers"][MCP_SERVER_NAME];
         assert_eq!(server["command"], "/Applications/Spool.app/x");
-        assert_eq!(server["args"][0], "--mcp");
+        assert_eq!(server["args"], serde_json::json!(["--mcp", "--engine-run"]));
         // An untrusted server is configured and never started — silently, which is why this
         // is asserted rather than assumed.
         assert_eq!(server["trust"], true);
@@ -2097,8 +2100,7 @@ mod tests {
         let v: serde_json::Value = serde_json::from_str(&json).unwrap();
         let server = &v["mcpServers"]["spool"];
         assert_eq!(server["command"], "/Applications/Spool.app/Contents/MacOS/spool");
-        assert_eq!(server["args"][0], "--mcp");
-        assert_eq!(server["args"].as_array().unwrap().len(), 1);
+        assert_eq!(server["args"], serde_json::json!(["--mcp", "--engine-run"]));
     }
 
     #[test]

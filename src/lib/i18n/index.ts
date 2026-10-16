@@ -1086,6 +1086,10 @@ const EN: Record<string, string> = {
   '拆成了 {n} 个子项目。按 ⌘Z 能一次撤回。': 'Split into {n} sub-projects. Press ⌘Z to undo it all at once.',
   '这条提议说的项目已经不在了，清掉了。': 'The project this proposal was about is no longer there, so it was cleared.',
   '每一组都没有块，没有拆。': 'No group has any blocks, so nothing was split.',
+  // P9G follow-up (Ocean 2026-10-16): a finished project is reopened before it is split.
+  '〈{title}〉已经完成了。要拆，先打开它、点项目头上的「重新打开」，再回来点「拆分」。':
+    '‹{title}› is finished. To split it, open it and press “Reopen” in the project header first, then come back and press Split.',
+  '〈{title}〉已经完成了，没有拆。要拆先重新打开它。': '‹{title}› is finished, so nothing was split. Reopen it first to split it.',
   '没能拆完：{msg}。已经挪过去的，按 ⌘Z 能撤回。': 'The split did not finish: {msg}. Press ⌘Z to undo what had already moved.',
   // The overview block the split leaves in the original project — user data once written, in the
   // language of the moment it was written (like the tutorial).
