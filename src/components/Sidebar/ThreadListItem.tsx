@@ -1,6 +1,7 @@
 import { Pin } from 'lucide-react';
 import type { MouseEvent, PointerEvent } from 'react';
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import CountdownBadge from '@/components/ui/CountdownBadge';
 import MenuDeleteItem from '@/components/ui/MenuDeleteItem';
 import PrivateMark from '@/components/ui/PrivateMark';
@@ -309,74 +310,81 @@ export default function ThreadListItem({
         </div>
       </div>
 
-      {menu && (
-        <div
-          role="menu"
-          ref={menuPos.ref}
-          /* Same clamp + scroll as the workspace heading's menu — a project row at the
-             bottom of the rail had the same cut-off 删除 (useMenuPosition). */
-          className="fixed z-50 max-h-[calc(100vh-16px)] min-w-[160px] overflow-y-auto rounded-md border border-line-strong bg-paper py-1 shadow-[var(--shadow-card)]"
-          style={menuPos.style}
-          onMouseDown={(e) => e.stopPropagation()}
-          onClick={(e) => e.stopPropagation()}
-        >
-          {/* What this menu is about to act on, said before any action — the one thing that
-              makes a batch delete safe to put one click away. */}
-          {acting.length > 1 && (
-            <div className="border-b border-line px-3 py-1 text-[13px] text-ink">
-              {t('选中的 {n} 个项目', { n: acting.length })}
-            </div>
-          )}
-          {/* P9E-4: while 「设为私密 / 取消私密」 asks, its explanation is the whole menu — moving
-              and deleting are out of the way, and the menu stays short enough to fit. */}
-          {privateAsk ? (
-            <PrivateConfirm
-              turnOn={privateTurnsOn}
-              onConfirm={() => {
-                void setPrivate(acting, privateTurnsOn);
-                setMenu(null);
-              }}
-              onCancel={() => setPrivateAsk(false)}
-            />
-          ) : (
-            <>
-              <div className="px-3 py-1 text-[13px] text-muted">{t('移动到工作区')}</div>
-              {otherWorkspaces.length === 0 ? (
-                <div className="px-3 py-1 text-xs text-muted">{t('没有其他工作区')}</div>
-              ) : (
-                otherWorkspaces.map((ws) => (
-                  <button
-                    key={ws.id}
-                    type="button"
-                    role="menuitem"
-                    onClick={() => {
-                      if (acting.length > 1) void moveMany(acting, ws.id);
-                      else void patchThread(thread.id, { workspaceId: ws.id });
+      {/* ⛔ 2026-10-16 (Ocean, P9E 验收): drawn at the top of the page, not inside this row. A
+          finished project's row is `opacity-50`, and a menu inside it came out half see-through
+          AND unclickable — the opacity makes the row its own layer, so the rows below painted
+          over the menu and took the clicks (「设为隐私后的项目如果点击已完成，再去右键关闭隐私，
+          弹窗会变成半透明，无法点击」). React still delivers its events through this row, as before. */}
+      {menu &&
+        createPortal(
+          <div
+            role="menu"
+            ref={menuPos.ref}
+            /* Same clamp + scroll as the workspace heading's menu — a project row at the
+               bottom of the rail had the same cut-off 删除 (useMenuPosition). */
+            className="fixed z-50 max-h-[calc(100vh-16px)] min-w-[160px] overflow-y-auto rounded-md border border-line-strong bg-paper py-1 shadow-[var(--shadow-card)]"
+            style={menuPos.style}
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* What this menu is about to act on, said before any action — the one thing that
+                makes a batch delete safe to put one click away. */}
+            {acting.length > 1 && (
+              <div className="border-b border-line px-3 py-1 text-[13px] text-ink">
+                {t('选中的 {n} 个项目', { n: acting.length })}
+              </div>
+            )}
+            {/* P9E-4: while 「设为私密 / 取消私密」 asks, its explanation is the whole menu — moving
+                and deleting are out of the way, and the menu stays short enough to fit. */}
+            {privateAsk ? (
+              <PrivateConfirm
+                turnOn={privateTurnsOn}
+                onConfirm={() => {
+                  void setPrivate(acting, privateTurnsOn);
+                  setMenu(null);
+                }}
+                onCancel={() => setPrivateAsk(false)}
+              />
+            ) : (
+              <>
+                <div className="px-3 py-1 text-[13px] text-muted">{t('移动到工作区')}</div>
+                {otherWorkspaces.length === 0 ? (
+                  <div className="px-3 py-1 text-xs text-muted">{t('没有其他工作区')}</div>
+                ) : (
+                  otherWorkspaces.map((ws) => (
+                    <button
+                      key={ws.id}
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        if (acting.length > 1) void moveMany(acting, ws.id);
+                        else void patchThread(thread.id, { workspaceId: ws.id });
+                        setMenu(null);
+                      }}
+                      className="block w-full px-3 py-1 text-left text-xs text-ink hover:bg-paper-2"
+                    >
+                      {ws.title || t('未命名')}
+                    </button>
+                  ))
+                )}
+                <div className="mt-1 border-t border-line pt-1">
+                  <MenuPrivateItem turnOn={privateTurnsOn} onAsk={() => setPrivateAsk(true)} />
+                </div>
+                <div className="mt-1 border-t border-line pt-1">
+                  <MenuDeleteItem
+                    label={acting.length > 1 ? t('删除这 {n} 个项目', { n: acting.length }) : t('删除项目')}
+                    onConfirm={() => {
+                      if (acting.length > 1) void removeMany(acting);
+                      else onDelete();
                       setMenu(null);
                     }}
-                    className="block w-full px-3 py-1 text-left text-xs text-ink hover:bg-paper-2"
-                  >
-                    {ws.title || t('未命名')}
-                  </button>
-                ))
-              )}
-              <div className="mt-1 border-t border-line pt-1">
-                <MenuPrivateItem turnOn={privateTurnsOn} onAsk={() => setPrivateAsk(true)} />
-              </div>
-              <div className="mt-1 border-t border-line pt-1">
-                <MenuDeleteItem
-                  label={acting.length > 1 ? t('删除这 {n} 个项目', { n: acting.length }) : t('删除项目')}
-                  onConfirm={() => {
-                    if (acting.length > 1) void removeMany(acting);
-                    else onDelete();
-                    setMenu(null);
-                  }}
-                />
-              </div>
-            </>
-          )}
-        </div>
-      )}
+                  />
+                </div>
+              </>
+            )}
+          </div>,
+          document.body,
+        )}
     </li>
   );
 }
