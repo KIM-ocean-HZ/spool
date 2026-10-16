@@ -239,6 +239,16 @@
   - commit、build、换装分开记在上面；**没 push、没发版**。
 - 换装前 Ocean 插进来一件（HANDOFF §9.2 第 124 – 125 条，owner interruption）：〈Memo产品复活｜Claude独立调研〉#20 看不到 —— 更正块被折进了被更正那一句底下。已修 `5b9b226`（更正块回到时间线，点被更正那一句在浮窗里预览），**跟 P9E 一起装**。验收时多看一条：打开这个项目，#16、#19、#20、#21 都在时间线上；点 #14 里那句有底色的话，旁边弹出 #20；点 #20 里那句，弹出 #21。
 
+### 7.7 验收第一轮（Ocean 2026-10-16）
+
+- Ocean 原话：「验收不通过，点击设为私密之后菜单窗口太长，导致用户无法看见底部信息」（HANDOFF §9.2 第 132 条）。
+- 复现：600×380 的窗口里右键最下面一行、点「设为私密…」—— 说明在原地展开，菜单变长，「设为私密 / 取消」和「删除项目」都在窗口底边外面（截图 `p9e-r1-before-menu-cut-off.png`）。原因：`useMenuPosition` 只在菜单打开那一刻按当时的高度摆一次，菜单后来长高了不重摆。
+- 提交：`13b6e7b fix(sidebar): 右键「设为私密…」展开说明之后，菜单不再跑出窗口底边（P9E 验收第一轮…）`
+- 改的文件：`src/components/ui/useMenuPosition.ts`（+ 新测试 `useMenuPosition.test.ts`）、`src/components/Sidebar/ThreadListItem.tsx`、`src/components/Sidebar/MenuPrivateItem.tsx`。
+- 做法：① 菜单大小一变就按同一个锚点重新摆（`ResizeObserver`），往左 / 往上挪到整块都在窗口里 —— 左栏两种右键菜单和「AI 引擎」小块都用这一个；② 说明展开时它就是整个菜单：「移动到工作区」和「删除」先收起来，只剩说明和两个按钮（多选时顶上照旧写选中了几个），点「取消 / 保持私密」回到原来的菜单。
+- 验：`clampMenu` 三条测试；全量 tsc 干净、vitest 101 / 1121、`(none missing)`、`--dead` 87。截图（桌面 `Spool/P9E-screenshots-20261016/`）：`p9e-r1-after-make-private-zh` / `-en`、`p9e-r1-after-turn-off-zh`（600×380，最下面一行）、`p9e-r1-after-very-short-window`（600×270，说明放不下时菜单整体上移，按钮照样看得见）。
+- 换装：先问（不改库、不改 MCP，AI 客户端不用重启）。
+
 ## 8. 收尾的文档动作（执行窗做）
 
 - 首屏改成 `COMPLETE —— 待 Ocean 验收`，移进 `docs/archive/product-taskbooks/`。
