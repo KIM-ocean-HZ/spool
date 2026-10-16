@@ -38,6 +38,11 @@ const refreshAfterUndoRedo = async (entry: UndoEntry): Promise<void> => {
       }
       break;
     }
+    // P9G-3: sub-projects appear or go (the sidebar), and the original project's feed changes.
+    case 'split':
+      await useThreadsStore.getState().loadAll();
+      await useBlocksStore.getState().load(entry.payload.originThreadId);
+      break;
     // P2 · B4: both ends of the move.
     case 'move':
       await useBlocksStore.getState().load(entry.payload.fromThreadId);

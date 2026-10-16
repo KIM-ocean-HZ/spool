@@ -29,6 +29,7 @@ import {
   softDeleteThread,
 } from '@/lib/db/threads';
 import { restoreWorkspace, softDeleteWorkspace } from '@/lib/db/workspaces';
+import { redoSplit, reverseSplit } from '@/lib/split/projectSplit';
 import * as undoLog from '@/lib/undo/undoLog';
 import type {
   CapturePayload,
@@ -39,6 +40,7 @@ import type {
   MergePayload,
   MovePayload,
   RefRemovePayload,
+  SplitPayload,
   ThreadDeleteManyPayload,
   ThreadDeletePayload,
   UndoEntry,
@@ -195,6 +197,17 @@ export const buildMoveUndo = (payload: MovePayload): UndoEntry => ({
   invalidated: false,
 });
 
+// P9G-3 拆项目. Every block it moved and the overview / links it wrote are affected: editing
+// one afterwards invalidates the whole entry (the user's latest edit wins, §9.13).
+export const buildSplitUndo = (payload: SplitPayload): UndoEntry => ({
+  id: nanoid(),
+  kind: 'split',
+  timestamp: Date.now(),
+  payload,
+  affectedBlockIds: [...payload.moved.map((m) => m.blockId), ...payload.created.map((b) => b.id)],
+  invalidated: false,
+});
+
 // --- Pure helpers over an entry (exported for runUndo / the toast). ---
 
 export const threadIdForEntry = (entry: UndoEntry): string => {
@@ -207,6 +220,8 @@ export const threadIdForEntry = (entry: UndoEntry): string => {
       return entry.payload.threadId;
     case 'move':
       return entry.payload.fromThreadId;
+    case 'split':
+      return entry.payload.originThreadId;
     case 'create':
       return entry.payload.threadId;
     case 'delete':
@@ -275,6 +290,8 @@ export const previewForEntry = (entry: UndoEntry): string => {
       if (!first) return '';
       return rest.length === 0 ? previewText(first.content) : `${previewText(first.content)} +${rest.length}`;
     }
+    case 'split':
+      return previewText(entry.payload.originTitle);
   }
 };
 
@@ -448,6 +465,13 @@ const reverseAndBuildRedo = async (
       return async () => {
         for (const b of deleted) await deleteBlock(b.id);
         for (const m of moved) await moveBlock(m.block.id, toThreadId, m.toSeq, m.toCreatedAt);
+      };
+    }
+    // P9G-3: the whole split back in one go; redo makes the same split from the record.
+    case 'split': {
+      await reverseSplit(entry.payload);
+      return async () => {
+        await redoSplit(entry.payload);
       };
     }
   }

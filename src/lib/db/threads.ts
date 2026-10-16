@@ -234,6 +234,17 @@ export const setThreadPrivate = async (id: string, on: boolean): Promise<void> =
   await db.execute('UPDATE threads SET private = $1 WHERE id = $2', [on ? 1 : 0, id]);
 };
 
+/** P9G-3 (Ocean 2026-10-16 第 130 条) — a sub-project made by a split takes the one-line summary
+ *  the AI proposed for it, recorded as the AI's (`summary_source = 'mcp'`), so an AI may refresh
+ *  it later and the user's own edit still locks it, exactly like any AI-written card. */
+export const setThreadAiSummary = async (id: string, summary: string): Promise<void> => {
+  const db = await getDb();
+  await db.execute(
+    "UPDATE threads SET summary = $1, summary_source = 'mcp', summary_at = $2 WHERE id = $3",
+    [summary, Date.now(), id],
+  );
+};
+
 // 2026-08-11 — `findOrCreateReviewThread` used to live here: 周回顾 had no home, so it made
 // itself a project called 「回顾」 in `workspaces[0]`, whichever that happened to be. Ocean
 // found one inside his 升学 workspace and asked what the rule was; there wasn't one. A review

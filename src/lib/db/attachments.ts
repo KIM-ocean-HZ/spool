@@ -254,6 +254,16 @@ export const setAttachmentAnchor = async (id: string, blockId: string | null): P
   await db.execute('UPDATE attachments SET anchor_block_id = $1 WHERE id = $2', [blockId, id]);
 };
 
+// P9G-3: a split moves a project file to a sub-project (and back, on ⌘Z). Only the project
+// changes; where it hangs, who added it and what it replaced stay as they are. (A file hung on a
+// block is not moved here — it follows its block inside moveBlock.)
+export const moveAttachmentsToThread = async (ids: string[], threadId: string): Promise<void> => {
+  if (ids.length === 0) return;
+  const db = await getDb();
+  const slots = ids.map((_, i) => `$${i + 2}`).join(', ');
+  await db.execute(`UPDATE attachments SET thread_id = $1 WHERE id IN (${slots})`, [threadId, ...ids]);
+};
+
 // P6-3: the user approved an AI's 「新版取代旧版」. The old row stays — readable as before,
 // openable from the right rail — and only these two columns say what replaced it and when.
 export const setAttachmentSuperseded = async (id: string, byId: string, at: number | null): Promise<void> => {

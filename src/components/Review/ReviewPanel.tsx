@@ -6,6 +6,13 @@ import type { SupersedeChoice, SupersedeReviewItem } from '@/lib/blocks/supersed
 import type { Block } from '@/lib/db/blocks';
 import { useT } from '@/lib/i18n';
 import type { FileAccessRequest } from '@/lib/db/fileAccess';
+import {
+  draftFromProposal,
+  groupBlockCounts,
+  separatedPairs,
+  type SplitDraft,
+  type SplitReviewItem,
+} from '@/lib/split/projectSplit';
 import type { FileProposal } from '@/lib/db/fileProposals';
 import { passageSource, type ProposalBatch } from '@/lib/db/proposals';
 import type { FollowUpProposal } from '@/lib/db/followUpItems';
@@ -38,6 +45,7 @@ export default function ReviewPanel() {
   const followUpProposals = useProposalsStore((s) => s.followUpProposals);
   const fileProposals = useProposalsStore((s) => s.fileProposals);
   const supersedeProposals = useProposalsStore((s) => s.supersedeProposals);
+  const splitProposals = useProposalsStore((s) => s.splitProposals);
   const expiredBatches = useProposalsStore((s) => s.expiredBatches);
   const busy = useProposalsStore((s) => s.busy);
   const close = useProposalsStore((s) => s.close);
@@ -50,6 +58,8 @@ export default function ReviewPanel() {
   const approveFileProposal = useProposalsStore((s) => s.approveFileProposal);
   const rejectFileProposal = useProposalsStore((s) => s.rejectFileProposal);
   const decideSupersede = useProposalsStore((s) => s.decideSupersede);
+  const approveSplit = useProposalsStore((s) => s.approveSplit);
+  const rejectSplit = useProposalsStore((s) => s.rejectSplit);
   const clearExpired = useProposalsStore((s) => s.clearExpired);
   // Subscribe to the stored map, then flatten here. NOT useThreadsStore(selectAllThreadsFlat):
   // that selector builds a fresh array on every call, so zustand's useSyncExternalStore sees
@@ -109,7 +119,8 @@ export default function ReviewPanel() {
               (fileRequests?.length ?? 0) +
               (followUpProposals?.length ?? 0) +
               (fileProposals?.length ?? 0) +
-              (supersedeProposals?.length ?? 0) ===
+              (supersedeProposals?.length ?? 0) +
+              (splitProposals?.length ?? 0) ===
             0 ? (
             <p className="py-8 text-center text-xs text-muted">{t('没有待你过目的。')}</p>
           ) : (
@@ -149,6 +160,17 @@ export default function ReviewPanel() {
                   daysLeft={dayCount(now, item.proposal.expiresAt)}
                   busy={busy}
                   onDecide={(choice) => void decideSupersede(item.proposal.id, choice)}
+                />
+              ))}
+              {/* P9G-3 — an AI's 「把这个项目拆成几个子项目」, regrouped here before anything moves. */}
+              {(splitProposals ?? []).map((item) => (
+                <SplitCard
+                  key={item.proposal.id}
+                  item={item}
+                  daysLeft={dayCount(now, item.proposal.expiresAt)}
+                  busy={busy}
+                  onSplit={(draft) => void approveSplit(item.proposal.id, draft)}
+                  onReject={() => void rejectSplit(item.proposal.id)}
                 />
               ))}
               {(followUpProposals ?? []).map((p) => (
@@ -511,6 +533,206 @@ function FileProposalCard({
         >
           <Trash2 size={12} />
           {t('不同意')}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * P9G-3 (Ocean 2026-10-16 第 127 – 131 条) — an AI proposing to split one long project into a
+ * few sub-projects. Nothing has moved yet: what this card shows is what 「拆分」 will do, and
+ * every part of it is the user's to change first (第 129 条) —
+ *   - each group's name (the AI's one-line summary is shown under it, and becomes the
+ *     sub-project's summary);
+ *   - where each block goes: a group, or staying in the original project;
+ *   - where each project file that hangs off no block, and each follow-up line, goes — staying,
+ *     unless the AI placed it (第 130 条).
+ * A correction and the block it corrects pulled apart get one plain sentence each: the mark on
+ * the corrected sentence is drawn only when both are in one project. A group left with no blocks
+ * is not created, and says so.
+ */
+function SplitCard({
+  item,
+  daysLeft,
+  busy,
+  onSplit,
+  onReject,
+}: {
+  item: SplitReviewItem;
+  daysLeft: number;
+  busy: boolean;
+  onSplit: (draft: SplitDraft) => void;
+  onReject: () => void;
+}) {
+  const t = useT();
+  const [draft, setDraft] = useState<SplitDraft>(() => draftFromProposal(item));
+  const counts = groupBlockCounts(item.blocks, draft);
+  const pairs = separatedPairs(item.blocks, draft);
+  const made = counts.filter((c) => c > 0).length;
+  const title = item.thread.title || t('（无标题）');
+  const groupName = (i: number): string =>
+    draft.groups[i]?.title.trim() || item.proposal.plan.groups[i]?.title || t('（无标题）');
+  const place = (map: Record<string, number | null>, id: string): number | null => map[id] ?? null;
+  // A file or a line sent to a group that will not be created stays — say so by showing it there.
+  const landed = (g: number | null): number | null => (g !== null && (counts[g] ?? 0) > 0 ? g : null);
+
+  const set = (key: 'blocks' | 'files' | 'followUps', id: string, g: number | null) =>
+    setDraft((d) => ({ ...d, [key]: { ...d[key], [id]: g } }));
+  const rename = (i: number, name: string) =>
+    setDraft((d) => ({ ...d, groups: d.groups.map((g, k) => (k === i ? { ...g, title: name } : g)) }));
+
+  const where = (value: number | null, onChange: (g: number | null) => void, onlyMade: boolean) => (
+    <select
+      value={value === null ? '' : String(value)}
+      onChange={(e) => onChange(e.target.value === '' ? null : Number(e.target.value))}
+      aria-label={t('去哪')}
+      className="max-w-[45%] flex-none truncate rounded border border-line bg-paper px-1 py-0.5 text-[11px] text-ink-2"
+    >
+      {draft.groups.map((_, i) =>
+        onlyMade && !((counts[i] ?? 0) > 0) ? null : (
+          <option key={i} value={i}>
+            {groupName(i)}
+          </option>
+        ),
+      )}
+      <option value="">{t('留在原项目')}</option>
+    </select>
+  );
+  const blockRow = (b: Block) => (
+    <li key={b.id} className="flex min-w-0 items-center gap-1.5">
+      {b.seq != null && <SeqBadge seq={b.seq} />}
+      <span className="min-w-0 flex-1 truncate text-xs text-ink">{firstLine(b)}</span>
+      {where(place(draft.blocks, b.id), (g) => set('blocks', b.id, g), false)}
+    </li>
+  );
+  const blocksIn = (g: number | null) => item.blocks.filter((b) => place(draft.blocks, b.id) === g);
+  const staying = blocksIn(null);
+
+  return (
+    <div className="mb-3 rounded-md border border-line-strong bg-paper-2/30 p-3">
+      <div className="flex items-baseline justify-between gap-3">
+        <span className="min-w-0 break-words text-xs text-ink-2">
+          {t('{client} 提议把〈{title}〉拆成 {n} 个子项目', {
+            client: item.proposal.client || 'AI',
+            title,
+            n: draft.groups.length,
+          })}
+        </span>
+        <span className="flex-none font-mono text-[10px] text-muted">{t('{n} 天后作废', { n: daysLeft })}</span>
+      </div>
+
+      <div className="mt-2 rounded border border-line bg-paper px-2.5 py-2">
+        <div className="text-[10px] uppercase tracking-wide text-muted">{t('它说为什么')}</div>
+        <p className="mt-1 whitespace-pre-wrap break-words text-xs leading-relaxed text-ink-2">{item.proposal.why}</p>
+      </div>
+
+      {draft.groups.map((g, i) => (
+        <div key={i} className="mt-2 rounded border border-line bg-paper px-2.5 py-2">
+          <div className="flex items-center gap-2">
+            <span className="flex-none text-[10px] uppercase tracking-wide text-muted">
+              {t('子项目 {n}', { n: i + 1 })}
+            </span>
+            <input
+              value={g.title}
+              onChange={(e) => rename(i, e.target.value)}
+              aria-label={t('子项目名')}
+              className="min-w-0 flex-1 rounded border border-line bg-paper px-1.5 py-0.5 text-xs text-ink focus:border-accent focus:outline-none"
+            />
+            <span className="flex-none font-mono text-[10px] text-muted">{t('{n} 块', { n: counts[i] ?? 0 })}</span>
+          </div>
+          {g.summary && (
+            <p className="mt-1 break-words text-[11px] leading-snug text-muted">{t('AI 写的一句：{s}', { s: g.summary })}</p>
+          )}
+          {(counts[i] ?? 0) > 0 ? (
+            <ul className="mt-1.5 space-y-1">{blocksIn(i).map(blockRow)}</ul>
+          ) : (
+            <p className="mt-1.5 text-[10px] leading-relaxed text-muted">
+              {t('这一组没有块，拆的时候不会建这个子项目。')}
+            </p>
+          )}
+        </div>
+      ))}
+
+      <div className="mt-2 rounded border border-line bg-paper px-2.5 py-2">
+        {/* Not uppercase like the other headers: it carries the project's own name. */}
+        <div className="text-[10px] text-muted">{t('留在〈{title}〉的块（{n}）', { title, n: staying.length })}</div>
+        {staying.length > 0 && <ul className="mt-1.5 space-y-1">{staying.map(blockRow)}</ul>}
+      </div>
+
+      {item.files.length > 0 && (
+        <div className="mt-2 rounded border border-line bg-paper px-2.5 py-2">
+          <div className="text-[10px] uppercase tracking-wide text-muted">{t('项目文件（没挂在某一块上的）')}</div>
+          <ul className="mt-1.5 space-y-1">
+            {item.files.map((f) => (
+              <li key={f.id} className="flex min-w-0 items-center gap-1.5">
+                <FileText size={11} className="flex-none text-muted" />
+                <span className="min-w-0 flex-1 truncate text-xs text-ink" title={f.target}>
+                  {f.label.trim() || fileNameOf(f.target)}
+                </span>
+                {where(landed(place(draft.files, f.id)), (g) => set('files', f.id, g), true)}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {item.followUps.length > 0 && (
+        <div className="mt-2 rounded border border-line bg-paper px-2.5 py-2">
+          <div className="text-[10px] uppercase tracking-wide text-muted">{t('跟进的事')}</div>
+          <ul className="mt-1.5 space-y-1">
+            {item.followUps.map((l) => (
+              <li key={l.id} className="flex min-w-0 items-center gap-1.5">
+                <Globe size={11} className="flex-none text-muted" />
+                <span className="min-w-0 flex-1 truncate text-xs text-ink">{l.text}</span>
+                {where(landed(place(draft.followUps, l.id)), (g) => set('followUps', l.id, g), true)}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {pairs.length > 0 && (
+        <div className="mt-2 space-y-1 border-l-2 border-[var(--notice-warm-edge)] pl-2">
+          {pairs.map((p) => (
+            <p key={`${p.block.id}>${p.pointsAt.id}`} className="text-[11px] leading-snug text-ink-2">
+              {p.kind === 'corrects'
+                ? t('#{a} 和 #{b} 分开之后，#{b} 那句话上的底色记号会没（两块都还在）。', {
+                    a: p.block.seq ?? '?',
+                    b: p.pointsAt.seq ?? '?',
+                  })
+                : t('#{a} 和 #{b} 分开之后在两个项目里，「已被整条取代」那一行照样点得过去。', {
+                    a: p.block.seq ?? '?',
+                    b: p.pointsAt.seq ?? '?',
+                  })}
+            </p>
+          ))}
+        </div>
+      )}
+
+      <p className="mt-2 text-[10px] leading-relaxed text-muted">
+        {t('拆分之后：每一组在同一个工作区里建成一个子项目，块连同编号、挂在块上的文件和图片一起挪过去；〈{title}〉名字不变，里面留一块总览，链接到每个子项目。按 ⌘Z 能一次撤回。', { title })}
+      </p>
+
+      <div className="mt-2.5 flex items-center gap-2">
+        <button
+          type="button"
+          disabled={busy || made === 0}
+          onClick={() => onSplit(draft)}
+          className="flex flex-1 items-center justify-center gap-1.5 rounded-md border border-accent/60 px-3 py-1.5 text-xs font-medium text-accent transition-colors enabled:hover:border-accent enabled:hover:bg-accent/15 disabled:opacity-40"
+        >
+          <Check size={12} />
+          {t('拆分（{n} 个子项目）', { n: made })}
+        </button>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={onReject}
+          title={t('直接扔掉，不留痕迹')}
+          className="flex flex-none items-center gap-1.5 rounded-md border border-line bg-paper px-3 py-1.5 text-xs text-muted transition-colors enabled:hover:border-line-strong enabled:hover:text-ink disabled:opacity-40"
+        >
+          <Trash2 size={12} />
+          {t('不拆')}
         </button>
       </div>
     </div>

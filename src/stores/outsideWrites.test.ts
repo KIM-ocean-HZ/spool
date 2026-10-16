@@ -180,6 +180,14 @@ describe('librarySignature —— 「库有没有被别处动过」的记号', (
                created_at, expires_at) VALUES ('fp-1','attach','Codex · MCP',?,'/x/b.pdf',10,'要挂',?,?)`,
           )
           .run(threadId, Date.now(), 9e15)],
+      // P9G-3：AI 提议拆项目同样从 `spool --mcp` 写进来。
+      ['提议拆项目', () =>
+        sqlite
+          .prepare(
+            `INSERT INTO split_proposals (id, thread_id, client, why, plan, created_at, expires_at)
+               VALUES ('sp-1',?,'Codex · MCP','太长了','{"groups":[]}',?,?)`,
+          )
+          .run(threadId, Date.now(), 9e15)],
       ['又一批块待审', () => proposeBlocks('batch-2')],
       // ⚠️ 最新那一行还在、时间没变 —— 只有行数分得出来。
       ['早的那批过期被清掉', () => sqlite.exec("DELETE FROM proposal_batches WHERE id = 'batch-1'")],

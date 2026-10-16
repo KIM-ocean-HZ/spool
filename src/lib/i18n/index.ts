@@ -1064,6 +1064,34 @@ const EN: Record<string, string> = {
   '{name} 提议、你同意的': '{name} proposed it, you approved',
   '以前的版本（{n} 个）': 'Earlier versions ({n})',
   '被取代于 {time}': 'Replaced {time}',
+  // P9G-3 (Ocean 2026-10-16) — an AI proposing to split a long project into sub-projects.
+  '{client} 提议把〈{title}〉拆成 {n} 个子项目': '{client} proposes splitting ‹{title}› into {n} sub-projects',
+  '子项目 {n}': 'Sub-project {n}',
+  '子项目名': 'Sub-project name',
+  'AI 写的一句：{s}': 'The AI’s one line: {s}',
+  '这一组没有块，拆的时候不会建这个子项目。': 'No blocks in this group — this sub-project will not be created.',
+  '留在〈{title}〉的块（{n}）': 'Blocks staying in ‹{title}› ({n})',
+  '留在原项目': 'Stays in the original',
+  '去哪': 'Where it goes',
+  '项目文件（没挂在某一块上的）': 'Project files (not on a block)',
+  '跟进的事': 'Things this project watches',
+  '#{a} 和 #{b} 分开之后，#{b} 那句话上的底色记号会没（两块都还在）。':
+    'Once #{a} and #{b} are apart, the highlighted sentence in #{b} loses its mark (both blocks stay).',
+  '#{a} 和 #{b} 分开之后在两个项目里，「已被整条取代」那一行照样点得过去。':
+    'Once apart, #{a} and #{b} sit in two projects; the “Replaced by” line still takes you across.',
+  '拆分之后：每一组在同一个工作区里建成一个子项目，块连同编号、挂在块上的文件和图片一起挪过去；〈{title}〉名字不变，里面留一块总览，链接到每个子项目。按 ⌘Z 能一次撤回。':
+    'On Split, each group becomes a sub-project in the same workspace, and its blocks move there with their numbers, their files and their pictures. ‹{title}› keeps its name and gets one overview block linking to each sub-project. Press ⌘Z to undo it all at once.',
+  '拆分（{n} 个子项目）': 'Split ({n} sub-projects)',
+  '不拆': 'Don’t split',
+  '拆成了 {n} 个子项目。按 ⌘Z 能一次撤回。': 'Split into {n} sub-projects. Press ⌘Z to undo it all at once.',
+  '这条提议说的项目已经不在了，清掉了。': 'The project this proposal was about is no longer there, so it was cleared.',
+  '每一组都没有块，没有拆。': 'No group has any blocks, so nothing was split.',
+  '没能拆完：{msg}。已经挪过去的，按 ⌘Z 能撤回。': 'The split did not finish: {msg}. Press ⌘Z to undo what had already moved.',
+  // The overview block the split leaves in the original project — user data once written, in the
+  // language of the moment it was written (like the tutorial).
+  '这个项目在 {date} 拆成了 {n} 个子项目：{list}': 'This project was split into {n} sub-projects on {date}: {list}',
+  '〈{title}〉': '‹{title}›',
+  '、': ', ',
 
   // DESIGN_FOLLOW_UP §8.4 — an AI proposing ONE line for a project's follow-up list. This is
   // approval of a line that will tell the NEXT conversation what to go looking for, so it is
@@ -1186,6 +1214,7 @@ const EN: Record<string, string> = {
   '没移动成：{msg}': 'Move failed: {msg}',
   // ⚠️ 撤销浮窗上的动作名，经 UNDO_OP_LABEL 现翻 —— i18n-check 看不见常量表，手加手核。
   '移动': 'Move',
+  '拆分项目': 'Split project',
 
   // Settings sub-panels
   '请按下 ⌘ / ⌃ / ⌥ 之一，再加一个普通键': 'Press ⌘ / ⌃ / ⌥ plus a regular key',

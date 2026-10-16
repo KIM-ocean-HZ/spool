@@ -90,6 +90,15 @@ export const listFollowUpItems = async (threadId: string): Promise<FollowUpItem[
   return rows.map(fromRow);
 };
 
+/** P9G-3: a split moves follow-up lines to a sub-project (and back, on ⌘Z). Only the project
+ *  changes — the line, its state and its history go with it as they are. */
+export const moveFollowUpItemsToThread = async (ids: string[], threadId: string): Promise<void> => {
+  if (ids.length === 0) return;
+  const db = await getDb();
+  const slots = ids.map((_, i) => `$${i + 2}`).join(', ');
+  await db.execute(`UPDATE follow_up_items SET thread_id = $1 WHERE id IN (${slots})`, [threadId, ...ids]);
+};
+
 /** How many live lines this project has. Zero is the off switch — a follow-up with nothing
  *  to look for cannot run, which is what `follow_up_brief IS NULL` used to mean (§3.2). */
 export const countOpenFollowUpItems = async (threadId: string): Promise<number> => {

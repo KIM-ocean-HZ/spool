@@ -20,7 +20,8 @@ export type UndoOpKind =
   | 'workspace_archive'
   | 'forward'
   | 'ref_remove'
-  | 'move';
+  | 'move'
+  | 'split';
 
 // Per-kind payloads. §8.2 types the schema-level payload as `unknown` for storage
 // flexibility; at every usage site we narrow it via the discriminated UndoEntry union
@@ -159,6 +160,23 @@ export interface MovePayload {
   deletedFiles?: Attachment[];
 }
 
+// P9G-3（Ocean 2026-10-16）：待审卡上点「拆分」—— 一个项目拆成几个子项目，整件事一条，⌘Z 一次全部回去
+// （lib/split/projectSplit.ts 的 reverseSplit）。记的是做了什么，撤回和重做都照着它走。
+export interface SplitPayload {
+  originThreadId: string;
+  /** For the confirmation card's preview. */
+  originTitle: string;
+  /** The sub-projects it made, in the card's order, with the names they got. */
+  children: { threadId: string; title: string }[];
+  /** Each moved block, the sub-project it went to, and the number and time it kept. */
+  moved: { blockId: string; toThreadId: string; seq: number | null; createdAt: number }[];
+  /** Project files (older versions included) and follow-up lines, and where each went. */
+  files: { id: string; toThreadId: string }[];
+  followUps: { id: string; toThreadId: string }[];
+  /** The overview block and the link blocks, as written into the original project. */
+  created: Block[];
+}
+
 interface BaseEntry {
   id: string;
   timestamp: number;
@@ -214,6 +232,10 @@ export interface MoveUndoEntry extends BaseEntry {
   kind: 'move';
   payload: MovePayload;
 }
+export interface SplitUndoEntry extends BaseEntry {
+  kind: 'split';
+  payload: SplitPayload;
+}
 
 export type UndoEntry =
   | CaptureUndoEntry
@@ -227,7 +249,8 @@ export type UndoEntry =
   | WorkspaceArchiveUndoEntry
   | ForwardUndoEntry
   | RefRemoveUndoEntry
-  | MoveUndoEntry;
+  | MoveUndoEntry
+  | SplitUndoEntry;
 
 const CAPACITY = 10;
 

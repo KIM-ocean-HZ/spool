@@ -9,6 +9,9 @@ import type { ProposalBatch } from '@/lib/db/proposals';
 import * as followUp from '@/lib/db/followUpItems';
 import type { FollowUpProposal } from '@/lib/db/followUpItems';
 import { purgeExpiredSupersedeProposals } from '@/lib/db/supersedeProposals';
+import * as splitProposals from '@/lib/db/splitProposals';
+import { applySplit, listSplitReview, type SplitDraft, type SplitReviewItem } from '@/lib/split/projectSplit';
+import type { SplitPayload } from '@/lib/undo/undoLog';
 import {
   decideSupersedeProposal,
   listSupersedeReview,
@@ -19,6 +22,7 @@ import { t } from '@/lib/i18n';
 import { useBlocksStore } from './blocksStore';
 import { useThreadsStore } from './threadsStore';
 import { toast } from './toastStore';
+import { buildSplitUndo, useUndoStore } from './undoStore';
 
 // DESIGN_MCP_WRITE_ROLE §4.3 — state behind the review screen.
 //
@@ -46,6 +50,8 @@ interface ProposalsState {
   fileProposals: FileProposal[] | null;
   /** P7-5 — an AI's 「更正 / 取代」 suggestion about two blocks; the user picks one of three. */
   supersedeProposals: SupersedeReviewItem[] | null;
+  /** P9G-3 — an AI's 「把这个项目拆成几个子项目」, regrouped on the card before 「拆分」. */
+  splitProposals: SplitReviewItem[] | null;
   /** Everything waiting on the user, in one number: the sidebar badge. */
   pendingCount: number;
   /** Batches past their 7 days — one line on the screen, never approvable. */
@@ -65,6 +71,8 @@ interface ProposalsState {
   approveFileProposal: (id: string) => Promise<void>;
   rejectFileProposal: (id: string) => Promise<void>;
   decideSupersede: (id: string, choice: SupersedeChoice) => Promise<void>;
+  approveSplit: (id: string, draft: SplitDraft) => Promise<void>;
+  rejectSplit: (id: string) => Promise<void>;
 }
 
 // Everything the approved blocks touched has to be re-read: they landed through a path
@@ -80,17 +88,23 @@ const reloadLibrary = async (): Promise<void> => {
 const loadAll = async (): Promise<
   Pick<
     ProposalsState,
-    'batches' | 'fileRequests' | 'followUpProposals' | 'fileProposals' | 'supersedeProposals'
+    | 'batches'
+    | 'fileRequests'
+    | 'followUpProposals'
+    | 'fileProposals'
+    | 'supersedeProposals'
+    | 'splitProposals'
   >
 > => {
   const now = Date.now();
-  const [batches, fileRequests, followUpProposals, fileProposalList, supersedeProposals] =
+  const [batches, fileRequests, followUpProposals, fileProposalList, supersedeProposals, splitList] =
     await Promise.all([
       db.listPendingBatches(now),
       files.listPendingFileRequests(now),
       followUp.listFollowUpProposals(),
       fileProposals.listPendingFileProposals(now),
       listSupersedeReview(now),
+      listSplitReview(now),
     ]);
   return {
     batches,
@@ -98,6 +112,7 @@ const loadAll = async (): Promise<
     followUpProposals,
     fileProposals: fileProposalList,
     supersedeProposals,
+    splitProposals: splitList,
   };
 };
 
@@ -116,7 +131,8 @@ const settle = async (get: () => ProposalsState, set: Setter): Promise<void> => 
     state.fileRequests!.length === 0 &&
     state.followUpProposals!.length === 0 &&
     state.fileProposals!.length === 0 &&
-    state.supersedeProposals!.length === 0;
+    state.supersedeProposals!.length === 0 &&
+    state.splitProposals!.length === 0;
   if (nothingLeft) get().close();
 };
 
@@ -126,6 +142,7 @@ export const useProposalsStore = create<ProposalsState>((set, get) => ({
   followUpProposals: null,
   fileProposals: null,
   supersedeProposals: null,
+  splitProposals: null,
   pendingCount: 0,
   expiredBatches: 0,
   panelOpen: false,
@@ -137,7 +154,7 @@ export const useProposalsStore = create<ProposalsState>((set, get) => ({
       // P7-5: what 过期检测 used to do each time it read these — a suggestion past its 7 days
       // is a no, and leaves nothing behind.
       await purgeExpiredSupersedeProposals(now);
-      const [proposals, expiredBatches, fileRequests, followUpLines, fileProposalCount, supersede] =
+      const [proposals, expiredBatches, fileRequests, followUpLines, fileProposalCount, supersede, splits] =
         await Promise.all([
           db.countPending(now),
           db.countExpiredBatches(now),
@@ -147,10 +164,11 @@ export const useProposalsStore = create<ProposalsState>((set, get) => ({
           // P7-5: read, not COUNTed — whether a row still needs the user depends on the two
           // blocks (done elsewhere already = not waiting), and that rule lives in one place.
           listSupersedeReview(now),
+          splitProposals.countPendingSplitProposals(now),
         ]);
       set({
         pendingCount:
-          proposals + fileRequests + followUpLines + fileProposalCount + supersede.length,
+          proposals + fileRequests + followUpLines + fileProposalCount + supersede.length + splits,
         expiredBatches,
       });
       // Keep an open screen honest: a second client could have queued more while the
@@ -176,6 +194,7 @@ export const useProposalsStore = create<ProposalsState>((set, get) => ({
         followUpProposals: [],
         fileProposals: [],
         supersedeProposals: [],
+        splitProposals: [],
       });
     }
   },
@@ -188,6 +207,7 @@ export const useProposalsStore = create<ProposalsState>((set, get) => ({
       followUpProposals: null,
       fileProposals: null,
       supersedeProposals: null,
+      splitProposals: null,
     }),
 
   approve: async (batchId, keepIds) => {
@@ -361,12 +381,55 @@ export const useProposalsStore = create<ProposalsState>((set, get) => ({
     }
   },
 
+  // P9G-3 — the click that splits a project as the card shows it. One undo entry for all of it;
+  // pushed even when the split stopped half-way, so what was done is still one ⌘Z from undone.
+  approveSplit: async (id, draft) => {
+    if (get().busy) return;
+    set({ busy: true });
+    let payload: SplitPayload | null = null;
+    try {
+      const outcome = await applySplit(id, draft, Date.now(), (p) => {
+        payload = p;
+      });
+      if (outcome.kind === 'split') {
+        toast.notice(t('拆成了 {n} 个子项目。按 ⌘Z 能一次撤回。', { n: outcome.payload.children.length }));
+      } else if (outcome.kind === 'gone') {
+        toast.notice(t('这条提议说的项目已经不在了，清掉了。'));
+      } else {
+        toast.notice(t('每一组都没有块，没有拆。'));
+      }
+    } catch (e) {
+      console.error('[split] failed', e);
+      toast.error(t('没能拆完：{msg}。已经挪过去的，按 ⌘Z 能撤回。', { msg: e instanceof Error ? e.message : String(e) }));
+    } finally {
+      const done = payload as SplitPayload | null;
+      if (done && done.children.length > 0) useUndoStore.getState().pushUndo(buildSplitUndo(done));
+      await reloadLibrary();
+      set({ busy: false });
+      await settle(get, set);
+    }
+  },
+
+  rejectSplit: async (id) => {
+    if (get().busy) return;
+    set({ busy: true });
+    try {
+      await splitProposals.deleteSplitProposal(id);
+    } catch (e) {
+      console.error('[split] refusal failed', e);
+    } finally {
+      set({ busy: false });
+      await settle(get, set);
+    }
+  },
+
   clearExpired: async () => {
     try {
       await db.purgeExpired(Date.now());
       await files.purgeExpiredFileRequests(Date.now());
       await fileProposals.purgeExpiredFileProposals(Date.now());
       await purgeExpiredSupersedeProposals(Date.now());
+      await splitProposals.purgeExpiredSplitProposals(Date.now());
     } catch (e) {
       console.warn('[proposals] purge failed', e);
     }
