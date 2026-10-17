@@ -61,7 +61,8 @@ export default function EngineConfig() {
     <div className="py-2.5">
       <div className="text-sm text-ink">{t('本机 AI 引擎')}</div>
       <div className="mt-0.5 text-xs text-muted">
-        {t('装了 Claude Code、Codex 或 Gemini CLI，就能让它替你整理项目。用你自己已经登录的那个，Spool 不存 API key。')}
+        {/* P9H-5（第 150 条）：紧挨在 DeepSeek 的 key 框下面，「Spool 不存 API key」单读像在说整个 Spool —— 说清是这条路。 */}
+        {t('装了 Claude Code、Codex 或 Gemini CLI，就能让它替你整理项目。用的是你自己已经登录的那个，走这条路 Spool 不用存 API key。')}
       </div>
 
       <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">

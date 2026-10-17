@@ -4,6 +4,7 @@ import ApiBalance from '@/components/ApiBalance';
 import Toggle from '@/components/ui/Toggle';
 import { apiKeyPresent, loadApiKey, saveApiKey, sidecarPresent } from '@/lib/ai/compress';
 import { useT } from '@/lib/i18n';
+import { IS_MAC } from '@/lib/platform';
 import { useSettingsStore } from '@/stores/settingsStore';
 
 // 形态 C 的设置（WORKPLAN-2026-08-20 §6.2 / §6.3）。
@@ -63,10 +64,14 @@ export default function ApiEngineConfig() {
       </div>
 
       {/* ⚠️ 这一句在开关关着的时候也要在：它是「已经装了 CLI 的人不用填 key」这条路的指路牌。
-          §6.2：形态 B 并行保留，不是被取代。 */}
-      <p className="text-[11px] leading-relaxed text-muted/80">
-        {t('已经装了 claude / codex 这类命令行工具的话，用「AI 引擎」那一节就行，一分钱不花、一个 key 不用填。这一节是给不想装命令行工具的人的第二条路。')}
-      </p>
+          §6.2：形态 B 并行保留，不是被取代。
+          P9H-5（DISCOVERED-20261014-6，Ocean 10-16 第 150 条）：只在 Mac 上 —— 它指着的「本机 AI 引擎」
+          那一节只在 Mac 上画（Settings/index.tsx），Windows 上这句是指向一个不存在的地方。 */}
+      {IS_MAC && (
+        <p className="text-[11px] leading-relaxed text-muted/80">
+          {t('已经装了 claude / codex 这类命令行工具的话，用「AI 引擎」那一节就行，一分钱不花、一个 key 不用填。这一节是给不想装命令行工具的人的第二条路。')}
+        </p>
+      )}
 
       {enabled && (
         <div className="space-y-2.5 rounded-md border border-line bg-paper-2/30 p-3">

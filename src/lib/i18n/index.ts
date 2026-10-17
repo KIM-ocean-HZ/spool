@@ -853,8 +853,9 @@ const EN: Record<string, string> = {
   '本机 AI 引擎': 'On-machine AI engine',
   // 2026-08-18 (Ocean): the resting line names the product, not the executable — see
   // Settings/EngineConfig's ① note. Versions and paths moved behind 详细说明.
-  '装了 Claude Code、Codex 或 Gemini CLI，就能让它替你整理项目。用你自己已经登录的那个，Spool 不存 API key。':
-    'With Claude Code, Codex or the Gemini CLI installed, one of them can tidy your projects for you. It runs through the tool you are already signed into — Spool stores no API key.',
+  // P9H-5 (第 150 条): it sits right under the DeepSeek key box — say it is THIS route that needs no key.
+  '装了 Claude Code、Codex 或 Gemini CLI，就能让它替你整理项目。用的是你自己已经登录的那个，走这条路 Spool 不用存 API key。':
+    'With Claude Code, Codex or the Gemini CLI installed, one of them can tidy your projects for you. It runs through the tool you are already signed into, so this route needs no API key in Spool.',
   '✓ 已连接 {name}': '✓ Connected to {name}',
   '✓ 已连接 {name}（还装了另外 {n} 个）': '✓ Connected to {name} ({n} more installed)',
   '详细说明：要装什么、装在哪、各家的限制':
