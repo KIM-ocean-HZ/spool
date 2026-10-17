@@ -74,13 +74,16 @@ const MCP_SERVER_NAME: &str = "spool";
 // review screen, and the refusal to touch what the user wrote.
 // P9G follow-up (Ocean 2026-10-16): except the tools this engine must never have
 // (`mcp::ENGINE_EXCLUDED_TOOLS` — `propose_split`); the test allows for exactly those.
-pub(crate) const ALLOWED_TOOL_NAMES: [&str; 24] = [
+pub(crate) const ALLOWED_TOOL_NAMES: [&str; 25] = [
     "add_block",
     "check_library",
     "close_follow_up_item",
     "create_thread",
     "distill",
     "find_similar_blocks",
+    // P9H-6 (Ocean 10-16 第 151 条): the engine may look at pictures too — a follow-up can then
+    // read a screenshot. Not in ENGINE_EXCLUDED_TOOLS.
+    "get_block_images",
     "get_block_original",
     "get_blocks",
     "get_digest",
@@ -787,7 +790,7 @@ fn codex_config_overrides(exe: &str, web: bool) -> Vec<String> {
         // call ends as `user cancelled MCP tool call` before it reaches Spool — annotations
         // correct or not. This per-server setting pre-approves Spool's own tools (and only
         // those: `enabled_tools` above is still the list). Same grant claude's `--allowedTools`
-        // gives the same 24 tools (§2.2). Values codex 0.147 accepts: auto / prompt / writes /
+        // gives the same 25 tools (§2.2). Values codex 0.147 accepts: auto / prompt / writes /
         // approve. Verified on a copy of the real library, 2026-10-13: with this line
         // close_follow_up_item, propose_blocks and add_block all completed; without it, all
         // three were cancelled. ⛔ Not a reason to mark tools read-only, and ⛔ never trade

@@ -206,6 +206,44 @@ fn preview_data_url_at(format: &str, bytes: &[u8], edge: u32) -> Result<String, 
     }
 }
 
+/// P9H-6: one picture handed to an AI is kept under this many bytes — a model rejects larger
+/// image content outright (Claude's limit is 5 MB), and a reply carries several.
+pub const AI_IMAGE_MAX_BYTES: usize = 3_500_000;
+
+/// A picture for an AI: its media type, its bytes, and the width × height they are.
+pub type ForAi = (&'static str, Vec<u8>, (u32, u32));
+
+/// P9H-6 (Ocean 10-16 第 148 条) — a picture as an AI is handed it: long edge at most `edge`,
+/// under AI_IMAGE_MAX_BYTES. One already small enough goes as it is stored (every stored format —
+/// PNG, JPEG, GIF, WebP; TIFF became PNG on the way in — is one models take); a larger one is
+/// scaled down and re-encoded, PNG when it has transparency (JPEG if that is still too big),
+/// JPEG otherwise. Returns the media type, the bytes, and the size handed over.
+pub fn for_ai(format: &str, bytes: &[u8], edge: u32) -> Result<ForAi, String> {
+    let mut reader = ImageReader::new(Cursor::new(bytes))
+        .with_guessed_format()
+        .map_err(|e| e.to_string())?;
+    reader.limits(limits());
+    let img = reader.decode().map_err(|e| e.to_string())?;
+    let (w, h) = img.dimensions();
+    if w.max(h) <= edge && bytes.len() <= AI_IMAGE_MAX_BYTES {
+        return Ok((mime(format), bytes.to_vec(), (w, h)));
+    }
+    let small = if w.max(h) > edge { img.thumbnail(edge, edge) } else { img };
+    let dims = small.dimensions();
+    let mut out = Vec::new();
+    if small.color().has_alpha() {
+        small.write_to(&mut Cursor::new(&mut out), ImageFormat::Png).map_err(|e| e.to_string())?;
+        if out.len() <= AI_IMAGE_MAX_BYTES {
+            return Ok(("image/png", out, dims));
+        }
+        out.clear();
+    }
+    image::codecs::jpeg::JpegEncoder::new_with_quality(&mut out, 85)
+        .encode_image(&small.to_rgb8())
+        .map_err(|e| e.to_string())?;
+    Ok(("image/jpeg", out, dims))
+}
+
 // ---------------------------------------------------------------------------------------
 // P7-8 — a file to point at. The bytes live in the library, so a pack (and get_blocks) can
 // only name a picture once a copy of it sits on disk: `image-cache/<id>.<ext>` beside

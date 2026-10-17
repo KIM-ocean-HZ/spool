@@ -3165,6 +3165,116 @@ impl BlockFilters<'_> {
 //   * 这一块从来没被压过 —— 它的正文就是原文，不用问；
 //   * 压过、但用户关掉了备份 —— 原文**真的不存在了**，⛔ 别让模型以为再问一次就能拿到；
 //   * 这个 id 根本不在库里。
+// P9H-6 (DISCOVERED-20261008-1, Ocean 10-16 第 148、151 条) — the pictures in ONE block, handed to
+// the AI as MCP image content. Until now it got only each picture's path and size (get_blocks'
+// `images`, the pack's `![caption](path)` lines): a client that reads local files could open
+// them, every other client (Claude Desktop, AI in a browser) could not see what a screenshot
+// says. A long edge over AI_IMAGE_EDGE_PX is scaled down first; one reply carries at most
+// AI_IMAGES_PER_CALL pictures and AI_IMAGE_BYTES_PER_CALL bytes, and says how to ask for the rest.
+// ⚠️ Read through the AI's views like every other read: a block in a private project is a block
+// that does not exist, in the same words.
+const AI_IMAGE_EDGE_PX: u32 = 1600;
+const AI_IMAGES_PER_CALL: usize = 6;
+const AI_IMAGE_BYTES_PER_CALL: usize = 4_500_000;
+
+/// The reply's text, and the pictures to send after it (media type, bytes).
+type BlockPictures = (String, Vec<(&'static str, Vec<u8>)>);
+
+fn get_block_images(conn: &Connection, block_id: &str, from: Option<i64>) -> Result<BlockPictures, String> {
+    use rusqlite::OptionalExtension;
+    let block: Option<(String, Option<i64>, String)> = conn
+        .query_row(
+            "SELECT b.content, b.seq, t.title FROM blocks b JOIN threads t ON t.id = b.thread_id
+              WHERE b.id = ?1 AND t.deleted_at IS NULL",
+            [block_id],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .optional()
+        .map_err(|e| e.to_string())?;
+    let Some((content, seq, title)) = block else {
+        return Err(t!(
+            "库里没有这一块。block_id 从 get_blocks / search_blocks / get_pack(include_ids=true) 来。",
+            "No such block. block_id comes from get_blocks / search_blocks / get_pack(include_ids=true)."
+        ));
+    };
+    let captions: std::collections::HashMap<String, String> = content
+        .split('\n')
+        .filter_map(parse_image_line)
+        .map(|(caption, id)| (id.to_string(), caption.trim().to_string()))
+        .collect();
+    let mut stmt = conn
+        .prepare("SELECT id, format, width, height, bytes FROM block_images WHERE block_id = ?1 ORDER BY position")
+        .map_err(|e| e.to_string())?;
+    let stored: Vec<(String, String, i64, i64, Vec<u8>)> = stmt
+        .query_map([block_id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)))
+        .map_err(|e| e.to_string())?
+        .collect::<Result<_, _>>()
+        .map_err(|e| e.to_string())?;
+    let total = stored.len();
+    let at = seq.map_or_else(|| format!("\u{2039}{title}\u{203a}"), |n| format!("#{n} \u{2039}{title}\u{203a}"));
+    if total == 0 {
+        return Ok((
+            t!(
+                "{at} 里没有图片。",
+                "{at} holds no pictures."
+            ),
+            Vec::new(),
+        ));
+    }
+    let first = from.unwrap_or(1).max(1) as usize;
+    if first > total {
+        return Err(t!(
+            "{at} 一共只有 {total} 张图片，from 最大是 {total}。",
+            "{at} holds only {total} pictures; from can be at most {total}."
+        ));
+    }
+    let mut sent = Vec::new();
+    let mut listed = Vec::new();
+    let mut bytes_so_far = 0usize;
+    let mut next: Option<usize> = None;
+    for (i, (id, format, width, height, bytes)) in stored.iter().enumerate().skip(first - 1) {
+        let n = i + 1;
+        let (mime, out, (w, h)) = crate::images::for_ai(format, bytes, AI_IMAGE_EDGE_PX)?;
+        // Always at least one; after that, stop before the reply grows past the budget.
+        if !sent.is_empty() && (sent.len() == AI_IMAGES_PER_CALL || bytes_so_far + out.len() > AI_IMAGE_BYTES_PER_CALL) {
+            next = Some(n);
+            break;
+        }
+        bytes_so_far += out.len();
+        listed.push(json!({
+            "n": n,
+            "caption": captions.get(id).filter(|c| !c.is_empty()),
+            "stored_size": format!("{width}\u{00d7}{height}"),
+            "sent_size": format!("{w}\u{00d7}{h}"),
+        }));
+        sent.push((mime, out));
+    }
+    let last = first + sent.len() - 1;
+    let head = if next.is_some() || first > 1 {
+        t!(
+            "{at} 有 {total} 张图片，这里是第 {first} – {last} 张（按块里的顺序）。",
+            "{at} holds {total} pictures; here are {first}\u{2013}{last}, in the block's order."
+        )
+    } else {
+        t!(
+            "{at} 的 {total} 张图片都在下面（按块里的顺序）。",
+            "All {total} pictures in {at} follow, in the block's order."
+        )
+    };
+    let more = next.map(|n| {
+        t!(
+            "为了不让一次回复太大，第 {n} 张起没有放进来 —— 用 get_block_images(from={n}) 再要。",
+            "To keep one reply small, pictures from {n} on were left out \u{2014} call get_block_images again with from={n}."
+        )
+    });
+    let payload = json!({ "project": title, "seq": seq, "pictures": total, "returned": listed, "next_from": next });
+    let text = match more {
+        Some(m) => format!("{head}\n{m}\n{payload}"),
+        None => format!("{head}\n{payload}"),
+    };
+    Ok((text, sent))
+}
+
 fn get_block_original_json(conn: &Connection, block_id: &str) -> Result<String, String> {
     struct OriginalRow {
         original: Option<String>,
@@ -3498,6 +3608,11 @@ fn get_blocks_json(
                         })
                     })
                     .collect(),
+            );
+            // P9H-6: the way to SEE them, said where a model reading pictures' paths already is
+            // (memory mcp-tool-routing-required: a hint on a path the model does not walk is no hint).
+            row["images_how_to_see"] = json!(
+                "These are paths. To look at the pictures themselves, call get_block_images with this block_id."
             );
         }
     }
@@ -8362,6 +8477,21 @@ fn tools_descriptor() -> Value {
             }
         },
         {
+            // P9H-6 (DISCOVERED-20261008-1): the pictures themselves, not their paths.
+            "name": "get_block_images",
+            "description": "SEE the pictures in one block — screenshots, photos, diagrams the user put there. Returns them as images you can look at, in the order they sit in the block, each preceded by its number and caption; a picture whose long edge is over 1600px arrives scaled down to that. Use it whenever what is IN a picture matters: 'what does the screenshot in #12 say', 'read the error in that capture', 'what is on the whiteboard photo'. get_blocks and get_pack only tell you a picture's path and size, which you cannot see through unless you can open local files. One reply carries up to 6 pictures; when a block has more, it says so and gives the `from` to pass for the rest. Read-only: it changes nothing and needs no consent toggle.",
+            "annotations": { "readOnlyHint": true, "destructiveHint": false, "idempotentHint": true, "openWorldHint": false },
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "block_id": { "type": "string", "description": "Block id, from get_blocks / search_blocks / get_pack(include_ids=true)." },
+                    "from": { "type": "integer", "minimum": 1, "description": "Start at this picture (1 = the first). Only needed when a previous reply said some were left out." }
+                },
+                "required": ["block_id"],
+                "additionalProperties": false
+            }
+        },
+        {
             "name": "request_file_access",
             "description": "Ask the user to let you read files they put in one of their projects. This reads NOTHING: it queues one card on Spool's review screen naming the files and your reason, and the user answers there. Files are listed by get_blocks (the `files` section) and by search_blocks (attachment_hits), each with an attachment_id and ai_readable — call this only for the ones where ai_readable is false. The parameter is an attachment_id and never a path: you can ask about a file the user chose in their own file dialog, and you can never name a new one; a file that is not in the project you name does not exist to this tool. If they say yes the grant is standing — that file's text then rides along with get_blocks(include_extracted_text=true) until they untick it in Spool. Tell the user a request is waiting for them; never that you read anything. Unanswered requests expire after 7 days. Requires MCP writes enabled in Spool's settings.",
             "annotations": { "readOnlyHint": false, "destructiveHint": false, "idempotentHint": false },
@@ -8519,6 +8649,32 @@ fn handle_tool_call(params: &Value) -> Value {
             .or_else(|| v.as_f64().map(|f| f.trunc() as i64))
             .or_else(|| v.as_str()?.trim().parse::<f64>().ok().map(|f| f.trunc() as i64))
     };
+
+    // P9H-6: the one tool whose reply is not only text — the pictures follow its line, each as
+    // MCP image content (base64 + media type).
+    if name == "get_block_images" {
+        let result = (|| -> Result<BlockPictures, String> {
+            let block_id = args
+                .get("block_id")
+                .and_then(Value::as_str)
+                .ok_or_else(|| t!("缺少 block_id 参数。", "Missing the block_id argument."))?;
+            get_block_images(&open_db(&dir)?, block_id, num("from"))
+        })();
+        return match result {
+            Ok((text, pictures)) => {
+                let mut content = vec![json!({ "type": "text", "text": hide_image_ids(&text) })];
+                for (mime, bytes) in pictures {
+                    content.push(json!({
+                        "type": "image",
+                        "data": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &bytes),
+                        "mimeType": mime,
+                    }));
+                }
+                json!({ "content": content, "isError": false })
+            }
+            Err(msg) => tool_result_text(msg, true),
+        };
+    }
 
     let run = || -> Result<String, String> {
         match name {
@@ -11482,6 +11638,9 @@ kept, marked as replaced, once the user approves\n\
 \"这一块原来是怎么写的\" / \"what did this block say before\" / a \u{1F5DC} block whose exact \
 wording you are about to quote \u{2192} get_block_original (the pack carries the marker, never the \
 original text)\n\
+\"那张截图上写了什么\" / \"看一下 #12 的图\" / \"what does the screenshot say\" / a block whose \
+pictures matter to the question \u{2192} get_block_images(block_id) \u{2014} it hands over the pictures \
+themselves; get_blocks and get_pack only give their paths\n\
 \"what are you watching for me\" / \"现在在跟进什么\" / \"现在在盯什么\" \u{2192} get_follow_up_brief (read the lines \
 back verbatim)\n\
 \"这个先记着\" / \"等 X 出来再说\" / \"回头查一下\" / any question the two of you could not settle \
@@ -16881,6 +17040,8 @@ mod tests {
             json!([{ "path": expected_path.to_string_lossy(), "format": "png", "width": 12, "height": 8, "size_bytes": png.len() }])
         );
         assert_eq!(b1["content"], json!(shown), "the text names the picture by its path, where it sits");
+        // P9H-6: and says, right there, how to look at it.
+        assert!(b1["images_how_to_see"].as_str().unwrap().contains("get_block_images"), "{b1}");
         assert!(v["blocks"].as_array().unwrap().iter().find(|b| b["block_id"] == "b2").unwrap().get("images").is_none());
         assert_eq!(std::fs::read(&expected_path).unwrap(), png, "the copy is the picture, byte for byte");
 
@@ -17005,7 +17166,7 @@ mod tests {
     // Two libraries that differ ONLY in that one holds two private projects (and everything
     // that hangs off them: blocks, a picture, a file, follow-up lines, queued proposals, a
     // summary, a link and a correction pointing at the public project). Every surface an AI
-    // reaches — the 25 tools, the 9 prompt assemblies (MCP and headless), resources — is
+    // reaches — the 26 tools, the 9 prompt assemblies (MCP and headless), resources — is
     // called the same way on both, including with the private projects' own ids and titles.
     // ⇒ The answers must be the same, byte for byte: what an AI gets is exactly what it would
     // get if the private projects did not exist — not their words, not their ids, not a count,
@@ -17241,6 +17402,9 @@ mod tests {
                 "files": [{ "attachment_id": "pubAtt1", "group": "A" }],
                 "follow_ups": [{ "item_id": "pubFu1", "group": "B" }] })),
             tool("create_thread", json!({ "workspace_title": "Nowhere", "title": "x" })),
+            // P9H-6: a private block's pictures are a block that does not exist.
+            tool("get_block_images", json!({ "block_id": "PRIVb2" })),
+            tool("get_block_images", json!({ "block_id": "pubB1" })),
             ("resources/list", json!({})),
             ("resources/read", json!({ "uri": "spool://thread/pubGarden" })),
             ("resources/read", json!({ "uri": "spool://thread/PRIVthread1" })),
@@ -17305,6 +17469,90 @@ mod tests {
             }
         }
         let _ = std::fs::remove_dir_all(&base);
+    }
+
+    // P9H-6 (DISCOVERED-20261008-1, Ocean 10-16 第 148、151 条): get_block_images hands the pictures
+    // over as MCP image content — scaled to a 1600px long edge, at most 6 a reply with the `from` for
+    // the rest, nothing of a private project's (the canary above calls it on PRIVb2 too).
+    #[test]
+    fn get_block_images_hands_over_the_pictures_scaled_capped_and_never_a_private_ones() {
+        use base64::Engine as _;
+        let dir = std::env::temp_dir().join(format!("spool-p9h-images-{}", std::process::id()));
+        canary_library(&dir, true);
+        let png = |w: u32, h: u32| {
+            let mut out = Vec::new();
+            image::DynamicImage::ImageRgb8(image::RgbImage::from_fn(w, h, |x, y| image::Rgb([(x % 251) as u8, (y % 241) as u8, 90])))
+                .write_to(&mut std::io::Cursor::new(&mut out), image::ImageFormat::Png)
+                .unwrap();
+            out
+        };
+        let small = png(40, 30);
+        {
+            let conn = Connection::open(dir.join("spool.db")).unwrap();
+            let put = |block: &str, bytes: Vec<u8>| {
+                crate::images::insert_images(&conn, block, &[crate::images::prepare(bytes).unwrap()], 1).unwrap()[0].id.clone()
+            };
+            let big = put("pubB1", png(3000, 1200));
+            put("pubB1", small.clone());
+            conn.execute(
+                "UPDATE blocks SET content = content || char(10) || ?1 WHERE id = 'pubB1'",
+                [format!("![the error dialog](spool-image:{big})")],
+            )
+            .unwrap();
+            for _ in 0..8 {
+                put("pubB2", png(20, 20));
+            }
+        }
+        let call = |args: Value| -> Value {
+            serde_json::from_str(&ai_call(&dir, "tools/call", &json!({ "name": "get_block_images", "arguments": args }))).unwrap()
+        };
+        let decoded = |part: &Value| -> (String, Vec<u8>) {
+            let bytes = base64::engine::general_purpose::STANDARD.decode(part["data"].as_str().unwrap()).unwrap();
+            (part["mimeType"].as_str().unwrap().to_string(), bytes)
+        };
+
+        // Two pictures, in the block's order: the big one scaled to 1600 wide (JPEG — no
+        // transparency), the small one exactly as stored.
+        let v = call(json!({ "block_id": "pubB1" }));
+        assert_eq!(v["isError"], json!(false), "{v}");
+        let content = v["content"].as_array().unwrap();
+        assert_eq!(content.len(), 3, "{v}");
+        let text = content[0]["text"].as_str().unwrap();
+        assert!(text.starts_with("All 2 pictures in #1 \u{2039}Garden notes\u{203a} follow"), "{text}");
+        assert!(text.contains("\"caption\":\"the error dialog\"") && text.contains("\"sent_size\":\"1600\u{00d7}640\""), "{text}");
+        assert!(!text.contains("spool-image"), "{text}");
+        let (mime, bytes) = decoded(&content[1]);
+        assert_eq!((content[1]["type"].as_str(), mime.as_str()), (Some("image"), "image/jpeg"));
+        let first = image::load_from_memory(&bytes).unwrap();
+        assert_eq!((first.width(), first.height()), (1600, 640));
+        assert_eq!(decoded(&content[2]), ("image/png".to_string(), small.clone()));
+
+        // Eight in one block: six, and the `from` for the rest; then the rest.
+        let v = call(json!({ "block_id": "pubB2" }));
+        let content = v["content"].as_array().unwrap();
+        assert_eq!(content.len(), 1 + 6, "{v}");
+        let text = content[0]["text"].as_str().unwrap();
+        assert!(text.contains("here are 1\u{2013}6") && text.contains("from=7") && text.contains("\"next_from\":7"), "{text}");
+        let v = call(json!({ "block_id": "pubB2", "from": 7 }));
+        assert_eq!(v["content"].as_array().unwrap().len(), 1 + 2, "{v}");
+        assert!(v["content"][0]["text"].as_str().unwrap().contains("here are 7\u{2013}8"), "{v}");
+        assert_eq!(call(json!({ "block_id": "pubB2", "from": 9 }))["isError"], json!(true));
+
+        // A private block's pictures: the very answer an id that never existed gets, and not a
+        // byte of the picture (PRIVimg1 is an 8-byte PNG header: iVBORw0KGgo=).
+        let private = call(json!({ "block_id": "PRIVb2" }));
+        assert_eq!(private["isError"], json!(true));
+        assert_eq!(private["content"], call(json!({ "block_id": "no-such-block" }))["content"]);
+        assert!(!private.to_string().contains("iVBORw0KGgo"), "{private}");
+
+        // Read-only, routed, and Spool's own engine gets it too (第 151 条).
+        let tools = tools_descriptor();
+        let t = tools.as_array().unwrap().iter().find(|t| t["name"] == "get_block_images").unwrap();
+        assert_eq!(t["annotations"]["readOnlyHint"], json!(true));
+        assert!(OPENERS.contains("get_block_images(block_id)"), "{OPENERS}");
+        assert!(crate::engine::ALLOWED_TOOL_NAMES.contains(&"get_block_images"));
+        assert!(!ENGINE_EXCLUDED_TOOLS.contains(&"get_block_images"));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     // P9E-2, the one thing a public project may legitimately still hold about a private one:
