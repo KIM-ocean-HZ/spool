@@ -33,7 +33,7 @@
 <main class="wrap article measure" style="margin: 0 auto;" data-zh-body="privacy">
 
 <h1>Privacy Policy</h1>
-<p class="lede">Last updated: 2026-08-23 (Spool v0.6.2). This English translation is provided for convenience;
+<p class="lede">Last updated: 2026-10-17 (Spool v0.7.0). This English translation is provided for convenience;
 the <a href="zh/privacy.html" hreflang="zh-Hans" lang="zh">Chinese original</a> is authoritative.</p>
 
 <h2>The one-sentence version</h2>
@@ -67,14 +67,27 @@ GitHub remain available if you would rather not involve a third party at all.</p
       key is <strong>not</strong> in it: on macOS it is stored in the system Keychain, on Windows in
       a separate <code>0600</code> file in the same directory. It is never written to a log or an
       error message.</li>
-  <li>Attachments are never copied or uploaded — Spool stores only the path to the original
-      file, plus (optionally) text extracted locally. PDF/Word text extraction happens entirely
-      on your machine.</li>
+  <li>Files you add to a project are never copied or uploaded. Spool records three things: the
+      path; a small piece of identity the system recognises the file by (so that Spool can follow
+      it when you move or rename it); and, optionally, text extracted locally. PDF/Word text
+      extraction happens entirely on your machine. When a file cannot be found and you press
+      “Find it”, Spool asks this machine's Spotlight for files of that name and shows the results
+      only to you.</li>
+  <li>Pictures you put into a block (pasted, dragged in, or a captured screenshot) are copied
+      into the database, so a picture stays in its block after the original is deleted. When a
+      Pack is made, or an AI reads a block with pictures, Spool writes a copy into the
+      <code>image-cache</code> folder in the same directory so the receiving program has
+      something to point at; deleting that folder loses nothing. A photo from an iPhone (HEIC) is
+      first turned into a JPEG on this machine, by the system's own converter.</li>
   <li>Spool keeps, on this machine, how long you focused each day: time at the computer (keyboard
-      or mouse used within 15 minutes) while Spool was in front or you had captured within 15
-      minutes. One number per day, in <code>focus.json</code> in the same directory. It is not in
+      or mouse used within 15 minutes), whether or not Spool is in front. One number per day, in <code>focus.json</code> in the same directory. It is not in
       the database, is not exported with the library, and never leaves this computer; deleting
       the directory clears it.</li>
+  <li>Text you have typed but not finished — in a block's editing panel, or in a project's input
+      box — is saved as you type to <code>drafts.json</code> in the same directory, so quitting or
+      updating Spool does not lose it; it is deleted once you press Done or send it. Like
+      <code>focus.json</code>, it is not in the database, is not exported with the library, and
+      never leaves this computer.</li>
   <li>Before any database schema upgrade, a snapshot backup is saved automatically in the same
       directory.</li>
 </ul>
@@ -102,8 +115,16 @@ request is made on your behalf, by a subprocess Spool starts:</p>
     <td>Your AI client reads project content over local inter-process communication; Spool
         listens on no network port. A file you added to a project yourself can be read by an AI
         by default — the text Spool extracted from it, not the file itself. Each file has its own
-        switch you can turn off at any time; after that an AI can only ask you for it. Where
-        those clients send content is governed by that client and your agreement with its
+        switch you can turn off at any time; after that an AI can only ask you for it. An AI can
+        also be handed the pictures in a block themselves (to read what a screenshot says).
+        <strong>Private projects</strong> (right-click a project in the sidebar to make it
+        private) do not exist for an AI connected through Spool: it cannot read them or see them
+        in any list, files and pictures included. It can still write into one (a project it created
+        as private, say), but cannot read back what it wrote. Spool's own AI features (weekly review, follow-up, compression) leave
+        private projects alone too. <strong>Private covers the route through Spool
+        only</strong>: an AI that can already read files on your computer directly (a
+        command-line tool given file access, say) is not stopped from reading the database file.
+        Where those clients send content is governed by that client and your agreement with its
         provider.</td>
   </tr>
   <tr>
@@ -143,7 +164,13 @@ separate subprocess, on your own key and quota, to the provider you picked.</p>
 MCP server on. The “allow AI writes” switch underneath it is <strong>on by default and can be
 turned off at any time</strong>; what an AI writes can only be <strong>added, never edited over
 anything you wrote</strong>, and every entry carries a source label (“Claude · MCP”, say) so it
-reads as theirs, not yours.</p>
+reads as theirs, not yours. If an AI thinks something already there needs correcting, it can only
+propose the correction, which waits for you in the review queue; it cannot retire a note for you.
+Three more kinds of proposal work the same way, taking effect only when you approve them there:
+attaching a file from your computer to a project (the AI names its full path; system folders,
+hidden folders and the like are refused outright), replacing an older version of a file with a
+newer one (the old one is kept, folded under the new), and splitting a long project into
+sub-projects (a finished project has to be reopened by you first).</p>
 
 <h2>System permissions</h2>
 <table>
@@ -162,11 +189,17 @@ reads as theirs, not yours.</p>
       <td>Reading the current tab title as a source label</td>
       <td>Source falls back to the application name</td></tr>
   <tr><td>Clipboard</td>
-      <td>Reading clipboard text at capture time</td>
+      <td>Reading the clipboard's text, picture, or copied picture files at capture time</td>
       <td>Capture unavailable</td></tr>
+  <tr><td>The folder screenshots go to (the Desktop by default)</td>
+      <td>When you double-tap ⌥ right after a screenshot (⌘⇧3, ⌘⇧4, ⌘⇧5), reading the one just
+          written; macOS asks the first time</td>
+      <td>Screenshots saved as files cannot be captured; ones sent to the clipboard (⌃⌘⇧4, say)
+          still can</td></tr>
 </table>
 <p>Permissions are used only when the corresponding feature fires — no background monitoring.
-The clipboard is read exactly once, at the moment you press the capture shortcut.</p>
+The clipboard is read exactly once, at the moment you press the capture shortcut; the
+screenshot folder is looked at only when you double-tap ⌥ to capture, for the picture just taken.</p>
 
 <h2>Contact</h2>
 <p>Questions or concerns: open an issue on
