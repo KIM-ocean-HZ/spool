@@ -99,6 +99,12 @@ const VK_LMENU: u16 = 0xA4;
 const VK_RMENU: u16 = 0xA5;
 const VK_LWIN: u16 = 0x5B;
 const VK_RWIN: u16 = 0x5C;
+const VK_SNAPSHOT: u16 = 0x2C; // PrtScn
+
+// P9H-7 ③ (DISCOVERED-20261008-3, Ocean 10-16 第 152 条): how long after Win+PrtScn a double-tap
+// Ctrl still takes that screenshot's FILE — the macOS module's COPY_GATE_WINDOW_MS, the same
+// window its screenshot chords get.
+const SHOT_WINDOW_MS: i32 = 10_000;
 
 fn is_ctrl(vk: u16) -> bool {
     vk == VK_CONTROL || vk == VK_LCONTROL || vk == VK_RCONTROL
@@ -130,6 +136,10 @@ struct TapState {
     shift_down: bool,
     alt_down: bool,
     win_down: bool,
+    // P9H-7 ③: the last Win+PrtScn — GetMessageTime (for the window) and the wall clock (the file
+    // it writes is dated by it). Win+PrtScn writes into the Screenshots folder; PrtScn and
+    // Win+Shift+S go to the clipboard and are read from there, as before.
+    last_shot: Option<(i32, u64)>,
 }
 
 impl TapState {
@@ -143,6 +153,7 @@ impl TapState {
             shift_down: false,
             alt_down: false,
             win_down: false,
+            last_shot: None,
         }
     }
 
@@ -189,6 +200,13 @@ impl TapState {
         }
 
         // A non-Ctrl key.
+        if vk == VK_SNAPSHOT && self.win_down {
+            let wall = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_millis() as u64)
+                .unwrap_or(0);
+            self.last_shot = Some((unsafe { GetMessageTime() }, wall));
+        }
         if !is_break {
             if self.ctrl_down {
                 self.other_key_since_ctrl_down = true;
@@ -254,8 +272,19 @@ fn run<R: Runtime>(app: AppHandle<R>) {
                 // 状态照喂(否则重新打开时手上是半截状态),只是不发出去。这边的 Raw Input 是
                 // INPUTSINK,本来就只看不删,所以「暂停」在 Windows 上是纯粹的不触发。
                 if state.on_key(vk, is_break) && !crate::capture::capture_disabled() {
-                    eprintln!("[double-tap-win] TRIGGER (clean double-tap Ctrl)");
-                    let _ = app.emit("capture-trigger", ());
+                    // P9H-7 ③: right after Win+PrtScn the capture takes that file — the payload the
+                    // macOS module sends for ⌘⇧3 (useCapture.ts `shot`, kind 'file').
+                    let now = unsafe { GetMessageTime() };
+                    match state.last_shot.filter(|&(at, _)| crate::images::win_shot_still_fresh(at, now, SHOT_WINDOW_MS)) {
+                        Some((_, wall)) => {
+                            eprintln!("[double-tap-win] TRIGGER (clean double-tap Ctrl, after Win+PrtScn)");
+                            let _ = app.emit("capture-trigger", serde_json::json!({ "shot": { "atMs": wall, "kind": "file" } }));
+                        }
+                        None => {
+                            eprintln!("[double-tap-win] TRIGGER (clean double-tap Ctrl)");
+                            let _ = app.emit("capture-trigger", ());
+                        }
+                    }
                 }
             }
         }

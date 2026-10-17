@@ -97,4 +97,8 @@ windows-sys = { version = "0.61", features = [
     # move — CreateFileW / GetFileInformationByHandleEx / OpenFileById /
     # GetFinalPathNameByHandleW (file_identity.rs). Same crate, more API surface.
     "Win32_Storage_FileSystem",
+    # P9H-7 ③: where Win+PrtScn writes — SHGetKnownFolderPath(FOLDERID_Screenshots), the
+    # string it returns freed with CoTaskMemFree (images.rs screenshot_dir). Same crate.
+    "Win32_UI_Shell",
+    "Win32_System_Com",
 ] }

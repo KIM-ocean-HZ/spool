@@ -192,6 +192,33 @@ fn gate_opener(copy_ns: u64, shot_ns: u64, now_ns: u64, window_ms: u64) -> Optio
     (at != 0 && at <= now_ns && (now_ns - at) / NANOS_PER_MS <= window_ms).then_some(who)
 }
 
+// P9H-7 ① (DISCOVERED-20261008-3, Ocean 10-16 第 152 条): ⌘⇧5 only opens a toolbar — the
+// picture is taken when the user clicks in it, which can be long after the chord, past the
+// 10 s gate below, and the double-tap that followed went to Claude. So a screenshot FILE
+// written since that chord, within the gate's window, opens it too. Only for the toolbar kind
+// (⌘⇧3/4 write at the chord itself), only within TOOLBAR_LINGER_MS of the chord, and only once
+// the file has landed: the floating thumbnail holds it back ~5 s, and the overlay already tells
+// the user to wait for the thumbnail to go (「等右下角的小图消失后再双击 ⌥」).
+const TOOLBAR_LINGER_MS: u64 = 5 * 60_000;
+
+/// The question above, given when the newest screenshot since the chord landed (`landed_ms`,
+/// None = none yet). All wall-clock ms.
+fn toolbar_shot_opens(kind: Option<ShotKind>, chord_ms: u64, landed_ms: Option<u64>, now_ms: u64, window_ms: u64) -> bool {
+    kind == Some(ShotKind::Toolbar)
+        && now_ms.saturating_sub(chord_ms) <= TOOLBAR_LINGER_MS
+        && landed_ms.is_some_and(|at| now_ms.saturating_sub(at) <= window_ms)
+}
+
+/// Look in the screenshot folder from inside the tap — on a helper thread, given at most 300 ms:
+/// the tap is in the path of every key on the machine and macOS switches off a tap that stalls.
+fn toolbar_shot_landed(chord_ms: u64) -> Option<u64> {
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = tx.send(crate::images::screenshot_landed_since(chord_ms));
+    });
+    rx.recv_timeout(std::time::Duration::from_millis(300)).ok().flatten()
+}
+
 // Copy-gate (2026-07-08): Claude Desktop's quick-entry popup ALSO triggers on a
 // double-tap of ⌥, so a bare double-tap is ambiguous on machines running both. The
 // capture mental model is "copy, then remember" (§10.2) — so Spool only treats a
@@ -693,7 +720,23 @@ fn on_event(etype: u32, event_ptr: *mut c_void) -> bool {
                     let copy_gap_ms = now.saturating_sub(copied) / NANOS_PER_MS;
                     // P7-7: a screenshot chord counts like ⌘C; whichever came last opened it.
                     let shot_ns = LAST_SHOT_NS.load(Ordering::Relaxed);
-                    let opener = gate_opener(copied, shot_ns, now, COPY_GATE_WINDOW_MS);
+                    let mut opener = gate_opener(copied, shot_ns, now, COPY_GATE_WINDOW_MS);
+                    // P9H-7 ①: ⌘⇧5 lingered on — a screenshot file that landed just now opens it too.
+                    // The cheap checks first: the folder is only looked at after a toolbar chord.
+                    let kind = ShotKind::from_u8(LAST_SHOT_KIND.load(Ordering::Relaxed));
+                    let chord_ms = LAST_SHOT_WALL_MS.load(Ordering::Relaxed);
+                    let now_ms = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|d| d.as_millis() as u64)
+                        .unwrap_or(0);
+                    if opener.is_none()
+                        && COPY_GATE_ACTIVE.load(Ordering::Relaxed)
+                        && kind == Some(ShotKind::Toolbar)
+                        && now_ms.saturating_sub(chord_ms) <= TOOLBAR_LINGER_MS
+                        && toolbar_shot_opens(kind, chord_ms, toolbar_shot_landed(chord_ms), now_ms, COPY_GATE_WINDOW_MS)
+                    {
+                        opener = Some(Opener::Shot);
+                    }
                     if !COPY_GATE_ACTIVE.load(Ordering::Relaxed) || opener.is_some() {
                         eprintln!(
                             "[double-tap] TRIGGER gap={gap}ms (⌘C {copy_gap_ms}ms ago, opener {opener:?})"
@@ -935,5 +978,26 @@ mod tests {
         assert!(!fresh_copy_within(copy, copy, press + 300 * MS, w), "second one does not");
         let newer = press + 400 * MS;
         assert!(fresh_copy_within(newer, copy, press + 900 * MS, w), "a new ⌘C counts again");
+    }
+
+    // P9H-7 ① (DISCOVERED-20261008-3): ⌘⇧5, a long look at the toolbar, then the click — the file
+    // that lands opens the gate, as the chord would have.
+    #[test]
+    fn a_screenshot_landing_after_a_lingering_toolbar_opens_the_gate() {
+        let chord = 1_800_000_000_000_u64;
+        let w = COPY_GATE_WINDOW_MS;
+        let toolbar = Some(ShotKind::Toolbar);
+        // 40 s on the toolbar, the file landed 3 s ago.
+        assert!(toolbar_shot_opens(toolbar, chord, Some(chord + 37_000), chord + 40_000, w));
+        // It landed 11 s ago: like a ⌘C 11 s ago, too old.
+        assert!(!toolbar_shot_opens(toolbar, chord, Some(chord + 29_000), chord + 40_000, w));
+        // Nothing has landed yet (the thumbnail is still up, or the toolbar was cancelled).
+        assert!(!toolbar_shot_opens(toolbar, chord, None, chord + 40_000, w));
+        // Only the toolbar: ⌘⇧3/4 write at the chord, and their gate is the chord's own.
+        assert!(!toolbar_shot_opens(Some(ShotKind::File), chord, Some(chord + 37_000), chord + 40_000, w));
+        assert!(!toolbar_shot_opens(None, chord, Some(chord + 37_000), chord + 40_000, w));
+        // Not forever: a file landing long after an old ⌘⇧5 is not that toolbar's.
+        let late = chord + TOOLBAR_LINGER_MS + 1;
+        assert!(!toolbar_shot_opens(toolbar, chord, Some(late - 1_000), late, w));
     }
 }

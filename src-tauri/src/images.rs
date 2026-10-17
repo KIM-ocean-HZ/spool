@@ -61,6 +61,7 @@ fn limits() -> Limits {
 /// Errors come back as codes, never sentences: the webview writes the words in the user's
 /// language (`too_large:<bytes>` / `unsupported`).
 pub fn prepare(bytes: Vec<u8>) -> Result<Prepared, String> {
+    let bytes = if is_heic(&bytes) { heic_to_jpeg(&bytes)? } else { bytes };
     if bytes.len() > MAX_IMAGE_BYTES {
         return Err(format!("too_large:{}", bytes.len()));
     }
@@ -90,6 +91,47 @@ pub fn prepare(bytes: Vec<u8>) -> Result<Prepared, String> {
         return Err(format!("too_large:{}", png.len()));
     }
     Ok(Prepared { format: "png", width, height, bytes: png })
+}
+
+/// P9H-7 ② (DISCOVERED-20261008-3): an iPhone photo is HEIC, which the decoder here does not
+/// read — it used to be 「这不是能放进块里的图片」. Told apart by its `ftyp` box brand.
+fn is_heic(bytes: &[u8]) -> bool {
+    const BRANDS: [&[u8; 4]; 8] = [b"heic", b"heix", b"hevc", b"hevx", b"heim", b"heis", b"mif1", b"msf1"];
+    bytes.len() >= 12 && &bytes[4..8] == b"ftyp" && BRANDS.iter().any(|b| &bytes[8..12] == *b)
+}
+
+/// HEIC → JPEG with the system's own converter (`sips`, part of every macOS — no crate, nothing
+/// leaves the machine). Through two temporary files, removed either way. Anything it cannot
+/// convert is `unsupported`, as before.
+#[cfg(target_os = "macos")]
+fn heic_to_jpeg(bytes: &[u8]) -> Result<Vec<u8>, String> {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static N: AtomicU64 = AtomicU64::new(0);
+    let stem = std::env::temp_dir().join(format!("spool-heic-{}-{}", std::process::id(), N.fetch_add(1, Ordering::Relaxed)));
+    let (src, out) = (stem.with_extension("heic"), stem.with_extension("jpg"));
+    let converted = std::fs::write(&src, bytes)
+        .ok()
+        .and_then(|()| {
+            std::process::Command::new("/usr/bin/sips")
+                .args(["-s", "format", "jpeg"])
+                .arg(&src)
+                .arg("--out")
+                .arg(&out)
+                .stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status()
+                .ok()
+        })
+        .filter(|st| st.success())
+        .and_then(|_| std::fs::read(&out).ok());
+    let _ = std::fs::remove_file(&src);
+    let _ = std::fs::remove_file(&out);
+    converted.ok_or_else(|| "unsupported".to_string())
+}
+#[cfg(not(target_os = "macos"))]
+fn heic_to_jpeg(_bytes: &[u8]) -> Result<Vec<u8>, String> {
+    Err("unsupported".into())
 }
 
 /// Appends after the block's last image, in the order given. Refuses a block that is not
@@ -467,7 +509,13 @@ fn is_marked_screenshot(p: &std::path::Path) -> bool {
     // size query only (null buffer): ≥ 0 means the attribute is there.
     unsafe { libc::getxattr(path.as_ptr(), name.as_ptr(), std::ptr::null_mut(), 0, 0, 0) >= 0 }
 }
-#[cfg(not(target_os = "macos"))]
+/// P9H-7 ③: Win+PrtScn writes into a folder that holds only screenshots (the system's
+/// 「图片\屏幕截图」), so there every picture counts — there is no mark to read.
+#[cfg(target_os = "windows")]
+fn is_marked_screenshot(_p: &std::path::Path) -> bool {
+    true
+}
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
 fn is_marked_screenshot(_p: &std::path::Path) -> bool {
     false
 }
@@ -488,6 +536,17 @@ const SHOT_SLACK_MS: u64 = 2_000;
 /// earlier than the chord. `Err` only when the folder cannot be read at all — on macOS that
 /// is the Desktop permission being refused ("denied").
 pub fn pick_new_screenshot(dir: &std::path::Path, since_ms: u64) -> Result<Option<std::path::PathBuf>, String> {
+    Ok(newest_shot_in(dir, since_ms, is_marked_screenshot)?.map(|(_, p)| p))
+}
+
+/// The newest image in `dir` that `is_shot` accepts, written no earlier than `since_ms`: when
+/// it was written (wall ms) and where. `is_shot` is the platform's way of knowing a screenshot
+/// (macOS: the system's mark; Windows: the folder itself) — a parameter so both are testable.
+fn newest_shot_in(
+    dir: &std::path::Path,
+    since_ms: u64,
+    is_shot: impl Fn(&std::path::Path) -> bool,
+) -> Result<Option<(u64, std::path::PathBuf)>, String> {
     let entries = std::fs::read_dir(dir).map_err(|e| {
         if e.kind() == std::io::ErrorKind::PermissionDenied { "denied".to_string() } else { e.to_string() }
     })?;
@@ -499,14 +558,29 @@ pub fn pick_new_screenshot(dir: &std::path::Path, since_ms: u64) -> Result<Optio
             continue;
         }
         let at = modified_ms(&meta);
-        if at + SHOT_SLACK_MS < since_ms || !is_marked_screenshot(&path) {
+        if at + SHOT_SLACK_MS < since_ms || !is_shot(&path) {
             continue;
         }
         if best.as_ref().is_none_or(|(b, _)| at > *b) {
             best = Some((at, path));
         }
     }
-    Ok(best.map(|(_, p)| p))
+    Ok(best)
+}
+
+/// P9H-7 ③: a Win+PrtScn this recent still names the picture the next double-tap Ctrl captures —
+/// the same 10 s the Mac's copy gate gives a screenshot chord. Times are GetMessageTime ms,
+/// which wrap (about every 49 days), hence `wrapping_sub`. Lives here, not in the Windows-only
+/// module, so it is tested on every platform (and only called on Windows).
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+pub fn win_shot_still_fresh(shot_at: i32, now: i32, window_ms: i32) -> bool {
+    (0..=window_ms).contains(&now.wrapping_sub(shot_at))
+}
+
+/// P9H-7 ①: when (wall ms) the newest screenshot written since `since_ms` landed — None when
+/// there is none yet, or the folder cannot be read.
+pub fn screenshot_landed_since(since_ms: u64) -> Option<u64> {
+    newest_shot_in(&screenshot_dir()?, since_ms, is_marked_screenshot).ok().flatten().map(|(at, _)| at)
 }
 
 /// `defaults read com.apple.screencapture <key>`, or None when unset.
@@ -523,6 +597,7 @@ fn screencapture_pref(key: &str) -> Option<String> {
 }
 
 /// Where ⌘⇧3/4/5 write their files: the user's setting, else the Desktop (the system default).
+#[cfg(not(target_os = "windows"))]
 fn screenshot_dir() -> Option<std::path::PathBuf> {
     let home = std::env::var_os("HOME").map(std::path::PathBuf::from)?;
     Some(match screencapture_pref("location") {
@@ -531,6 +606,29 @@ fn screenshot_dir() -> Option<std::path::PathBuf> {
         Some(loc) => std::path::PathBuf::from(loc),
         None => home.join("Desktop"),
     })
+}
+
+/// P9H-7 ③ (Ocean 10-16 第 152 条): where Win+PrtScn writes — the system's Screenshots known
+/// folder (「图片\屏幕截图」 by default, wherever the user or OneDrive has moved it), asked of the
+/// system rather than spelled out. ⚠️ Not compiled on the development Mac (memory §43): written
+/// against windows-sys 0.61.2's own signatures — SHGetKnownFolderPath(*const GUID, u32, HANDLE,
+/// *mut PWSTR) -> HRESULT, the returned string freed with CoTaskMemFree.
+#[cfg(target_os = "windows")]
+fn screenshot_dir() -> Option<std::path::PathBuf> {
+    use std::os::windows::ffi::OsStringExt;
+    use windows_sys::Win32::System::Com::CoTaskMemFree;
+    use windows_sys::Win32::UI::Shell::{FOLDERID_Screenshots, SHGetKnownFolderPath};
+    let mut raw: windows_sys::core::PWSTR = std::ptr::null_mut();
+    let hr = unsafe { SHGetKnownFolderPath(&FOLDERID_Screenshots, 0, std::ptr::null_mut(), &mut raw) };
+    let dir = (hr >= 0 && !raw.is_null()).then(|| {
+        // SAFETY: on success `raw` is a NUL-terminated wide string the system allocated.
+        let len = (0..).take_while(|&i| unsafe { *raw.add(i) } != 0).count();
+        let wide = unsafe { std::slice::from_raw_parts(raw, len) };
+        std::path::PathBuf::from(std::ffi::OsString::from_wide(wide))
+    });
+    // Freed on failure too (the docs say so; a null pointer is a no-op).
+    unsafe { CoTaskMemFree(raw as *const std::ffi::c_void) };
+    dir
 }
 
 /// ⌘⇧5's toolbar can be set to put the picture on the clipboard instead of in a file.
@@ -789,5 +887,83 @@ mod tests {
         let clear = encode(&rgba(2000, 1000), ImageFormat::Png);
         assert!(preview_data_url("png", &clear).unwrap().starts_with("data:image/png;base64,"));
         assert!(full_data_url("gif", b"GIF89a").starts_with("data:image/gif;base64,"));
+    }
+
+    // P9H-7 ② (DISCOVERED-20261008-3): an iPhone photo (HEIC) goes in — turned into JPEG by the
+    // system's own sips. The HEIC here is made by sips too, from a picture this test draws.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn a_heic_photo_goes_in_as_a_jpeg() {
+        let dir = std::env::temp_dir().join(format!("spool-heic-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let png = dir.join("in.png");
+        let heic = dir.join("photo.heic");
+        std::fs::write(&png, encode(&rgb(64, 48), ImageFormat::Png)).unwrap();
+        let made = std::process::Command::new("/usr/bin/sips")
+            .args(["-s", "format", "heic"])
+            .arg(&png)
+            .arg("--out")
+            .arg(&heic)
+            .output()
+            .unwrap();
+        assert!(made.status.success(), "{made:?}");
+        let bytes = std::fs::read(&heic).unwrap();
+        assert!(is_heic(&bytes), "{:?}", &bytes[..12]);
+
+        let p = prepare(bytes).unwrap();
+        assert_eq!((p.format, p.width, p.height), ("jpeg", 64, 48));
+        assert!(p.bytes.starts_with(&[0xFF, 0xD8]), "JPEG bytes");
+        // Something that says HEIC and is not: refused as before, and no temp file left behind.
+        let mut fake = b"\0\0\0\x18ftypheic".to_vec();
+        fake.extend_from_slice(b"not really");
+        assert_eq!(prepare(fake).unwrap_err(), "unsupported");
+        let left = std::fs::read_dir(std::env::temp_dir())
+            .unwrap()
+            .flatten()
+            .filter(|e| e.file_name().to_string_lossy().starts_with(&format!("spool-heic-{}-", std::process::id())))
+            .count();
+        assert_eq!(left, 0, "temporary files are removed");
+        assert!(!is_heic(&encode(&rgb(4, 4), ImageFormat::Png)));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // P9H-7 ③ (Ocean 10-16 第 152 条): on Windows every picture in the Screenshots folder counts
+    // (`is_shot` = always); the newest one written since the chord is the one. Run here with that
+    // rule — the Windows build only swaps in the folder and the rule.
+    #[test]
+    fn the_newest_picture_since_the_chord_is_the_screenshot() {
+        let dir = std::env::temp_dir().join(format!("spool-shot-pick-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let at = |name: &str, ms: u64| {
+            let p = dir.join(name);
+            std::fs::write(&p, b"x").unwrap();
+            let t = std::time::UNIX_EPOCH + std::time::Duration::from_millis(ms);
+            std::fs::File::options().write(true).open(&p).unwrap().set_modified(t).unwrap();
+        };
+        let chord = 1_800_000_000_000_u64;
+        at("Screenshot (1).png", chord - 60_000); // an older one
+        at("Screenshot (2).png", chord + 400);
+        at("Screenshot (3).png", chord + 900); // the newest
+        at("notes.txt", chord + 5_000); // not a picture
+        let every = |_: &std::path::Path| true;
+        let (when, path) = newest_shot_in(&dir, chord, every).unwrap().unwrap();
+        assert_eq!((when, path.file_name().unwrap().to_string_lossy().into_owned()), (chord + 900, "Screenshot (3).png".into()));
+        // Nothing since: none — never the older one.
+        assert_eq!(newest_shot_in(&dir, chord + 10_000, every).unwrap(), None);
+        // A folder that cannot be read is an error, not "nothing".
+        assert!(newest_shot_in(&dir.join("gone"), chord, every).is_err());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_win_print_screen_counts_for_ten_seconds_across_the_clock_wrapping() {
+        assert!(win_shot_still_fresh(1_000, 1_000, 10_000));
+        assert!(win_shot_still_fresh(1_000, 11_000, 10_000), "the edge is in");
+        assert!(!win_shot_still_fresh(1_000, 11_001, 10_000));
+        assert!(!win_shot_still_fresh(5_000, 1_000, 10_000), "not one from the future");
+        // GetMessageTime wraps at i32: a shot just before the wrap, a double-tap just after.
+        assert!(win_shot_still_fresh(i32::MAX - 2_000, i32::MIN + 3_000, 10_000));
     }
 }
