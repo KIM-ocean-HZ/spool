@@ -52,62 +52,36 @@ const run = (
   return { state: s, fired, lastNow: now - TICK_MS };
 };
 
-/** Frontmost, machine not idle — the ordinary working tick. */
-const busy = () => ({ focused: true, systemIdleMs: 1000, lastCaptureAt: null });
-
-/** The sitting the new criterion exists for: Spool is in the BACKGROUND, the person is typing
- *  in some other application, and captures keep landing. */
-const busyElsewhere = (lastCaptureAt: number) => () => ({
-  focused: false,
-  systemIdleMs: 1000,
-  lastCaptureAt,
-});
+/** Someone at the machine — the ordinary working tick. Where Spool's window is does not matter
+ *  any more (2026-10-17, see isWorking). */
+const busy = () => ({ systemIdleMs: 1000 });
 
 /** Nobody at the machine at all. */
-const away = () => ({ focused: false, systemIdleMs: PRESENCE_WINDOW_MS * 2, lastCaptureAt: null });
+const away = () => ({ systemIdleMs: PRESENCE_WINDOW_MS * 2 });
 
 describe('isWorking', () => {
-  const at = (o: Partial<TickInput>): boolean =>
-    isWorking({ now: T0, workMs: HOUR, focused: false, systemIdleMs: 1000, lastCaptureAt: null, ...o });
+  const at = (o: Partial<TickInput>): boolean => isWorking({ now: T0, workMs: HOUR, systemIdleMs: 1000, ...o });
 
-  it('needs the machine not idle AND a reason to call it a SPOOL sitting', () => {
-    // Frontmost and someone at the keyboard: the plain case.
-    expect(at({ focused: true })).toBe(true);
-    // ⚠️ Frontmost alone is not work. A window left in front while its owner is at lunch
-    // satisfies 「放在最前端窗口」 for an hour, and firing there would put a number in the dialog
-    // («专注一个小时») that nothing measured.
-    expect(at({ focused: true, systemIdleMs: PRESENCE_WINDOW_MS * 2 })).toBe(false);
-    // Someone at the keyboard, but nothing says they are working WITH Spool.
-    expect(at({ focused: false })).toBe(false);
-  });
-
-  it('counts a sitting spent in another application, on the strength of a capture', () => {
-    // ⚠️⚠️ The whole reason the criterion was rewritten (2026-08-21). Spool's design premise is
-    // that the user works in some OTHER app and captures into Spool from there — under the old
-    // 「Spool frontmost AND touched」 rule, that hour measured as zero work.
-    expect(at({ focused: false, lastCaptureAt: T0 - 60_000 })).toBe(true);
-    // But a capture is not a licence that never expires: N minutes after the last one, nothing
-    // in the background says this is still a Spool sitting.
-    expect(at({ focused: false, lastCaptureAt: T0 - PRESENCE_WINDOW_MS })).toBe(true);
-    expect(at({ focused: false, lastCaptureAt: T0 - PRESENCE_WINDOW_MS - 1 })).toBe(false);
+  // 2026-10-17（Ocean）：「直接去监控用户在电脑上工作的时间……spool 基本上在后台静默」—— 只看这台电脑
+  // 有没有人在用。原来还要「Spool 在前台，或者 15 分钟内捕捉过」，Spool 在后台时一小时几乎攒不满。
+  it('is someone at the computer — wherever Spool is, captured or not', () => {
+    expect(at({ systemIdleMs: 1000 })).toBe(true);
+    expect(at({ systemIdleMs: PRESENCE_WINDOW_MS * 2 })).toBe(false);
   });
 
   it('treats an unavailable idle reading as not working, never as working', () => {
     // ⚠️ The direction matters more than the case. This feature LOCKS the window for five
     // minutes; a lock earned by a measurement that never happened is worse than a feature that
     // quietly stops firing, because only one of the two is recoverable.
-    expect(at({ focused: true, systemIdleMs: null })).toBe(false);
-    expect(at({ focused: false, lastCaptureAt: T0 - 1000, systemIdleMs: null })).toBe(false);
+    expect(at({ systemIdleMs: null })).toBe(false);
   });
 
   it('forgives stillness right up to N — reading is work', () => {
-    // 验收③: Spool frontmost, reading a long block for 14 minutes without touching anything.
-    // ⚠️ This is why N had to grow from Ocean's five: the signal is machine-wide HID now, and
-    // reading a screen produces no HID events at all. At five minutes a person quietly reading
-    // scored as absent.
-    expect(at({ focused: true, systemIdleMs: 14 * 60_000 })).toBe(true);
-    expect(at({ focused: true, systemIdleMs: PRESENCE_WINDOW_MS })).toBe(true);
-    expect(at({ focused: true, systemIdleMs: PRESENCE_WINDOW_MS + 1 })).toBe(false);
+    // Reading a long page for 14 minutes without touching anything. ⚠️ The signal is machine-wide
+    // HID, and reading a screen produces no HID events at all — this is why N is 15, not 5.
+    expect(at({ systemIdleMs: 14 * 60_000 })).toBe(true);
+    expect(at({ systemIdleMs: PRESENCE_WINDOW_MS })).toBe(true);
+    expect(at({ systemIdleMs: PRESENCE_WINDOW_MS + 1 })).toBe(false);
   });
 });
 
@@ -318,58 +292,29 @@ describe('tickBreakState', () => {
 //
 // They are copied here rather than paraphrased, because two of them are exactly the behaviours
 // the OLD rule got wrong and the third is the one it got right and must keep getting right.
-describe('the rewritten criterion, against its own acceptance list', () => {
-  it('① an hour in another application, capturing at least once every N, fires', () => {
-    // A capture every ten minutes — inside N the whole way.
-    const ticks = HOUR / TICK_MS + 1;
-    const r = run(initialBreakState(), ticks, (_i, now) => busyElsewhere(now - 10 * 60_000)());
+describe('the criterion, against what it is for', () => {
+  // ⭐ 2026-10-17 — the case Ocean reported: an hour of work in other applications, Spool in the
+  // background the whole time, not one capture. Under the 08-21 rule this scored as no work.
+  it('① an hour at the computer with Spool in the background and no captures fires', () => {
+    const r = run(initialBreakState(), HOUR / TICK_MS + 1, busy);
     expect(r.fired).toBe(1);
   });
 
-  it('①-bis one capture and then nothing does NOT keep the streak alive', () => {
-    // ⚠️ The acceptance wording says 「每 15 分钟内至少有一次捕获」 and the frequency is the point:
-    // capture once at minute 0 and sit in another app for an hour, and the streak dies at N.
-    // That is correct behaviour, not a gap — Spool must not bill time it has no evidence for.
-    const r = run(initialBreakState(), HOUR / TICK_MS + 1, () => busyElsewhere(T0)());
-    expect(r.fired).toBe(0);
-    // 这一坐没了（activeMs 归零、lastTickAt 清空）。⚠️ `totalMs` 不归零，理由同上。
-    expect(r.state.activeMs).toBe(0);
-    expect(r.state.lastTickAt).toBeNull();
-  });
-
-  it('② an hour of an untouched machine with Spool in front does not fire', () => {
-    const r = run(initialBreakState(), HOUR / TICK_MS + 1, (_i, now) => ({
-      focused: true,
-      // Idle grows with the wall clock: nobody has touched anything since T0.
-      systemIdleMs: now - T0,
-      lastCaptureAt: null,
-    }));
+  it('② an hour of an untouched machine does not fire', () => {
+    // Idle grows with the wall clock: nobody has touched anything since T0.
+    const r = run(initialBreakState(), HOUR / TICK_MS + 1, (_i, now) => ({ systemIdleMs: now - T0 }));
     expect(r.fired).toBe(0);
     expect(r.state.activeMs).toBe(0);
   });
 
-  // 休息提醒的浮窗 (Ocean 2026-08-22). The reducer does not know about windows — it only ever
-  // says `due`. What this pins is the FACT the split in useBreakReminder depends on: `due` can
-  // now arrive on a tick where Spool is not frontmost, which was impossible under the old rule
-  // and is the entire reason the overlay card had to exist. ⛔ If this ever goes back to false,
-  // the popup path is dead code and the lock is covering other people's windows again.
-  it('can come due while Spool is in the background — the popup exists for this tick', () => {
-    const r = run(initialBreakState(), HOUR / TICK_MS + 1, (_i, now) =>
-      busyElsewhere(now - 10 * 60_000)(),
-    );
-    expect(r.fired).toBe(1);
-    // …and the tick it fired on had `focused: false`.
-    expect(busyElsewhere(T0)().focused).toBe(false);
-  });
-
-  it('③ reading a long block in Spool for 14 minutes does not break the count', () => {
-    // Frontmost, no input at all for fourteen minutes. The streak keeps accumulating, so the
-    // clock in the sidebar does not jump backwards while someone reads.
+  it('③ fifteen minutes of reading without touching anything does not break the count', () => {
+    // The streak keeps accumulating, so the clock in the sidebar does not jump backwards while
+    // someone reads.
     const started = run(initialBreakState(), 2, busy);
     const reading = run(
       started.state,
       28, // 14 minutes of ticks
-      (_i, now) => ({ focused: true, systemIdleMs: now - started.lastNow, lastCaptureAt: null }),
+      (_i, now) => ({ systemIdleMs: now - started.lastNow }),
       started.lastNow + TICK_MS,
     );
     expect(reading.state.activeMs).toBeGreaterThan(started.state.activeMs);
@@ -436,7 +381,7 @@ describe('focusTick — break reminders switched off', () => {
     let reminded = 0;
     let now = T0;
     for (let i = 0; i < n; i++) {
-      const r = focusTick(s, { now, workMs: HOUR, focused: true, systemIdleMs: 1000, lastCaptureAt: null }, remindersOn);
+      const r = focusTick(s, { now, workMs: HOUR, systemIdleMs: 1000 }, remindersOn);
       s = r.state;
       if (r.remind) reminded++;
       now += TICK_MS;

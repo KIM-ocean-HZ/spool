@@ -62,7 +62,7 @@ describe('rolling over to a new day', () => {
     let s = initialBreakState();
     let days: Record<string, number> = {};
     const tick = (now: number) => {
-      s = tickBreakState(s, { now, workMs: 60 * 60 * 1000, focused: true, systemIdleMs: 1000, lastCaptureAt: null }).state;
+      s = tickBreakState(s, { now, workMs: 60 * 60 * 1000, systemIdleMs: 1000 }).state;
       if (s.dayKey && s.lastActiveAt !== null) days = withDay(days, { dayKey: s.dayKey, totalMs: s.totalMs, lastActiveAt: s.lastActiveAt });
     };
     for (let t = evening; t <= evening + 20 * 60 * 1000; t += TICK_MS) tick(t);

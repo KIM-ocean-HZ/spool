@@ -927,8 +927,8 @@ const EN: Record<string, string> = {
   '这一周还没有加过块。': 'No blocks added this week.',
   '另外 {n} 个项目': '{n} more projects',
   '到期：': 'Due: ',
-  '专注时间 = 你在电脑前、并且 Spool 在前台或 15 分钟内捕捉过的时间，和休息提醒是同一个计时；不是在某个项目上花的时间。':
-    'Focus time = time at the computer while Spool was in front or you had captured within 15 minutes — the same clock as the break reminder. It is not time spent on any one project.',
+  '专注时间 = 你在电脑前（15 分钟内动过键盘或鼠标）的时间，和休息提醒是同一个计时；不是在某个项目上花的时间。':
+    'Focus time = time at the computer (keyboard or mouse used within 15 minutes) — the same clock as the break reminder. It is not time spent on any one project.',
   'AI 整理中…': 'AI working…',
   '用本机的 {engine} 把这条脉络提炼成一块结论':
     'Use the {engine} on this machine to distil this thread into one conclusion block',

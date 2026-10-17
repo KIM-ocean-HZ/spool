@@ -24,7 +24,12 @@
 //       within the last N minutes)                                    — N = 15, see below
 //
 //   Machine-wide idleness is what 「有人在」 actually means; frontmost-or-recent-capture is
-//   what makes it a SPOOL sitting rather than any hour spent at this computer. ⚠️ The idle
+//   what makes it a SPOOL sitting rather than any hour spent at this computer.
+//
+//   ⛔ 2026-10-17 (Ocean): that second half is GONE — the criterion is machine-wide idleness
+//   alone, any hour spent at this computer (see isWorking). Spool sits in the background most of
+//   the time, and the half that asked for it to be in front or to have just captured meant an
+//   hour was almost never reached. ⚠️ The idle
 //   value is handed IN as a tick input (capture::system_idle_ms) — this file stays a pure
 //   function with no timers and no I/O, which is the only reason the awkward cases below can
 //   be pinned by tests instead of waited for at a desk.
@@ -193,20 +198,12 @@ export const shouldRollDay = (state: BreakState, now: number): boolean => {
 
 export interface TickInput {
   now: number;
-  /** Is the Spool window frontmost right now (document.hasFocus()). */
-  focused: boolean;
   /** How long the MACHINE has gone without keyboard or mouse input, in ms — the answer from
    *  capture::system_idle_ms, handed in rather than looked up (see the header).
    *
    *  ⚠️ Null means the platform could not answer, NOT zero. Zero would read as 「the user just
    *  typed」, which is the wrong way to guess. */
   systemIdleMs: number | null;
-  /** When the last capture landed, from captureStore. Null = none since launch.
-   *
-   *  This is the half that lets a sitting spent in another application count: Spool is not
-   *  frontmost, but something arrived in it, so the person is working with Spool open beside
-   *  them — which is the way it is designed to be used. */
-  lastCaptureAt: number | null;
   /** How much active time earns a reminder — Settings → 休息提醒 → 连续工作时长, in ms.
    *
    *  ⚠️ Passed in on every tick rather than read from a constant, so a user who changes the
@@ -224,18 +221,20 @@ export interface TickResult {
   due: boolean;
 }
 
-/** Is this moment part of a sitting at all? 「系统没空闲 且（Spool 在前台 或 最近 N 分钟内有过
- *  捕获）」 — see the header for why each half is there.
+/** Is this moment part of a sitting at all? 「这台电脑 N 分钟内有人动过键盘或鼠标」—— 只这一条。
+ *
+ *  ── 2026-10-17（Ocean，P9H 那一窗插进来的）：「直接去监控用户在电脑上工作的时间，当前的逻辑会导致很难在
+ *  spool 上工作 1 hour，因为 spool 基本上在后台静默」⇒ 后半句「（Spool 在前台 或 最近 N 分钟内有过捕获）」
+ *  去掉了。⚠️ 这推翻的是 08-21 那条「要能说成是一次 SPOOL 的坐下」（见文件头）：Spool 大多数时候在后台，
+ *  那半句让一小时几乎攒不满。现在数的是「在电脑前干活的时间」—— 休息提醒、左栏的专注时钟、周回顾「活动」
+ *  里的专注时间是同一个数，都跟着变。
  *
  *  ⚠️ `systemIdleMs === null` is 「could not tell」 and returns false, never true. The reminder
  *  locks the window for five minutes; a lock earned by a measurement that never happened is
  *  the one failure this feature cannot afford, and a feature that quietly stops firing is
  *  recoverable in a way a feature that interrupts people for no reason is not. */
-export const isWorking = ({ now, focused, systemIdleMs, lastCaptureAt }: TickInput): boolean => {
-  if (systemIdleMs === null || systemIdleMs > PRESENCE_WINDOW_MS) return false;
-  if (focused) return true;
-  return lastCaptureAt !== null && now - lastCaptureAt <= PRESENCE_WINDOW_MS;
-};
+export const isWorking = ({ systemIdleMs }: TickInput): boolean =>
+  systemIdleMs !== null && systemIdleMs <= PRESENCE_WINDOW_MS;
 
 /** One tick of the clock.
  *

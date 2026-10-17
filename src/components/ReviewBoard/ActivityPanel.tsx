@@ -136,7 +136,7 @@ export default function ActivityPanel() {
         <h2 className="text-xs font-medium text-ink-2">{t('活动')}</h2>
         <span
           className="flex items-center gap-1 text-[11px] text-muted"
-          title={t('专注时间 = 你在电脑前、并且 Spool 在前台或 15 分钟内捕捉过的时间，和休息提醒是同一个计时；不是在某个项目上花的时间。')}
+          title={t('专注时间 = 你在电脑前（15 分钟内动过键盘或鼠标）的时间，和休息提醒是同一个计时；不是在某个项目上花的时间。')}
         >
           <Info size={11} className="flex-none" />
           {t('这一周')}

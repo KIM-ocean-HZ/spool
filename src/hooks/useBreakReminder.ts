@@ -13,7 +13,6 @@ import {
 import { SHOW_BREAK_OVERLAY_COMMAND } from '@/lib/capture/overlayProtocol';
 import { loadFocus, restoreBreakState, saveFocus, withDay, type FocusDays } from '@/lib/db/focusDay';
 import { useBreakStore } from '@/stores/breakStore';
-import { useCaptureStore } from '@/stores/captureStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 
 // 休息提醒 (2026-08-19) — the wiring around lib/breakReminder's reducer. The rule itself, and
@@ -138,16 +137,7 @@ export const useBreakReminder = (): void => {
             }
           }
 
-          const input = {
-            now: Date.now(),
-            workMs,
-            // ⚠️ `document.hasFocus()` and not a focus/blur flag of our own: the answer has to
-            // be right at the moment of the tick, and a flag can be stale after a window was
-            // raised by the OS (a tray click, a shortcut) rather than by an event we saw.
-            focused: document.hasFocus(),
-            systemIdleMs,
-            lastCaptureAt: useCaptureStore.getState().lastCaptureAt,
-          };
+          const input = { now: Date.now(), workMs, systemIdleMs };
           // P9B-2: the same reducer whether reminders are on or off — off only means `remind`
           // never comes back true.
           const { state, remind: due } = focusTick(stateRef.current, input, enabled);
