@@ -2,6 +2,7 @@ import { Check, FileText, Globe, Trash2, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import SeqBadge from '@/components/ThreadView/SeqBadge';
 import { plainText } from '@/lib/blocks/contentRuns';
+import { IMAGE_LINE_RE, imageLinesAsText } from '@/lib/blocks/imageLines';
 import type { SupersedeChoice, SupersedeReviewItem } from '@/lib/blocks/supersedeReview';
 import type { Block } from '@/lib/db/blocks';
 import { useT } from '@/lib/i18n';
@@ -319,8 +320,15 @@ function FileRequestCard({
 }
 
 /** The first line of a block, without its markdown — what the card shows next to its number. */
-const firstLine = (b: Block): string =>
-  plainText(b.content.split('\n').find((l) => l.trim() !== '') ?? '').trim();
+/** A block's first line of TEXT. P9H-4（DISCOVERED-20261016-6）：a picture line used to be taken and
+ *  stripped to nothing, so a block of only pictures had an empty row after its number — now it is
+ *  「[图片]」 (with its caption), the way the undo card says it. `image` is that word in the UI language. */
+const firstLine = (b: Block, image: string): string => {
+  const lines = b.content.split('\n').filter((l) => l.trim() !== '');
+  const text = lines.find((l) => !IMAGE_LINE_RE.test(l));
+  if (text !== undefined) return plainText(text).trim();
+  return lines[0] ? imageLinesAsText(lines[0], image).trim() : '';
+};
 
 /**
  * P7-5 (Ocean 2026-10-07, HANDOFF §9.2 第 40 条) — 「AI 给出操作建议后，用户在待审中检查，选择
@@ -378,7 +386,7 @@ function SupersedeCard({
     <div className="flex min-w-0 items-baseline gap-1.5">
       <span className="flex-none text-[10px] text-muted">{label}</span>
       {b.seq != null && <SeqBadge seq={b.seq} />}
-      <span className="min-w-0 flex-1 truncate text-xs text-ink">{firstLine(b)}</span>
+      <span className="min-w-0 flex-1 truncate text-xs text-ink">{firstLine(b, t('图片'))}</span>
       {b.threadId !== older.threadId && (
         <span className="max-w-[40%] flex-none truncate text-[10px] text-muted">
           {t('在〈{title}〉', { title: titleOf(b.threadId) })}
@@ -611,7 +619,7 @@ function SplitCard({
   const blockRow = (b: Block) => (
     <li key={b.id} className="flex min-w-0 items-center gap-1.5">
       {b.seq != null && <SeqBadge seq={b.seq} />}
-      <span className="min-w-0 flex-1 truncate text-xs text-ink">{firstLine(b)}</span>
+      <span className="min-w-0 flex-1 truncate text-xs text-ink">{firstLine(b, t('图片'))}</span>
       {where(place(draft.blocks, b.id), (g) => set('blocks', b.id, g), false)}
     </li>
   );

@@ -411,7 +411,7 @@ export default function RightRail({ thread, onCollapse, onEditBrief }: Props) {
           {/* DESIGN_PROJECT_FILES §3.2 — the project's files. Always present (a project with
               no files says so and offers the ＋), because this is now the ONLY place a file can
               be added or seen: the block action bar's 📎 and 🔗 are gone. */}
-          {thread && <ProjectFiles threadId={thread.id} />}
+          {thread && <ProjectFiles threadId={thread.id} isPrivate={thread.isPrivate} />}
 
           {/* R2's durable half — the one surviving fold, and the only thing in the rail that
               is reference rather than action. Absent entirely in a project no AI has touched

@@ -510,6 +510,9 @@ const EN: Record<string, string> = {
   // P5-4 (Ocean 2026-09-30): a file the user adds is readable by an AI by default now.
   '这个项目还没有文件。你加进来的文件，AI 默认能读到里面的文字，每个文件旁边的开关随时能关；打包时默认不带正文。':
     'No files in this project yet. An AI can read the text of any file you add here — each file has its own switch to turn that off. Packs leave the text out unless you tick it.',
+  // P9H-4 (DISCOVERED-20261016-1): a private project's files are out of every AI's reach through Spool.
+  '私密项目：通过 Spool 连接的 AI 读不到这里的文件。打包时默认不带正文。':
+    'Private project: no AI connected through Spool can read the files here. Packs leave the text out unless you tick it.',
   '从这个项目里去掉（文件本身不动）': 'Remove from this project (the file itself is untouched)',
   // P5 (Ocean 2026-10-05:「改为打包可读和 AI 可读，并且只有鼠标悬浮才显示」).
   '打包可读': 'In packs',

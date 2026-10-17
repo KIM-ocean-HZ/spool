@@ -1056,7 +1056,7 @@ function TextBlockItem({
       title={readOnly ? undefined : t('双击编辑批注')}
       ref={noteViewRef}
       onMouseUp={readOnly ? undefined : onSurfaceMouseUp}
-      className="mb-1.5 font-ui text-[length:var(--block-text)] font-medium leading-[1.55] text-ink"
+      className="mb-1.5 max-w-[var(--block-measure)] font-ui text-[length:var(--block-text)] font-medium leading-[1.55] text-ink"
     >
       {/* 标签走**行内**，不另起一行也不占一列：批注常常是一整句话，用 flex 分成两栏的话
           第二行会缩进到标签右边，读起来像引文。行内的话文字自然绕回左边缘。 */}
@@ -1286,7 +1286,7 @@ function TextBlockItem({
                   }
                 : undefined
             }
-            className={`whitespace-pre-wrap break-words font-ui leading-[1.65] ${
+            className={`max-w-[var(--block-measure)] whitespace-pre-wrap break-words font-ui leading-[1.65] ${
               // W7: demoted to quoted material when the note above is carrying the block.
               // Neutral rule, not the accent one — accent means "the user's own words",
               // and under W7 those are the line above, not this one.

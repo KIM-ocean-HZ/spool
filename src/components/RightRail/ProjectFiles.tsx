@@ -219,7 +219,11 @@ function LostDetail({ a, threadId, look }: { a: Attachment; threadId: string; lo
   );
 }
 
-export default function ProjectFiles({ threadId }: { threadId: string }) {
+/** `isPrivate` (P9H-4, DISCOVERED-20261016-1): no AI connected through Spool reads a private
+ *  project's files, switch on or not (P9E-2's view leaves them out) — so the rail does not say it
+ *  can, and 「AI 可读」 is not drawn. `ai_access` itself is left alone: make the project public
+ *  again and every switch is back as it was. */
+export default function ProjectFiles({ threadId, isPrivate = false }: { threadId: string; isPrivate?: boolean }) {
   const t = useT();
   const files = useBlocksStore((s) => s.attachmentsByThread[threadId] ?? EMPTY);
   const detach = useBlocksStore((s) => s.detach);
@@ -313,7 +317,9 @@ export default function ProjectFiles({ threadId }: { threadId: string }) {
     >
       {groups.length === 0 ? (
         <p className="px-3 text-[12px] leading-relaxed text-muted">
-          {t('这个项目还没有文件。你加进来的文件，AI 默认能读到里面的文字，每个文件旁边的开关随时能关；打包时默认不带正文。')}
+          {isPrivate
+            ? t('私密项目：通过 Spool 连接的 AI 读不到这里的文件。打包时默认不带正文。')
+            : t('这个项目还没有文件。你加进来的文件，AI 默认能读到里面的文字，每个文件旁边的开关随时能关；打包时默认不带正文。')}
         </p>
       ) : (
         <ul>
@@ -414,7 +420,8 @@ export default function ProjectFiles({ threadId }: { threadId: string }) {
                         {t('打包可读')}
                       </label>
                       {/* §5.1 ①: coloured when on, because a standing permission that looks exactly
-                          like one you never gave is the failure mode. */}
+                          like one you never gave is the failure mode. Not in a private project (above). */}
+                      {!isPrivate && (
                       <label
                         className={`flex cursor-pointer items-center gap-1 ${a.aiAccess ? 'text-accent' : ''}`}
                         title={t('关掉之后，AI 想再读它就得重新问你一次。')}
@@ -427,6 +434,7 @@ export default function ProjectFiles({ threadId }: { threadId: string }) {
                         />
                         {t('AI 可读')}
                       </label>
+                      )}
                     </span>
                   )}
                   <span className="flex w-[34px] flex-none items-center justify-end gap-1">
@@ -461,7 +469,8 @@ export default function ProjectFiles({ threadId }: { threadId: string }) {
                 {open && (
                   <ul>
                     {older.map((o) => {
-                      const hasText = o.kind === 'file' && o.extractedText != null;
+                      // Its only switch is 「AI 可读」 — none in a private project.
+                      const hasText = o.kind === 'file' && o.extractedText != null && !isPrivate;
                       return (
                         <li
                           key={o.id}

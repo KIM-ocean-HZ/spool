@@ -119,4 +119,27 @@ describe('待审面的「拆分」卡 (P9G-3)', () => {
     // No Chinese UI words left on the card (the project's own title is user data).
     expect(html).not.toMatch(/提议|子项目|拆分|不拆|留在|它说为什么|天后作废/);
   });
+
+  // P9H-4（DISCOVERED-20261016-6）：只有图片的块，块号后面原来是空的。
+  it('a block of only pictures reads 「[图片]」 (with its caption); a block with text keeps its text', () => {
+    const it0 = item([
+      { title: '截图', summary: '界面截图。', blockIds: ['b1', 'p1', 'p2', 'p3'] },
+      { title: '方案', summary: '后来的方案。', blockIds: ['b3'] },
+    ]);
+    const withPictures = {
+      ...it0,
+      blocks: [
+        ...it0.blocks,
+        block('p1', 5, '![](spool-image:img_a)'),
+        block('p2', 6, '![登录页](spool-image:img_b)\n![](spool-image:img_c)'),
+        block('p3', 7, '![](spool-image:img_d)\n后面那句话'),
+      ],
+    };
+    const zh = render(withPictures);
+    expect(zh).toMatch(/>\[图片\]</);
+    expect(zh).toContain('[图片] 登录页');
+    expect(zh).toContain('后面那句话');
+    expect(zh).not.toContain('spool-image');
+    expect(render(withPictures, 'en')).toMatch(/>\[image\]</);
+  });
 });
