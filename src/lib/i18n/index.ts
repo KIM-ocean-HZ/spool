@@ -1054,6 +1054,10 @@ const EN: Record<string, string> = {
   '挂上了「{name}」。': 'Attached “{name}”.',
   '挂上了「{name}」。原来那一块已经删了，所以挂在项目上。':
     'Attached “{name}”. The block it was meant for had been deleted, so it is on the project.',
+  // P9H-3 (DISCOVERED-20261016-4): the block went to another project (a split, a move) — the file follows it.
+  '那一块已经挪到〈{title}〉了。同意之后挂到〈{title}〉第 {n} 块上，AI 也能读到里面的文字（右栏随时能关）。':
+    'That block has moved to ‹{title}›. Approve and it is attached to block {n} of ‹{title}›, and an AI can read its text too (you can turn that off in the right panel at any time).',
+  '挂上了「{name}」，在〈{title}〉里 —— 那一块挪到那儿了。': 'Attached “{name}” in ‹{title}› — the block it was meant for moved there.',
   '「{name}」换上了，旧版「{old}」收在它下面。': '“{name}” is in place; the old “{old}” is folded under it.',
   '「{name}」已经在这个项目里了，没有重复挂。': '“{name}” is already in this project, so it was not added twice.',
   '找不到「{name}」了（挪走了，或者外接盘没插上），没有挂上。':

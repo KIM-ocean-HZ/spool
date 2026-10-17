@@ -2,16 +2,18 @@ import { createRequire } from 'node:module';
 import type Database from '@tauri-apps/plugin-sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createAttachment, type Attachment } from '@/lib/db/attachments';
-import { createBlock, deleteBlock, type Block } from '@/lib/db/blocks';
+import { createBlock, deleteBlock, moveBlock, type Block } from '@/lib/db/blocks';
 import { __setTestDb } from '@/lib/db/client';
 import { __insertFileProposalForTest, listPendingFileProposals } from '@/lib/db/fileProposals';
 import schemaSql from '@/lib/db/schema.sql?raw';
-import { createThread } from '@/lib/db/threads';
+import { createThread, softDeleteThread } from '@/lib/db/threads';
 import { createWorkspace } from '@/lib/db/workspaces';
 import { __setFileExistsForTest } from '@/lib/files/fileProposals';
+import { t } from '@/lib/i18n';
 import { useBlocksStore } from './blocksStore';
 import { useProposalsStore } from './proposalsStore';
 import { useSettingsStore } from './settingsStore';
+import { useToastStore } from './toastStore';
 
 // P6-3 (Ocean 2026-09-30 §9.2 第 7、10 条 + 10-06 第 32、34 条) — the click on an AI's file
 // proposal. ⚠️ Real SQLite (`node:sqlite` + the real schema.sql), same as the P5 tests: what
@@ -81,6 +83,7 @@ describe('AI 提的文件：点头才挂 (P6-3)', () => {
     b2 = await createBlock({ threadId, content: '第二块' });
     useBlocksStore.setState({ byThread: {}, attachmentsByThread: {} });
     useProposalsStore.setState({ panelOpen: false, busy: false, pendingCount: 0 });
+    useToastStore.setState({ toasts: [] });
   });
 
   afterEach(() => {
@@ -160,6 +163,38 @@ describe('AI 提的文件：点头才挂 (P6-3)', () => {
     await useProposalsStore.getState().approveFileProposal('p4');
 
     expect(fileRow('/Users/a/合同.pdf')).toMatchObject({ anchor_block_id: null, added_by: CLIENT });
+  });
+
+  // P9H-3（DISCOVERED-20261016-4）：那一块被拆分 / 「移到…」挪到别的项目了（id 不变）。原来按
+  // 「这个项目里的这一块」去找，找不到就当成删了，挂到提议的那个项目上。
+  it('点头时那一块已经挪到别的项目了 ⇒ 卡片说挂到哪个项目第几块，点头挂在那一块上', async () => {
+    await propose('p7', '/Users/a/合同.pdf', { anchorBlockId: b2.id });
+    const other = await createThread((await createWorkspace('W2')).id, '合同 · 第二期');
+    await createBlock({ threadId: other.id, content: '那边原来的' });
+    await moveBlock(b2.id, other.id, 2, b2.createdAt);
+    const [card] = await listPendingFileProposals(Date.now());
+    expect(card).toMatchObject({ anchorBlockId: b2.id, anchorSeq: 2, anchorThreadId: other.id, anchorThreadTitle: '合同 · 第二期' });
+
+    await useProposalsStore.getState().approveFileProposal('p7');
+
+    expect(fileRow('/Users/a/合同.pdf')).toMatchObject({ thread_id: other.id, anchor_block_id: b2.id, added_by: CLIENT });
+    expect(proposals()).toEqual([]);
+    expect(useToastStore.getState().toasts.map((x) => x.message)).toEqual([
+      t('挂上了「{name}」，在〈{title}〉里 —— 那一块挪到那儿了。', { name: '合同.pdf', title: '合同 · 第二期' }),
+    ]);
+  });
+
+  it('挪去的那个项目删了 ⇒ 算那一块没了，挂在提议的项目上', async () => {
+    await propose('p8', '/Users/a/合同.pdf', { anchorBlockId: b2.id });
+    const other = await createThread((await createWorkspace('W2')).id, '已删');
+    await moveBlock(b2.id, other.id, 1, b2.createdAt);
+    await softDeleteThread(other.id);
+    const [card] = await listPendingFileProposals(Date.now());
+    expect(card).toMatchObject({ anchorSeq: null, anchorThreadId: null });
+
+    await useProposalsStore.getState().approveFileProposal('p8');
+
+    expect(fileRow('/Users/a/合同.pdf')).toMatchObject({ thread_id: threadId, anchor_block_id: null });
   });
 
   it('点头时文件已经不在那儿了 ⇒ 什么都不挂，卡片留着（外接盘插回来还能点）', async () => {

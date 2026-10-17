@@ -470,11 +470,18 @@ function FileProposalCard({
   const client = proposal.client || 'AI';
   const replacing = proposal.kind === 'supersede';
   const blockGone = proposal.anchorBlockId !== null && proposal.anchorSeq === null;
+  // P9H-3: the block went to another project since (a split, 「移到…」) — the file goes with it.
+  const blockMoved = !blockGone && proposal.anchorThreadId !== null && proposal.anchorThreadId !== proposal.threadId;
   const consent = replacing
     ? t('同意之后新版挂在旧版原来的位置，AI 也能读到里面的文字（右栏随时能关）。旧版不删，收在新版下面。')
     : blockGone
       ? t('原来要挂的那一块已经删了。同意之后挂在这个项目上，AI 也能读到里面的文字（右栏随时能关）。')
-      : proposal.anchorSeq !== null
+      : blockMoved
+        ? t('那一块已经挪到〈{title}〉了。同意之后挂到〈{title}〉第 {n} 块上，AI 也能读到里面的文字（右栏随时能关）。', {
+            title: proposal.anchorThreadTitle || t('（无标题）'),
+            n: proposal.anchorSeq ?? '',
+          })
+        : proposal.anchorSeq !== null
         ? t('同意之后挂到第 {n} 块上，AI 也能读到里面的文字（右栏随时能关）。', { n: proposal.anchorSeq })
         : t('同意之后挂进这个项目，AI 也能读到里面的文字（右栏随时能关）。');
   return (

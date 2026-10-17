@@ -25,6 +25,10 @@ export interface FileProposal {
   anchorBlockId: string | null;
   /** That block's number now; null when there is none — or when the block has since gone. */
   anchorSeq: number | null;
+  /** P9H-3: the project that block is in NOW, and its name — a split or a move can have taken
+   *  it out of `threadId` since. Null with `anchorSeq`. */
+  anchorThreadId: string | null;
+  anchorThreadTitle: string | null;
   /** 'supersede' only: the file it would replace, and that file's name. */
   supersedesId: string | null;
   supersedesLabel: string | null;
@@ -42,6 +46,8 @@ interface Row {
   size_bytes: number;
   anchor_block_id: string | null;
   anchor_seq: number | null;
+  anchor_thread_id: string | null;
+  anchor_thread_title: string | null;
   supersedes_id: string | null;
   old_label: string | null;
   old_target: string | null;
@@ -57,10 +63,14 @@ const baseName = (p: string): string => p.split(/[\\/]/).filter(Boolean).pop() ?
 // replaced. Approving a replacement of a file that is gone would attach a file and say it
 // replaced something. The block is LEFT joined on purpose: a block deleted since only moves
 // the file onto the project, and the card says so (P6-3).
+// P9H-3 (DISCOVERED-20261016-4): found by its id wherever it is now — a split (P9G) or 「移到…」
+// moves a block, id and all, and it used to read as deleted here. Only a block whose project is
+// gone counts as gone (`bt`).
 const FROM_LIVE = `
     FROM file_proposals p
     JOIN threads t ON t.id = p.thread_id AND t.deleted_at IS NULL
-    LEFT JOIN blocks b ON b.id = p.anchor_block_id AND b.thread_id = p.thread_id
+    LEFT JOIN blocks b ON b.id = p.anchor_block_id
+    LEFT JOIN threads bt ON bt.id = b.thread_id AND bt.deleted_at IS NULL
     LEFT JOIN attachments a ON a.id = p.supersedes_id
    WHERE p.expires_at > $1
      AND (p.kind = 'attach'
@@ -75,6 +85,8 @@ const fromRow = (r: Row): FileProposal => ({
   sizeBytes: r.size_bytes,
   anchorBlockId: r.anchor_block_id,
   anchorSeq: r.anchor_seq,
+  anchorThreadId: r.anchor_thread_id,
+  anchorThreadTitle: r.anchor_thread_title,
   supersedesId: r.supersedes_id,
   supersedesLabel:
     r.supersedes_id === null ? null : r.old_label?.trim() || baseName(r.old_target ?? ''),
@@ -87,7 +99,9 @@ export const listPendingFileProposals = async (now: number): Promise<FileProposa
   const db = await getDb();
   const rows = await db.select<Row[]>(
     `SELECT p.id, p.kind, p.client, p.thread_id, p.path, p.size_bytes, p.anchor_block_id,
-            b.seq AS anchor_seq, p.supersedes_id, a.label AS old_label, a.target AS old_target,
+            CASE WHEN bt.id IS NOT NULL THEN b.seq END AS anchor_seq,
+            bt.id AS anchor_thread_id, bt.title AS anchor_thread_title,
+            p.supersedes_id, a.label AS old_label, a.target AS old_target,
             p.why, p.created_at, p.expires_at
        ${FROM_LIVE}
       ORDER BY p.created_at ASC`,
@@ -111,7 +125,9 @@ export const getPendingFileProposal = async (
   const db = await getDb();
   const rows = await db.select<Row[]>(
     `SELECT p.id, p.kind, p.client, p.thread_id, p.path, p.size_bytes, p.anchor_block_id,
-            b.seq AS anchor_seq, p.supersedes_id, a.label AS old_label, a.target AS old_target,
+            CASE WHEN bt.id IS NOT NULL THEN b.seq END AS anchor_seq,
+            bt.id AS anchor_thread_id, bt.title AS anchor_thread_title,
+            p.supersedes_id, a.label AS old_label, a.target AS old_target,
             p.why, p.created_at, p.expires_at
        ${FROM_LIVE} AND p.id = $2`,
     [now, id],

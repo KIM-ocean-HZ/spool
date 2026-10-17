@@ -1616,12 +1616,27 @@ const PACK_CHARS_BLOCKS: &str = "SUM(LENGTH(content) + COALESCE(LENGTH(annotatio
                                      + CASE WHEN ref_block_id IS NOT NULL THEN 80 ELSE 0 END)";
 
 // ⚠️ Qualified with `a.` — the caller supplies `FROM attachments a`. The 8000 mirrors the
-// per-file inline cap in the renderer.
+// per-file inline cap in the renderer. P9H-3 (DISCOVERED-20261007-3): a replaced file leaves the
+// pack whole (P6-4, `files` in render_pack), so it costs nothing here either — it used to count
+// up to 8000 chars of text the pack never carries.
 const PACK_CHARS_ATTACHMENTS: &str =
-    "SUM(CASE WHEN a.include_in_pack = 1 AND a.ai_access = 1 AND a.extracted_text IS NOT NULL
-              THEN MIN(LENGTH(a.extracted_text), 8000) ELSE 0 END
-         + 2 * COALESCE(LENGTH(a.label), LENGTH(a.target))
-         + LENGTH(a.target) + 100)";
+    "SUM(CASE WHEN a.superseded_by IS NOT NULL THEN 0 ELSE
+              CASE WHEN a.include_in_pack = 1 AND a.ai_access = 1 AND a.extracted_text IS NOT NULL
+                   THEN MIN(LENGTH(a.extracted_text), 8000) ELSE 0 END
+              + 2 * COALESCE(LENGTH(a.label), LENGTH(a.target))
+              + LENGTH(a.target) + 100 END)";
+
+// P9H-3 (DISCOVERED-20261007-3): a picture prints in the pack as the path of its copy (P7-8) —
+// `![caption](<image cache>/<id>.<ext>)` where its line was, or `![](…)` on a line after the
+// block when no line names it. Per picture: the id + 11 (the two separators, the extension, the
+// `\n![](` `)` of the second case); the cache folder, once per picture, is `image_path_chars`.
+// ⚠️ Qualified with `i.` — the caller supplies `FROM block_images i JOIN blocks b ON b.id = i.block_id`.
+const PACK_CHARS_IMAGES: &str = "SUM(LENGTH(i.id) + 11)";
+
+/// The image cache folder's length — added once per picture to PACK_CHARS_IMAGES.
+fn image_path_chars(conn: &Connection) -> i64 {
+    crate::images::cache_dir_of(conn).map_or(0, |d| d.to_string_lossy().chars().count() as i64)
+}
 
 fn list_threads_json(conn: &Connection, title_contains: Option<&str>) -> Result<String, String> {
     // R3 friction #1: "title → id" without pulling the whole list. Same matching
@@ -1651,7 +1666,9 @@ fn list_threads_json(conn: &Connection, title_contains: Option<&str>) -> Result<
                     COALESCE(fu.open_lines, 0),
                     COALESCE(ac.files, 0),
                     COALESCE(ac.files_locked, 0),
-                    COALESCE(fu.waiting, 0)
+                    COALESCE(fu.waiting, 0),
+                    COALESCE(ic.chars, 0),
+                    COALESCE(ic.pictures, 0)
              FROM threads t
              JOIN workspaces w ON w.id = t.workspace_id
              -- v22 (§8.5): two counters off one pass over the follow-up list. This call is
@@ -1676,6 +1693,9 @@ fn list_threads_json(conn: &Connection, title_contains: Option<&str>) -> Result<
                                              AND a.extracted_text IS NOT NULL
                                         THEN 1 ELSE 0 END) AS files_locked
                           FROM attachments a GROUP BY a.thread_id) ac ON ac.thread_id = t.id
+             LEFT JOIN (SELECT b.thread_id, COUNT(*) AS pictures, {PACK_CHARS_IMAGES} AS chars
+                          FROM block_images i JOIN blocks b ON b.id = i.block_id
+                         GROUP BY b.thread_id) ic ON ic.thread_id = t.id
              WHERE t.deleted_at IS NULL AND w.deleted_at IS NULL{title_clause}
              ORDER BY w.sort_order ASC, w.created_at ASC,
                       COALESCE(bc.last_at, t.created_at) DESC, t.id ASC",
@@ -1690,6 +1710,7 @@ fn list_threads_json(conn: &Connection, title_contains: Option<&str>) -> Result<
         Some(t) => vec![t],
         None => vec![],
     };
+    let image_path = image_path_chars(conn);
     let rows = stmt
         .query_map(rusqlite::params_from_iter(params), |r| {
             let summary: Option<String> = r.get(6)?;
@@ -1731,7 +1752,10 @@ fn list_threads_json(conn: &Connection, title_contains: Option<&str>) -> Result<
                 // inlined attachment text (per-attachment inline cap 8000 mirrored) +
                 // the measured fixed skeleton. Compare it straight against max_chars.
                 "pinned": r.get::<_, i64>(7)?,
-                "approx_pack_chars": r.get::<_, i64>(8)? + pack_skeleton_chars(),
+                "approx_pack_chars": r.get::<_, i64>(8)?
+                    + r.get::<_, i64>(15)?
+                    + r.get::<_, i64>(16)? * image_path
+                    + pack_skeleton_chars(),
                 // DESIGN_MCP_INTENT_ROUTING §4.3 C (§2.6): before these three, "is anything
                 // being watched here" and "does this project hold files" could only be
                 // answered by calling get_follow_up_brief once per project and reading a
@@ -4572,6 +4596,13 @@ fn create_thread_json(
         surfaces.push(("summary", s));
     }
     reject_raw_ids(conn, &surfaces)?;
+    // P9H-3 (DISCOVERED-20261016-2, Ocean 10-16 第 145 条 丙): a PRIVATE project whose name is taken
+    // in that workspace by one the AI cannot see (the visible ones were refused above) is stored as
+    // 「<name> 2」 — uniqueTitle's rule (lib/names/uniqueTitle.ts): no case, no surrounding blanks,
+    // 「 3」 if that is taken too. The receipt still says the name the AI passed: answering with
+    // 「 2」 would tell it a project it cannot see is there, and it can never read this one back to
+    // notice. A public project is stored as asked, as before.
+    let stored_title = if private { unique_title_among_all(conn, &ws_id, title)? } else { title.to_string() };
     let id = new_id()?;
     let now = now_ms();
     conn.execute(
@@ -4585,7 +4616,7 @@ fn create_thread_json(
         rusqlite::params![
             id,
             ws_id,
-            title,
+            stored_title,
             summary,
             summary.map(|_| "mcp"),
             now,
@@ -4595,6 +4626,26 @@ fn create_thread_json(
     )
     .map_err(|e| t!("写入失败: {e}", "Write failed: {e}"))?;
     Ok(json!({ "thread_id": id, "workspace": ws_title, "title": title, "private": private }).to_string())
+}
+
+/// `title`, or `<title> 2`, `<title> 3`, … — the first no live project in the workspace has, the
+/// private ones included (`main.threads`; the AI's `threads` view hides them). Mirrors uniqueTitle.
+fn unique_title_among_all(conn: &Connection, ws_id: &str, title: &str) -> Result<String, String> {
+    let key = |t: &str| t.trim().to_lowercase();
+    let mut stmt = conn
+        .prepare("SELECT title FROM main.threads WHERE workspace_id = ?1 AND deleted_at IS NULL")
+        .map_err(|e| e.to_string())?;
+    let taken: std::collections::HashSet<String> = stmt
+        .query_map([ws_id], |r| r.get::<_, Option<String>>(0))
+        .map_err(|e| e.to_string())?
+        .filter_map(Result::ok)
+        .map(|t| key(t.as_deref().unwrap_or_default()))
+        .collect();
+    if !taken.contains(&key(title)) {
+        return Ok(title.to_string());
+    }
+    let base = title.trim();
+    Ok((2..).map(|n| format!("{base} {n}")).find(|c| !taken.contains(&key(c))).unwrap_or_default())
 }
 
 // The thread's "catalogue card" (§9.11): since the MCP-first pivot the app itself never
@@ -7209,6 +7260,16 @@ fn get_project_overview_json(conn: &Connection, thread_id: &str, now: i64) -> Re
             |r| r.get(0),
         )
         .map_err(|e| e.to_string())?;
+    let img_chars: i64 = conn
+        .query_row(
+            &format!(
+                "SELECT COALESCE({PACK_CHARS_IMAGES}, 0) + COUNT(*) * ?2
+                 FROM block_images i JOIN blocks b ON b.id = i.block_id WHERE b.thread_id = ?1"
+            ),
+            rusqlite::params![thread_id, image_path_chars(conn)],
+            |r| r.get(0),
+        )
+        .map_err(|e| e.to_string())?;
 
     let mut newest_stmt = conn
         .prepare(
@@ -7314,7 +7375,7 @@ fn get_project_overview_json(conn: &Connection, thread_id: &str, now: i64) -> Re
         "blocks": {
             "total": total,
             "pinned": pinned,
-            "approx_pack_chars": block_chars + att_chars + pack_skeleton_chars(),
+            "approx_pack_chars": block_chars + att_chars + img_chars + pack_skeleton_chars(),
             "newest": newest,
         },
         "needs_attention": {
@@ -13242,6 +13303,55 @@ mod tests {
         assert_eq!(res[0]["description"], format!("{}…", "长".repeat(PLACEHOLDER_HEAD_CHARS)));
     }
 
+    // P9H-3 (DISCOVERED-20261007-3): approx_pack_chars against the real pack, on a project with a
+    // replaced file (it leaves the pack, so it must leave the estimate) and pictures (each prints as
+    // the full path of its copy). Both readers — list_threads and get_project_overview — agree.
+    #[test]
+    fn approx_pack_chars_leaves_out_replaced_files_and_counts_pictures() {
+        store_lang(Lang::Zh);
+        let tmp = std::env::temp_dir().join(format!("spool-mcp-estimate-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+        let conn = Connection::open(tmp.join("spool.db")).unwrap();
+        conn.execute_batch(include_str!("../../src/lib/db/schema.sql")).unwrap();
+        let old_text = "旧".repeat(9000);
+        let mut sql = format!(
+            "INSERT INTO workspaces (id, title, sort_order, created_at, updated_at) VALUES ('ws1', '收件箱', 0, 1, 1);
+             INSERT INTO threads (id, workspace_id, title, created_at, updated_at) VALUES ('t1', 'ws1', '截图', 1, 1);
+             INSERT INTO blocks (id, thread_id, kind, content, seq, created_at) VALUES
+               ('b1', 't1', 'text', '报错截图' || char(10) || '![报错](spool-image:img_named)', 1, 1),
+               ('b2', 't1', 'text', '一组界面', 2, 2);
+             INSERT INTO attachments (id, thread_id, kind, target, label, extracted_text, include_in_pack,
+                                      ai_access, created_at, superseded_by) VALUES
+               ('a_old', 't1', 'file', '/x/方案-v1.pdf', '方案-v1.pdf', '{old_text}', 1, 1, 1, 'a_new'),
+               ('a_new', 't1', 'file', '/x/方案-v2.pdf', '方案-v2.pdf', '新的', 1, 1, 2, NULL);
+             INSERT INTO block_images (id, block_id, position, bytes, format, width, height, size_bytes, created_at) VALUES
+               ('img_named', 'b1', 0, x'89504E470D0A1A0A', 'png', 1, 1, 8, 1);"
+        );
+        // Pictures no line names, printed after their block.
+        for n in 0..8 {
+            sql.push_str(&format!(
+                "INSERT INTO block_images (id, block_id, position, bytes, format, width, height, size_bytes, created_at)
+                 VALUES ('img_loose_{n}', 'b2', {n}, x'FFD8FFD9', 'jpeg', 1, 1, 4, 1);"
+            ));
+        }
+        conn.execute_batch(&sql).unwrap();
+
+        let real = build_pack(&conn, "t1", "all").unwrap().text;
+        assert!(!real.contains("方案-v1.pdf"), "the replaced file is not in the pack");
+        assert!(real.contains("image-cache"), "pictures print as their copies' paths");
+        let real = real.chars().count() as i64;
+
+        let listed: Vec<Value> = serde_json::from_str(&list_threads_json(&conn, None).unwrap()).unwrap();
+        let from_list = listed[0]["approx_pack_chars"].as_i64().unwrap();
+        let overview: Value = serde_json::from_str(&get_project_overview_json(&conn, "t1", 1).unwrap()).unwrap();
+        let from_overview = overview["blocks"]["approx_pack_chars"].as_i64().unwrap();
+        assert_eq!(from_list, from_overview, "two tools, one number");
+        // Never under (callers pass it straight as max_chars), and not thousands over.
+        assert!(from_list >= real, "estimate {from_list} is under the real pack {real}");
+        assert!(from_list - real < 600, "estimate {from_list} is far over the real pack {real}");
+    }
+
     // v2.4 (6a): the GROUP BY rewrite of list_threads must keep the correlated-subquery
     // semantics — per-attachment 8k inline cap, include_in_pack/extracted-text gates,
     // zero rows for empty threads, soft-deleted threads/workspaces excluded.
@@ -17405,6 +17515,61 @@ mod tests {
         assert_eq!(receipt(&out)["private"], json!(false));
         assert!(call("list_threads", json!({})).0.contains("Codex open"));
         let _ = std::fs::remove_dir_all(&raw_dir);
+    }
+
+    // P9H-3 (DISCOVERED-20261016-2, Ocean 10-16 第 145 条 丙): an AI creates a PRIVATE project with
+    // the name of a private one it cannot see in that workspace. Stored as 「… 2」 (one name per
+    // workspace, P9-1); the reply says the name it passed, and reads the same whether or not the
+    // hidden project exists — so it learns nothing. A public project keeps the name it asked for.
+    #[test]
+    fn a_private_project_named_like_a_hidden_one_is_stored_with_a_2_and_the_reply_does_not_say_so() {
+        let base = std::env::temp_dir().join(format!("spool-p9h-twin-{}", std::process::id()));
+        let now = now_ms();
+        let (with, without) = (base.join("with"), base.join("without"));
+        canary_library_at(&with, true, now);
+        canary_library_at(&without, false, now);
+        // PRIVthread2 is 「Zq7canary second」, private, in Studio. Another case, blanks around it.
+        let args = json!({ "name": "create_thread",
+            "arguments": { "workspace_title": "Studio", "title": "  zq7canary SECOND ", "private": true } });
+        let create = |dir: &std::path::Path| -> (String, String) {
+            let out = ai_call(dir, "tools/call", &args);
+            let v: Value = serde_json::from_str(&out).unwrap();
+            assert_ne!(v["isError"], json!(true), "{out}");
+            let text = v["content"][0]["text"].as_str().unwrap().to_string();
+            let body = &text[text.find('{').unwrap()..];
+            let id = serde_json::from_str::<Value>(body).unwrap()["thread_id"].as_str().unwrap().to_string();
+            (text.replace(&id, "<id>"), id)
+        };
+        let stored = |dir: &std::path::Path, id: &str| -> String {
+            Connection::open(dir.join("spool.db"))
+                .unwrap()
+                .query_row("SELECT title FROM threads WHERE id = ?1", [id], |r| r.get(0))
+                .unwrap()
+        };
+
+        let (reply_with, id_with) = create(&with);
+        let (reply_without, id_without) = create(&without);
+        assert_eq!(reply_with, reply_without, "the reply tells the two libraries apart");
+        assert!(reply_with.contains("zq7canary SECOND") && !reply_with.contains("SECOND 2"), "{reply_with}");
+        assert_eq!(stored(&with, &id_with), "zq7canary SECOND 2");
+        assert_eq!(stored(&without, &id_without), "zq7canary SECOND");
+
+        // Taken twice over: 「 3」 — and still not a word of it in the reply.
+        let (reply_again, id_again) = create(&with);
+        assert!(!reply_again.contains("SECOND 3"), "{reply_again}");
+        assert_eq!(stored(&with, &id_again), "zq7canary SECOND 3");
+
+        // A public one keeps the name it asked for, as before.
+        let out = ai_call(&with, "tools/call", &json!({ "name": "create_thread",
+            "arguments": { "workspace_title": "Studio", "title": "Zq7canary second" } }));
+        let v: Value = serde_json::from_str(&out).unwrap();
+        let text = v["content"][0]["text"].as_str().unwrap();
+        let id = serde_json::from_str::<Value>(&text[text.find('{').unwrap()..]).unwrap()["thread_id"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        assert_eq!(stored(&with, &id), "Zq7canary second");
+        let _ = std::fs::remove_dir_all(&base);
     }
 
     // P9E-2 (第 121 条 + mcp-tool-routing-required): an AI asked to keep a project away from

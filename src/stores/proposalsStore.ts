@@ -318,7 +318,12 @@ export const useProposalsStore = create<ProposalsState>((set, get) => ({
         toast.notice(
           outcome.blockGone
             ? t('挂上了「{name}」。原来那一块已经删了，所以挂在项目上。', { name: outcome.label })
-            : t('挂上了「{name}」。', { name: outcome.label }),
+            : outcome.movedTo !== null
+              ? t('挂上了「{name}」，在〈{title}〉里 —— 那一块挪到那儿了。', {
+                  name: outcome.label,
+                  title: outcome.movedTo || t('（无标题）'),
+                })
+              : t('挂上了「{name}」。', { name: outcome.label }),
         );
       } else if (outcome.kind === 'replaced') {
         toast.notice(t('「{name}」换上了，旧版「{old}」收在它下面。', { name: outcome.label, old: outcome.oldLabel }));

@@ -21,8 +21,9 @@ import { useBlocksStore } from '@/stores/blocksStore';
 // stays in the project, folded under the new one, and can still be opened.
 
 export type FileProposalOutcome =
-  /** Attached. `blockGone`: the block it was proposed for was deleted, so it went on the project. */
-  | { kind: 'attached'; label: string; blockGone: boolean }
+  /** Attached. `blockGone`: the block it was proposed for was deleted, so it went on the project.
+   *  `movedTo`: that block is in another project now (P9H-3), and the file went with it there. */
+  | { kind: 'attached'; label: string; blockGone: boolean; movedTo: string | null }
   | { kind: 'replaced'; label: string; oldLabel: string }
   /** The same path is already in the project — nothing attached, the card is cleared. */
   | { kind: 'already'; label: string }
@@ -51,16 +52,18 @@ export const approveFileProposal = async (
   }
   const label = basename(p.path);
   if (!(await fileExists(p.path))) return { kind: 'missing', label };
-  if (await findLiveAttachmentByTarget(p.threadId, p.path)) {
+
+  // Where it hangs. An attach goes onto the block it was proposed for — in whichever project that
+  // block is NOW (P9H-3: a split or a move takes the block, id and all, elsewhere) — or onto the
+  // proposal's project if the block has since been deleted. A replacement goes where the old file
+  // hangs NOW — the AI never names a block for it (P6-2), so there is nothing to drift.
+  const blockGone = p.kind === 'attach' && p.anchorBlockId !== null && p.anchorSeq === null;
+  let anchorBlockId = p.kind === 'attach' && !blockGone ? p.anchorBlockId : null;
+  const home = anchorBlockId !== null && p.anchorThreadId ? p.anchorThreadId : p.threadId;
+  if (await findLiveAttachmentByTarget(home, p.path)) {
     await deleteFileProposal(id);
     return { kind: 'already', label };
   }
-
-  // Where it hangs. An attach goes where it was proposed, or onto the project if that block
-  // has since been deleted. A replacement goes where the old file hangs NOW — the AI never
-  // names a block for it (P6-2), so there is nothing to drift.
-  const blockGone = p.kind === 'attach' && p.anchorBlockId !== null && p.anchorSeq === null;
-  let anchorBlockId = p.kind === 'attach' && !blockGone ? p.anchorBlockId : null;
   if (p.kind === 'supersede') {
     const old = (await listAttachmentsByThread(p.threadId)).find((a) => a.id === p.supersedesId);
     anchorBlockId = old?.anchorBlockId ?? null;
@@ -68,7 +71,7 @@ export const approveFileProposal = async (
 
   const blocks = useBlocksStore.getState();
   const attached = await blocks.attach({
-    threadId: p.threadId,
+    threadId: home,
     kind: 'file',
     target: p.path,
     label,
@@ -81,9 +84,9 @@ export const approveFileProposal = async (
   await deleteFileProposal(id);
   // `attach` appended to that project's list in memory; read the whole project back so the
   // replaced file and a project nobody had opened yet are both right everywhere it is shown.
-  await useBlocksStore.getState().load(p.threadId);
+  await useBlocksStore.getState().load(home);
 
   return p.kind === 'attach'
-    ? { kind: 'attached', label, blockGone }
+    ? { kind: 'attached', label, blockGone, movedTo: home !== p.threadId ? p.anchorThreadTitle ?? '' : null }
     : { kind: 'replaced', label, oldLabel: p.supersedesLabel ?? '' };
 };
