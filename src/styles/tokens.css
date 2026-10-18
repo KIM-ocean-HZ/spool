@@ -312,3 +312,41 @@
   --shadow-card:  0 4px 12px -6px rgba(0, 0, 0, 0.55);
   --shadow-toast: 0 8px 24px -8px rgba(0, 0, 0, 0.65);
 }
+
+/* =====================================================================================
+   织布的毛线颜色（2026-10-18, Ocean：「情人节也换成织布，逻辑一样，就改颜色」「再做精致一些」）。
+   柜子里那些东西（Knit/knitItems.ts）只认这八个名字：七种毛线 + 一支画线和针脚纹理的笔。
+   经典浅色是暖纸上的羊毛色（赤陶、芥黄、鼠尾草绿、牛仔蓝、燕麦、梅子、栗棕）；深色同一族提亮一点；
+   情人节换成 Ocean 给的那套（blush / rose / deep rose / mint / deep berry），一个形状都不改。
+   ⚠️ 只是装饰（aria-hidden），说事的是旁边的字 —— 所以没有按正文的对比度要求量，只要求在纸上看得清轮廓。
+   ===================================================================================== */
+:root {
+  --yarn-rust:    #c4572f;
+  --yarn-mustard: #d8a03a;
+  --yarn-sage:    #7ea47b;
+  --yarn-denim:   #4d72a6;
+  --yarn-oat:     #eadcc0;
+  --yarn-plum:    #8f4e79;
+  --yarn-brown:   #9a6440;
+  --yarn-ink:     #3a2c22;
+}
+:root[data-theme='valentine'] {
+  --yarn-rust:    #e66d98;
+  --yarn-mustard: #f4a9a0;
+  --yarn-sage:    #8fd3bd;
+  --yarn-denim:   #b77fb0;
+  --yarn-oat:     #fbe2ea;
+  --yarn-plum:    #ae325e;
+  --yarn-brown:   #c98a9f;
+  --yarn-ink:     #3a2a35;
+}
+:root[data-scheme='dark']:not([data-theme='valentine']) {
+  --yarn-rust:    #d36a42;
+  --yarn-mustard: #dfae52;
+  --yarn-sage:    #8db88a;
+  --yarn-denim:   #6b90c4;
+  --yarn-oat:     #dccbab;
+  --yarn-plum:    #a8648f;
+  --yarn-brown:   #a87650;
+  --yarn-ink:     #17120e;
+}

@@ -571,19 +571,7 @@ const EN: Record<string, string> = {
     'All block content + annotations + attachment text included in packs',
   '今天': 'today',
   '明天': 'tomorrow',
-  // 首日价值: the sidebar card (二期 — 「我攒了多少」, DESIGN_FIRST_DAY_VALUE) and the
-  // one-time line the third capture earns under it in the feed.
-  '你捕捉了 {n} 条': 'You captured {n}',
-  '今天读了 {n} 条': '{n} read today',
-  '写了 {n} 字': '{n} chars written',
-  // 情人节限定版 (2026-08-19) — the same four facts the spool states, said about the heart that
-  // replaces it in that theme (Sidebar/HeartMeter). Separate keys rather than one set of
-  // metaphor-free strings: 「线轴」 is the product's own name made visible and 「爱心」 is the point
-  // of the edition, so neither can be flattened into 「进度」 to save four entries.
-  '爱心：每 100 条捕捉填满一颗': 'One heart holds 100 captures',
-  '还差 {n} 条填满': '{n} more to fill it',
-  '这颗心填满了': 'This heart is full',
-  '已填满 {n} 颗心': '{n} hearts filled',
+  // 首日价值: the one-time line the third capture earns under the sidebar card, in the feed.
   '现在够打一个包了 —— 按 ⌘⇧P 打包，粘给任何 AI 试试。':
     'Enough to pack now — press ⌘⇧P and paste it to any AI.',
   // V2 (WORKPLAN §2.V2) — the reading gestures: the one-time first-run line and the scale
@@ -930,7 +918,7 @@ const EN: Record<string, string> = {
   // («Stitches today: 3») rather than in front of a noun that would need one.
   '打开柜子': 'Open the cupboard',
   '今天织了 {n} 针': 'Stitches today: {n}',
-  '这一块还差 {n} 针': '{n} to go on this patch',
+  '再织 {n} 针就多一块布': '{n} more stitches to a new patch',
   '攒了 {n} 块布': 'Patches put by: {n}',
   '下一件：{item}': 'Next: {item}',
   '柜子织满了': 'Cupboard is full',
@@ -944,20 +932,40 @@ const EN: Record<string, string> = {
   '织成{item}': 'Knit the {item}',
   '一针 = 你自己的一块（捕捉的或自己写的，AI 写的不算）；{n} 针织成一块布。攒够了布，就能织下一件。':
     'One stitch = one block of your own (captured or written by you; blocks written by an AI do not count). {n} stitches make a patch. Put by enough patches and you can knit the next thing.',
+  // 柜子里的东西，按难度四层（入门 / 简单 / 中级 / 熟练 —— 毛线行业通用的四档）。
+  '入门': 'Beginner',
+  '简单': 'Easy',
+  '中级': 'Intermediate',
+  '熟练': 'Experienced',
+  '洗碗布': 'dishcloth',
   '杯垫': 'coaster',
+  '书签': 'bookmark',
+  '发带': 'headband',
   '围巾': 'scarf',
+  '抱枕套': 'cushion cover',
+  '袖套': 'arm warmers',
+  '围脖': 'cowl',
+  '网兜': 'market bag',
+  '婴儿毯': 'baby blanket',
+  '茶壶套': 'tea cosy',
   '毛线帽': 'beanie',
   '手套': 'mittens',
+  '袜子': 'socks',
+  '麻花围巾': 'cable scarf',
+  '拖鞋': 'slippers',
   '小熊玩偶': 'teddy bear',
-  '毛衣': 'sweater',
-  '毯子': 'blanket',
+  '菱格背心': 'argyle vest',
+  '提花帽': 'colourwork hat',
+  '开衫': 'cardigan',
+  '蕾丝披肩': 'lace shawl',
+  '麻花毛衣': 'cable sweater',
+  '费尔岛毛衣': 'Fair Isle sweater',
+  '拼花毯': 'patchwork blanket',
   '织成了{item}，放进柜子里了。': 'Knitted the {item} and put it in the cupboard.',
   '没存上，{item}没有织成。': 'Could not save — the {item} was not knitted.',
   '这一周织的布': 'Knitted this week',
-  '一针 = 一块 · 一行 = 一天': 'one stitch = one block · one row = one day',
-  '这周织了 {n} 针，织好 {m} 块布。': 'Stitches this week: {n} · patches finished: {m}.',
-  '这周织成了：': 'Made this week:',
-  '{item}（{day}）': '{item} ({day})',
+  '这周织了 {n} 针，织好 {m} 块布': 'Knitted this week: {n} stitches, {m} patches',
+  '织成了': 'made',
   'AI 整理中…': 'AI working…',
   '用本机的 {engine} 把这条脉络提炼成一块结论':
     'Use the {engine} on this machine to distil this thread into one conclusion block',

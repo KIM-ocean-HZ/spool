@@ -6,7 +6,8 @@ import { useCaptureStore } from '@/stores/captureStore';
 import { knitItemName, useKnitStore } from '@/stores/knitStore';
 import { PatchSwatch } from './KnitArt';
 
-// 织布（Ocean 2026-10-17）—— 左栏那一小块：正在织的这一块布、今天织了几针、这一块还差几针；底下一行是
+// 织布（Ocean 2026-10-17）—— 左栏那一小块：正在织的这一块布、今天织了几针、再织几针就多一块布（10-18 改的：
+// 原来写「这一块还差 N 针」，Ocean「意思表达有歧义」）；底下一行是
 // 攒了几块、下一件织什么。⭐ 整块点一下 = 打开底部的柜子（「兑换的入口设置在柜子里和点击显示当前织了多少的
 // 小组件，作为隐藏入口，安静放置」）—— ⛔ 没有按钮、没有箭头，只有悬停时的提示和手形光标。
 //
@@ -64,7 +65,7 @@ export function KnitFace() {
       </div>
       <div className="flex min-w-0 flex-1 flex-col gap-y-0.5 leading-snug">
         <Fact text={t('今天织了 {n} 针', { n: today })} />
-        <Fact text={t('这一块还差 {n} 针', { n: left })} />
+        <Fact text={t('再织 {n} 针就多一块布', { n: left })} />
       </div>
     </div>
   );

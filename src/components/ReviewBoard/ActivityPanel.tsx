@@ -8,6 +8,7 @@ import { dateLocale, useT } from '@/lib/i18n';
 import { startOfWeek } from '@/lib/weeks';
 import { useBreakStore } from '@/stores/breakStore';
 import { useThreadsStore } from '@/stores/threadsStore';
+import KnitWeekLine from '@/components/Knit/KnitWeekLine';
 
 // 周回顾顶上的「活动」(P9B-3, 2026-10-14; Ocean 09-30 第 13、15 条, 10-10 第 76 条).
 // 「必须优美简洁，像 Apple 的屏幕使用时间，用最直观的方式、占最小的位置」: one big number, seven
@@ -257,6 +258,8 @@ export default function ActivityPanel() {
           ))}
         </p>
       )}
+      {/* 织布（Ocean 10-18「和活动放在一起，占一小块区域」）：这一周织了多少、织成了什么，最底下一行。 */}
+      <KnitWeekLine />
     </section>
   );
 }

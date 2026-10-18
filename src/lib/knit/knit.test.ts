@@ -3,6 +3,7 @@ import {
   canRedeem,
   cleanRedemptions,
   KNIT_ITEMS,
+  KNIT_TIERS,
   knitState,
   PATCH_STITCHES,
   redeem,
@@ -16,48 +17,75 @@ describe('knit rules (织布)', () => {
     expect(PATCH_STITCHES).toBe(35);
     const k = knitState(35 * 4 + 12, []);
     expect(k).toMatchObject({ made: 4, spent: 0, inStock: 4, onPatch: 12 });
-    expect(knitState(0, []).next?.id).toBe('coaster');
+    expect(knitState(0, []).next?.id).toBe('dishcloth');
   });
 
-  it('the ladder only goes up, one item at a time', () => {
-    const costs = KNIT_ITEMS.map((i) => i.cost);
-    for (let i = 1; i < costs.length; i++) expect(costs[i]).toBeGreaterThan(costs[i - 1]!);
-    expect(new Set(KNIT_ITEMS.map((i) => i.id)).size).toBe(KNIT_ITEMS.length);
+  it('four shelves by difficulty, at least three; the price never goes down, shelf to shelf it goes up', () => {
+    expect(KNIT_TIERS.length).toBeGreaterThanOrEqual(3);
+    const ids = KNIT_ITEMS.map((i) => i.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    for (let i = 1; i < KNIT_ITEMS.length; i++) {
+      expect(KNIT_ITEMS[i]!.cost).toBeGreaterThanOrEqual(KNIT_ITEMS[i - 1]!.cost);
+      expect(KNIT_ITEMS[i]!.tier).toBeGreaterThanOrEqual(KNIT_ITEMS[i - 1]!.tier);
+    }
+    const total = (tier: number) => KNIT_ITEMS.filter((i) => i.tier === tier).reduce((n, i) => n + i.cost, 0);
+    for (let tier = 2; tier <= KNIT_TIERS.length; tier++) expect(total(tier)).toBeGreaterThan(total(tier - 1));
+  });
+
+  it('the seven ids of the first version are still there — what was knitted with them stays knitted', () => {
+    for (const id of ['coaster', 'scarf', 'beanie', 'mittens', 'plush', 'sweater', 'blanket']) {
+      expect(KNIT_ITEMS.some((i) => i.id === id)).toBe(true);
+    }
+    // Ocean's knit.json from the night of 10-17: four things, 17 patches
+    const v1 = cleanRedemptions([
+      { item: 'coaster', at: 1, cost: 1 },
+      { item: 'scarf', at: 2, cost: 3 },
+      { item: 'beanie', at: 3, cost: 5 },
+      { item: 'mittens', at: 4, cost: 8 },
+    ]);
+    const k = knitState(814, v1);
+    expect(v1).toHaveLength(4);
+    expect(k).toMatchObject({ made: 23, spent: 17, inStock: 6 });
+    expect(Object.keys(k.owned).sort()).toEqual(['beanie', 'coaster', 'mittens', 'scarf']);
+    // the next one is the first in order not yet made, wherever the old ones now sit
+    expect(k.next?.id).toBe('dishcloth');
+    expect(canRedeem(k, 'mittens')).toBe('owned');
   });
 
   it('can only knit the next item, and only with enough patches in hand', () => {
+    const [a, b, c] = KNIT_ITEMS;
     let list: Redemption[] = [];
-    let k = knitState(35 * 3, list);
-    expect(canRedeem(k, 'scarf')).toBe('locked');
-    expect(canRedeem(k, 'coaster')).toBe('ok');
-    list = redeem(k, list, 'coaster', 1000);
-    k = knitState(35 * 3, list);
-    expect(k).toMatchObject({ spent: 1, inStock: 2 });
-    expect(canRedeem(k, 'coaster')).toBe('owned');
-    expect(canRedeem(k, 'scarf')).toBe('short'); // takes 3, 2 in hand
-    expect(redeem(k, list, 'scarf', 2000)).toEqual(list); // refused: nothing changes
-    k = knitState(35 * 4, list);
-    expect(canRedeem(k, 'scarf')).toBe('ok');
-    list = redeem(k, list, 'scarf', 2000);
+    let k = knitState(35 * a!.cost, list);
+    expect(canRedeem(k, b!.id)).toBe('locked');
+    expect(canRedeem(k, a!.id)).toBe('ok');
+    list = redeem(k, list, a!.id, 1000);
+    k = knitState(35 * a!.cost, list);
+    expect(k).toMatchObject({ spent: a!.cost, inStock: 0 });
+    expect(canRedeem(k, a!.id)).toBe('owned');
+    expect(canRedeem(k, b!.id)).toBe('short');
+    expect(redeem(k, list, b!.id, 2000)).toEqual(list); // refused: nothing changes
+    k = knitState(35 * (a!.cost + b!.cost), list);
+    expect(canRedeem(k, b!.id)).toBe('ok');
+    list = redeem(k, list, b!.id, 2000);
     expect(list).toEqual([
-      { item: 'coaster', at: 1000, cost: 1 },
-      { item: 'scarf', at: 2000, cost: 3 },
+      { item: a!.id, at: 1000, cost: a!.cost },
+      { item: b!.id, at: 2000, cost: b!.cost },
     ]);
-    expect(knitState(35 * 4, list)).toMatchObject({ inStock: 0, next: { id: 'beanie' } });
+    expect(knitState(35 * (a!.cost + b!.cost), list)).toMatchObject({ inStock: 0, next: { id: c!.id } });
   });
 
   it('deleting blocks never takes back what was already knitted (in hand floors at 0)', () => {
-    const list: Redemption[] = [{ item: 'coaster', at: 1, cost: 1 }];
+    const list: Redemption[] = [{ item: 'dishcloth', at: 1, cost: 1 }];
     const k = knitState(10, list);
-    expect(k).toMatchObject({ made: 0, inStock: 0, owned: { coaster: 1 } });
-    expect(k.next?.id).toBe('scarf');
+    expect(k).toMatchObject({ made: 0, inStock: 0, owned: { dishcloth: 1 } });
+    expect(k.next?.id).toBe('coaster');
   });
 
   it('with everything knitted there is no next item', () => {
     const list = KNIT_ITEMS.map((i, n) => ({ item: i.id, at: n, cost: i.cost }));
     const k = knitState(35 * 200, list);
     expect(k.next).toBeNull();
-    expect(canRedeem(k, 'blanket')).toBe('owned');
+    expect(canRedeem(k, KNIT_ITEMS[KNIT_ITEMS.length - 1]!.id)).toBe('owned');
   });
 
   it('cleanRedemptions drops anything it does not recognise', () => {

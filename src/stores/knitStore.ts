@@ -1,7 +1,15 @@
 import { create } from 'zustand';
 import { countStitches, listStitchTimesSince } from '@/lib/db/blocks';
 import { t } from '@/lib/i18n';
-import { canRedeem, knitState, redeem as redeemIn, type KnitItemId, type RedeemCheck, type Redemption } from '@/lib/knit/knit';
+import {
+  canRedeem,
+  knitState,
+  redeem as redeemIn,
+  type KnitItemId,
+  type KnitTier,
+  type RedeemCheck,
+  type Redemption,
+} from '@/lib/knit/knit';
 import { loadRedemptions, saveRedemptions } from '@/lib/knit/redemptions';
 import { toast } from './toastStore';
 
@@ -14,17 +22,38 @@ const startOfToday = (): number => {
   return d.getTime();
 };
 
-/** 东西的名字（界面语言）。新版本加东西，在这里和 KNIT_ITEMS 里各加一行。 */
+/** 东西的名字（界面语言）。新版本加东西，在这里、KNIT_ITEMS 和 Knit/knitItems.ts 里各加一份。 */
 export const knitItemName = (id: KnitItemId): string =>
   ({
+    dishcloth: t('洗碗布'),
     coaster: t('杯垫'),
+    bookmark: t('书签'),
+    headband: t('发带'),
     scarf: t('围巾'),
+    pillow: t('抱枕套'),
+    armwarmers: t('袖套'),
+    cowl: t('围脖'),
+    marketbag: t('网兜'),
+    babyblanket: t('婴儿毯'),
+    teacosy: t('茶壶套'),
     beanie: t('毛线帽'),
     mittens: t('手套'),
+    socks: t('袜子'),
+    cablescarf: t('麻花围巾'),
+    slippers: t('拖鞋'),
     plush: t('小熊玩偶'),
-    sweater: t('毛衣'),
-    blanket: t('毯子'),
+    vest: t('菱格背心'),
+    colorworkhat: t('提花帽'),
+    cardigan: t('开衫'),
+    shawl: t('蕾丝披肩'),
+    sweater: t('麻花毛衣'),
+    fairisle: t('费尔岛毛衣'),
+    blanket: t('拼花毯'),
   })[id];
+
+/** 每一层搁板叫什么（针织通用的四档难度）。 */
+export const knitTierName = (tier: KnitTier): string =>
+  ({ 1: t('入门'), 2: t('简单'), 3: t('中级'), 4: t('熟练') })[tier];
 
 interface KnitStoreState {
   /** 一共织了几针。 */

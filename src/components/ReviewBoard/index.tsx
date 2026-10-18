@@ -3,7 +3,6 @@ import { useCallback, useEffect, useState } from 'react';
 import ApiBalance from '@/components/ApiBalance';
 import LockedAiEntry, { AiSetupButton } from '@/components/AiSetup/LockedAiEntry';
 import ActivityPanel from './ActivityPanel';
-import KnitWeek from './KnitWeek';
 import Toggle from '@/components/ui/Toggle';
 import { MarkdownContent } from '@/lib/blocks/MarkdownContent';
 import {
@@ -463,8 +462,6 @@ export default function ReviewBoard() {
         {/* P9B-3 (Ocean 2026-09-30 第 13 条): 「活动」 first — it needs no AI and costs nothing, and
             it is the reason the door to this page is always open now (Sidebar, 第 76 条). */}
         <ActivityPanel />
-        {/* 织布（Ocean 2026-10-17）—— this week's knitting and what was made, right under 活动; no AI. */}
-        <KnitWeek />
         {reviews === null ? null : reviews.length === 0 ? (
           // ⚠️ P9C (第 93 – 98 条): only a ready bar earns the 「点上面那一下」 sentence. A locked bar
           // already says what is missing and opens it in place, so nothing is repeated here; with
