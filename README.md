@@ -10,10 +10,10 @@
 <p align="center">
   <b><a href="https://spoolapp.org">spoolapp.org</a></b> ·
   <b><a href="https://github.com/KIM-ocean-HZ/spool/releases/latest/download/Spool-macOS-arm64.dmg">Download for macOS</a></b> ·
-  <b><a href="https://github.com/KIM-ocean-HZ/spool/releases/latest/download/Spool-windows-x64-setup.exe">Download for Windows</a></b>
+  <b><a href="https://github.com/KIM-ocean-HZ/spool/releases/download/v0.6.1/Spool-windows-x64-setup.exe">Download for Windows (v0.6.1)</a></b>
   <br>
   <sub>The site walks the whole loop in an interactive demo (English / 中文) — no install needed.<br>
-  macOS: a signed, Apple-notarized <code>.dmg</code>. Windows: an x64 installer, not code-signed yet.<br>
+  macOS: a signed, Apple-notarized <code>.dmg</code>. Windows: an x64 installer, not code-signed yet, still v0.6.1 until the next release.<br>
   Free, offline, no account.</sub>
 </p>
 
@@ -39,14 +39,16 @@ Spool compresses "re-explaining" into "a single paste."
 
 ## Status
 
-**v0.5.0** — feature-complete and shipping on **macOS and Windows**. The two builds run the same
-library, the same pack, and the same capture gesture: a double-tap of one modifier key, ⌥ on macOS
-and Ctrl on Windows. What did not cross over is the macOS-specific work around focus handling and
-browser tab-title capture, so a Windows capture records the source application rather than the page.
-Linux is not implemented.
+**v0.7.0** — released for **macOS only**. Windows stays on **v0.6.1**, the last release that
+shipped a Windows installer, and catches up in the next release together with macOS. What changed
+in v0.7.0: [release notes](docs/RELEASE_NOTES_v0.7.0.md).
+
+On Windows, capture is a double-tap of Ctrl instead of ⌥. What did not cross over is the
+macOS-specific work around focus handling and browser tab-title capture, so a Windows capture
+records the source application rather than the page. Linux is not implemented.
 
 - **Distribution — macOS**: Developer ID–signed, Apple-notarized `.dmg`, straight from [Releases](https://github.com/KIM-ocean-HZ/spool/releases/latest). Not on the Mac App Store — sandboxing conflicts structurally with the global capture trigger.
-- **Distribution — Windows**: an x64 NSIS installer built by CI, **not code-signed** in this first release, so SmartScreen warns once before it will install.
+- **Distribution — Windows**: v0.6.1, an x64 NSIS installer built by CI, **not code-signed**, so SmartScreen warns once before it will install.
 - **Website**: [spoolapp.org](https://spoolapp.org), with an interactive walkthrough of capture → pack → re-brief → MCP in English and Chinese.
 - **No auto-update channel** yet: direct distribution means new versions are a manual download.
 
@@ -107,7 +109,7 @@ The full product constitution, rejected ideas, and the feature filter are in `PL
 - **Tailwind CSS** for layout; design tokens in CSS variables
 - **Zustand** for state
 - **SQLite** via `tauri-plugin-sql`, FTS5 with the trigram tokenizer
-- **MCP server** (`spool --mcp`, stdio, default OFF): the AI surface — 19 tools, 12 read (list/search/dedup/pack) plus 7 consented, attributed write tools
+- **MCP server** (`spool --mcp`, stdio, default OFF): the AI surface — 26 tools, 14 read (list/search/dedup/pack, a compressed block's original text, a block's pictures) plus 12 consented, attributed write tools. A Follow Up or Weekly Review run that Spool starts itself is served 25: everything except proposing a project split
 - **CLI engine slot**: `claude`, `codex`, or `gemini` runs as a local subprocess for Follow Up, Weekly Review, and follow-up-goal drafting — detected on disk, never bundled, never given a key
 
 ## Building from source
@@ -132,9 +134,9 @@ This route ships **no built-in AI** — nothing to configure, and no key: your c
 **You do not need any of this to use Spool with an AI.** ⌘⇧P (Ctrl+Shift+P) packs a project into Markdown you paste into a browser tab — nothing to install, nothing to connect, and no feature is withheld from you for skipping it. MCP buys exactly one thing: your AI fetches the context itself instead of waiting for you to paste it, and can file conclusions back with its name on them.
 
 - **One-click hookup**: Settings → MCP → **Connect** writes the client's config for you (with a backup). Restart the client so it can load the setting; Spool separately shows whether that client has actually connected.
-- **Read tools** (12): list projects (with one-line summaries and read-budget hints), a cross-project digest of recent activity, full-text search, near-duplicate detection, block paging (including blocks you have retired), the same deterministic pack the GUI produces, a read-only library hygiene checkup, one call that answers "how is this project doing" in a single round-trip, a read of what a project is currently watching for, plus three that hand back a briefing and the job to do with it — distill one project, report one project's health, review the week across all of them.
-- **Write tools** (7, behind a second and separate consent): create a project, append a block (optionally citing the block it builds on, or proposing that one point in it was corrected), refresh a project's one-line summary, queue a batch of blocks for your review, propose a new line for a project to follow up on, and close a follow-up line it has answered — a standing line refuses to be closed. One of the seven stores nothing at all: *ask to read a file already in a project* puts the request in front of you and waits. Every AI write carries an enforced source label (e.g. `Claude · MCP`) and shows a distinct badge in the GUI; an AI can never overwrite a summary you wrote by hand, never retire one of your blocks, and never write a note that reads as if you wrote it.
-- **What an AI can and cannot do to history**: it may append, and it may *propose* that one point in an older block was corrected — which you approve or discard. Marking a block as no longer valid stays yours alone.
+- **Read tools** (14): list projects (with one-line summaries and read-budget hints), a cross-project digest of recent activity, full-text search, near-duplicate detection, block paging (including blocks you have retired), the same deterministic pack the GUI produces, a read-only library hygiene checkup, one call that answers "how is this project doing" in a single round-trip, a read of what a project is currently watching for, the original wording of a block that was compressed, the pictures in a block (handed over as images), plus three that hand back a briefing and the job to do with it — distill one project, report one project's health, review the week across all of them.
+- **Write tools** (12, behind a second and separate consent): create a project, append a block (optionally citing the block it builds on, or proposing that one point in it was corrected), refresh a project's one-line summary, write the one-line gist on a block, propose a new line for a project to follow up on, and close a follow-up line it has answered — a standing line refuses to be closed. Six of the twelve change nothing until you approve them on the review screen: *queue a batch of blocks*, *ask to read a file already in a project*, *propose attaching a file from your computer*, *propose that a new file replaces an older one*, *propose that a newer block replaces an older one outright*, and *propose splitting a project into sub-projects*. Every AI write carries an enforced source label (e.g. `Claude · MCP`) and shows a distinct badge in the GUI; an AI can never overwrite a summary you wrote by hand, never retire one of your blocks, and never write a note that reads as if you wrote it.
+- **What an AI can and cannot do to history**: it may append, and it may *propose* that one point in an older block was corrected, or that a newer block replaces it outright — which you approve or discard. Marking a block as no longer valid stays yours alone.
 
 ### What to say once connected
 

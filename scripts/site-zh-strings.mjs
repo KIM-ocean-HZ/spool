@@ -69,7 +69,7 @@ export const ZH = {
   'hero-h1': '同一个项目，<br>不必解释第二遍。',
   'hero-sub': '复制值得保留的内容，再连按两下 <span class="kbd">⌥</span>（Windows 上是 <span class="kbd">Ctrl</span>）。内容会存入当前项目，你还可以附上当时的想法。几周后，一次打包就能把完整背景交给任何 AI；交出去的每个字，你都可以先看清楚。',
   'dl-btn': '下载 macOS 版',
-  'dl-btn-win': '下载 Windows 版',
+  'dl-btn-win': '下载 Windows 版（v0.6.1）',
   'try-btn': '直接试用，无需下载',
   'chip-free': '免费',
   'chip-arch': 'Apple 芯片 Mac · Windows x64',
@@ -130,7 +130,7 @@ export const ZH = {
 
   /* Mid-page download. */
   'mid-cta-p': '完整流程就是这样：安装应用，选择一个项目，然后开始保存。',
-  'mid-cta-fine': '免费 · Apple 芯片 Mac（arm64），已由 Apple 签名并公证 · Windows x64，暂未签名',
+  'mid-cta-fine': '免费 · Apple 芯片 Mac（arm64），已由 Apple 签名并公证 · Windows x64，暂未签名，还是 v0.6.1，下一版跟上',
 
   /* Compounding value. */
   'grow-k': '项目越久，价值越大',
@@ -232,7 +232,7 @@ export const ZH = {
   'brand-cap': 'Spool 标志：从上方看到的线轴，一根线从中向外延伸。',
   'cta-h': '项目背景，不必再解释第二次。',
   'cta-p': '免费、可离线使用、无需账号。',
-  'cta-fine': 'Apple 芯片 Mac（arm64），已签名并公证 · Windows x64，未签名 · 无需账号 · 不追踪使用情况 · <a href="https://github.com/KIM-ocean-HZ/spool/releases">在 GitHub 查看全部版本</a>',
+  'cta-fine': 'Apple 芯片 Mac（arm64），已签名并公证 · Windows x64，未签名，还是 v0.6.1，下一版跟上 · 无需账号 · 不追踪使用情况 · <a href="https://github.com/KIM-ocean-HZ/spool/releases">在 GitHub 查看全部版本</a>',
   'fb-k': '用过一阵之后',
   'fb-h': '告诉我用得怎么样。',
   'fb-p': 'Spool 不需要账号，也没有任何遥测——你怎么用它，没有一个字会传到我这里，这也意味着它没法替你告诉我任何事。好用也好，坏了也好，你不说我就不知道。',
