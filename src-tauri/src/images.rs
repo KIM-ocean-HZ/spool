@@ -583,6 +583,93 @@ pub fn screenshot_landed_since(since_ms: u64) -> Option<u64> {
     newest_shot_in(&screenshot_dir()?, since_ms, is_marked_screenshot).ok().flatten().map(|(at, _)| at)
 }
 
+/// 2026-10-18 (Ocean, 〈HAI- Lecture5〉): taken but not saved yet. While the floating thumbnail is
+/// up — and while Markup is open on it — the system keeps the picture in its own folder in the
+/// per-user temp dir (`TemporaryItems/NSIRD_screencaptureui_*`) and only writes the real file when
+/// the thumbnail goes. That afternoon the thumbnail stayed 14 s, a fixed 8 s wait gave up on it,
+/// and a double-tap made after a slow selection found the gate shut. This is the signal for both.
+/// ⚠️ Undocumented: should a later macOS keep it elsewhere, this answers false and everything falls
+/// back to the fixed wait and the landed-file rule — what it did before.
+#[cfg(target_os = "macos")]
+pub fn screenshot_pending_since(since_ms: u64) -> bool {
+    user_temp_dir().is_some_and(|tmp| shot_pending_in(&tmp.join("TemporaryItems"), since_ms))
+}
+#[cfg(not(target_os = "macos"))]
+pub fn screenshot_pending_since(_since_ms: u64) -> bool {
+    false
+}
+
+/// The question above, given `TemporaryItems`: a picture written since `since_ms` in one of the
+/// screenshot UI's folders. Folders untouched since then are not opened (there are dozens).
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn shot_pending_in(temp_items: &std::path::Path, since_ms: u64) -> bool {
+    let Ok(entries) = std::fs::read_dir(temp_items) else { return false };
+    entries.flatten().any(|e| {
+        e.file_name().to_string_lossy().starts_with("NSIRD_screencaptureui_")
+            && e.metadata().is_ok_and(|m| m.is_dir() && modified_ms(&m) + SHOT_SLACK_MS >= since_ms)
+            && matches!(newest_shot_in(&e.path(), since_ms, |_| true), Ok(Some(_)))
+    })
+}
+
+/// The per-user temp dir (`/var/folders/…/T/`), asked of the system rather than of `$TMPDIR`,
+/// which an app started some other way may not carry.
+#[cfg(target_os = "macos")]
+fn user_temp_dir() -> Option<std::path::PathBuf> {
+    let mut buf = [0 as libc::c_char; 1024];
+    let n = unsafe { libc::confstr(libc::_CS_DARWIN_USER_TEMP_DIR, buf.as_mut_ptr(), buf.len()) };
+    if n == 0 || n > buf.len() {
+        return None;
+    }
+    let dir = unsafe { std::ffi::CStr::from_ptr(buf.as_ptr()) }.to_str().ok()?;
+    Some(std::path::PathBuf::from(dir))
+}
+
+/// 2026-10-18: what the clipboard holds as text and files, as one number — None when it holds
+/// neither (empty, or only a picture). Compared, never stored or sent anywhere.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+pub fn clipboard_fingerprint() -> Option<u64> {
+    use std::hash::{Hash, Hasher};
+    let mut cb = arboard::Clipboard::new().ok()?;
+    let text = cb.get_text().ok().filter(|t| !t.is_empty());
+    let files = cb.get().file_list().ok().filter(|f| !f.is_empty());
+    if text.is_none() && files.is_none() {
+        return None;
+    }
+    // DefaultHasher::new() has fixed keys: the same contents give the same number all run long.
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    (text, files).hash(&mut h);
+    Some(h.finish())
+}
+
+/// How long after a ⌘C keydown the copying app may still be writing it. A key macro that sends
+/// ⌘C and the double-tap together puts ~10 ms between them (Ocean's log, 2026-10-18).
+#[cfg(target_os = "macos")]
+const COPY_SETTLE_MS: u64 = 150;
+
+/// 2026-10-18 (Ocean, 〈HAI- Lecture5〉: 「框选截图双击 option 无法捕捉截图，粘贴板一直保留着文本
+/// 数据」): a ⌘C pressed after a screenshot chord — did it bring anything new? A ⌘⇧4 picture goes
+/// to a file, so the clipboard still holds the text from before; a ⌘C with that text still selected
+/// writes it again, one with nothing selected writes nothing — either way the capture took the old
+/// text over the picture just taken. Now that ⌘C only wins when the clipboard differs from what it
+/// held at the chord. true = it does (capture the clipboard, as before); false = the screenshot.
+#[tauri::command(async)]
+pub fn clipboard_changed_since_shot() -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        let settled = crate::double_tap::last_copy_wall_ms() + COPY_SETTLE_MS;
+        let now = now_ms() as u64;
+        if settled > now {
+            std::thread::sleep(std::time::Duration::from_millis(settled - now));
+        }
+        // Not measured (a newer chord is still being read): say "changed" — the old behaviour.
+        crate::double_tap::clipboard_at_shot().is_none_or(|before| clipboard_fingerprint() != before)
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        true
+    }
+}
+
 /// `defaults read com.apple.screencapture <key>`, or None when unset.
 fn screencapture_pref(key: &str) -> Option<String> {
     let out = std::process::Command::new("defaults")
@@ -642,19 +729,46 @@ pub fn screenshot_goes_to_clipboard() -> bool {
 /// this looks again every 150 ms until `timeout_ms`. `Ok(None)` = nothing came.
 /// ⚠️ Reading the Desktop is what makes macOS ask once 「“Spool”想访问“桌面”文件夹中的文件」
 /// (Ocean 2026-10-08: 弹一次就弹一次). A refusal comes back as `Err("denied")`.
+/// 2026-10-18: `timeout_ms` is the least it waits; while the picture is still in the thumbnail
+/// (screenshot_pending_since) it keeps waiting, up to SHOT_PENDING_MAX_MS from the start.
 #[tauri::command(async)]
 pub fn find_new_screenshot(since_ms: u64, timeout_ms: u64) -> Result<Option<String>, String> {
+    use std::time::{Duration, Instant};
     let dir = screenshot_dir().ok_or_else(|| "no_dir".to_string())?;
-    let deadline = std::time::Instant::now() + std::time::Duration::from_millis(timeout_ms);
+    let start = Instant::now();
+    let mut deadline = start + Duration::from_millis(timeout_ms);
     loop {
         if let Some(p) = pick_new_screenshot(&dir, since_ms)? {
             return Ok(Some(p.to_string_lossy().into_owned()));
         }
-        if std::time::Instant::now() >= deadline {
+        let now = Instant::now();
+        deadline = wait_deadline(deadline, start, now, screenshot_pending_since(since_ms));
+        if now >= deadline {
             return Ok(None);
         }
-        std::thread::sleep(std::time::Duration::from_millis(150));
+        std::thread::sleep(Duration::from_millis(150));
     }
+}
+
+/// The longest a capture waits on one screenshot still in its thumbnail — Markup open on it, or
+/// the pointer resting there. Past it the card says the picture did not come, and the gate stays
+/// open for the file once it lands (double_tap.rs), so a second double-tap takes it.
+const SHOT_PENDING_MAX_MS: u64 = 60_000;
+/// After the thumbnail goes, the moment the system takes to write the real file.
+const SHOT_LANDING_GRACE_MS: u64 = 2_000;
+
+/// find_new_screenshot's deadline after one more look: pushed out while the picture is pending.
+fn wait_deadline(
+    deadline: std::time::Instant,
+    start: std::time::Instant,
+    now: std::time::Instant,
+    pending: bool,
+) -> std::time::Instant {
+    use std::time::Duration;
+    if !pending {
+        return deadline;
+    }
+    deadline.max(now + Duration::from_millis(SHOT_LANDING_GRACE_MS)).min(start + Duration::from_millis(SHOT_PENDING_MAX_MS))
 }
 
 #[derive(Debug, Serialize)]
@@ -965,5 +1079,48 @@ mod tests {
         assert!(!win_shot_still_fresh(5_000, 1_000, 10_000), "not one from the future");
         // GetMessageTime wraps at i32: a shot just before the wrap, a double-tap just after.
         assert!(win_shot_still_fresh(i32::MAX - 2_000, i32::MIN + 3_000, 10_000));
+    }
+
+    // 2026-10-18 (〈HAI- Lecture5〉): the picture in the thumbnail sits in the screenshot UI's own
+    // temp folder; a picture there newer than the chord = taken, not saved yet.
+    #[test]
+    fn a_picture_in_the_screenshot_uis_temp_folder_is_pending() {
+        let items = std::env::temp_dir().join(format!("spool-shot-pending-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&items);
+        let stamp = |p: &std::path::Path, ms: u64| {
+            let t = std::time::UNIX_EPOCH + std::time::Duration::from_millis(ms);
+            std::fs::File::open(p).unwrap().set_modified(t).unwrap();
+        };
+        let put = |folder: &str, name: &str, ms: u64| {
+            let d = items.join(folder);
+            std::fs::create_dir_all(&d).unwrap();
+            std::fs::write(d.join(name), b"x").unwrap();
+            stamp(&d.join(name), ms);
+            stamp(&d, ms);
+        };
+        let chord = 1_800_000_000_000_u64;
+        assert!(!shot_pending_in(&items, chord), "no TemporaryItems at all");
+        put("NSIRD_screencaptureui_old", "Screenshot old.png", chord - 60_000);
+        put("NSIRD_Logic Pro_x", "Bounce.png", chord + 1_000); // somebody else's
+        assert!(!shot_pending_in(&items, chord));
+        put("NSIRD_screencaptureui_new", "Screenshot 2026-10-18 at 14.44.06.png", chord + 3_000);
+        assert!(shot_pending_in(&items, chord));
+        assert!(!shot_pending_in(&items, chord + 10_000), "taken before this chord");
+        let _ = std::fs::remove_dir_all(&items);
+    }
+
+    // find_new_screenshot waits its 8 s at least; while the picture is pending, until 2 s after it
+    // stops being pending — never past a minute from the start.
+    #[test]
+    fn a_pending_screenshot_is_waited_for_up_to_a_minute() {
+        use std::time::{Duration, Instant};
+        let start = Instant::now();
+        let s = |n: u64| start + Duration::from_millis(n);
+        let base = s(8_000);
+        assert_eq!(wait_deadline(base, start, s(3_000), false), base, "not pending: the plain wait");
+        assert_eq!(wait_deadline(base, start, s(3_000), true), base, "pending early: still the plain wait");
+        assert_eq!(wait_deadline(base, start, s(13_000), true), s(15_000), "pending at 13 s: until 15 s");
+        assert_eq!(wait_deadline(s(15_000), start, s(14_000), false), s(15_000), "gone at 14 s: 15 s stands");
+        assert_eq!(wait_deadline(base, start, s(59_500), true), s(SHOT_PENDING_MAX_MS), "a minute at most");
     }
 }

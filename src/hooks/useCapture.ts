@@ -7,8 +7,10 @@ import {
   type ForegroundApp,
 } from '@/lib/capture/clipboard';
 import { ingestCapture, ingestImageCapture, type ImageSource } from '@/lib/capture/ingest';
+import { screenshotToTake, shotOf } from '@/lib/capture/shot';
 import type { BlockImage } from '@/lib/db/blockImages';
 import {
+  clipboardChangedSinceShot,
   clipboardImageFiles,
   clipboardImageSize,
   findNewScreenshot,
@@ -51,17 +53,6 @@ const CLIPBOARD_RETRY_DELAYS_MS = [120, 240]; // up to 3 attempts total
 
 const sleep = (ms: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, ms));
-
-/** P7-7 — set by double_tap.rs when a screenshot chord (not a ⌘C) opened the copy gate. */
-interface Shot {
-  /** Wall clock of the chord — the screenshot file is written after it. */
-  atMs: number;
-  kind: 'file' | 'clipboard' | 'toolbar';
-}
-const shotOf = (payload: unknown): Shot | null => {
-  const shot = (payload as { shot?: Shot } | null)?.shot;
-  return shot && typeof shot.atMs === 'number' ? shot : null;
-};
 
 const readClipboardWithRetry = async (): Promise<string> => {
   const first = await readClipboardText();
@@ -297,7 +288,8 @@ export function useCapture(): void {
           //   · ⌘⇧4 / ⌘⇧3（存成文件）：等那张截图写出来（右下角缩略图挂着时大约 5 秒），读它。
           //   · ⌃⌘⇧4 这类进剪贴板的截图：先拿剪贴板里的图 —— 剪贴板上要是还有字，那是更早的事。
           //   · 别的（⌘C 打开的闸）：照旧先拿字；没有字、剪贴板里是图片，才捕这张图。
-          const shot = shotOf(e.payload);
+          // 2026-10-18：截图之后又按了 ⌘C —— 那下 ⌘C 带来了新东西才捕字（shot.ts）。
+          const shot = await screenshotToTake(shotOf(e.payload), clipboardChangedSinceShot);
           const shotToFile =
             shot !== null &&
             (shot.kind === 'file' || (shot.kind === 'toolbar' && !(await screenshotGoesToClipboard())));

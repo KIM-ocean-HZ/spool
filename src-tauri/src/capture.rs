@@ -16,6 +16,9 @@ use tauri::{AppHandle, Emitter, Manager, Monitor, PhysicalPosition, Runtime};
 // schedules them aggressively, which lengthens CGEventTap callback latency on our
 // run-loop thread and breaks the double-tap window detection. 2s is tight enough that
 // a user who switches apps gets a fresh value within the next-capture window.
+// ⚠️ 2026-10-18 (Ocean, 〈HAI- Lecture5〉): the clock alone is not enough — two windows of one
+// browser are one app but two sources, and a capture from the other window inside the 2 s took
+// the first one's tab title. The cache is also keyed on the window server's front window.
 #[cfg(target_os = "macos")]
 const FRONTMOST_CACHE_MS: u128 = 2000;
 
@@ -37,6 +40,8 @@ pub struct ForegroundApp {
 struct FrontmostCache {
     value: Option<ForegroundApp>,
     at: Instant,
+    /// The front ordinary window (owner pid, window number) when the value was read.
+    window: Option<(i32, u32)>,
 }
 
 #[cfg(target_os = "macos")]
@@ -54,12 +59,13 @@ pub fn get_foreground_app() -> Option<ForegroundApp> {
     #[cfg(target_os = "macos")]
     {
         let now = Instant::now();
+        let window = onscreen_windows().first().map(|w| (w.pid, w.number));
         // Cache hit: avoid spawning a fresh osascript subprocess. Critical for
         // rapid-fire captures — see FRONTMOST_CACHE_MS comment for why this matters
         // for double-tap CGEventTap reliability.
         if let Ok(cache) = FRONTMOST_CACHE.lock() {
             if let Some(c) = cache.as_ref() {
-                if now.duration_since(c.at).as_millis() < FRONTMOST_CACHE_MS {
+                if now.duration_since(c.at).as_millis() < FRONTMOST_CACHE_MS && c.window == window {
                     return c.value.clone();
                 }
             }
@@ -78,6 +84,7 @@ pub fn get_foreground_app() -> Option<ForegroundApp> {
             *cache = Some(FrontmostCache {
                 value: result.clone(),
                 at: now,
+                window,
             });
         }
         result
@@ -102,38 +109,56 @@ pub fn get_foreground_app() -> Option<ForegroundApp> {
 
 #[cfg(target_os = "macos")]
 fn macos_frontmost_via_osascript() -> Option<ForegroundApp> {
-    let app = macos_frontmost_process_name()?;
+    let (app, pid) = macos_frontmost_process()?;
     // Browser tab title when available, else the app name. A failed/absent tab read
     // (no window, Automation permission not yet granted, unsupported app) just falls
     // back — capture still gets a usable source.
-    let source = browser_tab_title(&app).unwrap_or_else(|| app.clone());
+    let source = browser_tab_title(&app, pid).unwrap_or_else(|| app.clone());
     Some(ForegroundApp { app, source })
 }
 
+/// The frontmost process's name, and its pid when System Events gave one (the pid is what finds
+/// the process's windows in the window server — browser_tab_title).
 #[cfg(target_os = "macos")]
-fn macos_frontmost_process_name() -> Option<String> {
-    use std::process::Command;
-    let output = Command::new("osascript")
-        .args([
-            "-e",
-            "with timeout of 1 seconds",
-            "-e",
-            "tell application \"System Events\" to get name of first process whose frontmost is true",
-            "-e",
-            "end timeout",
-        ])
-        .output()
-        .ok()?;
+fn macos_frontmost_process() -> Option<(String, Option<i32>)> {
+    let out = osascript(&[
+        // ⚠️ The parentheses matter: without them AppleScript reads `{…} of first process` first
+        // and then fails on the `whose` (-1728). osacompile does not catch it — only a run does.
+        "tell application \"System Events\" to get {name, unix id} of (first process whose frontmost is true)",
+    ])?;
+    name_and_pid(&out)
+}
+
+/// `Google Chrome, 49341` (an AppleScript list as osascript prints it) → name and pid. Output
+/// without a pid on the end is taken whole as the name.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn name_and_pid(out: &str) -> Option<(String, Option<i32>)> {
+    let out = out.trim();
+    if out.is_empty() {
+        return None;
+    }
+    match out.rsplit_once(", ").map(|(name, pid)| (name, pid.trim().parse::<i32>())) {
+        Some((name, Ok(pid))) if !name.is_empty() => Some((name.to_string(), Some(pid))),
+        _ => Some((out.to_string(), None)),
+    }
+}
+
+/// Run an AppleScript (one line per `-e`) under a 1 s Apple-event timeout; its trimmed output,
+/// None on failure or when it printed nothing.
+#[cfg(target_os = "macos")]
+fn osascript(lines: &[&str]) -> Option<String> {
+    let mut cmd = std::process::Command::new("osascript");
+    cmd.args(["-e", "with timeout of 1 seconds"]);
+    for line in lines {
+        cmd.args(["-e", line]);
+    }
+    let output = cmd.args(["-e", "end timeout"]).output().ok()?;
     if !output.status.success() {
         return None;
     }
-    let name = String::from_utf8(output.stdout).ok()?;
-    let trimmed = name.trim();
-    if trimmed.is_empty() {
-        None
-    } else {
-        Some(trimmed.to_string())
-    }
+    let text = String::from_utf8(output.stdout).ok()?;
+    let trimmed = text.trim();
+    (!trimmed.is_empty()).then(|| trimmed.to_string())
 }
 
 // Read the active tab's title for a supported browser. Returns None for any other app,
@@ -141,32 +166,91 @@ fn macos_frontmost_process_name() -> Option<String> {
 // granted for that browser yet (first read triggers the system prompt). The browser
 // name reaching `tell application` is always one of the hard-coded match arms — never
 // raw osascript output — so there is no command-injection surface.
+//
+// ⭐ 2026-10-18 (Ocean, 〈HAI- Lecture5〉): **which window** is not the browser's `front window`.
+// With several Chrome windows open, the first captures out of the lecture PDF were all labelled
+// with another window's tab, 「Sign in successful | Claude Platform」. The browser's own window
+// order is its idea, not the screen's; the window server's front-to-back order is what the user
+// sees. So: every window's frame + active tab from the browser, and the one whose frame is the
+// frontmost of this browser's windows on screen wins. `front window` stays as the fallback — a
+// browser that cannot give frames (or no frame matched) behaves exactly as before.
 #[cfg(target_os = "macos")]
-fn browser_tab_title(app: &str) -> Option<String> {
-    use std::process::Command;
-    let script: String = match app {
-        "Safari" => {
-            "tell application \"Safari\" to get name of current tab of front window".to_string()
-        }
+fn browser_tab_title(app: &str, pid: Option<i32>) -> Option<String> {
+    let (tab_of_w, tab_of_front) = match app {
+        "Safari" => ("name of current tab of w", "name of current tab of front window"),
         "Google Chrome" | "Microsoft Edge" | "Brave Browser" | "Arc" => {
-            format!("tell application \"{app}\" to get title of active tab of front window")
+            ("title of active tab of w", "title of active tab of front window")
         }
         _ => return None,
     };
-    let output = Command::new("osascript")
-        .args(["-e", "with timeout of 1 seconds", "-e", &script, "-e", "end timeout"])
-        .output()
-        .ok()?;
-    if !output.status.success() {
-        return None;
+    let tell = format!("tell application \"{app}\"");
+    let record = format!(
+        "set out to out & (item 1 of b) & \",\" & (item 2 of b) & \",\" & (item 3 of b) & \",\" & (item 4 of b) & (character id 31) & ({tab_of_w}) & (character id 30)"
+    );
+    let windows = osascript(&[
+        &tell,
+        "set out to \"\"",
+        "repeat with w in windows",
+        "try",
+        "set b to bounds of w",
+        &record,
+        "end try",
+        "end repeat",
+        "return out",
+        "end tell",
+    ])
+    .map(|out| browser_windows(&out))
+    .unwrap_or_default();
+    let on_screen: Vec<Frame> = match pid {
+        Some(pid) => onscreen_windows().into_iter().filter(|w| w.pid == pid).map(|w| w.bounds).collect(),
+        None => Vec::new(),
+    };
+    if let Some(w) = window_the_user_is_in(&on_screen, &windows).or(windows.first()) {
+        return (!w.title.is_empty()).then(|| w.title.clone());
     }
-    let title = String::from_utf8(output.stdout).ok()?;
-    let trimmed = title.trim();
-    if trimmed.is_empty() {
-        None
-    } else {
-        Some(trimmed.to_string())
-    }
+    // No frames at all (a browser that does not script `bounds`): the old single question.
+    osascript(&[&format!("{tell} to get {tab_of_front}")])
+}
+
+/// x, y, width, height in global points, top-left origin — both the window server's
+/// `kCGWindowBounds` and AppleScript's `bounds` (as left, top, right, bottom) use that space.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+type Frame = (f64, f64, f64, f64);
+
+/// One of a browser's windows as its scripting interface reported it.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+#[derive(Debug, Clone, PartialEq)]
+struct BrowserWindow {
+    frame: Frame,
+    title: String,
+}
+
+/// Parse browser_tab_title's script output: records split by U+001E, each
+/// `left,top,right,bottom` U+001F `title`. In the browser's own window order.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn browser_windows(out: &str) -> Vec<BrowserWindow> {
+    out.split('\u{1e}')
+        .filter_map(|rec| {
+            let (bounds, title) = rec.split_once('\u{1f}')?;
+            let n: Vec<f64> = bounds.trim().split(',').filter_map(|v| v.trim().parse().ok()).collect();
+            let [l, t, r, b] = n[..] else { return None };
+            Some(BrowserWindow { frame: (l, t, r - l, b - t), title: title.trim().to_string() })
+        })
+        .collect()
+}
+
+/// The browser window the user is in: the frontmost of the browser's on-screen windows
+/// (`on_screen`, front to back) that is one of `windows`, recognised by its frame. Frames
+/// that match none (a find bar, a bubble, a Stage Manager thumbnail) are stepped over.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn window_the_user_is_in<'a>(on_screen: &[Frame], windows: &'a [BrowserWindow]) -> Option<&'a BrowserWindow> {
+    let close = |a: f64, b: f64| (a - b).abs() <= 1.0;
+    on_screen.iter().find_map(|&(x, y, w, h)| {
+        windows.iter().find(|bw| {
+            let (bx, by, bwid, bh) = bw.frame;
+            close(bx, x) && close(by, y) && close(bwid, w) && close(bh, h)
+        })
+    })
 }
 
 #[derive(Debug, Deserialize)]
@@ -1270,33 +1354,65 @@ fn ax_focused_app_pid() -> Option<i32> {
 // the user is looking at".
 #[cfg(target_os = "macos")]
 fn frontmost_window_owner_pid() -> Option<i32> {
+    onscreen_windows().first().map(|w| w.pid)
+}
+
+/// An ordinary (layer 0) window on screen, as the window server describes it.
+#[cfg(target_os = "macos")]
+struct OnscreenWindow {
+    pid: i32,
+    number: u32,
+    bounds: Frame,
+}
+
+/// The ordinary windows on screen, front to back — the reading frontmost_window_owner_pid
+/// takes its first entry from, and browser_tab_title picks the user's browser window from
+/// (window numbers and frames need no grant either; only titles are Screen Recording's).
+#[cfg(target_os = "macos")]
+fn onscreen_windows() -> Vec<OnscreenWindow> {
     use core_foundation::base::{CFType, TCFType};
     use core_foundation::dictionary::CFDictionary;
     use core_foundation::number::CFNumber;
     use core_foundation::string::CFString;
     use core_graphics::window::{
-        copy_window_info, kCGNullWindowID, kCGWindowLayer, kCGWindowListOptionOnScreenOnly,
-        kCGWindowOwnerPID,
+        copy_window_info, kCGNullWindowID, kCGWindowBounds, kCGWindowLayer,
+        kCGWindowListOptionOnScreenOnly, kCGWindowNumber, kCGWindowOwnerPID,
     };
 
-    let info = copy_window_info(kCGWindowListOptionOnScreenOnly, kCGNullWindowID)?;
+    let Some(info) = copy_window_info(kCGWindowListOptionOnScreenOnly, kCGNullWindowID) else {
+        return Vec::new();
+    };
     let layer_key = unsafe { CFString::wrap_under_get_rule(kCGWindowLayer) };
     let pid_key = unsafe { CFString::wrap_under_get_rule(kCGWindowOwnerPID) };
-    let num = |d: &CFDictionary<CFString, CFType>, k: &CFString| -> Option<i32> {
-        d.find(k).and_then(|v| v.downcast::<CFNumber>()).and_then(|n| n.to_i32())
+    let number_key = unsafe { CFString::wrap_under_get_rule(kCGWindowNumber) };
+    let bounds_key = unsafe { CFString::wrap_under_get_rule(kCGWindowBounds) };
+    let num = |d: &CFDictionary<CFString, CFType>, k: &CFString| -> Option<f64> {
+        d.find(k).and_then(|v| v.downcast::<CFNumber>()).and_then(|n| n.to_f64())
     };
+    let mut out = Vec::new();
     for raw in info.iter() {
         let dict = unsafe {
             CFDictionary::<CFString, CFType>::wrap_under_get_rule(*raw as *const _)
         };
-        if num(&dict, &layer_key) != Some(0) {
+        if num(&dict, &layer_key) != Some(0.0) {
             continue;
         }
-        if let Some(pid) = num(&dict, &pid_key).filter(|p| *p > 0) {
-            return Some(pid);
-        }
+        let Some(pid) = num(&dict, &pid_key).map(|p| p as i32).filter(|p| *p > 0) else {
+            continue;
+        };
+        let bounds = dict
+            .find(&bounds_key)
+            .and_then(|v| v.downcast::<CFDictionary>())
+            .map(|b| unsafe { CFDictionary::<CFString, CFType>::wrap_under_get_rule(b.as_concrete_TypeRef()) })
+            .and_then(|b| {
+                let f = |k: &'static str| num(&b, &CFString::from_static_string(k));
+                Some((f("X")?, f("Y")?, f("Width")?, f("Height")?))
+            })
+            .unwrap_or((0.0, 0.0, 0.0, 0.0));
+        let number = num(&dict, &number_key).map(|n| n as u32).unwrap_or(0);
+        out.push(OnscreenWindow { pid, number, bounds });
     }
-    None
+    out
 }
 
 // Make `pid` the active app. Returns false when the accessibility server refuses (no
@@ -1874,5 +1990,36 @@ mod tests {
         }))
         .unwrap();
         assert!(serde_json::to_value(text).unwrap().get("image").is_none());
+    }
+
+    // 2026-10-18 (〈HAI- Lecture5〉): what System Events prints for `{name, unix id}`.
+    #[test]
+    fn the_frontmost_process_line_gives_its_name_and_pid() {
+        assert_eq!(name_and_pid("Google Chrome, 49341\n"), Some(("Google Chrome".into(), Some(49341))));
+        assert_eq!(name_and_pid("Code"), Some(("Code".into(), None)), "no pid: the whole line is the name");
+        assert_eq!(name_and_pid("A, B"), Some(("A, B".into(), None)), "a tail that is not a number stays in the name");
+        assert_eq!(name_and_pid("  "), None);
+    }
+
+    // The source of a capture out of a browser is the window the user is in — the frontmost of
+    // the browser's windows on screen — not the browser's own `front window` (Ocean 2026-10-18).
+    #[test]
+    fn the_browser_window_is_the_frontmost_one_on_screen_not_the_browsers_first() {
+        // As browser_tab_title's script prints it, in the browser's own order: the sign-in window
+        // first (the browser's idea of front), the lecture behind it.
+        let out = "240,0,2320,1352\u{1f}Sign in successful | Claude Platform\u{1e}0,25,1512,982\u{1f}HAI-Lecture5\u{1e}";
+        let windows = browser_windows(out);
+        assert_eq!(windows.len(), 2);
+        assert_eq!(windows[1], BrowserWindow { frame: (0.0, 25.0, 1512.0, 957.0), title: "HAI-Lecture5".into() });
+        // The window server: a small bubble of the lecture window in front, then the lecture window.
+        let on_screen = [(1200.0, 40.0, 300.0, 120.0), (0.0, 25.0, 1512.0, 957.0), (240.0, 0.0, 2080.0, 1352.0)];
+        assert_eq!(window_the_user_is_in(&on_screen, &windows).map(|w| w.title.as_str()), Some("HAI-Lecture5"));
+        // Nothing of the browser on screen (another Space): no answer here — the caller falls back
+        // to the browser's first window, which is what it always did.
+        assert_eq!(window_the_user_is_in(&[], &windows), None);
+        // A window server frame a point off still counts (fractional points round differently).
+        assert!(window_the_user_is_in(&[(240.4, 0.0, 2080.6, 1351.5)], &windows).is_some());
+        // Records that do not parse are skipped, not fatal.
+        assert_eq!(browser_windows("junk\u{1e}1,2,3\u{1f}t\u{1e}\n").len(), 0);
     }
 }

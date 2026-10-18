@@ -179,44 +179,63 @@ fn screenshot_chord(keycode: i64, cmd: bool, shift: bool, ctrl: bool) -> Option<
     }
 }
 
-/// The copy-gate's question, with a screenshot counted like a ⌘C (P7-7): did one of them
-/// happen within `window_ms` before this double-tap? Returns what opened it — the more recent
-/// of the two — so the capture knows whether to look for a picture first.
-#[derive(Debug, PartialEq, Eq)]
-enum Opener {
-    Copy,
-    Shot,
+/// The copy-gate's question for one opener (P7-7: a screenshot chord counts like a ⌘C): did it
+/// happen within `window_ms` before this double-tap? `at_ns == 0` = never.
+///
+/// ⚠️ 2026-10-18 (Ocean, 〈HAI- Lecture5〉): the two are asked separately, no longer "whichever
+/// came last". A ⌘C after a ⌘⇧4 used to hide the screenshot altogether, and the capture took the
+/// text still on the clipboard from before — the picture went to a file, not to the clipboard.
+/// Now the screenshot rides along with `copiedAfter`, and the capture asks whether that ⌘C
+/// brought anything new (images.rs `clipboard_changed_since_shot`).
+fn gate_open(at_ns: u64, now_ns: u64, window_ms: u64) -> bool {
+    at_ns != 0 && at_ns <= now_ns && (now_ns - at_ns) / NANOS_PER_MS <= window_ms
 }
-fn gate_opener(copy_ns: u64, shot_ns: u64, now_ns: u64, window_ms: u64) -> Option<Opener> {
-    let (at, who) = if shot_ns > copy_ns { (shot_ns, Opener::Shot) } else { (copy_ns, Opener::Copy) };
-    (at != 0 && at <= now_ns && (now_ns - at) / NANOS_PER_MS <= window_ms).then_some(who)
+
+/// The wall clock in ms — what screenshot files are dated by.
+fn wall_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
 }
 
 // P9H-7 ① (DISCOVERED-20261008-3, Ocean 10-16 第 152 条): ⌘⇧5 only opens a toolbar — the
 // picture is taken when the user clicks in it, which can be long after the chord, past the
 // 10 s gate below, and the double-tap that followed went to Claude. So a screenshot FILE
-// written since that chord, within the gate's window, opens it too. Only for the toolbar kind
-// (⌘⇧3/4 write at the chord itself), only within TOOLBAR_LINGER_MS of the chord, and only once
-// the file has landed: the floating thumbnail holds it back ~5 s, and the overlay already tells
-// the user to wait for the thumbnail to go (「等右下角的小图消失后再双击 ⌥」).
-const TOOLBAR_LINGER_MS: u64 = 5 * 60_000;
+// written since that chord, within the gate's window, opens it too — only within
+// SHOT_LINGER_MS of the chord, and only once the file has landed: the floating thumbnail holds
+// it back ~5 s, and the overlay already tells the user to wait for the thumbnail to go.
+// ⭐ 2026-10-18: ⌘⇧3/4 too (their picture is taken when the selection is done, not at the chord —
+// a careful selection plus the thumbnail's 5 s is already most of the 10 s), and a picture still
+// sitting in the thumbnail (images.rs `screenshot_pending_since`) counts as well as a landed one.
+const SHOT_LINGER_MS: u64 = 5 * 60_000;
 
 /// The question above, given when the newest screenshot since the chord landed (`landed_ms`,
-/// None = none yet). All wall-clock ms.
-fn toolbar_shot_opens(kind: Option<ShotKind>, chord_ms: u64, landed_ms: Option<u64>, now_ms: u64, window_ms: u64) -> bool {
-    kind == Some(ShotKind::Toolbar)
-        && now_ms.saturating_sub(chord_ms) <= TOOLBAR_LINGER_MS
-        && landed_ms.is_some_and(|at| now_ms.saturating_sub(at) <= window_ms)
+/// None = none yet) and whether one is in the thumbnail now. All wall-clock ms.
+fn late_shot_opens(
+    kind: Option<ShotKind>,
+    chord_ms: u64,
+    landed_ms: Option<u64>,
+    pending: bool,
+    now_ms: u64,
+    window_ms: u64,
+) -> bool {
+    matches!(kind, Some(ShotKind::File | ShotKind::Toolbar))
+        && now_ms.saturating_sub(chord_ms) <= SHOT_LINGER_MS
+        && (pending || landed_ms.is_some_and(|at| now_ms.saturating_sub(at) <= window_ms))
 }
 
-/// Look in the screenshot folder from inside the tap — on a helper thread, given at most 300 ms:
+/// Look at the screenshot folders from inside the tap — on a helper thread, given at most 300 ms:
 /// the tap is in the path of every key on the machine and macOS switches off a tap that stalls.
-fn toolbar_shot_landed(chord_ms: u64) -> Option<u64> {
+fn late_shot_seen(chord_ms: u64) -> (Option<u64>, bool) {
     let (tx, rx) = std::sync::mpsc::channel();
     std::thread::spawn(move || {
-        let _ = tx.send(crate::images::screenshot_landed_since(chord_ms));
+        let _ = tx.send((
+            crate::images::screenshot_landed_since(chord_ms),
+            crate::images::screenshot_pending_since(chord_ms),
+        ));
     });
-    rx.recv_timeout(std::time::Duration::from_millis(300)).ok().flatten()
+    rx.recv_timeout(std::time::Duration::from_millis(300)).unwrap_or((None, false))
 }
 
 // Copy-gate (2026-07-08): Claude Desktop's quick-entry popup ALSO triggers on a
@@ -246,6 +265,27 @@ fn fresh_copy_within(copy_ns: u64, used_ns: u64, press_ns: u64, window_ms: u64) 
 
 // CGEventGetTimestamp (ns) of the last observed ⌘C/⌘X keydown; 0 = never.
 static LAST_COPY_CHORD_NS: AtomicU64 = AtomicU64::new(0);
+// The same keydown on the wall clock (ms) — images.rs gives the copying app a moment after it.
+static LAST_COPY_WALL_MS: AtomicU64 = AtomicU64::new(0);
+
+/// Wall ms of the last ⌘C/⌘X keydown, 0 = never.
+pub fn last_copy_wall_ms() -> u64 {
+    LAST_COPY_WALL_MS.load(Ordering::Relaxed)
+}
+
+// 2026-10-18: what the clipboard held at the last screenshot chord — (that chord's
+// LAST_SHOT_NS, images::clipboard_fingerprint()). Read on a helper thread after the chord.
+static SHOT_CLIPBOARD: Mutex<Option<(u64, Option<u64>)>> = Mutex::new(None);
+
+/// The clipboard's fingerprint at the last screenshot chord; None when it was not measured
+/// (no chord yet, or the newest chord's reading has not come back).
+pub fn clipboard_at_shot() -> Option<Option<u64>> {
+    let chord = LAST_SHOT_NS.load(Ordering::Relaxed);
+    match *SHOT_CLIPBOARD.lock().unwrap() {
+        Some((at, fingerprint)) if at == chord => Some(fingerprint),
+        _ => None,
+    }
+}
 
 // P7-7: the last screenshot chord — when (event clock, for the gate; wall clock, to find the
 // file it writes) and which kind (`ShotKind as u8`, 0 = never).
@@ -572,6 +612,7 @@ fn on_event(etype: u32, event_ptr: *mut c_void) -> bool {
             {
                 let now = unsafe { CGEventGetTimestamp(event_ptr as *const c_void) };
                 LAST_COPY_CHORD_NS.store(now, Ordering::Relaxed);
+                LAST_COPY_WALL_MS.store(wall_ms(), Ordering::Relaxed);
             } else if let Some(kind) = screenshot_chord(
                 keycode,
                 flags.contains(CGEventFlags::CGEventFlagCommand),
@@ -581,13 +622,15 @@ fn on_event(etype: u32, event_ptr: *mut c_void) -> bool {
                 // P7-7: a screenshot opens the gate the way ⌘C does (same window). Only
                 // observed, never consumed — the system still takes the screenshot.
                 let now = unsafe { CGEventGetTimestamp(event_ptr as *const c_void) };
-                let wall = std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .map(|d| d.as_millis() as u64)
-                    .unwrap_or(0);
                 LAST_SHOT_NS.store(now, Ordering::Relaxed);
-                LAST_SHOT_WALL_MS.store(wall, Ordering::Relaxed);
+                LAST_SHOT_WALL_MS.store(wall_ms(), Ordering::Relaxed);
                 LAST_SHOT_KIND.store(kind as u8, Ordering::Relaxed);
+                // 2026-10-18: what the clipboard holds right now, before anything after the chord
+                // — a later ⌘C is measured against it. Off the tap: a clipboard read can block.
+                thread::spawn(move || {
+                    let fingerprint = crate::images::clipboard_fingerprint();
+                    *SHOT_CLIPBOARD.lock().unwrap() = Some((now, fingerprint));
+                });
                 eprintln!("[double-tap] screenshot chord seen ({})", kind.name());
             }
             true
@@ -718,38 +761,38 @@ fn on_event(etype: u32, event_ptr: *mut c_void) -> bool {
                     // Claude Desktop's identical quick-entry gesture.
                     let copied = LAST_COPY_CHORD_NS.load(Ordering::Relaxed);
                     let copy_gap_ms = now.saturating_sub(copied) / NANOS_PER_MS;
-                    // P7-7: a screenshot chord counts like ⌘C; whichever came last opened it.
+                    // P7-7: a screenshot chord counts like ⌘C. 2026-10-18: both are asked — see
+                    // gate_open for why a later ⌘C no longer hides the screenshot.
                     let shot_ns = LAST_SHOT_NS.load(Ordering::Relaxed);
-                    let mut opener = gate_opener(copied, shot_ns, now, COPY_GATE_WINDOW_MS);
-                    // P9H-7 ①: ⌘⇧5 lingered on — a screenshot file that landed just now opens it too.
-                    // The cheap checks first: the folder is only looked at after a toolbar chord.
+                    let copy_open = gate_open(copied, now, COPY_GATE_WINDOW_MS);
+                    let mut shot_open = gate_open(shot_ns, now, COPY_GATE_WINDOW_MS);
+                    // P9H-7 ① + 2026-10-18: a screenshot taken a while after its chord — the file
+                    // that landed just now, or the picture still in the thumbnail, opens it too.
+                    // The cheap checks first: the folders are only looked at after a chord.
                     let kind = ShotKind::from_u8(LAST_SHOT_KIND.load(Ordering::Relaxed));
                     let chord_ms = LAST_SHOT_WALL_MS.load(Ordering::Relaxed);
-                    let now_ms = std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .map(|d| d.as_millis() as u64)
-                        .unwrap_or(0);
-                    if opener.is_none()
+                    let now_ms = wall_ms();
+                    if !shot_open
                         && COPY_GATE_ACTIVE.load(Ordering::Relaxed)
-                        && kind == Some(ShotKind::Toolbar)
-                        && now_ms.saturating_sub(chord_ms) <= TOOLBAR_LINGER_MS
-                        && toolbar_shot_opens(kind, chord_ms, toolbar_shot_landed(chord_ms), now_ms, COPY_GATE_WINDOW_MS)
+                        && late_shot_opens(kind, chord_ms, None, true, now_ms, COPY_GATE_WINDOW_MS)
                     {
-                        opener = Some(Opener::Shot);
+                        let (landed, pending) = late_shot_seen(chord_ms);
+                        shot_open = late_shot_opens(kind, chord_ms, landed, pending, now_ms, COPY_GATE_WINDOW_MS);
                     }
-                    if !COPY_GATE_ACTIVE.load(Ordering::Relaxed) || opener.is_some() {
+                    if !COPY_GATE_ACTIVE.load(Ordering::Relaxed) || copy_open || shot_open {
+                        // A ⌘C after the chord: the capture asks the clipboard whether it was new.
+                        let copied_after = copied > shot_ns;
                         eprintln!(
-                            "[double-tap] TRIGGER gap={gap}ms (⌘C {copy_gap_ms}ms ago, opener {opener:?})"
+                            "[double-tap] TRIGGER gap={gap}ms (⌘C {copy_gap_ms}ms ago, \
+                             screenshot {shot_open}, ⌘C after it {copied_after})"
                         );
-                        let shot = (opener == Some(Opener::Shot))
-                            .then(|| ShotKind::from_u8(LAST_SHOT_KIND.load(Ordering::Relaxed)))
-                            .flatten()
-                            .map(|kind| {
-                                serde_json::json!({
-                                    "atMs": LAST_SHOT_WALL_MS.load(Ordering::Relaxed),
-                                    "kind": kind.name(),
-                                })
-                            });
+                        let shot = shot_open.then_some(kind).flatten().map(|kind| {
+                            serde_json::json!({
+                                "atMs": chord_ms,
+                                "kind": kind.name(),
+                                "copiedAfter": copied_after,
+                            })
+                        });
                         // ⛔ 这一下已经是双击了 —— 把还在等的那个长按作废，
                         // 「不许两条都触发」就是靠这一行。
                         cancel_long_press();
@@ -951,20 +994,22 @@ mod tests {
         assert_eq!(screenshot_chord(KEYCODE_C, true, true, false), None);
     }
 
-    // P7-7: a screenshot opens the gate like ⌘C, same window; the more recent one is the opener.
+    // P7-7: a screenshot opens the gate like ⌘C, same window. 2026-10-18: each is asked on its
+    // own — a ⌘C after the screenshot no longer closes the screenshot's half (the capture then
+    // asks the clipboard whether that ⌘C brought anything new).
     #[test]
     fn a_screenshot_opens_the_copy_gate_like_cmd_c() {
         let now = 100_000 * MS;
         let w = COPY_GATE_WINDOW_MS;
-        assert_eq!(gate_opener(0, 0, now, w), None, "neither");
-        assert_eq!(gate_opener(now - 3_000 * MS, 0, now, w), Some(Opener::Copy));
-        assert_eq!(gate_opener(0, now - 3_000 * MS, now, w), Some(Opener::Shot));
-        assert_eq!(gate_opener(now - 9_000 * MS, now - 1_000 * MS, now, w), Some(Opener::Shot));
-        assert_eq!(gate_opener(now - 1_000 * MS, now - 9_000 * MS, now, w), Some(Opener::Copy));
-        assert_eq!(gate_opener(0, now - 10_000 * MS, now, w), Some(Opener::Shot), "edge is in");
-        assert_eq!(gate_opener(0, now - 10_001 * MS, now, w), None);
-        // Both older than the window: closed.
-        assert_eq!(gate_opener(now - 30_000 * MS, now - 11_000 * MS, now, w), None);
+        assert!(!gate_open(0, now, w), "never");
+        assert!(gate_open(now - 3_000 * MS, now, w));
+        assert!(gate_open(now - 10_000 * MS, now, w), "edge is in");
+        assert!(!gate_open(now - 10_001 * MS, now, w));
+        assert!(!gate_open(now + MS, now, w), "after the double-tap");
+        // Ocean's log, 10-18: ⌘⇧4, then the ⌘C a key macro sends 10 ms before its ⌥⌥ — both
+        // open, so the screenshot is still offered (with the ⌘C after it).
+        let (shot, copy) = (now - 4_000 * MS, now - 10 * MS);
+        assert!(gate_open(shot, now, w) && gate_open(copy, now, w) && copy > shot);
     }
 
     // P3 验收 (Ocean 10-02): one ⌘C fills one card. Once it is used, the same copy never
@@ -981,23 +1026,29 @@ mod tests {
     }
 
     // P9H-7 ① (DISCOVERED-20261008-3): ⌘⇧5, a long look at the toolbar, then the click — the file
-    // that lands opens the gate, as the chord would have.
+    // that lands opens the gate, as the chord would have. 2026-10-18: ⌘⇧3/4 the same, and a
+    // picture still in the thumbnail counts as well as a landed one.
     #[test]
-    fn a_screenshot_landing_after_a_lingering_toolbar_opens_the_gate() {
+    fn a_screenshot_taken_long_after_its_chord_still_opens_the_gate() {
         let chord = 1_800_000_000_000_u64;
         let w = COPY_GATE_WINDOW_MS;
         let toolbar = Some(ShotKind::Toolbar);
+        let file = Some(ShotKind::File);
         // 40 s on the toolbar, the file landed 3 s ago.
-        assert!(toolbar_shot_opens(toolbar, chord, Some(chord + 37_000), chord + 40_000, w));
+        assert!(late_shot_opens(toolbar, chord, Some(chord + 37_000), false, chord + 40_000, w));
         // It landed 11 s ago: like a ⌘C 11 s ago, too old.
-        assert!(!toolbar_shot_opens(toolbar, chord, Some(chord + 29_000), chord + 40_000, w));
-        // Nothing has landed yet (the thumbnail is still up, or the toolbar was cancelled).
-        assert!(!toolbar_shot_opens(toolbar, chord, None, chord + 40_000, w));
-        // Only the toolbar: ⌘⇧3/4 write at the chord, and their gate is the chord's own.
-        assert!(!toolbar_shot_opens(Some(ShotKind::File), chord, Some(chord + 37_000), chord + 40_000, w));
-        assert!(!toolbar_shot_opens(None, chord, Some(chord + 37_000), chord + 40_000, w));
-        // Not forever: a file landing long after an old ⌘⇧5 is not that toolbar's.
-        let late = chord + TOOLBAR_LINGER_MS + 1;
-        assert!(!toolbar_shot_opens(toolbar, chord, Some(late - 1_000), late, w));
+        assert!(!late_shot_opens(toolbar, chord, Some(chord + 29_000), false, chord + 40_000, w));
+        // Nothing has landed and nothing is in the thumbnail (the toolbar was cancelled).
+        assert!(!late_shot_opens(toolbar, chord, None, false, chord + 40_000, w));
+        // ⌘⇧4 with a slow selection: 9 s to select, double-tapped while the thumbnail is up.
+        assert!(late_shot_opens(file, chord, None, true, chord + 12_000, w));
+        // …or after it went and the file landed.
+        assert!(late_shot_opens(file, chord, Some(chord + 14_000), false, chord + 16_000, w));
+        // Not the clipboard kind (it writes no file), not without a chord.
+        assert!(!late_shot_opens(Some(ShotKind::Clipboard), chord, Some(chord + 37_000), true, chord + 40_000, w));
+        assert!(!late_shot_opens(None, chord, Some(chord + 37_000), true, chord + 40_000, w));
+        // Not forever: a file landing long after an old chord is not that chord's.
+        let late = chord + SHOT_LINGER_MS + 1;
+        assert!(!late_shot_opens(toolbar, chord, Some(late - 1_000), true, late, w));
     }
 }

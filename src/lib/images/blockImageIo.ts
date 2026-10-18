@@ -60,8 +60,18 @@ const IMAGE_EXT = /\.(png|jpe?g|gif|webp|tiff?|heic)$/i;
 export const isImagePath = (path: string): boolean => IMAGE_EXT.test(path);
 
 /** How long a capture waits for a ⌘⇧4 screenshot to be written (the floating thumbnail holds
- *  it back about five seconds). */
+ *  it back about five seconds). The least it waits: while the picture is still in the thumbnail
+ *  Rust keeps waiting, up to a minute (images.rs `find_new_screenshot`). */
 export const SHOT_WAIT_MS = 8_000;
+
+/** 2026-10-18 — a ⌘C pressed after a screenshot chord: did it bring anything new to the clipboard?
+ *  false = it did not, and the screenshot is what to capture. Any failure or a slow clipboard
+ *  answers true, which is the behaviour from before (the clipboard wins). */
+export const clipboardChangedSinceShot = (): Promise<boolean> =>
+  Promise.race([
+    invoke<boolean>('clipboard_changed_since_shot').catch(() => true),
+    new Promise<boolean>((resolve) => setTimeout(() => resolve(true), 1_500)),
+  ]);
 
 /** The screenshot taken at `sinceMs`, once it is a file; null = none came in time.
  *  Rejects with 'denied' when the Desktop permission was refused. */

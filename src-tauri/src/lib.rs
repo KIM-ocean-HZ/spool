@@ -405,6 +405,7 @@ pub fn run() {
             images::add_block_image_from_clipboard,
             images::clipboard_image_size,
             images::find_new_screenshot,
+            images::clipboard_changed_since_shot,
             images::screenshot_goes_to_clipboard,
             images::cached_block_images,
             images::clipboard_image_files,
