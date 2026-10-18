@@ -9,6 +9,7 @@ import {
   countBlocksByProjectSince,
   countCaptures,
   countMcpBlocks,
+  countStitches,
   countUserWrittenChars,
   createBlock,
   deleteBlock,
@@ -17,6 +18,7 @@ import {
   listCapturesSince,
   listIncomingRefsForTargets,
   listPendingRefReviews,
+  listStitchTimesSince,
   mergeBlocks,
   restoreBlock,
   applyCompression,
@@ -1047,5 +1049,55 @@ describe('countBlocksByProjectSince', () => {
     // a block marked 「不作数了」 was still added this week; last week's is not this week's
     expect(byId[b.id]).toEqual({ threadId: b.id, capture: 1, self: 0, ai: 0 });
     expect(byId[gone.id]).toBeUndefined();
+  });
+});
+
+describe('countStitches / listStitchTimesSince (织布)', () => {
+  let sqlite: Sqlite;
+
+  beforeEach(() => {
+    sqlite = new DatabaseSync(':memory:');
+    sqlite.exec(schemaSql);
+    __setTestDb(makeAdapter(sqlite));
+  });
+
+  afterEach(() => {
+    __setTestDb(null);
+    sqlite.close();
+  });
+
+  it('counts exactly what 活动 calls captured + written by you — never the AI, the tutorial or a deleted project', async () => {
+    const ws = await createWorkspace('工作区');
+    const a = await createThread(ws.id, 'A');
+    const b = await createThread(ws.id, 'B');
+    const gone = await createThread(ws.id, '删掉的');
+    for (const source of [null, '', 'Safari', 'Chrome', '那本书', 'Claude · MCP', 'MCP', 'Spool 指南', 'Spool Guide']) {
+      await createBlock({ threadId: a.id, content: source ?? 'user', source });
+    }
+    const old = await createBlock({ threadId: b.id, content: '上周的', source: 'Safari' });
+    await createBlock({ threadId: gone.id, content: '删掉的项目里', source: null });
+    sqlite.prepare('UPDATE threads SET deleted_at = ? WHERE id = ?').run(Date.now(), gone.id);
+    const since = Date.now() - 60_000;
+    sqlite.prepare('UPDATE blocks SET created_at = ? WHERE id = ?').run(since - 7 * 86_400_000, old.id);
+
+    // null + '' (yours) + Safari, Chrome, 那本书 (captured) + last week's capture = 6
+    expect(await countStitches()).toBe(6);
+    const times = await listStitchTimesSince(since);
+    expect(times).toHaveLength(5);
+    expect([...times].sort((x, y) => x - y)).toEqual(times);
+
+    // the same blocks the weekly 活动 panel counts, so the two can never disagree
+    const week = await countBlocksByProjectSince(since);
+    expect(week.reduce((n, r) => n + r.capture + r.self, 0)).toBe(times.length);
+  });
+
+  it('a deleted block takes its stitch with it', async () => {
+    const ws = await createWorkspace('工作区');
+    const a = await createThread(ws.id, 'A');
+    const x = await createBlock({ threadId: a.id, content: 'x', source: null });
+    await createBlock({ threadId: a.id, content: 'y', source: 'Safari' });
+    expect(await countStitches()).toBe(2);
+    await deleteBlock(x.id);
+    expect(await countStitches()).toBe(1);
   });
 });

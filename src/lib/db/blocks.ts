@@ -336,6 +336,39 @@ export const countBlocksByProjectSince = async (since: number): Promise<ProjectB
   return rows.map((r) => ({ threadId: r.threadId, capture: Number(r.capture), self: Number(r.self), ai: Number(r.ai) }));
 };
 
+/** 织布（Ocean 2026-10-17）—— 一针 = 你自己的一块：捕捉进来的，或者自己写的。⛔ 不另写判断：就是
+ *  `countBlocksByProjectSince` 的 capture + self 那两种（同一个 `captureClause`、同一条「source 为空」），
+ *  所以周回顾「活动」和织布永远数的是同一批块。⛔ AI 写回的不算 —— AI 不能替你织。教程那几块、删掉的
+ *  项目里的不算；删掉一块，那一针跟着没了（针数是查出来的，⛔ 不存）。 */
+const stitchWhere = (since: number): { sql: string; params: (string | number)[] } => {
+  const cap = captureClause();
+  const holes = cap.params.map((_, i) => `$${i + 1}`).join(', ');
+  return {
+    sql: `FROM blocks JOIN threads ON threads.id = blocks.thread_id
+           WHERE threads.deleted_at IS NULL
+             AND COALESCE(source, '') NOT IN (${holes})
+             AND (TRIM(COALESCE(source, '')) = '' OR (${cap.sql}))
+             AND blocks.created_at >= $${cap.params.length + 1}`,
+    params: [...cap.params, since],
+  };
+};
+
+/** 一共织了多少针（全部历史）。 */
+export const countStitches = async (): Promise<number> => {
+  const db = await getDb();
+  const w = stitchWhere(0);
+  const rows = await db.select<{ c: number }[]>(`SELECT COUNT(*) AS c ${w.sql}`, w.params);
+  return Number(rows[0]?.c ?? 0);
+};
+
+/** `since` 起每一针的时刻，从早到晚 —— 按本地日子分组由调用方做（周回顾那一周、今天那几针）。 */
+export const listStitchTimesSince = async (since: number): Promise<number[]> => {
+  const db = await getDb();
+  const w = stitchWhere(since);
+  const rows = await db.select<{ at: number }[]>(`SELECT blocks.created_at AS at ${w.sql} ORDER BY blocks.created_at`, w.params);
+  return rows.map((r) => Number(r.at));
+};
+
 /** What the user captured since `since` — newest first. Feeds the sidebar card's
  *  「今天读了 N 条」 line (首日价值, DESIGN_NEXT_STAGE §4.5) and its 打包 target.
  *

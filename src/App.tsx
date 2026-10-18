@@ -12,6 +12,7 @@ import ReviewPanel from '@/components/Review/ReviewPanel';
 import RightRail from '@/components/RightRail';
 import SearchOverlay from '@/components/Search/SearchOverlay';
 import Settings from '@/components/Settings';
+import KnitDrawer from '@/components/Knit/KnitDrawer';
 import Sidebar from '@/components/Sidebar';
 import ProjectBoard from '@/components/ProjectBoard';
 import ReviewBoard from '@/components/ReviewBoard';
@@ -380,7 +381,7 @@ export default function App() {
               not a set of blocks (the project matrix; the run of weekly reviews), so each
               takes the centre column the way a project does. Selecting any project leaves
               whichever one was open (threadsStore.select). */}
-          <main className="min-w-0 flex-1 overflow-hidden">
+          <main className="relative min-w-0 flex-1 overflow-hidden">
             {/* ⭐ R4（2026-08-22 晚）：整理面**不再抢中间区**。它现在是项目里的一个页签
                 （见 ThreadView），所以这里只剩三个同级的面。
                 ⛔ 原来那句「它故意盖过 pinned 视图」连同那个行为一起撤了 —— 那正是
@@ -392,6 +393,9 @@ export default function App() {
             ) : (
               <ThreadView />
             )}
+            {/* 织布（Ocean 2026-10-17）—— the cabinet slides up over the bottom of this column; the only
+                way in is the knitting panel in the sidebar. */}
+            <KnitDrawer />
           </main>
 
           {/* DESIGN_WORKBENCH §9.13 — **a pinned view has no right rail at all.** Ocean, twice:

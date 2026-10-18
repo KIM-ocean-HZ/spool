@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { clearAllData } from '@/lib/db/client';
 import { clearDraftsFile } from '@/lib/db/drafts';
 import { useT } from '@/lib/i18n';
+import { clearKnitFile } from '@/lib/knit/redemptions';
 import { IS_MAC } from '@/lib/platform';
 import BrowserAutomation from './BrowserAutomation';
 import LibraryTransfer from './LibraryTransfer';
@@ -20,6 +21,8 @@ export default function AdvancedConfig() {
       await clearAllData();
       // P9D: unsaved text lives in drafts.json, not the library — it goes too.
       await clearDraftsFile();
+      // 织布: what was knitted lives in knit.json — with the library empty there is no cloth to show for it.
+      await clearKnitFile();
       // Every store is now stale; a reload re-hydrates them from the empty DB.
       window.location.reload();
     } catch (e) {

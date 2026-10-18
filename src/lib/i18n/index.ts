@@ -574,10 +574,6 @@ const EN: Record<string, string> = {
   // 首日价值: the sidebar card (二期 — 「我攒了多少」, DESIGN_FIRST_DAY_VALUE) and the
   // one-time line the third capture earns under it in the feed.
   '你捕捉了 {n} 条': 'You captured {n}',
-  '线轴：每 100 条捕捉缠满一轴': 'One spool holds 100 captures',
-  '还差 {n} 条缠满': '{n} more to fill it',
-  '这一轴缠满了': 'This spool is full',
-  '已缠满 {n} 轴': '{n} spools filled',
   '今天读了 {n} 条': '{n} read today',
   '写了 {n} 字': '{n} chars written',
   // 情人节限定版 (2026-08-19) — the same four facts the spool states, said about the heart that
@@ -929,6 +925,39 @@ const EN: Record<string, string> = {
   '到期：': 'Due: ',
   '专注时间 = 你在电脑前（15 分钟内动过键盘或鼠标）的时间，和休息提醒是同一个计时；不是在某个项目上花的时间。':
     'Focus time = time at the computer (keyboard or mouse used within 15 minutes) — the same clock as the break reminder. It is not time spent on any one project.',
+  // 织布（Ocean 2026-10-17 选的 B）—— 左栏那一小块、底部的柜子、周回顾里那一节。
+  // ⚠️ No plural forms in this dictionary, so the English is written around the count
+  // («Stitches today: 3») rather than in front of a noun that would need one.
+  '打开柜子': 'Open the cupboard',
+  '今天织了 {n} 针': 'Stitches today: {n}',
+  '这一块还差 {n} 针': '{n} to go on this patch',
+  '攒了 {n} 块布': 'Patches put by: {n}',
+  '下一件：{item}': 'Next: {item}',
+  '柜子织满了': 'Cupboard is full',
+  '柜子': 'Cupboard',
+  '合上柜子': 'Close the cupboard',
+  '合上': 'Close',
+  '手里有 {n} 块布 · 一共织好 {m} 块': 'Patches in hand: {n} · knitted in all: {m}',
+  '{d} 织成': 'made {d}',
+  '要 {n} 块布': 'Takes {n} patches',
+  '还差 {n} 块布': '{n} patches short',
+  '织成{item}': 'Knit the {item}',
+  '一针 = 你自己的一块（捕捉的或自己写的，AI 写的不算）；{n} 针织成一块布。攒够了布，就能织下一件。':
+    'One stitch = one block of your own (captured or written by you; blocks written by an AI do not count). {n} stitches make a patch. Put by enough patches and you can knit the next thing.',
+  '杯垫': 'coaster',
+  '围巾': 'scarf',
+  '毛线帽': 'beanie',
+  '手套': 'mittens',
+  '小熊玩偶': 'teddy bear',
+  '毛衣': 'sweater',
+  '毯子': 'blanket',
+  '织成了{item}，放进柜子里了。': 'Knitted the {item} and put it in the cupboard.',
+  '没存上，{item}没有织成。': 'Could not save — the {item} was not knitted.',
+  '这一周织的布': 'Knitted this week',
+  '一针 = 一块 · 一行 = 一天': 'one stitch = one block · one row = one day',
+  '这周织了 {n} 针，织好 {m} 块布。': 'Stitches this week: {n} · patches finished: {m}.',
+  '这周织成了：': 'Made this week:',
+  '{item}（{day}）': '{item} ({day})',
   'AI 整理中…': 'AI working…',
   '用本机的 {engine} 把这条脉络提炼成一块结论':
     'Use the {engine} on this machine to distil this thread into one conclusion block',
