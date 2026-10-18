@@ -1,6 +1,6 @@
 # 产品任务书 P9H —— 发版一之前的扫尾：§9.10 里除了己组的 17 条
 
-> **状态：COMPLETE —— 待 Ocean 验收**（2026-10-16 下发，10-17 – 10-18 执行完、已换装；回执在 §7，验收单 §6 九条 + §7.11 末尾织布四条；10-18 验收中他提的织布四处已改，§7.13，还没换装）。验收通过之后是发版一。
+> **状态：COMPLETE —— 待 Ocean 验收**（2026-10-16 下发，10-17 – 10-18 执行完、已换装；回执在 §7，验收单 §6 九条 + §7.11 末尾织布四条；10-18 验收中他提的织布四处已改、已换装，§7.13）。验收通过之后是发版一。
 >
 > **唯一交付：** 下面 §3 的九步（P9H-0 – P9H-8），按顺序做完，每一步测试通过、单独一笔提交，并在 §7 写回执。
 >
@@ -479,4 +479,10 @@
 - 截图：`~/Desktop/Spool/P9H-screenshots-20261017/knit-v2/` —— `knit2-items*`（24 件，浅色 / 情人节 / 深色）、`knit2-app-made*`（按 Ocean 真实的四件：中英、情人节、深色、窄窗口）、`knit2-app-full`（全齐）、`knit2-side*`（左栏，含情人节）、`knit2-week*`（「活动」最底下那一行）。
 - 自己看截图改掉的：发带原来像一只盘子、围脖像花盆、披肩的花边太大 —— 三件重画了；袖套上像眼睛的拇指洞去掉了。
 - 不用了的文件（删要 Ocean 跑）：`src/components/Sidebar/SpoolMeter.tsx`、`src/components/Sidebar/HeartMeter.tsx`，以及只有它们在用的 `src/lib/blocks/spoolProgress.ts` 和它的测试。
-- 换装：还没有，先问。
+- **已换装**（Ocean 10-18「换装」，HANDOFF §9.2 第 157 条；`drafts.json` 停之前是空的）：
+  - 构建：在 `7209e8d` 上（`src` / `src-tauri` / `site` / `scripts` 没有未提交改动），命令同 §7.12；「skipping app notarization」；TSA 一遍过（`spool` 11:21:07、`spool-ai` 11:21:06）；`--verify --deep --strict` 过。新二进制连真库最新副本：普通 26 个工具、`--engine-run` 25 个，看图工具照旧回图片；副本数字探针前后一样。
+  - 装前：`spool` sha256 `86c26d3c…`（§7.12 那版）；真库 v35 · ok，数字和 §7.12 逐项一样（这一段没有新块）；快照 27 个；`knit.json` 四件（杯垫、围巾、毛线帽、手套，花了 17 块）。
+  - 备份（桌面）：`spool.before-knit2-install-20261018-112121.db` 和同名的 `settings` / `focus` / `drafts` / `knit` 四个 json（这次起多拷 `knit.json`）。
+  - 停：GUI 79505、`--overlay` 79512 按 pid `kill -TERM`，一秒内都退了；45 个 `--mcp` 一个没碰（装后逐个核过都活着）。旧包 `~/Desktop/Spool/spool-pre-install/Spool-old-20261018-112121-pre-knit2.app`。
+  - 装后：sha256 `33811bfd…` 和构建产物一致；主进程 20866（11:21:28）、`--overlay` 20945（11:21:29），txt inode 82945349 = 新文件；`spctl` = `Unnotarized Developer ID`；stderr 只有那两行。真库仍 v35 · ok、数字逐项一样、快照 27 个；`settings.json` 和 `knit.json` 逐字节一样。
+  - 没 push、没发版。
