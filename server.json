@@ -3,7 +3,7 @@
   "name": "io.github.KIM-ocean-HZ/spool",
   "title": "Spool",
   "description": "Your local project library: hand any AI a project pack, search it, and write findings back.",
-  "version": "0.6.2",
+  "version": "0.7.0",
   "websiteUrl": "https://spoolapp.org/#mcp",
   "repository": {
     "url": "https://github.com/KIM-ocean-HZ/spool",
