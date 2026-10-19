@@ -6,12 +6,12 @@ Several things earlier versions told you now work differently. They are collecte
 
 ## Download
 
-**macOS** — `Spool_0.7.0_aarch64.dmg` · __ MB · Apple Silicon (M1 or later), macOS 11 or newer
+**macOS** — `Spool_0.7.0_aarch64.dmg` · 10.9 MB · Apple Silicon (M1 or later), macOS 11 or newer
 
 The macOS build is signed and notarized with a Developer ID, so it opens without the "unidentified developer" warning. `Spool-macOS-arm64.dmg` is the same file under a fixed name, for direct-download links — either name works.
 
 ```
-sha256  ________________________________________________________________  Spool_0.7.0_aarch64.dmg
+sha256  5c2fb81784a57eed5d0d69a28fbe41733cf95eaeaa334d363f41b89aa65b0d5c  Spool_0.7.0_aarch64.dmg
 ```
 
 **Windows is not in this release.** The Windows download stays at v0.6.1, the last release that shipped a Windows installer. Windows catches up in the next release, together with macOS.
