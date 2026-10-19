@@ -148,4 +148,62 @@
 
 ## 7. 回执（执行窗填写）
 
-（待执行）
+### 7.1 P9R-0 · 开工核对 + Ocean 的答复（10-18 晚）
+
+- 前提：插队修的两个捕捉 bug（`f74dfab`）16:13 已换装；Ocean 10-18「试过了，两条都好」⇒ 开工。
+- 基线（`a78955b`）：tsc 干净 · vitest 113 个文件 / 1173 条（第一遍 1 条红：`knitStore.test.ts` 撤销那条，单独连跑 6 遍红 1 遍 ——
+  `unredeem` 拿 `Date.now()` 当身份，测试里两次兑换落在同一毫秒时旧 toast 的撤销对上了新的那件；人点不出同一毫秒，
+  是测试不稳不是产品 bug，记 HANDOFF，不在这一窗修）· cargo 222 过 · 5 跳过 · sidecar 14 · `(none missing)` · `--dead` 87 · `cargo tree` 那条空。
+- `fetch`（HTTPS + gh token）：远端 `main` 仍是 `e37950c`；本地多 **213** 笔（任务书写时 210，之后多了 P9R 任务书和插队那两笔）；
+  改到 `site/` 的 4 笔不变；`docs/` 改了 **131** 个文件；「推荐信 / 老师信息 / 个人网站素材」：`docs/` 里远端 3 个、推完 10 个
+  （多出的 1 个是这份任务书自己）；另有几个测试文件把这几个词当样例用，远端已经有 4 个。
+- §4 四件的答复：① **甲 照推**（第一次选了 Other 没写字，重问后选甲）；② Ocean 直接给了三个环境变量（只当环境变量传给构建命令，
+  没写进任何文件、提交或记忆）；③ **只写英文**；④ **丙 都不改**（首页线轴那一段和两张图这一版不动）。
+- 另问的一件（发布完整性，§5「停下来问」）：官网中英各 3 个 + README 1 个「下载 Windows 版」按钮指向
+  `releases/latest/download/Spool-windows-x64-setup.exe`，**从 08-24 v0.6.2 起就是 404**（v0.6.2 只发 Mac，`latest` 里没有 Windows 包；
+  台账 v0.6.2 那行写了「故意只发一个平台」，没人注意到按钮跟着坏了）。v0.7.0 也只发 Mac ⇒ Ocean 选**甲：按钮改指 v0.6.1**
+  （最后一个有 Windows 包的版本），按钮写「(v0.6.1)」、小字写「还是 v0.6.1，下一版跟上」。发版二要改回 `latest`。
+
+### 7.2 P9R-1 · 版本号和对外说法（`f92b937`）
+
+- 三处版本号 → 0.7.0，`Cargo.lock` 跟着，`cargo check` 过；隐私说明三份日期 → 2026-10-18，`build-site-zh` 重跑、它的测试 12 条过。
+- README：状态段（只发 Mac、Windows 停在 v0.6.1、链到发版说明、去掉 v0.5.0 feature-complete）、Windows 链接、MCP 工具数。
+- MCP 工具数（真库 `VACUUM INTO` 副本 + `{"mcpEnabled":true}`，`SPOOL_DATA_DIR` 指副本，`/Applications` 里那个二进制 = `f74dfab` 的代码，
+  P9R-1 不改代码）：普通连接 **26**（只读 14、写 12）；`--engine-run` **25**（少 `propose_split`）。P9R-4 用发版二进制再数一遍。
+- 官网：Windows 按钮（见 7.1）；线轴那一段不动（④ 丙）。提交前 tsc 干净、vitest 1173 全过。
+
+### 7.3 P9R-2 · 升级和首启验证（只在副本上）
+
+scratchpad 里一份 vitest 配置把 `@tauri-apps/plugin-sql` 和 `@tauri-apps/api/path` 换成桩（`Database.load` 打开 scratchpad 里的文件、
+快照目录指 scratchpad），跑的是仓库里真的 `migrateSchema` / `initDb`。⛔ 没起 GUI，真库一个字节没碰。
+
+- **A · v24 副本直接走 `migrateSchema`**（源：`spool.pre-migration-v24-2026-08-25T03-39-22-515Z.db`，`VACUUM INTO` 出来，`integrity_check` ok）：
+  `fresh === false`；`user_version` 24 → 35；**每张老表条数、每一列 `SUM(LENGTH)` 和非空数逐项相等**（工作区 21 · 项目 53 · 块 296 · 文件 1 ·
+  引擎记录 12 · 跟进 13 ……）；新表 5 张（`block_images`、`file_proposals`、`read_positions`、`split_proposals`、`supersede_proposals`）全空；
+  新列 14 个全是 NULL（`threads.private` 全 0，没有项目被迁成私密）；`integrity_check` ok、`foreign_key_check` 空、`blocks_fts` 的
+  `integrity-check` 过。和空库按 `schema.sql` 建出来的比：只差 `attachments.thread_id` 可空（v15 用 ALTER 加的，真库从 v15 起就这样，不是这一版新来的）。
+- **B · 另一份 v24 副本走真的 `getDb()` → `initDb`**（迁移 + `seedDefaults`）：结果和 A 逐项相同、没有播种任何东西；
+  升级前自动快照写出来了（`spool.pre-migration-v24-…db`，`user_version` 24，和原件逐项相等）。
+- **C · 空库走真的 `initDb`**：`fresh` 路径建到 v35，播进默认工作区 + 教程两个项目 + 示例项目（4 个项目、17 块），`integrity_check` ok。
+  真正的首启（新机器 / 新用户、双击 ⌥ 授权）照 §6 第 4 条留给 Ocean。
+
+### 7.4 P9R-3 · 发版说明（`7b7b466`）
+
+`docs/RELEASE_NOTES_v0.7.0.md`，英文，Ocean 10-18 看过「可以」。大小和 sha256 留空，打完包填。
+
+### 7.5 P9R-4 · 构建 + 公证 —— ⛔ 第一次卡在苹果账号（10-18 21:38）
+
+- `/Volumes` 只有 `Macintosh HD`；在 `7b7b466` 上跑 `npm run tauri build`（日志进 scratchpad 文件，没接管道），
+  环境变量带 `APPLE_SIGNING_IDENTITY="Developer ID Application: Hanze JIN (Q5Y5JRXZ58)"` 和公证三件。
+- 编译、sidecar、签名都过了（`Spool.app` 的 Authority 第一行是 Developer ID，时间戳 21:39:20）；**交公证那一下苹果回 403**：
+  `A required agreement is missing or has expired. This request requires an in-effect agreement that has not been signed or has expired.`
+  构建退出 1，没出 dmg，**没有 submission id**（请求在排队之前就被拒了）。
+- 拿同一套凭据跑只读的 `xcrun notarytool history` 也是同一个 403 ⇒ 是账号那边（苹果更新了开发者协议、要账号持有人重新同意），
+  不是 TSA 那种偶发失败，也不是这次构建的问题。照 §5 停下来问 Ocean。
+- Ocean 10-18 晚在 developer.apple.com 同意了新版《Apple Developer Program License Agreement》（签发 2026-10-13，账号页显示接受日期 2026-10-18）。
+  之后每 1 – 3 分钟只读地查一次 `notarytool history`：**到 10-19 04:58 仍是同一个 403**；App Store Connect「商务 → 协议」顶上
+  那条黄条（10-18 22:08 截图、23:3x 再看）仍在。
+- 插曲：10-18 晚这台机器升到 macOS 27.0.1、Xcode 27.1，新 Xcode 的许可没同意时 `xcrun notarytool` 根本不出网、报的是 Xcode 许可那一句 ——
+  轮询脚本只看「没有 403」就当成通了，**误报过一次**（已向 Ocean 更正）；Ocean 跑了 `sudo xcodebuild -license accept` 之后又回到 403。
+  之后的轮询改成「`notarytool history` 退出 0 才算通」。
+- 发版日已经不是 10-18 ⇒ 构建前要先把隐私说明三份的日期改成真正发版那天（第 149 条），一笔小提交。
