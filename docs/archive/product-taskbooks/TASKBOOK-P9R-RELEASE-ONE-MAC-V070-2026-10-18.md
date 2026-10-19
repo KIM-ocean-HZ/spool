@@ -1,6 +1,6 @@
 # 产品任务书 P9R —— 发版一：Mac 版 v0.7.0
 
-> **状态：ACTIVE**（2026-10-18 下发）—— 下一窗执行。开工先问 Ocean §4 的四件，答完再动手。
+> **状态：已完成，等 Ocean 验收**（2026-10-19 发布）—— v0.7.0 已签名公证、推送、打 tag、建 Release，官网和 MCP Registry 已更新，本机已换成正式版；回执 §7，验收单 §6。2026-10-18 下发，当晚卡在苹果协议 403、10-19 下午通了。
 >
 > ⚠️ **10-18 插队（HANDOFF §9.2 第 159 条）**：开工前修了两个捕捉 bug（`f74dfab`：浏览器多窗口的来源、截图后再按 ⌘C）。
 > 等 Ocean 真机验过再开工；这一笔也进 v0.7.0（发版说明要写）。§2 的基线随之变了：vitest **113 个文件 / 1173 条**、cargo **222 过 · 5 跳过**。
@@ -207,3 +207,53 @@ scratchpad 里一份 vitest 配置把 `@tauri-apps/plugin-sql` 和 `@tauri-apps/
   轮询脚本只看「没有 403」就当成通了，**误报过一次**（已向 Ocean 更正）；Ocean 跑了 `sudo xcodebuild -license accept` 之后又回到 403。
   之后的轮询改成「`notarytool history` 退出 0 才算通」。
 - 发版日已经不是 10-18 ⇒ 构建前要先把隐私说明三份的日期改成真正发版那天（第 149 条），一笔小提交。
+
+- **10-19 通了**：Ocean 10-19「应该可以了，官网的提示消失了」（App Store Connect 的黄条没了；他 10-19 也给 Apple Support 发过邮件，到底是哪个让它好的不知道）。
+  16:21 只读 `notarytool history` **退出 0、列出了历史**（最上面是 v0.6.2 那两次，和台账对得上）。
+
+### 7.6 P9R-4 · 构建 + 公证（10-19）
+
+- 发版日变成 10-19 ⇒ 先改隐私说明三份日期 → 2026-10-19、重跑 `build-site-zh`（测试 12 条过）：`20cebca`。
+- `/Volumes` 只有 `Macintosh HD` 和系统的 `Recovery`；`xcodebuild -version` 不报许可。在 **`20cebca`** 上 `npm run tauri build`（16:21:34 – 16:23:27，退出 0）。
+- **`.app` 公证 Accepted，submission `e49524ae-4533-4d9a-ab12-c116e8b092fd`**（日志里当场记的）。
+- **`.dmg` 补公证 Accepted，submission `0e012752-73dc-45cc-8ef7-5b41005ef510`**（`$DMG` 用绝对路径），`stapler staple` 过。
+- 验：两个产物 `spctl` 都是 `accepted` · `source=Notarized Developer ID`；`codesign -dvv` Authority 第一行 `Developer ID Application: Hanze JIN (Q5Y5JRXZ58)`
+  （`.app` 时间戳 16:22:13、dmg 16:23:27）；`--verify --deep --strict` 过；`spool-ai` 也是 Developer ID；两个 `stapler validate` 都过；`Info.plist` 版本 0.7.0；
+  二进制 `minos 11.0`（发版说明写的「macOS 11 or newer」对）。
+- dmg：**11,478,440 字节**（staple 之后），**sha256 `5c2fb81784a57eed5d0d69a28fbe41733cf95eaeaa334d363f41b89aa65b0d5c`**；填进发版说明（10.9 MB，按 1024² 和 v0.6.2 一样）：`efe2265`。
+- **发版二进制的 MCP**（真库 `VACUUM INTO` 副本 + `{"mcpEnabled":true}`，`SPOOL_DATA_DIR` 指副本）：`serverInfo.version` = 0.7.0；普通 **26**（只读 14、写 12）、
+  `--engine-run` **25**（没有 `propose_split`）—— 和 README 一致；`get_block_images` 回了一张 `image/png`；连**没迁移的 v24 副本**时 `list_threads` 被拒，
+  文案「Spool's database is still the older v24; this MCP server is v35…」。真库目录的 `mcp-clients.json` 里没有探针那一行。
+
+### 7.7 P9R-5 · 推送 + Release + Registry（Ocean 10-19「三步都做」「改成 0.7.0 并发布」）
+
+- 推之前再 `fetch`：远端仍 `e37950c`，没推的 **218** 笔、改到 `site/` 的 6 笔。HTTPS + gh token 推 `main`：`e37950c..efe2265`；`update-ref` 补 `origin/main`，再 fetch 核过远端 = 本地。
+- `git tag -a v0.7.0 20cebca`（打在真正构建的那一笔上）并推；`ls-remote` 核过 `v0.7.0^{}` = `20cebca`。
+- `gh release create v0.7.0 --verify-tag --latest --title "Spool 0.7.0 (macOS)" --notes-file docs/RELEASE_NOTES_v0.7.0.md`，两个资产
+  `Spool_0.7.0_aarch64.dmg` + 同一个文件改名的 `Spool-macOS-arm64.dmg`（sha256 先比过一样）；`releases/latest` = v0.7.0；不是草稿、不是预发布。
+- `latest/download/Spool-macOS-arm64.dmg` → 跳到 `download/v0.7.0/…`、**200**；`download/v0.6.1/Spool-windows-x64-setup.exe` **200**。
+- 从 Release 两个名字各**下载回来**：sha256 都是 `5c2fb817…`，`stapler validate` 过，`spctl` `accepted` · `Notarized Developer ID`。
+- 官网：Pages 部署跟着这一推跑了（`efe2265`）；`spoolapp.org` 的 `last-modified` 15:49:47 GMT，英文 / 中文隐私页都是「2026-10-19（对应 Spool v0.7.0）」，
+  中英首页各 3 个 Windows 按钮指 v0.6.1、3 个 macOS 按钮走 `latest`。
+- **MCP Registry**：`server.json` 0.6.2 → 0.7.0，`mcp-publisher validate` 过；08-29 存的登录过期了（401），用 `gh auth token` 重新 `login github --token` 后 publish 成功；
+  线上 API 核过 `0.7.0 status=active isLatest=true`（publishedAt 2026-10-19T15:32:29Z），0.6.2 还在、`isLatest=false`。提交 `server.json`（本地，收尾时一起推）。
+
+### 7.8 P9R-6 · 本机换成正式版（Ocean 10-19「没有，可以换」—— 没有没点「完成」的字）
+
+- 装前：`/Applications/Spool.app` 版本 0.6.2 字样的 Developer ID 构建（`spool` sha256 `0292a0f7…`，`Unnotarized Developer ID`）；GUI 3404、`--overlay` 3466；`--mcp` 9 个；
+  真库 v35 · ok · 工作区 30 · 项目 88 · 块 1261 · 文件 67 · 图片 20 · 正文总长 497,659；快照 27 个；`drafts.json` 空。
+- 备份（`~/Desktop/Spool/db/`）：`spool.before-v070-install-20261019-165138.db`（v35 · ok · 1261 块）+ 同名的 `settings` / `focus` / `drafts` / `knit` 四个 json。
+- 装的是**从 Release 下载回来的那个 dmg 里的** `.app`：只读挂载 → `ditto` 出来 → `chmod -R go+rX` → `codesign --verify --deep --strict` 过；`spool` sha256 `5a8fefb5…` = 构建产物。
+- 停：GUI 3404、`--overlay` 3466 按 pid `kill -TERM`，几秒内都退了；`--mcp` 一个没碰（装后还是 9 个）。旧包 → `~/Desktop/Spool/spool-pre-install/Spool-old-20261019-165138-pre-v070.app`。
+- 起：`open -a /Applications/Spool.app --stdout/--stderr ~/Desktop/Spool/logs/spool-v070-20261019-165138.log`（记忆 §50）。主进程 29466、`--overlay` 29494（16:52:01）；
+  运行中的二进制 inode 83841284 = 新文件。
+- 装后：`spctl` = **`accepted` · `Notarized Developer ID`**，版本 0.7.0；真库 v35 · ok，上面那几个数逐项一样、快照仍 27 个（同版本库，没迁移）；
+  `settings.json` / `knit.json` / `drafts.json` 和备份逐字节一样；日志两行：overlay 起来了、双击 ⌥ 装在 HID/active（独占）——授权没掉。
+
+### 7.9 P9R-7 · 台账和收尾
+
+- `docs/CASE_STUDY_LEDGER.md` §1.2 加了 v0.7.0 那一行（照 v0.6.2：日期、tag → 构建提交、签名身份、两个 submission id、文件名 / 大小 / sha256、Gatekeeper、
+  Windows 故意不出且按钮改指 v0.6.1、固定名 200、库 v24 → v35、MCP 26 / 25、Registry），外加一段「这一行多了什么」：卡在账号协议、不是构建。⛔ 没写它自己所在提交的 sha。
+- `docs/RELEASE.md` §0.0 顶上加一句「最新发布是 v0.7.0」，别的没动。
+- HANDOFF §9.2 第 163 条、§9.3 发版一那一行、§9.8 唯一下一步；`DISCOVERED-20261018-5` 结案；任务书移进 `archive/product-taskbooks/`；`docs/README.md` 入口那一行。
+- **没做的**：§6 第 4 条（新机器 / 新 macOS 用户上从官网下载、首启建库、双击 ⌥ 授权）只有 Ocean 做得了。

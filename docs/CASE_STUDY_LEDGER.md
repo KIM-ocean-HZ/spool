@@ -229,6 +229,38 @@ so a later reader does not mistake it for an omission: the Windows job runs only
 `windows-port` branch, and merging `main` into it was declined for this release rather than
 forgotten.
 
+---
+
+| Field | v0.7.0 |
+|---|---|
+| Published | **2026-10-19** |
+| Tagged commit | tag `v0.7.0` → `20cebca`, the commit the binary was built from (the commits after it on `main` change documentation only) |
+| Signing identity — macOS | Developer ID Application (Apple Developer Program, Team `Q5Y5JRXZ58`) |
+| **Notarisation — `.app`** | submission `e49524ae-4533-4d9a-ab12-c116e8b092fd` · **Accepted** (submitted as `Spool.zip`) |
+| **Notarisation — `.dmg`** | submission `0e012752-73dc-45cc-8ef7-5b41005ef510` · **Accepted** |
+| Artefact — macOS | `Spool_0.7.0_aarch64.dmg`, 11,478,440 bytes |
+| sha256 — macOS | `5c2fb81784a57eed5d0d69a28fbe41733cf95eaeaa334d363f41b89aa65b0d5c` |
+| Gatekeeper verdict — macOS | `accepted` · `source=Notarized Developer ID` on **both** artefacts, and re-verified on copies downloaded back from the published Release under both names (byte-identical sha256, staple intact); `codesign -dvv` Authority resolved to the Developer ID certificate; `--verify --deep --strict` passes; the bundled `spool-ai` sidecar carries the same Developer ID signature |
+| Windows | **not built for this release** — the second macOS-only release in a row. The site and README now point their Windows button at the v0.6.1 installer by explicit version, because `releases/latest/download/Spool-windows-x64-setup.exe` had been returning 404 since v0.6.2 became the latest release |
+| Fixed-name assets | `Spool-macOS-arm64.dmg` — **HTTP 200** through `releases/latest/download/`, byte-identical to the versioned asset |
+| Database schema | **v24 → v35** — eleven additive steps (nullable columns, new tables, indexes); no existing row rewritten, no table rebuilt. Run beforehand on a copy of a real v24 library through the app's own migration code: every pre-existing table kept its row count and every pre-existing column its total length and non-null count; new tables empty; the automatic pre-upgrade snapshot written |
+| MCP surface (release binary) | 26 tools — 14 read-only, 12 write; 25 when the server is started for Spool's own engine (`--engine-run`), which is not offered `propose_split`. Against an un-upgraded v24 library the server refuses with the upgrade message instead of reading it |
+| MCP Registry | `io.github.KIM-ocean-HZ/spool` **0.7.0** published (metadata only) and listed as latest; 0.6.2 remains listed |
+
+**What this row adds that the earlier ones do not: a release held up by an account, not by the
+build.** The first build (2026-10-18, 21:39) compiled and signed cleanly, and notarisation answered
+`HTTP 403 — A required agreement is missing or has expired`: Apple had issued a new Program License
+Agreement on 2026-10-13. No submission id exists for that attempt — the request was refused before
+it was queued. The same 403 came back from a read-only `notarytool history` call, which is how the
+cause was pinned to the account rather than the artefact. It persisted for roughly nineteen hours
+after the agreement was accepted on the developer site, while App Store Connect still showed it as
+outstanding, and had cleared by 16:21 on 2026-10-19. The account holder had written to Apple
+Developer Support in the meantime; whether that or time cleared it is not known.
+Two side effects are recorded so they are not mistaken for something else: the release date moved,
+so the privacy policy's date was changed again to match it; and an operating-system update in the
+same window brought a new Xcode whose licence had to be accepted before `notarytool` would contact
+Apple at all — a different error that, read carelessly, looks like the 403 having cleared.
+
 ## 2. Measured findings
 
 These are the rows that matter most: results obtained by measuring a running system, not
