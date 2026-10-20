@@ -2,7 +2,7 @@
 
 > **状态：COMPLETE —— 待 Ocean 验收**（2026-10-20 下发并执行完）：`-1` `-2` `-3` `-4` `-5` `-7` 都改了，另修了 CI 从 08-20 起就跑不到 `cargo test` 的问题
 > （`-8`，第 169 条）；GitHub 的 Windows 机器上 **vitest 1176 · cargo 200 过 · 0 红 · 4 忽略 · 安装包打得出来**（run 39494949228），Mac 上数字只多不少。
-> 提交在本地 `main` 和远端分支 `p9x-windows-test-fixes`；**还没合进远端 main**（要问 Ocean）。界面那部分等不受管理的 Windows 真机（§6 第 3 条）。回执在 §7。
+> Ocean「推 main」⇒ 已推（`c07a799..f3bcc15`，HANDOFF §9.2 第 170 条），验证分支已删。界面那部分等不受管理的 Windows 真机（§6 第 3 条）。回执在 §7。
 >
 > （下发时：ACTIVE —— 2026-10-20 下发，同一窗执行；Ocean 选完就是授权，HANDOFF §9.2 第 168 条）
 >
@@ -200,7 +200,7 @@ tsc 干净 · vitest 113 / **1176**（+3）· cargo **223 过 · 5 跳过**（+1
 
 ### 7.5 还差什么
 
-- **合进远端 main、推 main**：要问 Ocean（本地 `main` 已经是这些提交；推 main 不改 `site/` ⇒ 不触发官网部署；`windows-build` 只认 `windows-port` 和手动 ⇒ 也不会自己跑）。
+- **推 main**：Ocean「推 main」「推完 main 后删掉」（第 170 条）⇒ 推之前 fetch 核过远端 main 仍是 `c07a799`、不改 `site/`、10 笔都没有署名；`c07a799..f3bcc15` 快进推上去，没触发官网部署和 CI；远端分支 `p9x-windows-test-fixes` 已删。
 - 界面那部分（§6 第 3 条）：等不受管理的 Windows 真机，发版二之前照 P9W §6 走的时候顺带看。
 - 没换装（这几条都不影响 Mac 上已有的库；Mac 上的行为没变）。
 
