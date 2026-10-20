@@ -61,6 +61,12 @@ jobs:
 
       - run: npx vitest run
 
+      # Since the sidecar arrived (08-20, `externalBin`), tauri-build refuses to compile anything
+      # — tests included — until `binaries/spool-ai-<triple>.exe` exists, and the installer step
+      # below is the only other place that builds it. Same command its beforeBuildCommand runs.
+      - name: Build sidecar
+        run: npm run build:sidecar
+
       - name: cargo test
         working-directory: src-tauri
         run: cargo test
