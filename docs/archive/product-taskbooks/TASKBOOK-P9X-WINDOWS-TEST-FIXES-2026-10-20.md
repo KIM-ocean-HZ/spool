@@ -1,6 +1,10 @@
 # 产品任务书 P9X —— 修 P9W 在 Windows 上记下的问题（测试、图片路径、空快照、路径闸）
 
-> **状态：ACTIVE**（2026-10-20 下发，同一窗执行 —— Ocean 选完就是授权，HANDOFF §9.2 第 168 条）
+> **状态：COMPLETE —— 待 Ocean 验收**（2026-10-20 下发并执行完）：`-1` `-2` `-3` `-4` `-5` `-7` 都改了，另修了 CI 从 08-20 起就跑不到 `cargo test` 的问题
+> （`-8`，第 169 条）；GitHub 的 Windows 机器上 **vitest 1176 · cargo 200 过 · 0 红 · 4 忽略 · 安装包打得出来**（run 39494949228），Mac 上数字只多不少。
+> 提交在本地 `main` 和远端分支 `p9x-windows-test-fixes`；**还没合进远端 main**（要问 Ocean）。界面那部分等不受管理的 Windows 真机（§6 第 3 条）。回执在 §7。
+>
+> （下发时：ACTIVE —— 2026-10-20 下发，同一窗执行；Ocean 选完就是授权，HANDOFF §9.2 第 168 条）
 >
 > **唯一交付：** P9W（`c07a799`）记下的 `DISCOVERED-20261020-1`、`-3`、`-4`、`-5`，加上这一窗新发现、Ocean 让并进来的 `-7`，
 > 在 Mac 上改完、测完，再到 GitHub 的 Windows 机器上（`windows-build` 手动触发，**新分支，不是 main**）跑到 `cargo test` 全绿；
@@ -146,9 +150,65 @@ HANDOFF 和 README 里有别的窗口没提交的改动 —— 只暂存自己�
    - `-7`：一个「AI 可读」的项目文件挪进 `AppData` 里 → 右栏显示「找到了，但没跟过去」那一种，点「是这个」才跟（P9W §6 第 18 条那一套）；
    - `-2`：如果最后用了 P9X-6 第 2 步的开关 —— 发出去的 exe 没变，托盘菜单、文件对话框照 P9W §6 第 4、20 条看一眼就行。
 
-## 7. 回执（执行时填写）
+## 7. 回执（2026-10-20 执行）
 
-（未填）
+### 7.1 开工
+
+- 同步：本地落后 `c07a799` 一笔，`docs/HANDOFF-2026-09-04.md`、`docs/README.md` 里有别的窗口没提交的改动 ⇒ 先存补丁
+  （`~/Desktop/Spool/patches/uncommitted-{HANDOFF,README}-before-c07a799-20261020.patch`）→ checkout 这两个文件 → fetch（HTTPS + gh token）→ `merge --ff-only`
+  → `apply --3way` 放回。README 一处相邻行冲突，两边都留（研究线改过的 CODEX 那一行 + `c07a799` 的 P9W 入口行）。放回后两份文件的未提交差异和同步前一样
+  （HANDOFF +18；README +15 / -4）。没用 stash。之后每次提交这两个文件都只暂存自己的改动（拼出「HEAD + 只有我的改动」写进索引，核过它加上别人的补丁正好等于工作区）。
+- 基线：§2.3；审核：§2.1；Ocean 的答复：§4（下发时）+ 下面第 169 条。
+
+### 7.2 提交（本地 `main`；同样推到了远端分支 `p9x-windows-test-fixes`）
+
+| 步 | 提交 | 做了什么 | Mac 上怎么验的 |
+|---|---|---|---|
+| P9X-0 | `b432254` | 下发：本任务书 + HANDOFF / README（只暂存自己的） | — |
+| P9X-1 | `950c574` | `-1`：`chrono_ish` 改用 `systime::utc_from_epoch_ms` | 新测试（1970、2000-02-29、2026 年末）先在旧的 `gmtime_r` 上跑过是绿的 ⇒ 输出逐字不变；cargo 223 过 · 5 跳过（+1） |
+| P9X-2 | `f6842ea` | `-7`：`path_gate_stop` 比较前路径、家目录、系统目录都过 `plain_path`；加一条 `#[cfg(windows)]` 测试（真的 `path_gate_rules()`） | cargo 223 · 5，警告不变 |
+| P9X-3 | `c5d625a` | `-4`：`images.rs` 新增 `shown_path`，Windows 上 `\` → `/` | golden 两边照旧（cargo `golden_pack_matches_fixture`、vitest `src/lib/pack` 120 条）；cargo 223 · 5。**和 §3 的出入**：没另加 `#[cfg(windows)]` 测试，改在 `cached_copies_are_written_once_and_named_by_id` 里加一句「路径里没有 `\`」—— 走的是真的生成路径，两个平台都跑，Windows 上就是钉住这次改动 |
+| P9X-4 | `15f5552` | `-3`：路径 6 条、废纸篓、held 两条、Spotlight / 截图临时文件夹两条（见 §3 P9X-4） | cargo 223 · 5，10 条在 Mac 上照样在跑 |
+| P9X-5 | `9ec936f` | `-5`：版本 0 **且**一行用户数据都没有才不写快照；`client.test.ts` 假的 path 模块 + 三条测试 | vitest 1176（+3）；临时把条件换成「总是快照」，「全新库不写」那条变红、另两条照旧绿，再改回来 |
+| P9X-6 | `a44b2b7` | **`-8`**（第 169 条）：`windows-build.yml` 在 `cargo test` 前加一步 `npm run build:sidecar` | YAML 能解析、触发条件没变 |
+| P9X-6 | `738e3b0` | `-2`：`build.rs` 只在设了 `SPOOL_TEST_CC6_MANIFEST` 时改用 `new_without_app_manifest()` + `/MANIFEST:EMBED /MANIFESTINPUT:windows-test-manifest.xml`；workflow 只在 `cargo test` 那一步设它 | cargo 223 · 5；`windows-test-manifest.xml` = tauri-build 2.6.0 自带那份逐字节（sha256 `4636f3ba…3d43`） |
+| P9X-6 | `13662fd` | `-3` 里 `a_moved_or_renamed_file…` 在 Windows 上露出的第二处 Mac 假设：挪动后的身份 Mac 重新记一份（bookmark 带位置），Windows 不变（盘号 + 文件号） | cargo 223 · 5，Mac 照旧断言「不同」 |
+
+每笔提交后都跑了 `CLAUDE.md` §5 的自查：全部 clean。
+
+### 7.3 GitHub 的 Windows 机器（`windows-latest`，手动触发，分支 `p9x-windows-test-fixes`）
+
+| run | 提交 | 结果 |
+|---|---|---|
+| 39470669135 | `9ec936f` | `cargo test` 连构建脚本都没过：`resource path binaries\spool-ai-x86_64-pc-windows-msvc.exe doesn't exist` —— 08-20 加 sidecar 以来 CI 一直会这样（`-8`），和 P9X 无关 ⇒ 问 Ocean（第 169 条） |
+| 39492440800 | `a44b2b7` | 编过了（`-1` 在 Windows 上成立）；测试 exe 退出 `0xc0000139 STATUS_ENTRYPOINT_NOT_FOUND` ⇒ **`-2` GitHub 的机器也撞** |
+| 39493581115 | `738e3b0` | 测试跑起来了：199 过 · 1 红 · 4 忽略；红的是上面 `13662fd` 那一处 |
+| **39494949228** | **`13662fd`** | **全绿**（2026-10-20 20:47 – 21:04 UTC）：vitest 113 个文件 / 1176 · sidecar 编过 · cargo **200 过 · 0 红 · 4 忽略**（忽略的 4 条是要真钱 / 真库 / 联网的那几条）· 安装包 `Spool_0.7.0_x64-setup.exe` 打出来了（artifact `spool-windows-nsis` 的 zip 8,567,806 字节；没下载、没装、没发） |
+
+- 链接：https://github.com/KIM-ocean-HZ/spool/actions/runs/39494949228
+- P9W 记的 10 条 + 这一批新加的，在 Windows 上全是 ok：`a_moved_or_renamed_file…`、`seen_reports_where…`、`deleted_trash_and_unknown…`、`an_ai_readable_file_moved_into…held_not_followed`（`-7`）、
+  `mcp::a_moved_file_is_reported…`、`file_proposals_queue…`、`pictures_reach_get_blocks…`（`-4`）、`the_path_gate_judges…`、`on_windows_a_path_into_appdata_or_a_system_folder_stops…`（`-7`）、
+  `cached_copies_are_written_once_and_named_by_id`（`-4`）、`chrono_ish_writes_utc_the_same_on_every_platform`（`-1`）；Spotlight、截图临时文件夹两条在 Windows 上不编（预期）。
+- 条数：Windows 200 + 4 忽略，Mac 223 + 5 跳过 —— `cfg` 两边各编一部分。
+- 编译警告：8 条（`capture.rs` 3 个没用到的 import、几个只在 Mac 用的函数等），**都是改之前就有的**，这一批没多出一条（`spotlight_query` 的 `allow` 起作用了）。
+- 发出去的 exe：打安装包那一步不设 `SPOOL_TEST_CC6_MANIFEST` ⇒ `build.rs` 走原来的 `tauri_build::build()`，嵌清单的办法和以前一样。这一点是按构造推的，**没有拆开安装包核清单**。
+
+### 7.4 Mac 最终数字（`13662fd`）
+
+tsc 干净 · vitest 113 / **1176**（+3）· cargo **223 过 · 5 跳过**（+1）· sidecar 14 · `i18n-check` `(none missing)` · `--dead` 87 · `cargo tree … | grep` 网络库 空 · 编译警告和开工时逐行一样。
+（最后一遍整套跑的时候 `knitStore.test.ts` 撤销那条红了一次 —— 就是 `DISCOVERED-20261018-3` 那个同一毫秒的偶发红，这一批没碰 knitStore；马上重跑 1176 全绿。）
+
+### 7.5 还差什么
+
+- **合进远端 main、推 main**：要问 Ocean（本地 `main` 已经是这些提交；推 main 不改 `site/` ⇒ 不触发官网部署；`windows-build` 只认 `windows-port` 和手动 ⇒ 也不会自己跑）。
+- 界面那部分（§6 第 3 条）：等不受管理的 Windows 真机，发版二之前照 P9W §6 走的时候顺带看。
+- 没换装（这几条都不影响 Mac 上已有的库；Mac 上的行为没变）。
+
+### 7.6 新发现（记在 HANDOFF §9.9）
+
+- `DISCOVERED-20261020-8` · Windows CI 的 `cargo test` 从 08-20 加 sidecar 起就跑不到 —— Ocean 10-20 让修（第 169 条），`a44b2b7` 已修。
+- `DISCOVERED-20261020-9` · Windows 上路径闸的拒绝消息里，家目录 / 系统目录显示成 `\\?\C:\…`（`gate_stop_message` 用的是 canonicalize 过的规则）—— 只是显示，captured，P3。
+- `-2` 的结论：GitHub 的机器也撞，用只在测试时生效的开关修了；`DISCOVERED-20261010-9` 补了一行（合进 main 之后从 main 跑 CI，`cargo test` 能绿）。
 
 ---
 
