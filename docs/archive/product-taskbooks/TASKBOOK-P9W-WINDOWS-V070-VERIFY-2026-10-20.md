@@ -1,7 +1,10 @@
 # 产品任务书 P9W —— Windows 上验证 v0.7.0（只验，不发）
 
-> **状态：ACTIVE**（2026-10-20 下发）—— 下一窗执行，**在 Ocean 的 Windows 电脑上**，用 Windows 版 VS Code 里的 Claude Code。
-> 开工先做 §0（环境），再问 Ocean §4 的几件，答完再动手。
+> **状态：COMPLETE（部分）**（2026-10-20 下发、同日执行）—— W-0 / W-1 / W-5 做完，迁移和首启播种在副本上验过；
+> W-2 – W-4（真安装、§6 的 43 条）被那台学校电脑的安全软件拦住，**没测**；Rust 测试在 Windows 上编不过（只记不修）；**没发版**。回执在 §7。
+>
+> （下发时：ACTIVE —— 下一窗执行，**在 Ocean 的 Windows 电脑上**，用 Windows 版 VS Code 里的 Claude Code。
+> 开工先做 §0（环境），再问 Ocean §4 的几件，答完再动手。）
 >
 > **唯一交付：** 用 `main`（代码 = Mac 上发出去的 v0.7.0）在 Windows 上**第一次**编译、跑全套测试、打出 NSIS 安装包、装上去，
 > 照 §6 和 Ocean 一起把 v0.7.0 在 Windows 上走一遍；每一条结果、每一个问题记下来（§7 回执 + HANDOFF）。
@@ -204,7 +207,118 @@
 
 ## 7. 回执（执行窗填写）
 
-（待执行）
+### 7.1 W-0 · 环境 + 基线（10-20 下午）
+
+- 机器：Windows 11 企业版 10.0.26200，**学校管理的电脑**（这一点 §7.3 要用），12 核。
+- §0 ①：这台机器 Git for Windows 的**系统级** `core.autocrlf=true`，clone 下来是 CRLF（`src/lib/pack` 那几个 `w/crlf`）。
+  `git config --global core.autocrlf false` 之后：443 个文件 `git diff --ignore-cr-at-eol` 为空（只差 `\r`）→ `git checkout -- .`；
+  另外 187 个 stat 缓存没认出来的，逐个核过「去掉 `\r` 之后的 hash = 提交里的 blob」（0 个对不上）再去掉 `\r`、`git add -u` 刷新索引。
+  之后 `git ls-files --eol` 全是 `w/lf`、工作区干净。（`git reset --hard` / `update-index --really-refresh` 被 Claude Code 的权限闸拦了，才绕成这样，结果一样。）
+- §0 ②：Node **v22.23.3**（官方 zip，sha256 对过 `SHASUMS256.txt`，解压在 `%LOCALAPPDATA%\Programs\`，没改系统 PATH）· rustc / cargo **1.99.1**
+  （rustup，`stable-x86_64-pc-windows-msvc`）· VS 2022 Community 17.14 自带的 MSVC 14.44 + Windows SDK 10.0.26100（机器上原来就有）· WebView2 155。
+- §0 ③：`git log -1` = `86487d6`（推任务书那一笔）；`git diff --stat v0.7.0 HEAD -- src src-tauri package.json package-lock.json` **空**；
+  整个仓库 v0.7.0 之后只改了 `docs/` 和 `server.json`（Registry 元数据，不进构建）。
+- 基线（每一步日志单独进文件、记退出码）：
+
+| 项 | Windows（`86487d6`） | Mac（`20cebca`） |
+|---|---|---|
+| `npx tsc -b` | 干净 | 干净 |
+| vitest | **113 个文件 / 1173 条全过** | 113 / 1173 |
+| `knitStore.test.ts` 单独连跑 | **20 遍全绿**（没复现 `DISCOVERED-20261018-3`） | 6 遍红 1 遍 |
+| sidecar `cargo test` | **14 过** | 14 |
+| `i18n-check` / `--dead` | `(none missing)` / 87 | 同 |
+| `cargo tree … \| grep` 网络库 | **空** | 空 |
+| `cargo test`（`src-tauri`） | ⛔ **编不过** | 222 过 · 5 跳过 |
+
+- `cargo test` 报错原文（只有这一条 error，另 3 条 `capture.rs` 没用到的 import 警告）：
+
+```
+error[E0425]: cannot find function `gmtime_r` in crate `libc`
+   --> src\compress_sweep.rs:275:20
+    |
+275 |     unsafe { libc::gmtime_r(&secs, &mut tm) };
+    |                    ^^^^^^^^
+help: a function with a similar name exists: `gmtime_s`
+error: could not compile `spool` (lib test) due to 1 previous error; 3 warnings emitted
+```
+
+  `compress_sweep` 是 `#[cfg(test)]` 的模块（DeepSeek 压缩实测台），**发出去的 Spool 里没有它**；这一行 08-21 进来（`4f60c69`），
+  Windows CI 最后一次跑是 08-19（`windows-port`，run 32228101203 绿），之后就没在 Windows 上编过。
+- 照 §5 停下之前，在**仓库外的副本**上往下探了两层（仓库一个字没改），好让 Ocean 一次看全：
+  1. 只改那一行（`cfg(unix)` 照旧 `gmtime_r`，`cfg(windows)` 用 UCRT 的 `gmtime_s`）→ 编得过，但**测试程序起不来**：
+     `exit code: 0xc0000139, STATUS_ENTRYPOINT_NOT_FOUND`。`dumpbin /imports`：从 `comctl32.dll` 进来 `DefSubclassProc`、`RemoveWindowSubclass`、
+     `SetWindowSubclass`、**`TaskDialogIndirect`** —— 最后一个只有 Common Controls v6 有；app 的 exe 有 tauri-build 嵌进去的 v6 清单，**测试 exe 没有**，
+     于是绑到 v5、一启动就死。三处用它的都是 Tauri 自己的依赖（`muda` 0.19.1、`rfd` 0.16.0、`tauri-runtime-wry` 2.11.0，和 08-19 那次构建的版本一样；
+     那时为什么没撞上没查清，工具链从 8 月的 stable 换成了 1.99.1 是一个可能）。`cargo:rustc-link-arg-tests` 只管 `tests/` 下的集成测试，
+     cargo 直接报「does not have a test target」，所以没有「只对测试」的窄改法。
+  2. 再照 tauri-build 的做法：`WindowsAttributes::new_without_app_manifest()` + 链接器 `/MANIFEST:EMBED /MANIFESTINPUT:<tauri 默认那份清单>`
+     （⚠️ 这一改连**发出去的 exe** 嵌清单的方式也变了）→ 测试跑起来了：**190 过 · 10 红 · 4 忽略**。10 条红全是测试里写死了 Mac 的假设，产品代码的 Windows 分支在：
+     - 6 条路径：期望值用 `std::fs::canonicalize`，Windows 上它带 `\\?\` 前缀，产品给的是 `C:\…`（`file_follow` 2 条：`a_moved_or_renamed_file…`、`seen_reports_where…`；
+       `mcp` 4 条：`a_moved_file_is_reported…`、`file_proposals_queue…`、`pictures_reach_get_blocks…`、`the_path_gate_judges…`）；
+     - `file_follow::deleted_trash_and_unknown…`：拿 `.Trashes/501` 当废纸篓（Windows 认 `$Recycle.Bin`，`file_identity.rs:336`）；
+       `file_follow::an_ai_readable_file_moved_into…held_not_followed`：拿 `Library/Caches` 当 AI 进不去的地方（Windows 是 `AppData`，`mcp.rs:6724`）；
+     - `the_spotlight_query…`：Spotlight 只有 Mac，文件名里的 `\` 在 Windows 上是路径分隔符；
+     - `images::…screenshot_uis_temp_folder_is_pending`：`File::open(p).set_modified(…)` 在 Windows 上只读打开改不了时间（`Access is denied`），测的又是 Mac 截图小图那个临时文件夹。
+- Ocean：「**Record, don't fix**」（HANDOFF §9.2 第 166 条）⇒ `DISCOVERED-20261020-1` – `-3`，产品代码一行没改。
+
+### 7.2 W-1 · 安装包（不签名）
+
+- `npx tauri build --bundles nsis`，16:48:29 – 16:56:55，退出 0；环境里没有任何签名变量；NSIS 3.11 和 `nsis_tauri_utils` 0.5.3 是 Tauri 自己下的（校验过 hash）。
+- **`Spool_0.7.0_x64-setup.exe`：8,571,695 字节，sha256 `4fe5bd2bb312c413c89616ce45a5e5e9720e86f1e8457a745ebf37256c2b4a99`**。
+  `spool.exe` 的文件版本 / 产品版本 0.7.0；`spool-ai.exe`（1,381,888 字节）跟着进了包。
+- 发布构建编得过 = P1 – P9H 的 Windows 代码（测试以外的部分）**第一次在 Windows 上编过**。
+- 没上传、没打 tag、没建 Release（第 167 条）；包只在本机 `src-tauri/target/release/bundle/nsis/`。
+
+### 7.3 W-2 – W-4 · ⛔ 被这台电脑的安全软件拦住
+
+- §4 ①：这台机器上原来**没有 Spool**（`%APPDATA%\com.oceanjin.spool`、`%LOCALAPPDATA%\Spool` 都不存在）⇒ 走 W-2 第二种（装 v0.6.1 → 覆盖装）。
+- v0.6.1 从 Release 下载 `Spool-windows-x64-setup.exe`（6,982,762 字节，和台账一致；sha256 `8814690c8894ef8a7f9cded5b5e3ca86923ed5b9646b798c56b71c6077db350a`），
+  `/S` 静默装到 `%LOCALAPPDATA%\Spool`（currentUser、不要管理员，退出码 0）。
+- **起不来**：两次启动（PowerShell 17:00:24、Git Bash 17:00:42）都一启动就被杀，没有输出、没建库。Windows「应用程序」日志里两条 911 号事件，来源 **HitmanPro.Alert**：
+  `Mitigation Lockdown · Policy LockdownNewFile · Lockdown type: DenyNewFileExecute · Application …\AppData\Local\Spool\spool.exe · Created By …\Spool-windows-x64-setup.exe`。
+  这是学校给管理的电脑装的终端防护：**安装程序刚放出来的 exe 一律不让运行**。不是 Spool 的毛病；W-1 的包装出来是同一种情况（没去试，免得再触发告警）。没碰安全软件。
+- Ocean：「**能验的先验，不发版**」（第 167 条）⇒ W-2 的真安装器覆盖升级、W-3、W-4（§6 全部 43 条）**都没测**。
+  v0.6.1 还装在 `%LOCALAPPDATA%\Spool`（从没跑起来过、没有库）。
+
+### 7.4 不起界面能验的那一半（全在 scratch 副本上；这台机器上本来就没有真库）
+
+- **造一个 v23 老库**：`git archive v0.6.1 src` 到 scratch，用附录 A 的 `node:sqlite` 桩、Windows 的 UA，跑 **v0.6.1 自己的** `getDb() → initDb`（首启：建表、默认工作区、教程），
+  再用 v0.6.1 的 `createBlock` / `createAttachment` / `setBlockSupersession` + `setCorrectedQuote` 写三块（带来源的字、带批注的块、更正第一块里一句话的块）和一个项目文件（Windows 路径）。
+  结果：v23 · ok · 工作区 1 · 项目 4 · 块 15 · 文件 1。
+- **A · 副本走 `__migrateSchemaForTest`**（附录 A 原样）：`fresh === false`；23 → 35（12 步）；**20 张老表、138 列的条数、`SUM(LENGTH)`、非空数逐项相等**；
+  新表 5 张（`block_images`、`file_proposals`、`read_positions`、`split_proposals`、`supersede_proposals`）全空；新列 16 个全 NULL，`threads.private` 4 行全 0；
+  `integrity_check` ok、`foreign_key_check` 空。
+- **B · 另一份副本走真的 `getDb() → initDb`**（另桩掉 `@tauri-apps/api/path`，快照目录指副本旁边）：v35 · ok，条数和迁移前一样、没播种任何东西；
+  库旁边写出 **`spool.pre-migration-v23-2026-10-20T16-06-32-029Z.db`**。
+- **C · 空库走真的 `initDb`**（Windows UA，`IS_WINDOWS === true`）：v35 · ok；建出「欢迎使用 Spool」(6 块)、「让 AI 用上你的 Spool」(6)、「示例项目：机器学习课」(5)、「未分类」(0)；
+  正文里 `Ctrl` 4 处、「双击 Ctrl」1 处，`⌥` / `⌘` / 「输入监听」**0 处**。顺带：全新空库旁边也写了一个 4 KB 的 `spool.pre-migration-v0-….db`（`DISCOVERED-20261020-5`，各平台都一样）。
+- 这一半**替不了** §6 第 43 条（真窗口里首启看教程）和 W-2 的真安装器原地升级。
+
+### 7.5 W-5 · MCP（`src-tauri/target/release/spool.exe` = 打进 W-1 那个包的同一个；副本目录 + `{"mcpEnabled":true}`）
+
+- v35 副本（A 的结果；再用 SQL 往「P9W 升级测试」第 1 块塞了一张 12×8 的 PNG，测试用）：`serverInfo` = `{ name: 'spool', version: '0.7.0' }`；
+  普通连接 **26**（只读 14、写 12）；`--engine-run` **25**（只读 14、写 11，没有 `propose_split`）；
+  `get_block_images` → 「All 1 pictures in #1 ‹P9W 升级测试› follow, in the block's order」+ **`image/png`**。
+- v23 副本（没迁移）：`list_threads` **被拒** —— 「Spool's database is still the older v23; this MCP server is v35. The upgrade happens inside the app — launch Spool once…」。
+- `get_pack` 里图片那一行（§6 第 15 条要记原样）：`![](C:\Users\…\mcp35\image-cache\p9wimg0000000000000001.png)` —— **绝对路径、反斜杠**，
+  `image-cache` 跟着建在库旁边（`DISCOVERED-20261020-4`）。
+- 探针 `initialize` 报的客户端名只进了两个副本目录的 `mcp-clients.json`。
+
+### 7.6 §6 那张单
+
+**43 条全部「没测」** —— 原因都是 §7.3（装好的 Spool 在这台电脑上起不来）。其中三处有不起界面的旁证，**不算过**：
+第 15 条（pack 里图片路径的样子，见 §7.5）、第 35 – 40 条背后的 MCP 服务本身（§7.5）、第 43 条的教程正文（§7.4 C）。
+第 41 – 42 条按 §4 ③ 本来就不测。要验得换一台不受学校管理的 Windows 电脑（或者学校 IT 放行 `%LOCALAPPDATA%\Spool\spool.exe`），照本任务书 W-2 – W-4 再走一遍。
+
+### 7.7 新发现（HANDOFF §9.9）
+
+`DISCOVERED-20261020-1` `gmtime_r` 测试编不过 · `-2` 测试 exe 缺 Common Controls v6 清单 · `-3` 10 条测试写死了 Mac 的假设 ·
+`-4` Windows 上 pack 里的图片路径是反斜杠绝对路径 · `-5` 全新首启也写一个空的 `pre-migration-v0` 快照 · `-6` 受管理的 Windows 电脑拦装好的 Spool。
+
+### 7.8 收尾
+
+- HANDOFF：§9.2 第 165 – 167 条、§9.3 P9W 那一行、§9.8、§9.9 六条新发现、`DISCOVERED-20261010-9` 补一行；任务书移进 `archive/product-taskbooks/`，`docs/README.md` 入口那一行跟着改。
+- 提交照 `CLAUDE.md` §5（作者 `KIM-ocean-HZ`，没有 AI 署名）；推送是 Ocean 开工时说的「push to github and finish」。
 
 ---
 
