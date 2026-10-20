@@ -314,6 +314,7 @@ pub struct Candidate {
 /// equality does not). The display name in turn drops the extension when Finder hides it,
 /// so the query asks all three ways and `same_name` keeps only an exact file name.
 /// In that language `*` is a wildcard and `"` / `\` end or escape the string: all escaped.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub(crate) fn spotlight_query(name: &str) -> String {
     let quote = |s: &str| {
         let escaped = s.replace('\\', "\\\\").replace('"', "\\\"").replace('*', "\\*");
@@ -502,6 +503,23 @@ mod tests {
         d.canonicalize().unwrap()
     }
 
+    /// A path as Spool shows it and as a user's own path is written: `temp()` canonicalizes,
+    /// which on Windows gives `\\?\C:\…`, where Spool hands out `C:\…` (`file_identity::plain`, P9X).
+    fn path_text(p: &Path) -> String {
+        let s = super::path_text(p);
+        s.strip_prefix(r"\\?\").map(str::to_string).unwrap_or(s)
+    }
+
+    /// Where apps keep their own data under home — what `path_gate_rules` keeps AI out of —
+    /// and a folder inside it: `~/Library/Caches`, `%USERPROFILE%\AppData\Local` (P9X).
+    fn private_folder() -> (&'static str, &'static str) {
+        if cfg!(windows) {
+            ("AppData", "Local")
+        } else {
+            ("Library", "Caches")
+        }
+    }
+
     fn library() -> Connection {
         let conn = Connection::open_in_memory().unwrap();
         conn.execute_batch(
@@ -615,13 +633,19 @@ mod tests {
         assert_eq!(row(&conn, "del").0, path_text(&deleted), "the recorded path is kept");
 
         // A `.Trashes` folder is what a Trash looks like on any disk but the start-up one, so
-        // this is the whole trash path without putting anything in the user's own Trash.
+        // this is the whole trash path without putting anything in the user's own Trash. On
+        // Windows every disk has a `$Recycle.Bin\<the user's SID>` (P9X).
         let trashed = d.join("trashed.pdf");
         std::fs::write(&trashed, b"x").unwrap();
         attach(&conn, "tr", "file", &trashed);
         state_of(&conn, "tr");
-        std::fs::create_dir_all(d.join(".Trashes/501")).unwrap();
-        let in_trash = d.join(".Trashes/501/trashed.pdf");
+        let trash = if cfg!(windows) {
+            d.join("$Recycle.Bin").join("S-1-5-21-1-2-3-1001")
+        } else {
+            d.join(".Trashes").join("501")
+        };
+        std::fs::create_dir_all(&trash).unwrap();
+        let in_trash = trash.join("trashed.pdf");
         std::fs::rename(&trashed, &in_trash).unwrap();
         let s = state_of(&conn, "tr");
         assert_eq!((s.state, s.found_at), ("trash", Some(path_text(&in_trash))));
@@ -668,12 +692,14 @@ mod tests {
     #[test]
     fn an_ai_readable_file_moved_into_a_place_ai_proposals_may_not_reach_is_held_not_followed() {
         let home = temp("held-home");
+        let (private, inside) = private_folder();
         std::fs::create_dir_all(home.join("Desktop")).unwrap();
-        std::fs::create_dir_all(home.join("Library/Caches")).unwrap();
+        std::fs::create_dir_all(home.join(private).join(inside)).unwrap();
+        // The home the way `path_gate_rules` makes it: canonicalized (`\\?\C:\…` on Windows).
         let rules = PathGateRules {
             home: home.clone(),
             system_roots: vec![],
-            home_private: "Library",
+            home_private: private,
             home_private_open: &[],
         };
         let f = home.join("Desktop/a.pdf");
@@ -682,7 +708,7 @@ mod tests {
         attach(&conn, "a", "file", &f);
         conn.execute("UPDATE attachments SET ai_access = 1 WHERE id = 'a'", []).unwrap();
         look(&conn, "a", Some(&rules)).unwrap();
-        let hidden = home.join("Library/Caches/a.pdf");
+        let hidden = home.join(private).join(inside).join("a.pdf");
         std::fs::rename(&f, &hidden).unwrap();
 
         let s = look(&conn, "a", Some(&rules)).unwrap().unwrap();
@@ -701,8 +727,9 @@ mod tests {
     #[test]
     fn seen_reports_where_a_file_is_now_and_never_the_place_ai_is_kept_out_of() {
         let home = temp("seen-home");
+        let (private, inside) = private_folder();
         std::fs::create_dir_all(home.join("Desktop/dissertation-doc/Ethic")).unwrap();
-        std::fs::create_dir_all(home.join("Library/Caches")).unwrap();
+        std::fs::create_dir_all(home.join(private).join(inside)).unwrap();
         let f = home.join("Desktop/CS_REC_1.docx");
         std::fs::write(&f, b"x").unwrap();
         let old = path_text(&f);
@@ -710,7 +737,7 @@ mod tests {
         let rules = PathGateRules {
             home: home.clone(),
             system_roots: vec![],
-            home_private: "Library",
+            home_private: private,
             home_private_open: &[],
         };
         let seen_now = |label: &str| seen(&old, label, identity.as_deref(), true, Some(&rules));
@@ -728,7 +755,7 @@ mod tests {
         assert_eq!(seen_now("CS_REC_1.docx").label, "伦理申请表.docx", "the label was the old file name");
         assert_eq!(seen_now("第一张表").label, "第一张表", "a name the user typed stays");
 
-        let hidden = home.join("Library/Caches/伦理申请表.docx");
+        let hidden = home.join(private).join(inside).join("伦理申请表.docx");
         std::fs::rename(&renamed, &hidden).unwrap();
         let s = seen_now("CS_REC_1.docx");
         assert_eq!((s.path.as_str(), s.state), (old.as_str(), "held"), "the gated path is not handed out");
@@ -782,6 +809,8 @@ mod tests {
         assert_eq!(read_notice(None), None);
     }
 
+    // Spotlight is the Mac's; on Windows `\` in a name is a separator, so the stem differs (P9X).
+    #[cfg(target_os = "macos")]
     #[test]
     fn the_spotlight_query_matches_the_whole_name_and_escapes_what_would_break_it() {
         assert_eq!(

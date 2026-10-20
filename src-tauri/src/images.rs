@@ -1096,7 +1096,9 @@ mod tests {
     }
 
     // 2026-10-18 (〈HAI- Lecture5〉): the picture in the thumbnail sits in the screenshot UI's own
-    // temp folder; a picture there newer than the chord = taken, not saved yet.
+    // temp folder; a picture there newer than the chord = taken, not saved yet. A Mac folder,
+    // and on Windows a file opened read-only cannot have its time set (P9X).
+    #[cfg(target_os = "macos")]
     #[test]
     fn a_picture_in_the_screenshot_uis_temp_folder_is_pending() {
         let items = std::env::temp_dir().join(format!("spool-shot-pending-{}", std::process::id()));

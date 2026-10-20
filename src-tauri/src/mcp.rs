@@ -14710,8 +14710,9 @@ mod tests {
                VALUES ('a_moved', 'th1', 'file', '{old}', 'CS_REC_1.docx', '伦理审查表第一类', 'docx', 1, 1),
                       ('a_gone', 'th1', 'file', '{gone}', 'CS_REC_2.docx', '伦理审查表第二类', 'docx', 1, 2),
                       ('a_never', 'th1', 'file', '/x/没记过身份.pdf', '没记过身份.pdf', NULL, NULL, 0, 3);",
-            old = old.display(),
-            gone = gone.display()
+            // Stored the way a user's own path is (`C:\…`, not canonicalize's `\\?\C:\…`; P9X).
+            old = plain_path(&old),
+            gone = plain_path(&gone)
         ))
         .unwrap();
         for (id, p) in [("a_moved", &old), ("a_gone", &gone)] {
@@ -14737,15 +14738,15 @@ mod tests {
         )
         .unwrap();
         let file = |id: &str| read["files"].as_array().unwrap().iter().find(|f| f["attachment_id"] == id).unwrap().clone();
-        assert_eq!(file("a_moved")["target"], moved.display().to_string());
+        assert_eq!(file("a_moved")["target"], plain_path(&moved));
         assert!(file("a_moved")["not_found"].is_null(), "a moved file is not a lost one");
-        assert_eq!(file("a_gone")["target"], gone.display().to_string());
+        assert_eq!(file("a_gone")["target"], plain_path(&gone));
         assert!(file("a_gone")["not_found"].as_str().unwrap().contains("删掉"));
         assert!(file("a_never")["not_found"].as_str().unwrap().contains("认不出"));
 
         let found: Value = serde_json::from_str(&search_blocks_json(&conn, "伦理审查表第一类", None, None).unwrap()).unwrap();
         let hit = &found["attachment_hits"][0]["attachment"];
-        assert_eq!(hit["target"], moved.display().to_string());
+        assert_eq!(hit["target"], plain_path(&moved));
         assert!(hit["not_found"].is_null());
 
         assert_eq!(library(&conn), before, "reading wrote to the library");
@@ -14758,7 +14759,7 @@ mod tests {
             home_private_open: &[],
         };
         let out: Value = serde_json::from_str(
-            &propose_replace_file_json(&conn, &rules, "th1", "a_moved", &moved.display().to_string(), "新版", 1)
+            &propose_replace_file_json(&conn, &rules, "th1", "a_moved", &plain_path(&moved), "新版", 1)
                 .unwrap(),
         )
         .unwrap();
@@ -16750,7 +16751,9 @@ mod tests {
             home_private: "Library",
             home_private_open: &["Mobile Documents", "CloudStorage"],
         };
-        let at = |rel: &str| home.join(rel).to_string_lossy().into_owned();
+        // A path the way an AI hands it over and Spool shows it: `C:\…`; the rules keep the
+        // canonicalized home, as `path_gate_rules` does (P9X).
+        let at = |rel: &str| plain_path(&home.join(rel));
         let gate = |p: &str| gate_proposed_path(p, &rules);
 
         assert_eq!(gate(&at("Documents/方案.pdf")).unwrap(), (at("Documents/方案.pdf"), 3));
@@ -16773,7 +16776,7 @@ mod tests {
         refused(&at("Documents/没有这个.pdf"), "找不到");
         refused(&at("Documents/文件夹"), "不是一个文件");
         refused(&at(".hidden/h.pdf"), "隐藏");
-        refused(&sys.join("f.txt").to_string_lossy(), "系统目录");
+        refused(&plain_path(&sys.join("f.txt")), "系统目录");
         refused(&at("Library/Preferences/x.plist"), "数据库");
         // Spool 自己的数据目录在 ~/Library 下 ⇒ 自然被拒。
         refused(&at("Library/Application Support/com.oceanjin.spool/spool.db"), "数据库");
@@ -16819,7 +16822,9 @@ mod tests {
         for f in ["Documents/old.pdf", "Documents/new.pdf", "Documents/v2.pdf", ".hidden/h.pdf"] {
             std::fs::write(home.join(f), "abcd").unwrap();
         }
-        let at = |rel: &str| home.join(rel).to_string_lossy().into_owned();
+        // A path the way an AI hands it over and Spool shows it: `C:\…`; the rules keep the
+        // canonicalized home, as `path_gate_rules` does (P9X).
+        let at = |rel: &str| plain_path(&home.join(rel));
         let conn = Connection::open(tmp.join("spool.db")).unwrap();
         conn.execute_batch(include_str!("../../src/lib/db/schema.sql")).unwrap();
         conn.execute_batch(&format!(
@@ -17023,9 +17028,12 @@ mod tests {
     #[test]
     fn pictures_reach_get_blocks_and_the_pack_as_paths() {
         store_lang(Lang::En);
-        let tmp = std::env::temp_dir().join(format!("spool-pack-images-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&tmp);
-        std::fs::create_dir_all(&tmp).unwrap();
+        let raw_tmp = std::env::temp_dir().join(format!("spool-pack-images-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&raw_tmp);
+        std::fs::create_dir_all(&raw_tmp).unwrap();
+        // Long and plain: a Windows temp folder can be a short `RUNNER~1` one, which sqlite keeps
+        // as it is, and canonicalize's `\\?\` is not what Spool prints (P9X).
+        let tmp = std::path::PathBuf::from(plain_path(&canonical_or_same(raw_tmp)));
         let conn = Connection::open(tmp.join("spool.db")).unwrap();
         conn.execute_batch(include_str!("../../src/lib/db/schema.sql")).unwrap();
         conn.execute_batch(&format!(
@@ -17049,16 +17057,22 @@ mod tests {
             [format!("two builds side by side\n![left is the old one](spool-image:{})\nthen the fix", metas[0].id)],
         )
         .unwrap();
-        // sqlite reports the file's real path (symlinks resolved), and so does every pack line.
-        let expected_path = std::fs::canonicalize(&tmp).unwrap().join("image-cache").join(format!("{}.png", metas[0].id));
-        let shown = format!("two builds side by side\n![left is the old one]({})\nthen the fix", expected_path.to_string_lossy());
+        // sqlite reports the file's real path (symlinks resolved), and so does every pack line —
+        // on Windows written with `/` (P9X).
+        let expected_path = tmp.join("image-cache").join(format!("{}.png", metas[0].id));
+        let expected_text = if cfg!(windows) {
+            expected_path.to_string_lossy().replace('\\', "/")
+        } else {
+            expected_path.to_string_lossy().into_owned()
+        };
+        let shown = format!("two builds side by side\n![left is the old one]({expected_text})\nthen the fix");
 
         let filters = BlockFilters { pinned: None, has_annotation: None, source_contains: None, stale: None };
         let v: Value = serde_json::from_str(&get_blocks_json(&conn, "t1", None, None, None, None, &filters, false).unwrap()).unwrap();
         let b1 = v["blocks"].as_array().unwrap().iter().find(|b| b["block_id"] == "b1").unwrap().clone();
         assert_eq!(
             b1["images"],
-            json!([{ "path": expected_path.to_string_lossy(), "format": "png", "width": 12, "height": 8, "size_bytes": png.len() }])
+            json!([{ "path": expected_text, "format": "png", "width": 12, "height": 8, "size_bytes": png.len() }])
         );
         assert_eq!(b1["content"], json!(shown), "the text names the picture by its path, where it sits");
         // P9H-6: and says, right there, how to look at it.
