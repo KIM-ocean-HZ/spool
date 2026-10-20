@@ -1155,8 +1155,12 @@ const migrateSchema = async (db: Database, backupPrefix = 'spool'): Promise<bool
   }
 
   // The schema is about to change. Snapshot first so every path below — the additive
-  // registry steps AND the destructive rebuild — is recoverable.
-  await backupDbBeforeMigration(db, current, backupPrefix);
+  // registry steps AND the destructive rebuild — is recoverable. A brand-new library
+  // (version 0 and not one row) has nothing to recover and gets none (P9X,
+  // DISCOVERED-20261020-5); version 0 WITH rows is the refusal below, which needs one.
+  if (current !== 0 || (await countExistingUserRows(db)) > 0) {
+    await backupDbBeforeMigration(db, current, backupPrefix);
+  }
 
   // Walk the registry. Each completed step checkpoints user_version (PRAGMA doesn't
   // accept bound parameters; `to` is a code-local integer).

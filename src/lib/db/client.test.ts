@@ -1,6 +1,8 @@
+import { mkdtempSync, readdirSync, rmSync } from 'node:fs';
 import { createRequire } from 'node:module';
+import { tmpdir } from 'node:os';
 import type Database from '@tauri-apps/plugin-sql';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   CURRENT_SCHEMA_VERSION,
   drainMigrationNotices,
@@ -13,6 +15,17 @@ import {
 } from './client';
 import schemaSql from './schema.sql?raw';
 import { listAttachmentsByThread } from './attachments';
+
+// P9X: where the pre-migration snapshot goes. Unset, the path API fails the way it does outside
+// the app and migrateSchema carries on without a snapshot — as every other test here always has.
+const snapshot = vi.hoisted(() => ({ dir: null as string | null }));
+vi.mock('@tauri-apps/api/path', () => ({
+  appConfigDir: async () => {
+    if (!snapshot.dir) throw new Error('no app config dir in tests');
+    return snapshot.dir;
+  },
+  join: async (...parts: string[]) => parts.join('/'),
+}));
 
 const { DatabaseSync } = createRequire(import.meta.url)(
   'node:sqlite',
@@ -1706,6 +1719,39 @@ describe('migrateSchema registry (§19.3)', () => {
     for (const t of ['workspaces', 'threads', 'blocks', 'attachments']) {
       expect(tables).toContain(t);
     }
+  });
+
+  // P9X (DISCOVERED-20261020-5): a snapshot is for getting a library back, so a brand-new one
+  // gets none — but an upgrade, and a version-0 library that holds rows, still do.
+  describe('the pre-migration snapshot', () => {
+    beforeEach(() => {
+      snapshot.dir = mkdtempSync(`${tmpdir()}/spool-snapshot-`);
+    });
+    afterEach(() => {
+      rmSync(snapshot.dir!, { recursive: true, force: true });
+      snapshot.dir = null;
+    });
+
+    it('is not written for a brand-new library', async () => {
+      expect(await __migrateSchemaForTest(db)).toBe(true);
+      expect(readdirSync(snapshot.dir!)).toEqual([]);
+    });
+
+    it('is still written before an upgrade', async () => {
+      applySchema(handle);
+      downgradeToV34(handle);
+      seedUserData(handle);
+      await __migrateSchemaForTest(db);
+      expect(readdirSync(snapshot.dir!)).toEqual([expect.stringMatching(/^spool\.pre-migration-v34-.+\.db$/)]);
+    });
+
+    it('is still written for a version-0 library that holds rows, before refusing it', async () => {
+      applySchema(handle);
+      handle.exec('PRAGMA user_version = 0');
+      seedUserData(handle);
+      await expect(__migrateSchemaForTest(db)).rejects.toThrow(/refusing to rebuild/);
+      expect(readdirSync(snapshot.dir!)).toEqual([expect.stringMatching(/^spool\.pre-migration-v0-.+\.db$/)]);
+    });
   });
 
   it('walking the registry does not report fresh (no tutorial re-seed on upgrade)', async () => {
