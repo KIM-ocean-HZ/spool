@@ -6759,9 +6759,15 @@ pub(crate) enum GateStop {
 /// says whether anything is there) and on the resolved one (so a symlink or a `..` cannot
 /// walk around it — that second run is the one that decides).
 pub(crate) fn path_gate_stop(path: &std::path::Path, rules: &PathGateRules) -> Option<GateStop> {
-    use std::path::Component;
-    let under_home = path.strip_prefix(&rules.home).ok();
-    for c in under_home.unwrap_or(path).components() {
+    use std::path::{Component, PathBuf};
+    // ⚠️ Windows: the rules come out of `canonicalize` (`\\?\C:\…`), the place a moved file is
+    // found at does not (`C:\…`), and to `strip_prefix` / `starts_with` those are two different
+    // disks — nothing under home or a system folder ever stopped (P9X, DISCOVERED-20261020-7).
+    // Both sides are compared without it; a Mac path never has it.
+    let path = PathBuf::from(plain_path(path));
+    let home = PathBuf::from(plain_path(&rules.home));
+    let under_home = path.strip_prefix(&home).ok();
+    for c in under_home.unwrap_or(&path).components() {
         if let Component::Normal(s) = c {
             let s = s.to_string_lossy();
             if s.starts_with('.') {
@@ -6769,7 +6775,7 @@ pub(crate) fn path_gate_stop(path: &std::path::Path, rules: &PathGateRules) -> O
             }
         }
     }
-    if let Some(root) = rules.system_roots.iter().find(|r| path.starts_with(r)) {
+    if let Some(root) = rules.system_roots.iter().find(|r| path.starts_with(plain_path(r))) {
         return Some(GateStop::System(root.clone()));
     }
     if let Some(rel) = under_home {
@@ -16780,6 +16786,21 @@ mod tests {
             refused(&at("Desktop/dots/h.pdf"), "隐藏");
         }
         let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    // P9X（DISCOVERED-20261020-7）：Windows 上真的规则是 canonicalize 出来的 `\\?\C:\…`，跟着挪动的
+    // 文件找到的位置是 `C:\…` —— 两种写法都得拦。
+    #[cfg(windows)]
+    #[test]
+    fn on_windows_a_path_into_appdata_or_a_system_folder_stops_with_or_without_the_prefix() {
+        let rules = path_gate_rules().unwrap();
+        let home = std::env::var("USERPROFILE").unwrap();
+        let system = std::env::var("SystemRoot").unwrap();
+        let stops = |p: String| path_gate_stop(std::path::Path::new(&p), &rules).is_some();
+        assert!(stops(format!(r"{home}\AppData\Local\Spool\a.pdf")));
+        assert!(stops(format!(r"{system}\System32\a.dll")));
+        assert!(stops(format!(r"\\?\{home}\AppData\Local\Spool\a.pdf")));
+        assert!(!stops(format!(r"{home}\Documents\a.pdf")));
     }
 
     // P6-2：两个工具只往 `file_proposals` 排一行，⛔ 一个文件都不挂、一行 attachments 都不动。
