@@ -70,6 +70,11 @@ jobs:
       - name: cargo test
         working-directory: src-tauri
         run: cargo test
+        # Test-only: the test executables get the Common Controls v6 manifest too, or they die
+        # at load with 0xc0000139 (build.rs). The installer step never sets it, so the shipped
+        # exe is embedded exactly as before.
+        env:
+          SPOOL_TEST_CC6_MANIFEST: "1"
 
       # NSIS only. `bundle.targets: "all"` would also build the MSI, which drags in WiX
       # and the VBSCRIPT optional Windows feature for no first-release benefit
