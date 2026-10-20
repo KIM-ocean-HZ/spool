@@ -599,7 +599,13 @@ mod tests {
         let (target, identity, notice, text) = row(&conn, "a");
         assert_eq!(target, path_text(&moved));
         assert!(identity.is_some());
-        assert_ne!(identity.unwrap(), before, "a fresh identity, recorded at the new place");
+        // A Mac bookmark carries the place, so it is recorded afresh; a Windows identity is the
+        // disk and file number, which a rename keeps (P9X).
+        if cfg!(target_os = "macos") {
+            assert_ne!(identity.unwrap(), before, "a fresh identity, recorded at the new place");
+        } else {
+            assert_eq!(identity.unwrap(), before, "the same disk and file number after a rename");
+        }
         assert_eq!(read_notice(notice.as_deref()), Some(Notice::Moved { from: path_text(&f) }));
         assert_eq!(text, "the text", "same file: the extracted text is not touched");
         let label: String = conn.query_row("SELECT label FROM attachments WHERE id = 'a'", [], |r| r.get(0)).unwrap();
