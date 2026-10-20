@@ -333,6 +333,19 @@ pub struct CachedImage {
     pub size_bytes: i64,
 }
 
+/// How a pack line (and get_blocks) names a copy. On Windows with `/`: in a Markdown link a `\`
+/// before punctuation is an escape (`\_`, `\#` …), so `C:\…` breaks wherever a folder name starts
+/// with one, and Windows opens `C:/…` all the same (P9X, DISCOVERED-20261020-4). Elsewhere the
+/// path as it is — a Mac's pack does not change by a byte.
+fn shown_path(file: &std::path::Path) -> String {
+    let s = file.to_string_lossy().into_owned();
+    if cfg!(windows) {
+        s.replace('\\', "/")
+    } else {
+        s
+    }
+}
+
 /// The pictures of these blocks, in order, each with a copy on disk under `cache_dir`
 /// (written now when missing). A copy that cannot be written still gets its path — the
 /// line says where it would be, and the next call tries again.
@@ -380,7 +393,7 @@ pub fn cached_images_of(
         out.push(CachedImage {
             id,
             block_id,
-            path: file.to_string_lossy().into_owned(),
+            path: shown_path(&file),
             format,
             width,
             height,
@@ -974,6 +987,7 @@ mod tests {
         assert_eq!(got.iter().map(|c| c.id.clone()).collect::<Vec<_>>(), vec![metas[0].id.clone(), metas[1].id.clone()]);
         assert!(got[0].path.ends_with(&format!("{}.png", metas[0].id)));
         assert!(got[1].path.ends_with(&format!("{}.jpg", metas[1].id)));
+        assert!(!got[0].path.contains('\\'), "a pack line's path is written with `/` (P9X): {}", got[0].path);
         assert_eq!(std::fs::read(&got[0].path).unwrap(), png_bytes);
         assert_eq!((got[0].width, got[0].height), (30, 20));
         // Written once: a second call does not rewrite it.
