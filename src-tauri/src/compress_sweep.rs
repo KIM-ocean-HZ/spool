@@ -269,19 +269,22 @@ fn run_the_sweep() {
 }
 
 /// ISO 8601（UTC）。这个 crate 没有 chrono，而实测记录里没有时间就没法对价目表的高峰/闲时。
+/// 用 `systime` 的纯算术：Windows 没有 `gmtime_r`（P9X，`DISCOVERED-20261020-1`）。
 fn chrono_ish(t: std::time::SystemTime) -> String {
     let secs = t.duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0) as i64;
-    let mut tm: libc::tm = unsafe { std::mem::zeroed() };
-    unsafe { libc::gmtime_r(&secs, &mut tm) };
+    let c = crate::systime::utc_from_epoch_ms(secs * 1000);
     format!(
         "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z",
-        tm.tm_year + 1900,
-        tm.tm_mon + 1,
-        tm.tm_mday,
-        tm.tm_hour,
-        tm.tm_min,
-        tm.tm_sec
+        c.year, c.mon, c.mday, c.hour, c.min, c.sec
     )
+}
+
+#[test]
+fn chrono_ish_writes_utc_the_same_on_every_platform() {
+    let at = |s: u64| chrono_ish(std::time::UNIX_EPOCH + std::time::Duration::from_secs(s));
+    assert_eq!(at(0), "1970-01-01T00:00:00Z");
+    assert_eq!(at(951_782_400), "2000-02-29T00:00:00Z");
+    assert_eq!(at(1_798_761_599), "2026-12-31T23:59:59Z");
 }
 
 fn sanitize(s: &str) -> String {
