@@ -1435,6 +1435,15 @@ const EN: Record<string, string> = {
   '还没定。定几行「要跟进什么」，之后才能让 AI 出去查。':
     'Not set yet. Write a few lines of what to watch for, and the AI can go and look.',
   '照你定的那几行联网搜索': 'Search the web, following the lines you wrote',
+  // P9S-6: searching moved into the follow-up editor, with a weekly switch; the rail keeps one quiet line.
+  '上次查：{day} · 带回 {n} 条，在待审里': 'Last searched {day} · brought back {n}, waiting for your review',
+  '上次查：{day} · 没有新消息': 'Last searched {day} · nothing new',
+  ' · 每周自动查': ' · searches weekly',
+  '每周自动查一次': 'Search once a week by itself',
+  '用本机的 {engine}。查到新东西才放进待审，并标着「跟进」；没有就什么都不说。':
+    'Uses {engine} on this Mac. Only something new reaches your review, marked as a follow-up; otherwise it says nothing.',
+  '上次 AI 说的': 'What the AI said last time',
+  '这一块是「联网搜索」跟进带回来的': 'Brought back by a web follow-up search',
   '联网搜索': 'Search the web',
   // P9C — the two follow-up buttons while locked.
   '联网搜索要用本机的 Claude Code 或 Codex。': 'Web search runs on Claude Code or Codex on this Mac.',

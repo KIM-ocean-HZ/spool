@@ -20,6 +20,7 @@ import {
 } from '@/lib/engine/followUp';
 import { toolCaption } from '@/lib/engine/progress';
 import { t } from '@/lib/i18n';
+import { useFollowUpStore } from './followUpStore';
 import { reloadOutsideWrites } from './outsideWrites';
 import { useSettingsStore } from './settingsStore';
 import { selectThreadById, useThreadsStore } from './threadsStore';
@@ -95,6 +96,9 @@ export interface EngineTask {
   threadId: string;
   threadTitle: string;
   action: EngineAction;
+  /** P9S-6: started by the weekly timer, not by a click — a finished run says nothing (the review
+   *  badge already shows what came back; 「跟进只能安静显示内容」). Failures still say so. */
+  quiet?: boolean;
 }
 
 /** DESIGN_FOLLOW_UP §3.2: 找出还没解决的问题 is the one action whose OUTPUT is the point — the
@@ -161,6 +165,7 @@ interface EngineState {
     action: EngineAction,
     timeoutSecs: number,
     onResult?: ResultHandler,
+    quiet?: boolean,
   ) => boolean;
   /** Stop the running task and drop everything still waiting (§1.2 — the pill is one
    *  control, and a user stopping "the AI" does not mean "and then start the next one"). */
@@ -205,7 +210,7 @@ const siftFollowUp = async (threadId: string, runStartedAt: number): Promise<num
   if (items.length === 0) {
     // Still record the run: 「上次跑过」 is true whether or not it found anything, and M4's
     // timer will need it.
-    await setFollowUpState(threadId, serializeFollowUpState({ ...state, lastRunAt: now }));
+    await setFollowUpState(threadId, serializeFollowUpState({ ...state, lastRunAt: now, lastFound: 0 }));
     return 0;
   }
   const { fresh, repeats } = siftProposals(items, state, now);
@@ -336,6 +341,11 @@ export const useEngineStore = create<EngineState>((set, get) => {
       // propose_supersede) — the badge and the 过期检测 tab have to notice without waiting
       // for a window focus. Same list, same order as the focus reload.
       await reloadOutsideWrites();
+      // P9S-6: the run may have closed lines, and it rewrote 「上次查」 — the open project's panel
+      // re-reads both.
+      if (isFollowUp && useFollowUpStore.getState().threadId === next.threadId) {
+        await useFollowUpStore.getState().load(next.threadId);
+      }
     } catch (e) {
       console.warn('[engine] post-run reload failed', e);
     }
@@ -345,6 +355,8 @@ export const useEngineStore = create<EngineState>((set, get) => {
       // Nothing was stored and nothing should be announced: the draft goes to the panel
       // the user is looking at, and they decide whether it becomes the brief (§6-2).
       onResult?.(resultText);
+    } else if (outcome === 'ok' && isFollowUp && next.quiet) {
+      // P9S-6: the weekly run. What it brought back is on the review badge; nothing new says nothing.
     } else if (outcome === 'ok' && isFollowUp) {
       // §2.4: "nothing new" is a legitimate, quiet result — not a failure and not an
       // apology. Saying it plainly is what keeps the feature from feeling broken on the
@@ -487,7 +499,7 @@ export const useEngineStore = create<EngineState>((set, get) => {
       }
     },
 
-    enqueue: (threadId, threadTitle, action, timeoutSecs, onResult) => {
+    enqueue: (threadId, threadTitle, action, timeoutSecs, onResult, quiet) => {
       const { current, queue } = get();
       // P9E-3（第 122 条）：私密项目不交给本机 AI。界面上那几处是锁着的，这里是后面那道门。
       // （周回顾的 threadId 是空的 —— 它读整个库，私密的那几个在 MCP 那一侧就看不见。）
@@ -503,7 +515,7 @@ export const useEngineStore = create<EngineState>((set, get) => {
         toast.notice(t('这条脉络已经排上了，等它跑完'));
         return false;
       }
-      const task: EngineTask = { id: nextTaskId++, threadId, threadTitle, action };
+      const task: EngineTask = { id: nextTaskId++, threadId, threadTitle, action, ...(quiet ? { quiet } : {}) };
       timeouts.set(task.id, timeoutSecs);
       if (onResult) resultHandlers.set(task.id, onResult);
       set({ queue: [...queue, task] });

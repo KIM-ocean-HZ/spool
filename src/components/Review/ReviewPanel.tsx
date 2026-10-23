@@ -1,6 +1,8 @@
 import { Check, FileText, Globe, Trash2, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import SeqBadge from '@/components/ThreadView/SeqBadge';
+import { FollowUpTag } from '@/components/ThreadView/SourceBadge';
+import { isFollowUpSource } from '@/lib/blocks/sourceIcon';
 import { plainText } from '@/lib/blocks/contentRuns';
 import { IMAGE_LINE_RE, imageLinesAsText } from '@/lib/blocks/imageLines';
 import type { SupersedeChoice, SupersedeReviewItem } from '@/lib/blocks/supersedeReview';
@@ -875,8 +877,12 @@ function BatchCard({
   return (
     <div className="mb-3 rounded-md border border-line-strong bg-paper-2/30 p-3">
       <div className="flex items-baseline justify-between gap-3">
-        <span className="min-w-0 truncate text-xs text-ink-2">
-          {batch.note ?? t('{client} 提了 {n} 条', { client: batch.client, n: batch.items.length })}
+        <span className="flex min-w-0 items-baseline gap-1.5 text-xs text-ink-2">
+          {/* P9S-6: what a follow-up search brought back says so first — the same mark the block keeps. */}
+          {isFollowUpSource(batch.client) && <FollowUpTag />}
+          <span className="min-w-0 truncate">
+            {batch.note ?? t('{client} 提了 {n} 条', { client: batch.client, n: batch.items.length })}
+          </span>
         </span>
         <span className="flex-none font-mono text-[10px] text-muted">
           {t('{n} 天后作废', { n: daysLeft })}

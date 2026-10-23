@@ -1,6 +1,6 @@
 import { Bot, Circle, Code2, FileText, Globe, MessageSquare, Sparkles, Terminal } from 'lucide-react';
 import { describe, expect, it } from 'vitest';
-import { isMcpSource, sourceIcon } from './sourceIcon';
+import { isMcpSource, sourceIcon, isFollowUpSource } from './sourceIcon';
 
 describe('sourceIcon', () => {
   it('maps browser sources to Globe', () => {
@@ -80,5 +80,18 @@ describe('sourceIcon', () => {
     expect(isMcpSource('Claude')).toBe(false);
     expect(isMcpSource('MCP 协议笔记')).toBe(false);
     expect(isMcpSource(null)).toBe(false);
+  });
+});
+
+// P9S-6: a follow-up's finds are marked, and are still an AI's.
+describe('isFollowUpSource', () => {
+  it('recognises the follow-up label in both languages, and nothing that merely mentions it', () => {
+    for (const s of ['Claude Code · 跟进 · MCP', 'codex · Follow-up · MCP', '跟进 · MCP', 'Claude Code · 跟进 · MCP — 用户原文']) {
+      expect(isFollowUpSource(s)).toBe(true);
+      expect(isMcpSource(s)).toBe(true);
+    }
+    for (const s of ['Claude Code · MCP', '跟进计划.md', 'Google Chrome', null]) {
+      expect(isFollowUpSource(s)).toBe(false);
+    }
   });
 });

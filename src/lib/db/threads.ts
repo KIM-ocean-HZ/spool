@@ -267,6 +267,22 @@ export const setFollowUpState = async (id: string, state: string | null): Promis
   await db.execute('UPDATE threads SET follow_up_state = $1 WHERE id = $2', [state, id]);
 };
 
+/** P9S-6 (Ocean 2026-10-23, 第 173 / 175 条): the projects that may search by themselves this week —
+ *  switched on, still in progress, not private, with at least one line still being watched. Whether it
+ *  is due yet is the caller's to decide from the state (lib/engine/followUp `dueAutoFollowUp`).
+ *  ⚠️ The LIKE only narrows the rows read; the state is parsed properly afterwards. */
+export const listAutoFollowUpCandidates = async (): Promise<
+  { id: string; title: string; state: string | null }[]
+> => {
+  const db = await getDb();
+  return db.select<{ id: string; title: string; state: string | null }[]>(
+    `SELECT t.id, t.title, t.follow_up_state AS state FROM threads t
+      WHERE t.deleted_at IS NULL AND t.status <> 'done' AND t.private = 0
+        AND t.follow_up_state LIKE '%"auto":true%'
+        AND EXISTS (SELECT 1 FROM follow_up_items f WHERE f.thread_id = t.id AND f.status = 'open')`,
+  );
+};
+
 // Single atomic UPDATE instead of BEGIN/UPDATE/UPDATE/COMMIT. tauri-plugin-sql is backed
 // by sqlx::SqlitePool, which means each `db.execute` may borrow a *different* connection
 // from the pool — BEGIN on conn A doesn't bind UPDATEs that land on conns B/C, and the

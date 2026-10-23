@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
+  AUTO_FOLLOW_UP_PERIOD_MS,
+  dueAutoFollowUp,
   emptyFollowUpState,
   fingerprint,
   normalizeUrl,
@@ -221,5 +223,44 @@ describe('seenUrlsForPrompt', () => {
   it('leaves out entries with no URL — a hash is nothing the model can act on', () => {
     const s = rememberProposals(emptyFollowUpState(), [item('a', '没有来源的结论')], NOW);
     expect(seenUrlsForPrompt(s, NOW)).toEqual([]);
+  });
+});
+
+// P9S-6: the weekly switch and the last run's count live in the same column.
+describe('the weekly switch rides in the run state', () => {
+  it('parses it, and an older column without it reads as off', () => {
+    expect(parseFollowUpState('{"v":1,"lastRunAt":5,"seen":[],"auto":true,"lastFound":2}')).toMatchObject({
+      auto: true,
+      lastFound: 2,
+    });
+    expect(parseFollowUpState('{"v":1,"lastRunAt":5,"seen":[]}').auto).toBeUndefined();
+  });
+
+  it('a run that found something keeps the switch on and records how many', () => {
+    const s = rememberProposals({ ...emptyFollowUpState(), auto: true }, [item('a', '结论 https://x.edu/a')], NOW);
+    expect(s.auto).toBe(true);
+    expect(s.lastFound).toBe(1);
+    expect(parseFollowUpState(serializeFollowUpState(s)).auto).toBe(true);
+  });
+});
+
+describe('dueAutoFollowUp (P9S-6, once a week)', () => {
+  const st = (lastRunAt: number, auto = true) => JSON.stringify({ v: 1, lastRunAt, seen: [], ...(auto ? { auto } : {}) });
+  const WEEK = AUTO_FOLLOW_UP_PERIOD_MS;
+  it('the oldest one that is a week past its last run; never a switched-off one', () => {
+    const now = 100 * WEEK;
+    const due = dueAutoFollowUp(
+      [
+        { id: 'recent', state: st(now - WEEK + 1) },
+        { id: 'old', state: st(now - 3 * WEEK) },
+        { id: 'older-but-off', state: st(0, false) },
+        { id: 'week', state: st(now - WEEK) },
+      ],
+      now,
+    );
+    expect(due?.id).toBe('old');
+    expect(dueAutoFollowUp([{ id: 'recent', state: st(now - 1) }], now)).toBeNull();
+    // never ran: due straight away once switched on
+    expect(dueAutoFollowUp([{ id: 'new', state: st(0) }], now)?.id).toBe('new');
   });
 });

@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import LockedAiEntry from '@/components/AiSetup/LockedAiEntry';
 import PrivateAiEntry from '@/components/AiSetup/PrivateAiEntry';
 import EngineBar from '@/components/RightRail/EngineBar';
+import FollowUpSearch from './FollowUpSearch';
 import { aiEntryState } from '@/lib/engine/gate';
 import { isImeComposing } from '@/lib/utils/ime';
 import { useT } from '@/lib/i18n';
@@ -234,6 +235,10 @@ export default function FollowUpPanel({ thread, onClose }: Props) {
               </p>
             </div>
           ) : null}
+
+          {/* P9S-6 (Ocean 2026-10-23): 「联网搜索」 lives here now, one level down from the rail, with
+              the weekly switch beside it. */}
+          <FollowUpSearch thread={thread} hasLines={openItems.length > 0} />
 
           {/* §8.6 — an answered line is retired, not deleted: it stays here with one click to
               put it back. That is what makes it safe to let an AI close one without asking

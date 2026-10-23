@@ -589,13 +589,25 @@ pub fn detect(preferred: Option<EngineKind>, manual: Option<&str>) -> EngineStat
     }
 }
 
+// The arguments Spool's own server is started with inside an engine run. `--engine-run` always
+// (mcp.rs: the tools the engine is not given); P9S-6 adds `--engine-follow-up` to the one action that
+// searches the web — 跟进 — so what it proposes is labelled as a follow-up's and it may retire a standing
+// line (mcp.rs `serving_follow_up`).
+fn server_args(web: bool) -> Vec<&'static str> {
+    let mut args = vec!["--mcp", crate::mcp::ENGINE_RUN_FLAG];
+    if web {
+        args.push(crate::mcp::ENGINE_FOLLOW_UP_FLAG);
+    }
+    args
+}
+
 // §2.2: the temporary --mcp-config. It registers Spool's own executable with `--mcp`,
 // i.e. exactly the server Claude Desktop is pointed at by the one-click hookup — so
 // "several processes on one library" is the model already in production, not a new risk
 // surface opened here.
-pub fn mcp_config_json(exe: &str) -> String {
+pub fn mcp_config_json(exe: &str, web: bool) -> String {
     serde_json::json!({
-        "mcpServers": { MCP_SERVER_NAME: { "command": exe, "args": ["--mcp", crate::mcp::ENGINE_RUN_FLAG] } }
+        "mcpServers": { MCP_SERVER_NAME: { "command": exe, "args": server_args(web) } }
     })
     .to_string()
 }
@@ -782,7 +794,10 @@ fn codex_config_overrides(exe: &str, web: bool) -> Vec<String> {
         format!("tools.web_search={web}"),
         format!("mcp_servers.{MCP_SERVER_NAME}.command={}", toml_string(exe)),
         // P9G follow-up: `--engine-run` tells the server it is serving this engine (mcp.rs).
-        format!("mcp_servers.{MCP_SERVER_NAME}.args=[\"--mcp\",\"{}\"]", crate::mcp::ENGINE_RUN_FLAG),
+        format!(
+            "mcp_servers.{MCP_SERVER_NAME}.args=[{}]",
+            server_args(web).iter().map(|a| format!("\"{a}\"")).collect::<Vec<_>>().join(",")
+        ),
         format!("mcp_servers.{MCP_SERVER_NAME}.enabled_tools=[{tools}]"),
         // ⚠️⚠️ P9F F6 (DISCOVERED-20260924-1, Ocean 2026-10-11 #80「Codex 必须能写回」).
         // `approval_policy="never"` alone does NOT let a tool through: codex treats every MCP
@@ -856,7 +871,7 @@ pub fn gemini_settings_json(exe: &str, web: bool) -> String {
         "mcpServers": {
             MCP_SERVER_NAME: {
                 "command": exe,
-                "args": ["--mcp", crate::mcp::ENGINE_RUN_FLAG],
+                "args": server_args(web),
                 "trust": true,
                 "includeTools": ALLOWED_TOOL_NAMES,
             }
@@ -1414,7 +1429,7 @@ pub fn run_action(
     let mut cmd = std::process::Command::new(bin);
     match kind {
         EngineKind::Claude => {
-            std::fs::write(&cfg_path, mcp_config_json(&exe.to_string_lossy()))
+            std::fs::write(&cfg_path, mcp_config_json(&exe.to_string_lossy(), web))
                 .map_err(|e| format!("could not write the MCP config: {e}"))?;
             cmd.args(claude_args(prompt, &cfg_path.to_string_lossy(), max_turns, web, model));
         }
@@ -2099,11 +2114,23 @@ mod tests {
     // the CLI would be talking to something other than the user's library.
     #[test]
     fn mcp_config_registers_spool_itself() {
-        let json = mcp_config_json("/Applications/Spool.app/Contents/MacOS/spool");
+        let json = mcp_config_json("/Applications/Spool.app/Contents/MacOS/spool", false);
         let v: serde_json::Value = serde_json::from_str(&json).unwrap();
         let server = &v["mcpServers"]["spool"];
         assert_eq!(server["command"], "/Applications/Spool.app/Contents/MacOS/spool");
         assert_eq!(server["args"], serde_json::json!(["--mcp", "--engine-run"]));
+        // P9S-6: the follow-up run (the one that searches the web) also says it is the follow-up.
+        let web: serde_json::Value =
+            serde_json::from_str(&mcp_config_json("/x/spool", true)).unwrap();
+        assert_eq!(
+            web["mcpServers"]["spool"]["args"],
+            serde_json::json!(["--mcp", "--engine-run", "--engine-follow-up"])
+        );
+        let gemini: serde_json::Value = serde_json::from_str(&gemini_settings_json("/x/spool", true)).unwrap();
+        assert_eq!(gemini["mcpServers"]["spool"]["args"][2], "--engine-follow-up");
+        assert!(codex_args("p", "/x/spool", "/tmp/m", true)
+            .iter()
+            .any(|a| a == "mcp_servers.spool.args=[\"--mcp\",\"--engine-run\",\"--engine-follow-up\"]"));
     }
 
     #[test]

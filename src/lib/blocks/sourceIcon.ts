@@ -27,6 +27,12 @@ const RULES: readonly [RegExp, LucideIcon][] = [
 export const isMcpSource = (source: string | null): boolean =>
   source != null && (source === 'MCP' || source.startsWith('MCP — ') || source.includes(' · MCP'));
 
+/** P9S-6 (Ocean 2026-10-23: 「加入的 block 需要强调这是跟进的结果」): what Spool's own follow-up run brought
+ *  back carries 「… · 跟进 · MCP」 (mcp.rs `follow_up_source_label`, written in the UI language of the moment,
+ *  so both spellings are recognised). It is still an MCP source in every other respect. */
+export const isFollowUpSource = (source: string | null): boolean =>
+  source != null && /(^|\s·\s)(跟进|Follow-up) · MCP(\s—|$)/.test(source);
+
 // Unknown source / no match → a small filled dot, rendered muted at the badge head.
 export function sourceIcon(source: string | null): LucideIcon {
   if (!source) return Circle;

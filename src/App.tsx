@@ -35,6 +35,7 @@ import { startDraftPrompt } from '@/stores/draftPrompt';
 import { useAiUpdatesStore } from '@/stores/aiUpdatesStore';
 import { t } from '@/lib/i18n';
 import { toast } from '@/stores/toastStore';
+import { useAutoFollowUp } from '@/hooks/useAutoFollowUp';
 import { useAutoMaintain } from '@/hooks/useAutoMaintain';
 import { useBreakReminder } from '@/hooks/useBreakReminder';
 import { useCapture } from '@/hooks/useCapture';
@@ -122,6 +123,8 @@ export default function App() {
   useUndo();
   // DESIGN_WORKBENCH §4.3 — off unless the user turned it on; the hook checks that itself.
   useAutoMaintain();
+  // P9S-6: each project's 「每周自动查一次」 (off unless switched on in its follow-up editor).
+  useAutoFollowUp();
   // 情人节限定版 (2026-08-19) — writes the theme onto <html>; the capture overlay does the same
   // from its own root, off the same settings.json.
   useAppliedTheme();

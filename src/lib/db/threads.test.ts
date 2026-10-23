@@ -3,7 +3,14 @@ import type Database from '@tauri-apps/plugin-sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { __setTestDb } from './client';
 import schemaSql from './schema.sql?raw';
-import { createThread, listAllThreads, setThreadPrivate } from './threads';
+import { addFollowUpItem } from './followUpItems';
+import {
+  createThread,
+  listAllThreads,
+  listAutoFollowUpCandidates,
+  setFollowUpState,
+  setThreadPrivate,
+} from './threads';
 import { createWorkspace } from './workspaces';
 
 const { DatabaseSync } = createRequire(import.meta.url)(
@@ -75,5 +82,41 @@ describe('私密项目 (P9E-1)', () => {
     handle.prepare('UPDATE threads SET updated_at = 5 WHERE id = ?').run(t.id);
     await setThreadPrivate(t.id, true);
     expect(handle.prepare('SELECT updated_at FROM threads WHERE id = ?').get(t.id)).toEqual({ updated_at: 5 });
+  });
+});
+
+// P9S-6 (Ocean 2026-10-23 第 173 / 175 条): which projects the weekly follow-up may pick from.
+describe('listAutoFollowUpCandidates (P9S-6)', () => {
+  let handle: Sqlite;
+
+  beforeEach(() => {
+    handle = new DatabaseSync(':memory:');
+    handle.exec(schemaSql.replace(/--.*$/gm, ''));
+    __setTestDb(asPluginSql(handle));
+  });
+
+  afterEach(() => {
+    __setTestDb(null);
+    handle.close();
+  });
+
+  it('switched on, in progress, not private, still watching something — nothing else', async () => {
+    const ws = await createWorkspace('ws');
+    const on = '{"v":1,"lastRunAt":0,"seen":[],"auto":true}';
+    const mk = async (title: string, state: string | null, opts: { line?: boolean } = {}) => {
+      const t = await createThread(ws.id, title);
+      await setFollowUpState(t.id, state);
+      if (opts.line !== false) await addFollowUpItem(t.id, '截止日期公布了没有', false);
+      return t;
+    };
+    const yes = await mk('开着', on);
+    await mk('没开', '{"v":1,"lastRunAt":0,"seen":[]}');
+    await mk('没有在跟的行', on, { line: false });
+    const priv = await mk('私密', on);
+    await setThreadPrivate(priv.id, true);
+    const done = await mk('完成了', on);
+    handle.prepare("UPDATE threads SET status = 'done' WHERE id = ?").run(done.id);
+
+    expect((await listAutoFollowUpCandidates()).map((c) => c.id)).toEqual([yes.id]);
   });
 });

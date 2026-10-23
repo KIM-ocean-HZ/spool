@@ -1,17 +1,16 @@
-import { ChevronDown, ChevronRight, Globe, Inbox } from "lucide-react";
+import { ChevronDown, ChevronRight, Inbox } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import CompressRail from "@/components/Compress/CompressRail";
-import LockedAiEntry from "@/components/AiSetup/LockedAiEntry";
-import PrivateAiEntry from "@/components/AiSetup/PrivateAiEntry";
 import LiveRun from "./LiveRun";
 import McpBar from "./McpBar";
 import ProjectFiles from "./ProjectFiles";
 import RailSection from "./RailSection";
 import RunCard from "./RunCard";
+import { lastSearchLine } from "@/components/ThreadView/FollowUpSearch";
 import { createBlock } from "@/lib/db/blocks";
 import type { EngineRun } from "@/lib/db/engineRuns";
 import { groupAiActivity, visibleRuns } from "@/lib/engine/activity";
-import { aiEntryState, canShowEngineActions, engineActionsDisabled } from "@/lib/engine/gate";
+import { aiEntryState, canShowEngineActions } from "@/lib/engine/gate";
 import { imageLinesAsText } from "@/lib/blocks/imageLines";
 import { dateLocale, useT } from "@/lib/i18n";
 import { IS_MAC } from "@/lib/platform";
@@ -21,7 +20,6 @@ import { useSearchStore } from "@/stores/searchStore";
 import {
   ACTION_LABEL,
   ENGINE_LABEL,
-  engineSupportsWeb,
   useEngineStore,
   type EngineKind,
 } from "@/stores/engineStore";
@@ -91,7 +89,6 @@ export default function RightRail({ thread, onCollapse, onEditBrief }: Props) {
   const status = useEngineStore((s) => s.status);
   const current = useEngineStore((s) => s.current);
   const queue = useEngineStore((s) => s.queue);
-  const enqueue = useEngineStore((s) => s.enqueue);
   const probe = useEngineStore((s) => s.probe);
   const loadRuns = useEngineStore((s) => s.loadRuns);
   const dismissRun = useEngineStore((s) => s.dismissRun);
@@ -99,7 +96,6 @@ export default function RightRail({ thread, onCollapse, onEditBrief }: Props) {
   const mcpEnabled = useSettingsStore((s) => s.mcpEnabled);
   const mcpWriteEnabled = useSettingsStore((s) => s.mcpWriteEnabled);
   const actionsEnabled = useSettingsStore((s) => s.aiEngineActionsEnabled);
-  const timeoutSecs = useSettingsStore((s) => s.aiEngineTimeoutSecs);
 
   // v22 (§8.7) — what this project follows up is a list of rows now, loaded for whichever
   // project is open and shared with the editor behind 编辑 so both move together.
@@ -109,6 +105,8 @@ export default function RightRail({ thread, onCollapse, onEditBrief }: Props) {
     () => followUpItems.filter((i) => i.status === "open"),
     [followUpItems],
   );
+  const followUpRun = useFollowUpStore((s) => s.run);
+  const lastSearch = lastSearchLine(t, followUpRun);
 
   const pending = useProposalsStore((s) => s.pendingCount);
   const openReview = useProposalsStore((s) => s.open);
@@ -141,9 +139,8 @@ export default function RightRail({ thread, onCollapse, onEditBrief }: Props) {
     busyOnThisThread,
   };
   const engineReady = canShowEngineActions(gate);
-  // P9C (第 94、97、98 条): 「联网搜索」 runs on the local CLI only — locked on a Mac without it
-  // (or with its switches off), hidden on Windows and with 「显示 AI 功能」 off. Undecided until the
-  // first detection answers, so no lock flashes past on a machine that has one.
+  // P9C (第 94、97、98 条) — the same answer the follow-up editor uses for 「联网搜索」 (P9S-6 moved the
+  // button there). Here it only decides whether an empty list says 「还没定」: not in a private project.
   const searchEntry =
     status === null
       ? null
@@ -155,7 +152,6 @@ export default function RightRail({ thread, onCollapse, onEditBrief }: Props) {
           // P9E-3（第 122 条）：私密项目里不联网去查 —— Spool 自带的 AI 不碰它。
           privateProject: thread?.isPrivate === true,
         });
-  const disabled = engineActionsDisabled(gate);
 
   // §3.1 — this is the "user agrees" the prompts have always asked for. The block goes in
   // through the ordinary insert path with a source label, exactly like an MCP write: what
@@ -205,7 +201,9 @@ export default function RightRail({ thread, onCollapse, onEditBrief }: Props) {
   //   * 跟进 files proposals rather than prose, so a follow-up run often comes back with no
   //     text at all — and the old card only rendered its buttons for `outcome === 'ok' &&
   //     hasText`. A textless run had no ✕. RunCard gives every card a ✕ now, unconditionally.
-  const shown = visibleRuns(runs, thread?.id ?? null);
+  // P9S-6: a follow-up's own words are not a card up here any more — what it found is on the review
+  // screen, and what it said is folded inside the follow-up editor (FollowUpSearch).
+  const shown = visibleRuns(runs, thread?.id ?? null).filter((r) => r.action !== "follow_up");
   // R2: the durable half of "what did the AI put in my library". ⚠️ Unlike the cards, this
   // does NOT go away when answered: a block an AI wrote stays a block an AI wrote.
   const blocks = useBlocksStore((s) =>
@@ -330,60 +328,15 @@ export default function RightRail({ thread, onCollapse, onEditBrief }: Props) {
                   {t("还没定。定几行「要跟进什么」，之后才能让 AI 出去查。")}
                 </p>
               )}
-              {/* P9E-3: a private project — whether or not it has lines, no AI goes looking. */}
-              {searchEntry === "private" && (
-                <div className="mt-2 px-3">
-                  <PrivateAiEntry label={t("联网搜索")} />
-                </div>
+              {/* P9S-6 (Ocean 2026-10-23: 「用户主动点击联网搜索退化到二级界面，跟进只能安静显示内容」): the
+                  button, its locks and the weekly switch are behind 编辑 now (ThreadView/FollowUpSearch).
+                  What stays here is the list, and one quiet line about the last search. */}
+              {followUpLines.length > 0 && lastSearch && (
+                <p className="mt-1 px-3 text-[11px] text-muted">
+                  {lastSearch}
+                  {followUpRun?.auto && t(' · 每周自动查')}
+                </p>
               )}
-              {/* §7.8.5-2 — the button is withheld, not disabled, on an engine that cannot
-                  carry this action; a greyed control invites a hunt for the switch that turns
-                  it on, and there isn't one. The brief itself stays visible and editable:
-                  switching to a subscription engine later should find it already written. */}
-              {/* ⚠️ 2026-08-12 Ocean offered two ways to stop this reading as one more line of
-                  the brief: 「和上面的跟进内容之间划一条线，或者把它做成一个按钮」. It used to have
-                  both. It keeps the second — it is a bordered control, plainly a thing you press
-                  — and drops the rule, because 2026-08-17 put a rule BETWEEN sections: a divider
-                  inside a section and a divider around it, in the same column, is the noise that
-                  pass exists to remove. It stays inline-width, not a full-width bar (§9.13 #2). */}
-              {/* P9C: while locked, the same place shows the lock (只有跟进行的时候才有). */}
-              {searchEntry === "locked" && followUpLines.length > 0 && (
-                <div className="mt-2 px-3">
-                  <LockedAiEntry
-                    label={t("联网搜索")}
-                    reason={
-                      cliAvailable && status?.selected
-                        ? t("{engine} 已经装好，还差打开 MCP 那边的开关。", {
-                            engine: ENGINE_LABEL[status.selected],
-                          })
-                        : t("联网搜索要用本机的 Claude Code 或 Codex。")
-                    }
-                    route="cli"
-                  />
-                </div>
-              )}
-              {searchEntry === "ready" &&
-                followUpLines.length > 0 &&
-                (engineSupportsWeb(status?.selected ?? null) ? (
-                  <div className="mt-2 px-3">
-                    <button
-                      type="button"
-                      disabled={disabled}
-                      onClick={() =>
-                        enqueue(thread.id, thread.title, "follow_up", timeoutSecs)
-                      }
-                      title={t("照你定的那几行联网搜索")}
-                      className="flex items-center gap-1.5 rounded border border-line bg-paper px-2 py-1 text-[13px] text-ink-2 transition-colors enabled:hover:border-accent enabled:hover:text-accent disabled:text-muted disabled:opacity-60"
-                    >
-                      <Globe size={12} className="flex-none" />
-                      {t("联网搜索")}
-                    </button>
-                  </div>
-                ) : (
-                  <p className="mt-2 px-3 text-[12px] leading-relaxed text-muted">
-                    {t("联网搜索这一项 Gemini CLI 跑不了——它的免费额度一次跟进就用完了。换成 Claude Code 或 Codex 才有。")}
-                  </p>
-                ))}
             </RailSection>
           )}
 

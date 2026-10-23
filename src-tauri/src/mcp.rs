@@ -1407,6 +1407,25 @@ fn serving_engine() -> bool {
     std::env::args().any(|a| a == ENGINE_RUN_FLAG)
 }
 
+// P9S-6 (Ocean 2026-10-23, §9.2 第 174 条): a follow-up run of Spool's own engine gets this flag as well
+// (engine.rs adds it whenever the run searches the web, which only 跟进 does). Two things hang off it:
+// what it proposes is labelled as a follow-up's (`follow_up_source_label`), and it may close a STANDING
+// line — 「跟进的 CLI 也可以主动关掉跟进」. A chat client still may not; that rule is unchanged.
+pub(crate) const ENGINE_FOLLOW_UP_FLAG: &str = "--engine-follow-up";
+
+#[cfg(test)]
+thread_local! {
+    static TEST_FOLLOW_UP_RUN: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+fn serving_follow_up() -> bool {
+    #[cfg(test)]
+    if TEST_FOLLOW_UP_RUN.with(|e| e.get()) {
+        return true;
+    }
+    std::env::args().any(|a| a == ENGINE_FOLLOW_UP_FLAG)
+}
+
 pub(crate) fn app_data_dir() -> Option<PathBuf> {
     #[cfg(test)]
     if let Some(dir) = TEST_DATA_DIR.with(|d| d.borrow().clone()) {
@@ -4588,6 +4607,19 @@ fn mcp_source_label() -> String {
     }
 }
 
+// P9S-6 (Ocean 2026-10-23: 「加入的 block 需要强调这是跟进的结果」): what a follow-up run proposes says so in
+// its label — 「Claude Code · 跟进 · MCP」 — which the review card and, once approved, the block both carry.
+// ⚠️ Still ends in ` · MCP`: everything that asks 「did an AI write this」 (isMcpSource, the SQL predicate,
+// the green dot) keeps answering yes. The word is written in the UI language of the moment, like the rest
+// of what this server stores; the GUI recognises both (lib/blocks/sourceIcon `isFollowUpSource`).
+fn follow_up_source_label() -> String {
+    let word = t!("跟进", "Follow-up");
+    match CLIENT_NAME.lock().unwrap().as_deref() {
+        Some(name) if !name.trim().is_empty() => format!("{} · {word} · MCP", name.trim()),
+        _ => format!("{word} · MCP"),
+    }
+}
+
 // §3.1-3 (三方评审 2026-08-04, Ocean 拍板): an error body is the single most likely thing
 // a client repeats to the user word for word — so it is the last place an internal id may
 // appear, and it used to be the first. Every "no such project" now says it without echoing
@@ -6396,7 +6428,7 @@ fn propose_blocks_json(
 
     let batch_id = new_id()?;
     let expires_at = now + PROPOSAL_TTL_MS;
-    let client = mcp_source_label();
+    let client = if serving_follow_up() { follow_up_source_label() } else { mcp_source_label() };
     let tx = conn.transaction().map_err(|e| e.to_string())?;
     tx.execute(
         "INSERT INTO proposal_batches (id, client, note, source_text, source_thread_id,
@@ -7680,7 +7712,9 @@ fn close_follow_up_item_json(
              user what changed — reopening it is theirs to do, inside Spool."
         ));
     }
-    if standing == 1 {
+    // P9S-6 (第 174 条): Spool's own follow-up run may retire a standing watch it judges finished — its
+    // outcome line is what the user reads under it, and closing is not deleting (§8.6, reopenable).
+    if standing == 1 && !serving_follow_up() {
         return Err(t!(
             "这一条是「永久跟进」的,从这里关不掉:〈{title}〉的「{line}」。\
              查到一次答案不代表它完了 —— 它下次还会变,而这正是用户把它标成永久跟进的原因。\
@@ -10859,7 +10893,7 @@ fn follow_up_brief_prompt_text(title: &str, pack: &str) -> String {
 /// run that closed a standing watch after answering it once would leave the project silently
 /// unwatched (§8.2). `close_follow_up_item` refuses that outright, but the prompt says it too
 /// — a refusal at the end of a paid run is an expensive way to learn the rule.
-fn follow_up_targets_of(conn: &Connection, id: &str, title: &str) -> Result<String, String> {
+fn follow_up_targets_of(conn: &Connection, id: &str, title: &str, headless: bool) -> Result<String, String> {
     let standing = standing_follow_up_lines(conn, id)?;
     let questions = open_follow_up_questions(conn, id)?;
     if standing.is_empty() && questions.is_empty() {
@@ -10871,15 +10905,33 @@ fn follow_up_targets_of(conn: &Connection, id: &str, title: &str) -> Result<Stri
     }
     let mut out = String::new();
     if !standing.is_empty() {
-        out.push_str(&t!(
-            "## 永久跟进的(每一轮都要查一遍)\n\u{26a0} 这几条查到答案也**不要**收掉 —— \
-             它们跟进的就是「会不会变」,本来就不会完。\n",
-            "## Standing watches (check every one of these, every run)\n\u{26a0} Do NOT close \
-             these when you find an answer — what they watch is whether something CHANGES, so \
-             they are never finished.\n"
-        ));
-        for line in &standing {
-            out.push_str(&format!("- {line}\n"));
+        if headless {
+            // P9S-6 (第 174 条): Spool's own run may retire one of these — but only one that has stopped
+            // being worth watching, never because it got an answer this time.
+            out.push_str(&t!(
+                "## 永久跟进的(每一轮都要查一遍)\n\u{26a0} 查到答案**不是**收掉它们的理由 —— \
+                 它们跟进的就是「会不会变」。只有一条已经**不值得再跟**(事情彻底定了、和这个项目不再相关)时,\
+                 才调 close_follow_up_item(item_id, outcome) 收掉,outcome 一句话写清为什么。\n",
+                "## Standing watches (check every one of these, every run)\n\u{26a0} Finding an answer \
+                 is NOT a reason to close one — what they watch is whether something CHANGES. Close \
+                 one with close_follow_up_item(item_id, outcome) only when it is no longer worth \
+                 watching at all (settled for good, or no longer relevant to this project), with one \
+                 sentence in outcome saying why.\n"
+            ));
+            for (item_id, line) in &standing {
+                out.push_str(&format!("- {line}(item_id: {item_id})\n"));
+            }
+        } else {
+            out.push_str(&t!(
+                "## 永久跟进的(每一轮都要查一遍)\n\u{26a0} 这几条查到答案也**不要**收掉 —— \
+                 它们跟进的就是「会不会变」,本来就不会完。\n",
+                "## Standing watches (check every one of these, every run)\n\u{26a0} Do NOT close \
+                 these when you find an answer — what they watch is whether something CHANGES, so \
+                 they are never finished.\n"
+            ));
+            for (_, line) in &standing {
+                out.push_str(&format!("- {line}\n"));
+            }
         }
     }
     if !questions.is_empty() {
@@ -10909,6 +10961,19 @@ fn follow_up_targets_of(conn: &Connection, id: &str, title: &str) -> Result<Stri
                 None => out.push_str(&format!("- {text}(item_id: {item_id})\n")),
             }
         }
+    }
+    if headless {
+        // P9S-6 (第 174 条): 「或者换一个新跟进」 — the old line goes now, the new one waits for the user.
+        out.push_str(&t!(
+            "\n\n## 想换一条更有用的\n\
+             有一条问得不对、或者有更值得跟的:先用 close_follow_up_item 收掉旧的(outcome 写换成了什么),\
+             再用 **suggest_follow_up_item** 提新的一条 —— 新的那条进待审,用户点「要」才生效。一次最多换两条。",
+            "\n\n## Swapping a line for a better one\n\
+             If a line asks the wrong thing, or something else is more worth watching: retire the old one \
+             with close_follow_up_item (outcome says what replaced it), then propose the new one with \
+             **suggest_follow_up_item** — it waits on the review screen and takes effect only when the \
+             user approves it. At most two swaps per run."
+        ));
     }
     Ok(out.trim_end().to_string())
 }
@@ -10958,20 +11023,24 @@ fn open_follow_up_questions(
 /// project follows up until the user approves it (§8.4), and a reader that included them
 /// would let a proposal steer a real search before anyone agreed to it — which is the whole
 /// reason the gate exists.
-fn standing_follow_up_lines(conn: &Connection, thread_id: &str) -> Result<Vec<String>, String> {
+fn standing_follow_up_lines(conn: &Connection, thread_id: &str) -> Result<Vec<(String, String)>, String> {
     let mut stmt = conn
         .prepare(
-            "SELECT text FROM follow_up_items
+            "SELECT id, text FROM follow_up_items
               WHERE thread_id = ?1 AND status = 'open' AND standing = 1
               ORDER BY sort_order ASC, created_at ASC",
         )
         .map_err(|e| e.to_string())?;
     let rows = stmt
-        .query_map([thread_id], |r| r.get::<_, String>(0))
+        .query_map([thread_id], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))
         .map_err(|e| e.to_string())?
         .collect::<Result<Vec<_>, _>>()
         .map_err(|e| e.to_string())?;
-    Ok(rows.into_iter().map(|l| l.trim().to_string()).filter(|l| !l.is_empty()).collect())
+    Ok(rows
+        .into_iter()
+        .map(|(id, l)| (id, l.trim().to_string()))
+        .filter(|(_, l)| !l.is_empty())
+        .collect())
 }
 
 // DESIGN_FOLLOW_UP §3.4 / §2.5 — the follow-up run itself.
@@ -11289,7 +11358,7 @@ fn guidance_text_for(name: &str, args: &Value, headless: bool) -> Result<String,
                 return Err(no_such_thread());
             };
             let (id, title) = resolve_thread(conn, key)?;
-            let brief = follow_up_targets_of(conn, &id, &title)?;
+            let brief = follow_up_targets_of(conn, &id, &title, headless)?;
             let built = build_pack(conn, &id, range)?;
             let (text, _) = if built.text.chars().count() as i64 > PACK_DEFAULT_MAX_CHARS {
                 budgeted_pack(&built, PACK_DEFAULT_MAX_CHARS)
@@ -12247,7 +12316,7 @@ mod tests {
 
         // Gate: with an empty list the run is refused, and the refusal says what to do about
         // it. v22: the list is rows now (§8.7), and the gate reads the same either way.
-        let err = follow_up_targets_of(&conn, "th1", "升学规划").unwrap_err();
+        let err = follow_up_targets_of(&conn, "th1", "升学规划", false).unwrap_err();
         assert!(err.contains("清单"), "{err}");
         // Whitespace is not a line either — an empty box must not arm a web watcher.
         conn.execute(
@@ -12257,7 +12326,7 @@ mod tests {
             [],
         )
         .unwrap();
-        assert!(follow_up_targets_of(&conn, "th1", "升学规划").is_err());
+        assert!(follow_up_targets_of(&conn, "th1", "升学规划", false).is_err());
 
         let brief = "CMU MSCS 2027 fall 的截止日期变没变";
         conn.execute(
@@ -12267,7 +12336,7 @@ mod tests {
             [brief],
         )
         .unwrap();
-        assert!(follow_up_targets_of(&conn, "th1", "升学规划").unwrap().contains(brief));
+        assert!(follow_up_targets_of(&conn, "th1", "升学规划", false).unwrap().contains(brief));
 
         // M3 (§2.4): a project that has never run a follow-up carries no history, so the
         // prompt is byte-identical to what M2 sent.
@@ -15653,6 +15722,55 @@ mod tests {
         assert!(close_follow_up_item_json(&conn, "没这条", "随便", None, 99).is_err());
     }
 
+    // P9S-6 (Ocean 2026-10-23, §9.2 第 174 条): Spool's own follow-up run — and only that — may retire a
+    // standing line; its prompt names the standing lines' ids and how to swap one for a better line; and
+    // what it proposes says it came from a follow-up, while still reading as an AI's.
+    #[test]
+    fn the_engines_follow_up_may_retire_a_standing_line_and_says_where_its_finds_came_from() {
+        store_lang(Lang::Zh);
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(include_str!("../../src/lib/db/schema.sql")).unwrap();
+        conn.execute_batch(
+            "INSERT INTO workspaces (id, title, sort_order, created_at, updated_at)
+               VALUES ('ws1', '升学', 0, 1, 1);
+             INSERT INTO threads (id, workspace_id, title, status, is_capture_target,
+                                  created_at, updated_at)
+               VALUES ('th1', 'ws1', '申请规划', 'active', 0, 1, 1);
+             INSERT INTO follow_up_items (id, thread_id, text, standing, fingerprint, status,
+                                          sort_order, created_at)
+               VALUES ('q1', 'th1', '截止日期公布了没有', 0, 'q1', 'open', 0, 1),
+                      ('s1', 'th1', '这个截止日期会不会再改', 1, 's1', 'open', 1, 1);",
+        )
+        .unwrap();
+
+        // A chat client still cannot; the follow-up run can, with its sentence kept.
+        assert!(close_follow_up_item_json(&conn, "s1", "项目已经放弃,不用再跟", None, 9).is_err());
+        TEST_FOLLOW_UP_RUN.with(|e| e.set(true));
+        let closed = close_follow_up_item_json(&conn, "s1", "项目已经放弃,不用再跟", None, 9);
+        let label = follow_up_source_label();
+        TEST_FOLLOW_UP_RUN.with(|e| e.set(false));
+        assert!(closed.is_ok(), "{closed:?}");
+        assert_eq!(status_of(&conn, "s1"), "answered");
+        assert!(label.ends_with("跟进 · MCP"), "{label}");
+        assert!(crate::mcp::tests::is_mcp_label(&label), "{label}");
+
+        // The prompt: the engine sees the standing line's id and the swap rule; a chat client sees neither.
+        conn.execute("UPDATE follow_up_items SET status = 'open' WHERE id = 's1'", []).unwrap();
+        let headless = follow_up_targets_of(&conn, "th1", "申请规划", true).unwrap();
+        assert!(headless.contains("会不会再改(item_id: s1)"), "{headless}");
+        assert!(headless.contains("suggest_follow_up_item"), "{headless}");
+        assert!(headless.contains("不值得再跟"), "{headless}");
+        let chat = follow_up_targets_of(&conn, "th1", "申请规划", false).unwrap();
+        assert!(!chat.contains("item_id: s1"), "{chat}");
+        assert!(!chat.contains("suggest_follow_up_item"), "{chat}");
+        assert!(chat.contains("**不要**收掉"), "{chat}");
+    }
+
+    // Mirrors lib/blocks/sourceIcon `isMcpSource` — a follow-up's label must still read as an AI's.
+    pub(crate) fn is_mcp_label(s: &str) -> bool {
+        s == "MCP" || s.starts_with("MCP — ") || s.contains(" · MCP")
+    }
+
     // §8.5 — the anti-nagging guard, which was dead until this: `last_raised_at` was read by
     // every follow-up payload and written by nobody, so `raised_today` was permanently false
     // and 「今天已经抬过的别再抬」 pointed at an empty set. ⚠️ Same shape as the traps this
@@ -15750,7 +15868,7 @@ mod tests {
         .unwrap();
 
         // Nothing on the list at all: the run is refused at the layer the GUI cannot bypass.
-        let err = follow_up_targets_of(&conn, "th1", "申请规划").unwrap_err();
+        let err = follow_up_targets_of(&conn, "th1", "申请规划", false).unwrap_err();
         assert!(err.contains("空"), "{err}");
 
         conn.execute_batch(
@@ -15763,7 +15881,7 @@ mod tests {
         )
         .unwrap();
 
-        let targets = follow_up_targets_of(&conn, "th1", "申请规划").unwrap();
+        let targets = follow_up_targets_of(&conn, "th1", "申请规划", false).unwrap();
         assert!(targets.contains("截止日期有没有改"));
         assert!(targets.contains("今年的先修课要求有没有变"));
         // The question carries its id, because closing it is a call the run has to be able to
@@ -15782,7 +15900,7 @@ mod tests {
         // the §3.2 trap it avoids: "nothing to search by" and "follow-up is off" are not the
         // same fact, and the user would have been told the second one.
         conn.execute("UPDATE follow_up_items SET standing = 0 WHERE id = 'a'", []).unwrap();
-        let targets = follow_up_targets_of(&conn, "th1", "申请规划").unwrap();
+        let targets = follow_up_targets_of(&conn, "th1", "申请规划", false).unwrap();
         assert!(targets.contains("截止日期有没有改"), "{targets}");
     }
 

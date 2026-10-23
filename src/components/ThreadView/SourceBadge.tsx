@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { isMcpSource, sourceIcon } from '@/lib/blocks/sourceIcon';
+import { isFollowUpSource, isMcpSource, sourceIcon } from '@/lib/blocks/sourceIcon';
 import type { Block } from '@/lib/db/blocks';
 import { isImeComposing } from '@/lib/utils/ime';
 import { useBlocksStore } from '@/stores/blocksStore';
@@ -56,6 +56,8 @@ export default function SourceBadge({ block, readOnly }: Props) {
   // body stays identical (§2.5 presence-not-pressure; §2.6 rejected colored blocks).
   const mcp = isMcpSource(block.source);
   const badgeTone = mcp ? 'text-accent' : 'text-muted';
+  // P9S-6: a follow-up's find says so before anything else on the line.
+  const followUpTag = isFollowUpSource(block.source) ? <FollowUpTag /> : null;
 
   // Digest read-mode (§11.2): the badge is a static label, no click-to-edit.
   if (readOnly) {
@@ -63,6 +65,7 @@ export default function SourceBadge({ block, readOnly }: Props) {
     const Icon = sourceIcon(block.source);
     return (
       <span className={`inline-flex items-center gap-1 px-1 text-[10px] ${badgeTone}`}>
+        {followUpTag}
         <Icon size={12} className="flex-none" />
         {block.source}
       </span>
@@ -99,6 +102,8 @@ export default function SourceBadge({ block, readOnly }: Props) {
     // colour, no fill, the source label follows it.
     const Icon = sourceIcon(block.source);
     return (
+      <span className="inline-flex items-center gap-1">
+      {followUpTag}
       <button
         onClick={() => setEditing(true)}
         className={`inline-flex items-center gap-1 rounded px-1 py-0 text-[10px] ${badgeTone} transition-colors hover:bg-paper-2 hover:text-ink`}
@@ -107,6 +112,7 @@ export default function SourceBadge({ block, readOnly }: Props) {
         <Icon size={12} className="flex-none" />
         {block.source}
       </button>
+      </span>
     );
   }
 
@@ -118,5 +124,19 @@ export default function SourceBadge({ block, readOnly }: Props) {
     >
       {t('+ 来源')}
     </button>
+  );
+}
+
+/** P9S-6 — 「跟进」, in the same small bordered pill the timeline uses for 「已不作数」. Also on the review
+ *  card (ReviewPanel), so the mark is the same before and after the block is let in. */
+export function FollowUpTag() {
+  const t = useT();
+  return (
+    <span
+      title={t('这一块是「联网搜索」跟进带回来的')}
+      className="flex-none rounded border border-accent/50 px-1 text-[10px] leading-[14px] text-accent"
+    >
+      {t('跟进')}
+    </span>
   );
 }

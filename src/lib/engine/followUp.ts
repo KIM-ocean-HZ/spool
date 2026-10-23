@@ -36,6 +36,11 @@ export interface FollowUpState {
    *  readable, and M4's timer will want it. */
   lastRunAt: number;
   seen: SeenItem[];
+  /** P9S-6 (Ocean 2026-10-23, 第 173 / 175 条): search once a week by itself. Off unless the user
+   *  turned it on for this project. Optional, so a column written by an older build reads as off. */
+  auto?: boolean;
+  /** P9S-6: how many the last run brought back past the gate — 「上次查：… 带回 2 条」. */
+  lastFound?: number;
 }
 
 /** How many entries the column keeps. A follow-up proposes at most 5 (§6-3), so this is
@@ -62,7 +67,13 @@ export const parseFollowUpState = (raw: string | null): FollowUpState => {
       (s): s is SeenItem =>
         !!s && typeof s.u === 'string' && typeof s.f === 'string' && typeof s.at === 'number',
     );
-    return { v: 1, lastRunAt: typeof v.lastRunAt === 'number' ? v.lastRunAt : 0, seen };
+    return {
+      v: 1,
+      lastRunAt: typeof v.lastRunAt === 'number' ? v.lastRunAt : 0,
+      seen,
+      ...(v.auto === true ? { auto: true } : {}),
+      ...(typeof v.lastFound === 'number' ? { lastFound: v.lastFound } : {}),
+    };
   } catch {
     return emptyFollowUpState();
   }
@@ -229,7 +240,9 @@ export const rememberProposals = (
   // Newest last, oldest dropped first — a cap that trimmed the new entries would make the
   // gate stop working on exactly the runs it exists for.
   const seen = [...kept, ...added].slice(-SEEN_CAP);
-  return { v: 1, lastRunAt: now, seen };
+  // ⚠️ The switch rides along — this runs after every follow-up, and dropping it here would turn the
+  // weekly search off the first time it found something.
+  return { ...state, v: 1, lastRunAt: now, seen, lastFound: items.length };
 };
 
 /** The compact list handed to the follow-up prompt so a repeat is never fetched at all.
@@ -246,4 +259,23 @@ export const seenUrlsForPrompt = (state: FollowUpState, now: number, cap = 40): 
     out.push(u);
   }
   return out;
+};
+
+/** P9S-6 (第 173 条): once a week. */
+export const AUTO_FOLLOW_UP_PERIOD_MS = 7 * 86_400_000;
+
+/** Which switched-on project searches next: the one whose last run is oldest, once that is a week ago.
+ *  A run that failed or was stopped still stamps `lastRunAt` (engineStore `siftFollowUp` runs on every
+ *  outcome), so a broken engine is retried weekly, not every ten minutes on the user's quota. */
+export const dueAutoFollowUp = <T extends { state: string | null }>(
+  candidates: readonly T[],
+  now: number,
+): T | null => {
+  let best: { c: T; at: number } | null = null;
+  for (const c of candidates) {
+    const s = parseFollowUpState(c.state);
+    if (s.auto !== true || now - s.lastRunAt < AUTO_FOLLOW_UP_PERIOD_MS) continue;
+    if (!best || s.lastRunAt < best.at) best = { c, at: s.lastRunAt };
+  }
+  return best?.c ?? null;
 };
