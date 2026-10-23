@@ -4,12 +4,12 @@ Spool is a context hub for long-running projects: capture fragments the moment t
 
 ## Download
 
-**macOS** — `Spool_0.7.1_aarch64.dmg` · SIZE · Apple Silicon (M1 or later), macOS 11 or newer
+**macOS** — `Spool_0.7.1_aarch64.dmg` · 11.0 MB · Apple Silicon (M1 or later), macOS 11 or newer
 
 The macOS build is signed and notarized with a Developer ID, so it opens without the "unidentified developer" warning. `Spool-macOS-arm64.dmg` is the same file under a fixed name, for direct-download links — either name works.
 
 ```
-sha256  SHA256  Spool_0.7.1_aarch64.dmg
+sha256  3ca1883999ec8139a16ef39a7608b92314c8c2da5d32e58221d9fc290ef6880a  Spool_0.7.1_aarch64.dmg
 ```
 
 **Windows is not in this release.** The Windows download stays at v0.6.1. The next Windows installer will be v0.7.1 itself, once that build has been checked on a Windows machine.
