@@ -1,6 +1,6 @@
 # 产品任务书 P9S —— Ocean 10-23 的七条建议，做完发 v0.7.1（Mac）
 
-> **状态：ACTIVE**（2026-10-23 下发，同一窗执行）。
+> **状态：COMPLETE**（2026-10-23 下发、执行、换装；Ocean 当天「验收通过，发版」；v0.7.1（Mac）当天发布，回执在 §7.9 – §7.10）。
 >
 > **唯一交付：** 下面 §3 的七步（P9S-1 – P9S-7）按顺序做完，每一步测试通过、单独一笔提交，§7 写回执；
 > 然后换装（先问）→ Ocean 验收 → 发 v0.7.1（Mac，§3 P9S-8）。
@@ -224,3 +224,17 @@ Ocean 验收 P9S-1 – P9S-7 之后：
 - 装后：sha256 `47d7464b…` 和构建产物一致；主进程 92311、`--overlay` 92327 都是 19:48:03 起的；`spctl` = `Unnotarized Developer ID`（换装用的开发版，发 v0.7.1 时才公证）；日志只有 `[overlay] helper started` 和 `[double-tap] installed at HID/active` 两行（两个授权都在）。真库那一串数逐项和装前一样（不迁移）；`settings.json` 26 个键；〈剩余推荐信〉#5 指着 #4 的那条更正**开机时自动解除了**（全库再查一遍：0 条），`ai-seen.json` 起点 = 开机那一刻。
 - 开着的 AI 客户端：库没变，旧的 `--mcp` 照常能用；但它们跑的还是旧二进制，新的跟进规则（引擎跑跟进时能关永久跟进、标「跟进」）只在 Spool 自己的引擎里生效，和聊天客户端无关 —— 重启不重启都行。
 - 状态：**已换装，等 Ocean 照 §6 验收**；验收通过后做 P9S-8（发 v0.7.1，推之前问）。
+
+### 7.10 P9S-8 · 发 v0.7.1（Ocean 10-23「验收通过，发版」）
+
+- **问了四件**（第 180 条）：公证凭据 Ocean 直接给了三个值（只当环境变量传给构建和 `notarytool` 两条命令，没写进任何文件、提交或记忆）；推送 **照推，四步都做**；Windows 按钮 **仍指 v0.6.1**；发版说明 **可以**。
+- 版本号和对外说法 `8402d9e`：三处 0.7.1（`Cargo.lock` 跟着，`cargo check` 过，两个警告是老的）；隐私说明三份（日期 2026-10-23 对应 v0.7.1、加 `ai-seen.json`、写明每周自动跟进默认关 / 每个项目一个开关），`build-site-zh` 重跑、12 条测试过；README 状态段；`docs/RELEASE_NOTES_v0.7.1.md`（英文）。
+- 构建 + 公证（在 `8402d9e` 上，20:02:46 – 20:04:29，退出 0）：只读 `notarytool history` 先过一遍（退出 0）；**`.app` Accepted，submission `92748691-e320-4d15-b939-13561a7c6555`**；**`.dmg` Accepted，submission `2c4a01d8-a3f6-44bb-8274-0c892be01146`**（`$DMG` 绝对路径），`stapler staple` 过。两个产物 `spctl` = `Notarized Developer ID`，Authority 第一行 Developer ID（`spool-ai` 也是），`--verify --deep --strict` 过，两个 `stapler validate` 过，版本 0.7.1，`minos 11.0`。dmg **11,483,019 字节**，**sha256 `3ca18839…6880a`**，填进发版说明 `6d96150`。
+- 发版二进制 MCP（真库 `VACUUM INTO` 副本 + `{"mcpEnabled":true}`）：`serverInfo.version` 0.7.1；普通 **26**（只读 14、写 12）；`--engine-run` **25**（没有 `propose_split`）；真库的 `mcp-clients.json` 里没有探针那一行。
+- 推送：fetch 核过远端仍是 `f3bcc15`，出去的 14 笔作者都是 KIM-ocean-HZ、没有任何署名行；`f3bcc15..6d96150` 推上去，`update-ref` 补 `origin/main`。tag `v0.7.1` → `8402d9e`（构建那一笔）并推，`ls-remote` 核过。
+- Release：`gh release create v0.7.1 --verify-tag --latest`，两个资产 `Spool_0.7.1_aarch64.dmg` + 同一个文件改名的 `Spool-macOS-arm64.dmg`（sha256 先比过）；不是草稿、不是预发布；`releases/latest` = v0.7.1；`latest/download/Spool-macOS-arm64.dmg` 跳到 v0.7.1、**200**；`download/v0.6.1/Spool-windows-x64-setup.exe` **200**。两个名字各下载回来：sha256 一样、staple 在、`spctl` accepted。
+- 官网：这一推改了 `site/`，Pages 部署跑完（成功）；`spoolapp.org` 中英隐私页都是「2026-10-23（对应 Spool v0.7.1）」、都有 `ai-seen.json`。
+- MCP Registry：`server.json` 0.7.1；`validate` 过；登录又过期了（401），`login github --token "$(gh auth token)"` 后 publish 成功；线上 **0.7.1 active isLatest=true**（2026-10-23T19:07:26Z），0.7.0 / 0.6.2 还在。
+- 本机换成正式版：`drafts.json` 两个都空（没有没存的字）；装前真库 v35 · ok · 工作区 30 / 项目 90 / 块 1297 · 正文 538045 / 文件 68 / 图片 20 / 跟进 33 / 回顾记录 29 / 待审 0（比 19:48 多的是 Ocean 验收时写的）。备份 `~/Desktop/Spool/db/spool.before-v071-install-20261023-200753.db` + `settings` / `focus` / `drafts` / `knit` / `ai-seen` 五个 json。GUI 92311、`--overlay` 92327 按 pid 停；`--mcp` 没碰。装的是从 Release **下载回来**的 dmg 里的 `.app`（只读挂载 → `ditto` → `chmod -R go+rX` → `--verify --deep --strict` 过；`spool` sha256 `6055346f…` = 构建产物）。旧包 → `spool-pre-install/Spool-old-20261023-200753-pre-v071.app`；日志 `~/Desktop/Spool/logs/spool-v071-20261023-200753.log`。装后：`Notarized Developer ID`、0.7.1；日志两行（overlay 起来了、双击 ⌥ HID/active）；真库那一串数逐项一样；四个 json 和备份逐字节一样。
+- 台账 `CASE_STUDY_LEDGER.md` §1.2 加 v0.7.1 那一张表（不写它自己所在提交的 sha）；`RELEASE.md` §0.0 顶上那句改成 v0.7.1。
+- **没做的**：Windows v0.7.1 包（等一台不受管理的 Windows 电脑，照 P9W 验）；新机器上从官网下载首启（和 v0.7.0 一样，只有 Ocean 做得了）。

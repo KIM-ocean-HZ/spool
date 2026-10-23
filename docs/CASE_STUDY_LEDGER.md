@@ -261,6 +261,32 @@ so the privacy policy's date was changed again to match it; and an operating-sys
 same window brought a new Xcode whose licence had to be accepted before `notarytool` would contact
 Apple at all — a different error that, read carelessly, looks like the 403 having cleared.
 
+---
+
+| Field | v0.7.1 |
+|---|---|
+| Published | **2026-10-23** |
+| Tagged commit | tag `v0.7.1` → `8402d9e`, the commit the binary was built from (the commits after it on `main` change documentation only) |
+| Signing identity — macOS | Developer ID Application (Apple Developer Program, Team `Q5Y5JRXZ58`) |
+| **Notarisation — `.app`** | submission `92748691-e320-4d15-b939-13561a7c6555` · **Accepted** |
+| **Notarisation — `.dmg`** | submission `2c4a01d8-a3f6-44bb-8274-0c892be01146` · **Accepted** |
+| Artefact — macOS | `Spool_0.7.1_aarch64.dmg`, 11,483,019 bytes |
+| sha256 — macOS | `3ca1883999ec8139a16ef39a7608b92314c8c2da5d32e58221d9fc290ef6880a` |
+| Gatekeeper verdict — macOS | `accepted` · `source=Notarized Developer ID` on **both** artefacts, and re-verified on copies downloaded back from the published Release under both names (byte-identical sha256, staple intact); `codesign -dvv` Authority resolved to the Developer ID certificate; `--verify --deep --strict` passes; the bundled `spool-ai` sidecar carries the same Developer ID signature; minimum macOS 11.0 |
+| Windows | **not built for this release.** The project owner decided on 2026-10-23 that the first Windows installer after v0.6.1 will be v0.7.1 itself, once it has been checked on an unmanaged Windows machine; until then the Windows button keeps pointing at v0.6.1 (HTTP 200) |
+| Fixed-name assets | `Spool-macOS-arm64.dmg` — **HTTP 200** through `releases/latest/download/`, redirecting to the v0.7.1 asset, byte-identical to the versioned one |
+| Database schema | **unchanged — v35.** Upgrading from v0.7.0 performs no migration. The citations the previous version held for review are released on first launch (one in the owner's library), by the app's own rule, not by a schema step |
+| MCP surface (release binary) | 26 tools — 14 read-only, 12 write; 25 when the server is started for Spool's own engine (`--engine-run`), which is not offered `propose_split`. Same counts as v0.7.0 |
+| MCP Registry | `io.github.KIM-ocean-HZ/spool` **0.7.1** published (metadata only) and listed as latest; 0.7.0 and 0.6.2 remain listed |
+
+**What this row adds: a release four days after the previous one, cut from the owner's own use.**
+v0.7.1 is seven changes the owner asked for after living with v0.7.0 for four days, built,
+installed on the owner's machine and accepted there before release. One of them is a regression fix: the
+knitting cabinet added in v0.7.0 gave the centre column hidden scroll room, and a jump to the last
+block of a project scrolled the column itself by 152 px in an off-screen WebKit reproduction. The
+privacy policy changed in substance, not only in date: it now names `ai-seen.json` and says that a
+follow-up can run once a week by itself when the user switches that on for a project.
+
 ## 2. Measured findings
 
 These are the rows that matter most: results obtained by measuring a running system, not
