@@ -39,10 +39,13 @@ describe('effectiveScheme', () => {
     }
   });
 
-  it('⛔ 情人节 is always light — no setting, no system reaches past it (第 60 条)', () => {
+  // P9S-7 (Ocean 2026-10-23) replaced 第 60 条's 「情人节 is always light」: it has a dark palette now.
+  it('情人节 follows the setting exactly like 经典', () => {
     for (const setting of COLOR_SCHEMES) {
       for (const systemDark of [true, false]) {
-        expect(effectiveScheme('valentine', setting, systemDark)).toBe('light');
+        expect(effectiveScheme('valentine', setting, systemDark)).toBe(
+          effectiveScheme('classic', setting, systemDark),
+        );
       }
     }
   });

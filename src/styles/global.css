@@ -219,3 +219,26 @@ article[data-block-id].block-active {
 :root[data-scheme='dark']:not([data-theme='valentine']) .flash {
   animation-name: flash-dark;
 }
+
+/* 情人节深色 (P9S-7, 2026-10-23) —— 同一张牡丹，盖一层深莓色的纱：中间读字的地方 95%，边上 82%，
+   花在四角隐约透出来。纱的颜色就是这一套的 `--paper`。 */
+:root[data-scheme='dark'][data-theme='valentine'] .paper-bg {
+  background:
+    radial-gradient(
+      ellipse 78% 72% at 50% 45%,
+      rgba(33, 23, 30, 0.95) 0%,
+      rgba(33, 23, 30, 0.9) 70%,
+      rgba(33, 23, 30, 0.82) 100%
+    ),
+    url('../assets/valentine-background.png') center / cover no-repeat,
+    var(--paper);
+}
+
+@keyframes flash-valentine-dark {
+  0%   { background-color: rgba(240, 128, 159, 0.22); }
+  100% { background-color: transparent; }
+}
+
+:root[data-scheme='dark'][data-theme='valentine'] .flash {
+  animation-name: flash-valentine-dark;
+}

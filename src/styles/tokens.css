@@ -321,6 +321,70 @@
 }
 
 /* =====================================================================================
+   情人节深色 (P9S-7, 2026-10-23; Ocean：「尝试给情人节桌面加上深色模式，截图给我验收」) —— 推翻第 60 条
+   「情人节版永远是浅色」那一半；浅色的情人节、经典的浅 / 深两套一个字节都没动。
+
+   同一套 Ocean 的颜色，换到夜里：底是 deep berry #3a2a35 那一族压暗（深莓黑），字是 blush 那一族提亮
+   （粉白），强调色是 rose 提亮到深底上小字看得清，进行中是 mint，框住两条栏的薄荷色变成暗薄荷。
+   和经典深色同一套下限，对着 `--paper` 量过：ink 14.70 · ink-2 10.25 · muted 4.27（浅色下限 3.42）· accent 6.88 ·
+   accent-2 10.24 · status-active 9.01 · status-parked 6.74 · status-done 5.77 · urgent 6.14 ·
+   urgent-strong 7.99 · ai-new 10.38；线 1.20 / 1.62。ink 压在 accent-soft 上 11.27、highlight 上 7.55、
+   selection 上 9.64。⚠️ 字体（Cormorant）、`--rail-wash` 之外的形状都从上面情人节那一块继承，这里只换颜色。
+   ===================================================================================== */
+:root[data-scheme='dark'][data-theme='valentine'] {
+  color-scheme: dark;
+
+  --paper-rgb:       33 23 30;
+  --paper:           rgb(var(--paper-rgb));
+  --paper-2-rgb:     43 31 39;
+  --paper-2:         rgb(var(--paper-2-rgb));
+  --paper-edge:      #3a2a35;
+  --ink-rgb:         247 232 238;
+  --ink:             rgb(var(--ink-rgb));
+  --ink-2-rgb:       217 192 204;
+  --ink-2:           rgb(var(--ink-2-rgb));
+  --muted-rgb:       146 118 133;
+  --muted:           rgb(var(--muted-rgb));
+
+  --line-rgb:        52 37 46;
+  --line:            rgb(var(--line-rgb));
+  --line-strong-rgb: 76 56 67;
+  --line-strong:     rgb(var(--line-strong-rgb));
+
+  --accent-rgb:      240 128 159;
+  --accent:          rgb(var(--accent-rgb));
+  --accent-2:     #f8b4c8;
+  --accent-soft:  #4a2236;
+  --highlight:    #7a2f50;
+  --selection:    #5a2a40;
+
+  /* the orientation tint stays MINT, as in the light theme — a dark mint here */
+  --block-active-bg:           #1d2b27;
+  --block-active-bg-fade-ms:   3000ms;
+
+  --notice-warm:      rgba(242, 155, 182, 0.12);
+  --notice-warm-edge: rgba(240, 128, 159, 0.40);
+
+  --status-active:   #7cc9b3;
+  --status-parked:   #d6925c;
+  --status-done:     #a88d9c;
+  --ai-new:          #5fe08a;
+  --urgent:          #e87a64;
+  --urgent-strong:   #f39884;
+
+  --search-hit: rgba(242, 155, 182, 0.32);
+
+  --activity-capture: #3987e5;
+  --activity-self:    #d95926;
+  --activity-ai:      #199e70;
+
+  --shadow-card:  0 4px 12px -6px rgba(0, 0, 0, 0.55);
+  --shadow-toast: 0 8px 24px -8px rgba(0, 0, 0, 0.65);
+
+  --rail-wash: rgba(22, 36, 32, 0.55);
+}
+
+/* =====================================================================================
    织布的毛线颜色（2026-10-18, Ocean：「情人节也换成织布，逻辑一样，就改颜色」「再做精致一些」）。
    柜子里那些东西（Knit/knitItems.ts）只认这八个名字：七种毛线 + 一支画线和针脚纹理的笔。
    经典浅色是暖纸上的羊毛色（赤陶、芥黄、鼠尾草绿、牛仔蓝、燕麦、梅子、栗棕）；深色同一族提亮一点；
@@ -356,4 +420,14 @@
   --yarn-plum:    #a8648f;
   --yarn-brown:   #a87650;
   --yarn-ink:     #17120e;
+}
+:root[data-scheme='dark'][data-theme='valentine'] {
+  --yarn-rust:    #f07f9f;
+  --yarn-mustard: #f6b4a6;
+  --yarn-sage:    #8fd3bd;
+  --yarn-denim:   #c491be;
+  --yarn-oat:     #e9cdd8;
+  --yarn-plum:    #d25a86;
+  --yarn-brown:   #c98a9f;
+  --yarn-ink:     #120b10;
 }

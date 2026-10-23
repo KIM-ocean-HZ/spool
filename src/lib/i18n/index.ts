@@ -789,7 +789,6 @@ const EN: Record<string, string> = {
   '浅色': 'Light',
   '深色': 'Dark',
   '跟着电脑的深浅色走，或者固定一种。切换立即生效。': 'Follow your computer, or pick one. Takes effect at once.',
-  '情人节版只有浅色。': 'The Valentine edition is light only.',
   '配色、标题字体和背景。切换立即生效，不影响你存的东西。':
     'Colours, title face and background. Takes effect immediately; nothing you saved is touched.',
   '经典': 'Classic',

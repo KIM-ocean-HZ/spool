@@ -102,3 +102,15 @@ body {
   background-size: auto, 800px auto;
   background-repeat: no-repeat, no-repeat;
 }
+
+/* 情人节深色 (P9S-7) —— 捕捉卡同一张花，盖深莓色的纱。 */
+:root[data-scheme='dark'][data-theme='valentine'] .capture-bloom {
+  background-image:
+    linear-gradient(
+      to bottom right,
+      rgba(33, 23, 30, 0.97) 0%,
+      rgba(33, 23, 30, 0.93) 50%,
+      rgba(33, 23, 30, 0.86) 100%
+    ),
+    url('../assets/valentine-background.png');
+}

@@ -3,7 +3,8 @@
 //
 // Ocean: 「我觉得可以加入一个跟随系统切换颜色深浅的功能，自动开启」 and, when asked, a three-way
 // switch in Settings — 跟随系统 / 浅色 / 深色, default 跟随系统 (第 61 条) — with 情人节版 staying
-// light whatever the system does (第 60 条).
+// light whatever the system does (第 60 条). ⚠️ P9S-7 (2026-10-23) undid that last part: 情人节 has its
+// own dark palette now (tokens.css), and the switch works the same under both themes.
 //
 // ⚠️ Separate from the theme on purpose. The theme says WHICH palette (经典 / 情人节); this says
 // light or dark, and only 经典 has a dark one. They are two attributes on <html>
@@ -32,10 +33,10 @@ export const isColorScheme = (v: unknown): v is ColorScheme =>
 export const colorSchemeOrDefault = (v: unknown): ColorScheme =>
   isColorScheme(v) ? v : DEFAULT_COLOR_SCHEME;
 
-/** Light or dark, given the theme, the setting and what the system is doing.
- *  ⛔ 情人节 is always light (第 60 条) — checked first, so no setting can reach past it. */
-export const effectiveScheme = (theme: string, setting: ColorScheme, systemDark: boolean): Scheme => {
-  if (theme === 'valentine') return 'light';
+/** Light or dark, given the setting and what the system is doing.
+ *  P9S-7 (Ocean 2026-10-23): 情人节 has a dark palette now too, so the theme no longer decides this —
+ *  it is still a parameter because every caller passes it, and a later theme may want to again. */
+export const effectiveScheme = (_theme: string, setting: ColorScheme, systemDark: boolean): Scheme => {
   if (setting === 'light' || setting === 'dark') return setting;
   return systemDark ? 'dark' : 'light';
 };
@@ -65,9 +66,8 @@ export const applyScheme = (scheme: Scheme, root: Element): void => {
 export const SCHEME_HINT_KEY = 'spool.schemeHint';
 
 /** What the boot script should do next launch: a fixed answer, or 'system' to ask the system.
- *  情人节 is stored as 'light' because that is what it always paints. */
-export const schemeHint = (theme: string, setting: ColorScheme): ColorScheme =>
-  theme === 'valentine' ? 'light' : setting;
+ *  (Since P9S-7 the same for both themes.) */
+export const schemeHint = (_theme: string, setting: ColorScheme): ColorScheme => setting;
 
 /** Remember the hint. A missing or blocked localStorage only costs the first frame. */
 export const writeSchemeHint = (hint: ColorScheme): void => {

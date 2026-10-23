@@ -121,17 +121,14 @@ export default function GeneralConfig() {
       <div className="border-t border-line" />
 
       {/* 深浅色 (P9B-1, 2026-10-14; Ocean 第 61 条). Right under 外观: it is the same kind of
-          control and the two combine — only 经典 has a dark palette. ⚠️ Same markup as the two
-          pickers above, deliberately (one kind of control, one widget). Under 情人节 the whole row
-          goes grey and says why: 情人节版 is always light (第 60 条), so a live switch there would
-          be a control that does nothing. */}
+          control and the two combine. ⚠️ Same markup as the two pickers above, deliberately (one
+          kind of control, one widget). P9S-7 (2026-10-23): 情人节 has a dark palette too now, so the
+          row is live under both themes (it used to go grey there, 第 60 条). */}
       <div className="flex items-center justify-between gap-4 py-2.5">
         <div className="min-w-0">
           <div className="text-sm text-ink">{t('深浅')}</div>
           <div className="mt-0.5 text-xs text-muted">
-            {theme === 'valentine'
-              ? t('情人节版只有浅色。')
-              : t('跟着电脑的深浅色走，或者固定一种。切换立即生效。')}
+            {t('跟着电脑的深浅色走，或者固定一种。切换立即生效。')}
           </div>
         </div>
         <div className="flex flex-none items-center gap-1">
@@ -139,7 +136,6 @@ export default function GeneralConfig() {
             <button
               key={scheme}
               type="button"
-              disabled={theme === 'valentine'}
               onClick={() => void update({ colorScheme: scheme })}
               className={`rounded-md border px-2.5 py-1 text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
                 colorScheme === scheme
