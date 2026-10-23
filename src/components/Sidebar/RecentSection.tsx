@@ -1,4 +1,5 @@
-import { useMemo } from 'react';
+import { ChevronDown, ChevronRight } from 'lucide-react';
+import { useMemo, useState } from 'react';
 import { useT } from '@/lib/i18n';
 import { useThreadsStore } from '@/stores/threadsStore';
 import SectionLabel from './SectionLabel';
@@ -13,6 +14,11 @@ import SectionLabel from './SectionLabel';
 // rail's tidy-up: this list repeats rows that also exist in the workspaces below it, so its
 // length is what decides how much of the rail is duplication.
 const RECENT_MAX = 3;
+// P9S-3 (Ocean 2026-10-23: 「最近做成可展开式的，展开之后滚动就可以看见更多最近的项目，但是展开需要做的
+// 安静，不改变当前左侧边的一致性」). Opened by the same muted chevron a workspace heading carries, the
+// rows are the same rows; the box stops growing at about six of them and scrolls inside, so opening it
+// moves the rest of the rail down by a bounded amount. Not stored: every launch starts at three.
+const RECENT_EXPANDED_MAX = 10;
 
 export default function RecentSection() {
   const t = useT();
@@ -25,7 +31,9 @@ export default function RecentSection() {
   const clickRow = useThreadsStore((s) => s.clickRow);
   const setCaptureTarget = useThreadsStore((s) => s.setCaptureTarget);
 
-  const recent = useMemo(() => {
+  const [expanded, setExpanded] = useState(false);
+
+  const ordered = useMemo(() => {
     const live = Object.values(byWs)
       .flat()
       .filter((t) => t.status !== 'done');
@@ -33,8 +41,9 @@ export default function RecentSection() {
     const rest = live
       .filter((t) => !t.isCaptureTarget)
       .sort((a, b) => b.updatedAt - a.updatedAt);
-    return [...target, ...rest].slice(0, RECENT_MAX);
+    return [...target, ...rest];
   }, [byWs]);
+  const recent = ordered.slice(0, expanded ? RECENT_EXPANDED_MAX : RECENT_MAX);
 
   if (recent.length === 0) return null;
 
@@ -42,8 +51,23 @@ export default function RecentSection() {
     /* ⚠️ No rule of its own any more — the one under 聚焦 closes off both of these sections
        together (see Sidebar/index). One section, one heading, one left edge: SectionLabel. */
     <div className="mt-3.5">
-      <SectionLabel>{t('最近')}</SectionLabel>
-      <ul className="space-y-0.5">
+      <SectionLabel>
+        {t('最近')}
+        {/* Only when there is something to show beyond the three — a chevron that opens onto the
+            same three rows would be a control that does nothing. */}
+        {ordered.length > RECENT_MAX && (
+          <button
+            type="button"
+            onClick={() => setExpanded((v) => !v)}
+            className="-m-0.5 flex-none rounded p-0.5 text-muted hover:text-ink"
+            aria-expanded={expanded}
+            aria-label={expanded ? t('收起') : t('展开')}
+          >
+            {expanded ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
+          </button>
+        )}
+      </SectionLabel>
+      <ul className={`space-y-0.5 ${expanded ? 'max-h-[13rem] overflow-y-auto' : ''}`}>
         {recent.map((th) => (
           <li
             key={th.id}
