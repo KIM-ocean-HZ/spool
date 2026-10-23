@@ -105,6 +105,8 @@ const EN: Record<string, string> = {
   // Sidebar
   '进行中': 'Active',
   '搁置': 'Parked',
+  // P9S-4: the project row's dot while an AI has written something not yet looked at.
+  'AI 写进来了新内容': 'An AI added something new here',
   '聚焦': 'Focus',
   '收件箱': 'Inbox',
   '未分类': 'Unsorted',

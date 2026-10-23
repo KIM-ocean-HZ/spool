@@ -12,6 +12,7 @@ import { noticeRenamed } from '@/lib/names/renameNotice';
 import { startRailDrag } from '@/lib/sidebar/railDrag';
 import { isImeComposing } from '@/lib/utils/ime';
 import { useT } from '@/lib/i18n';
+import { useAiUpdatesStore } from '@/stores/aiUpdatesStore';
 import { useCaptureStore } from '@/stores/captureStore';
 import { useCompressStore } from '@/stores/compressStore';
 import { useThreadsStore } from '@/stores/threadsStore';
@@ -41,6 +42,8 @@ export default function ThreadListItem({
   const title = thread.title.trim() || t('无标题');
   const dimmed = thread.status === 'done';
   const flash = useCaptureStore((s) => s.flashThreadId === thread.id);
+  // P9S-4: something an AI wrote here that the user has not had on screen yet.
+  const aiNew = useAiUpdatesStore((s) => s.unread.has(thread.id));
   // ⭐ 2026-08-22（Ocean：「正在压缩的项目在左侧边栏的项目名也加一个整理中」）：
   // 一次压缩要跑一两分钟，而它跑的时候人多半已经切到别的项目去了 —— 不在左栏说一句，
   // 屏幕上就没有任何地方能告诉他「哪个项目正在跑」。⚠️ 和 `捕捉中` 一样只用字，不用图标。
@@ -254,7 +257,7 @@ export default function ThreadListItem({
           )}
         </div>
         <div className="flex flex-none items-center gap-1.5">
-          <StatusDot status={thread.status} />
+          <StatusDot status={thread.status} aiNew={aiNew} />
           {/* A completed project has no live deadline — never show a countdown / 逾期 on it
               (mirrors FocusSection's done filter). The deadline itself is kept and still
               editable in the thread header. */}

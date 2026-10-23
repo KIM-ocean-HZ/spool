@@ -7,6 +7,9 @@ import { useT } from '@/lib/i18n';
 
 interface Props {
   status: ThreadStatus;
+  /** P9S-4: an AI has written something in this project the user has not looked at yet. The dot turns
+   *  green with a faint halo drawn outside its 4px, so the row does not move. */
+  aiNew?: boolean;
 }
 
 const STATUS_COLOR: Record<ThreadStatus, string> = {
@@ -21,18 +24,19 @@ const STATUS_LABEL: Record<ThreadStatus, string> = {
   done: '已完成',
 };
 
-export default function StatusDot({ status }: Props) {
+export default function StatusDot({ status, aiNew = false }: Props) {
   const t = useT();
   return (
     <svg
       width={4}
       height={4}
       viewBox="0 0 4 4"
-      className="flex-none"
+      className="flex-none overflow-visible"
       role="img"
-      aria-label={t(STATUS_LABEL[status])}
+      aria-label={aiNew ? t('AI 写进来了新内容') : t(STATUS_LABEL[status])}
     >
-      <circle cx={2} cy={2} r={2} fill={STATUS_COLOR[status]} />
+      {aiNew && <circle cx={2} cy={2} r={4} fill="var(--ai-new)" fillOpacity={0.22} />}
+      <circle cx={2} cy={2} r={aiNew ? 2.5 : 2} fill={aiNew ? 'var(--ai-new)' : STATUS_COLOR[status]} />
     </svg>
   );
 }

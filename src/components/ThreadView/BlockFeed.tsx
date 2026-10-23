@@ -7,7 +7,9 @@ import {
   stepBlockIndex,
   topmostVisibleBlockId,
 } from '@/lib/blocks/viewportAnchor';
+import { isMcpSource } from '@/lib/blocks/sourceIcon';
 import { useActiveBlockStore } from '@/stores/activeBlockStore';
+import { seenUpTo, useAiUpdatesStore } from '@/stores/aiUpdatesStore';
 import { useBlocksStore } from '@/stores/blocksStore';
 import { useCaptureStore } from '@/stores/captureStore';
 import { askBeforeDeletingBlocks } from '@/stores/deleteFilesPromptStore';
@@ -183,6 +185,34 @@ export default function BlockFeed({ threadId, scrollRef }: Props) {
     const el = document.querySelector(`[data-block-id="${highlightBlockId}"]`);
     el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }, [highlightBlockId, blocks, windowSize]);
+
+  // P9S-4 (Ocean 2026-10-23: 「等用户浏览到新增 block 再回到原来的样子」): the project's green dot goes
+  // out when a block an AI wrote, newer than what was seen, is actually on screen — not merely because
+  // the project was opened. Half of it in view, or a screenful of a block taller than that.
+  const unreadHere = useAiUpdatesStore((s) => s.unread.has(threadId));
+  useEffect(() => {
+    if (!unreadHere) return;
+    const since = seenUpTo(threadId);
+    const fresh = new Map(
+      blocks.filter((b) => isMcpSource(b.source) && b.createdAt > since).map((b) => [b.id, b.createdAt]),
+    );
+    if (fresh.size === 0) return;
+    const io = new IntersectionObserver(
+      (entries) => {
+        for (const e of entries) {
+          if (!e.isIntersecting || (e.intersectionRatio < 0.5 && e.intersectionRect.height < 120)) continue;
+          const at = fresh.get((e.target as HTMLElement).dataset.blockId ?? '');
+          if (at !== undefined) void useAiUpdatesStore.getState().markSeen(threadId, at);
+        }
+      },
+      { threshold: [0, 0.25, 0.5, 1] },
+    );
+    for (const id of fresh.keys()) {
+      const el = document.querySelector(`[data-block-id="${CSS.escape(id)}"]`);
+      if (el) io.observe(el);
+    }
+    return () => io.disconnect();
+  }, [unreadHere, threadId, blocks, windowSize]);
 
   // ⭐ V2 ② (WORKPLAN §2.V2, Ocean 2026-08-25: 「这个一定要加」): ↓ / ↑ move the focus one
   // block down / up. ↑ is not in his words — the workplan asks for it because a feed you can

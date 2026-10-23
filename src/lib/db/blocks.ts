@@ -194,6 +194,19 @@ export const getBlockById = async (id: string): Promise<Block | null> => {
 const MCP_SOURCE_PREDICATE =
   "source = 'MCP' OR source LIKE 'MCP — %' OR instr(source, ' · MCP') > 0";
 
+/** P9S-4: per project, when the newest block an AI wrote (through MCP) landed — only those after
+ *  `since`, which is the moment this feature first ran, so nothing written before it counts. */
+export const latestMcpBlockAtByThread = async (since: number): Promise<Record<string, number>> => {
+  const db = await getDb();
+  const rows = await db.select<{ thread_id: string; at: number }[]>(
+    `SELECT thread_id, MAX(created_at) AS at FROM blocks
+      WHERE created_at > $1 AND source IS NOT NULL AND (${MCP_SOURCE_PREDICATE})
+      GROUP BY thread_id`,
+    [since],
+  );
+  return Object.fromEntries(rows.map((r) => [r.thread_id, r.at]));
+};
+
 export const countMcpBlocks = async (): Promise<number> => {
   const db = await getDb();
   const rows = await db.select<{ c: number }[]>(

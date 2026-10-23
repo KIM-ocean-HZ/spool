@@ -59,6 +59,10 @@
   --status-active:   #6b7c5a;
   --status-parked:   #a8632c;
   --status-done:     #8c8576;
+  /* P9S-4 (Ocean 2026-10-23「小圆点亮绿灯」): the project row's dot while an AI has written something
+     in that project the user has not looked at yet. A clear green, well away from 进行中's olive,
+     so the two read as different states and not as two shades of one. */
+  --ai-new:          #2e9e57;
   --urgent:          #b3402f;
   --urgent-strong:   #8a2e22;
 
@@ -167,6 +171,8 @@
   --status-active:   #377260;
   --status-parked:   #a8632c;
   --status-done:     #9f7a93;
+  /* P9S-4: 进行中 is already a teal-green here, so the new-from-AI green goes brighter and yellower. */
+  --ai-new:          #1fa463;
   --urgent:          #b3402f;
   --urgent-strong:   #8a2e22;
 
@@ -298,6 +304,7 @@
   --status-active:   #96ac7a;
   --status-parked:   #d6925c;
   --status-done:     #968d7c;
+  --ai-new:          #5fd68b;
   --urgent:          #e87a64;
   --urgent-strong:   #f39884;
 

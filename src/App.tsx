@@ -32,6 +32,7 @@ import {
 import { releaseRefsToRetired } from '@/lib/db/blocks';
 import { loadDrafts } from '@/lib/db/drafts';
 import { startDraftPrompt } from '@/stores/draftPrompt';
+import { useAiUpdatesStore } from '@/stores/aiUpdatesStore';
 import { t } from '@/lib/i18n';
 import { toast } from '@/stores/toastStore';
 import { useAutoMaintain } from '@/hooks/useAutoMaintain';
@@ -151,6 +152,8 @@ export default function App() {
       // this version used to hold in 「关系待审」, and any retired while the window was closed.
       await releaseRefsToRetired().catch((e) => console.warn('[refs] release sweep failed', e));
       await loadThreads();
+      // P9S-4: which projects an AI wrote into since they were last looked at (the green dot).
+      void useAiUpdatesStore.getState().refresh().catch((e) => console.warn('[ai-seen] refresh failed', e));
       // P9D: text not yet in the library (drafts.json). After the DB is open — a draft whose
       // block is gone is dropped on read. Not awaited: nothing else waits on it, and a block drawn
       // before it lands picks its draft up then. Blocks left from last time get a line (P9D-3).

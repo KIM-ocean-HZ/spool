@@ -1,4 +1,5 @@
 import { librarySignature } from '@/lib/db/librarySignature';
+import { useAiUpdatesStore } from './aiUpdatesStore';
 import { useBlocksStore } from './blocksStore';
 import { useProposalsStore } from './proposalsStore';
 import { useThreadsStore } from './threadsStore';
@@ -20,6 +21,8 @@ export async function reloadOutsideWrites(): Promise<void> {
   if (active) await useBlocksStore.getState().load(active);
   // P7-5：AI 提的「更正 / 取代」也在待审里（过期检测页签只放用户自己跑的），这一句一起刷新。
   await useProposalsStore.getState().refresh();
+  // P9S-4：AI 写进来的块让那个项目的小圆点变绿。
+  await useAiUpdatesStore.getState().refresh();
 }
 
 // P4-2：Spool 一直开着、窗口却没有重新拿到焦点的时候（和 AI 客户端左右并排、人在那边打字；

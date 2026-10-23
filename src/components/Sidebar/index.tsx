@@ -9,13 +9,14 @@ import {
   Search,
   Settings as SettingsIcon,
 } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { RAIL_SCROLLER_ATTR } from '@/lib/sidebar/railDrag';
 import { DUE_SOON_DAYS, dueInDays } from '@/lib/threads/deadline';
 import { useT } from '@/lib/i18n';
 import { splitArchived } from '@/lib/workspaces/archive';
 import { nextExpandedIds, workspaceChain } from '@/lib/workspaces/open';
 import { buildWorkspaceTree, compareWorkspaceTitles, type WorkspaceNode } from '@/lib/workspaces/tree';
+import { useAiUpdatesStore } from '@/stores/aiUpdatesStore';
 import { useEngineStore } from '@/stores/engineStore';
 import { useProposalsStore } from '@/stores/proposalsStore';
 import { useSearchStore } from '@/stores/searchStore';
@@ -122,6 +123,24 @@ export default function Sidebar({ onCollapse }: Props) {
     });
     if (!open) setFolded({ key: chainKey, ids: new Set([...foldedNow, ...ids]) });
   };
+  // P9S-4（Ocean 2026-10-23 第 176 条：「只在项目上亮，但是折叠的项目如果被更新可以自动展开」）——
+  // a project that lights up green opens the workspace it sits in, and the ones above it, so the dot is
+  // somewhere he can see it. Only at the moment it lights: folding the group again afterwards holds.
+  const aiNew = useAiUpdatesStore((s) => s.unread);
+  const litBefore = useRef<ReadonlySet<string>>(new Set());
+  useEffect(() => {
+    const newly = [...aiNew].filter((id) => !litBefore.current.has(id));
+    litBefore.current = aiNew;
+    if (newly.length === 0) return;
+    const toOpen = new Set<string>();
+    for (const [wsId, list] of Object.entries(threadsByWs)) {
+      if (!list.some((th) => newly.includes(th.id))) continue;
+      for (const id of workspaceChain(workspaces, wsId)) if (!openIds.has(id)) toOpen.add(id);
+    }
+    if (toOpen.size > 0) setOpen([...toOpen], true);
+    // Only a change in which projects are lit is a reason to open anything.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [aiNew]);
   // The 归档 section is folded by default, and its state is not stored. Same rule as the
   // groups on the open project's chain: while that project sits in an archived workspace the
   // section opens by itself, and folding it then holds only while the chain stays the same.
