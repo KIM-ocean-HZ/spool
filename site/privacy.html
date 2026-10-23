@@ -33,7 +33,7 @@
 <main class="wrap article measure" style="margin: 0 auto;" data-zh-body="privacy">
 
 <h1>Privacy Policy</h1>
-<p class="lede">Last updated: 2026-10-19 (Spool v0.7.0). This English translation is provided for convenience;
+<p class="lede">Last updated: 2026-10-23 (Spool v0.7.1). This English translation is provided for convenience;
 the <a href="zh/privacy.html" hreflang="zh-Hans" lang="zh">Chinese original</a> is authoritative.</p>
 
 <h2>The one-sentence version</h2>
@@ -92,6 +92,10 @@ GitHub remain available if you would rather not involve a third party at all.</p
       <code>knit.json</code> in the same directory. Stitches and patches are not stored — they are
       counted from your blocks each time. It is not in the database either, is not exported with
       the library, and never leaves this computer.</li>
+  <li>How far you have looked at what AIs added to each project — one time per project, used only
+      to decide whether that project's dot in the left rail lights up green — is kept in
+      <code>ai-seen.json</code> in the same directory. It is not in the database either, is not
+      exported with the library, and never leaves this computer.</li>
   <li>Before any database schema upgrade, a snapshot backup is saved automatically in the same
       directory.</li>
 </ul>
@@ -159,9 +163,13 @@ request is made on your behalf, by a subprocess Spool starts:</p>
 the lines you wrote yourself describing what to watch for, and asks that CLI to go look for
 news — so those lines and the context it needs reach the CLI's provider. Weekly Review and
 drafting follow-up goals do not receive web-search tools, but the project content they need is
-still handed to the CLI and may reach its provider.</p>
+still handed to the CLI and may reach its provider. Follow up runs only when you press it, unless
+you switch on <strong>Search once a week by itself</strong> for a project in its follow-up editor —
+then Spool runs it for that project once a week, through the same CLI and on your own quota, and
+only something new reaches your review. The switch is per project and off by default.</p>
 <p>In other words: content leaves this machine only along a route you switched on — a manual
-paste, an MCP client you enabled, a CLI action you ran, or the API engine you gave a key to. With
+paste, an MCP client you enabled, a CLI action you ran (including a weekly follow-up you
+switched on for a project), or the API engine you gave a key to. With
 the API engine off, Spool makes no network request at all; with it on, the request comes from a
 separate subprocess, on your own key and quota, to the provider you picked.</p>
 <p>The other direction — an AI writing into your library — only arises once you have turned the
