@@ -228,7 +228,6 @@ const EN: Record<string, string> = {
   // ⛔ 施工单原话：「没有就明确写『未记录为什么引用』」—— 留白读不出「是没人写」
   // 还是「界面没显示」，而真库 58 条边 `ref_note` 一条都没有。
   '未记录为什么引用': 'no reason recorded',
-  '其中 {n} 处引的是已经不作数的内容，等你看一眼': '{n} of them cite something that no longer holds — worth a look',
   // 待审的三个动作。⛔ 「移除引用」只清关系，一个块都不删。
   '关系待审': 'Citations to review',
   '引的这一块已经不作数了 —— ': 'What this cites no longer holds — ',

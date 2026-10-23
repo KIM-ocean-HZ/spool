@@ -29,6 +29,7 @@ import {
   retranslateTutorial,
   setSeedLanguage,
 } from '@/lib/db/client';
+import { releaseRefsToRetired } from '@/lib/db/blocks';
 import { loadDrafts } from '@/lib/db/drafts';
 import { startDraftPrompt } from '@/stores/draftPrompt';
 import { t } from '@/lib/i18n';
@@ -146,6 +147,9 @@ export default function App() {
       await loadSettings();
       setSeedLanguage(useSettingsStore.getState().language);
       await loadWorkspaces();
+      // P9S-2: citations still pointing at a block that no longer counts are released — the ones
+      // this version used to hold in 「关系待审」, and any retired while the window was closed.
+      await releaseRefsToRetired().catch((e) => console.warn('[refs] release sweep failed', e));
       await loadThreads();
       // P9D: text not yet in the library (drafts.json). After the DB is open — a draft whose
       // block is gone is dropped on read. Not awaited: nothing else waits on it, and a block drawn

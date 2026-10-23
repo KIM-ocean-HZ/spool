@@ -20,6 +20,9 @@ import {
   listPendingRefReviews,
   listStitchTimesSince,
   mergeBlocks,
+  __resetReleasedRefsForTest,
+  releaseRefsToRetired,
+  replaceBlock,
   restoreBlock,
   applyCompression,
   restoreBlockOriginal,
@@ -872,6 +875,7 @@ describe('provenance graph (v29)', () => {
     sqlite = new DatabaseSync(':memory:');
     sqlite.exec(schemaSql);
     __setTestDb(makeAdapter(sqlite));
+    __resetReleasedRefsForTest();
   });
 
   afterEach(() => {
@@ -916,22 +920,75 @@ describe('provenance graph (v29)', () => {
     expect(await listIncomingRefsForTargets([])).toEqual({});
   });
 
-  it('待审队列：引用方 live + 被引已退役 + 非 supersedes + 没审过', async () => {
-    const { a, target, sameProject } = await seed();
-    await sqlite
-      .prepare('UPDATE blocks SET ref_block_id = ? WHERE id = ?')
-      .run(target.id, sameProject.id);
+  // P9S-2（Ocean 2026-10-23 第 171 条）：不再排队等人看 —— 一块不作数，指着它的引用当场解除。
+  it('P9S-2：一块不作数 ⇒ 指着它的引用自动解除，跨项目那一条也解，两块都还在', async () => {
+    const { target, sameProject, crossProject } = await seed();
+    await setBlockSupersession(sameProject.id, target.id, 'corrects', 1);
+    await setCorrectedQuote(sameProject.id, '旧结论');
+    sqlite.prepare('UPDATE blocks SET ref_block_id = ? WHERE id = ?').run(target.id, crossProject.id);
 
-    // 被引块还有效 ⇒ 队列是空的。
+    const { released } = await setBlockStale(target.id, 111);
+    expect(released.map((e) => e.citingId).sort()).toEqual([crossProject.id, sameProject.id].sort());
+    for (const id of [sameProject.id, crossProject.id]) {
+      expect(await getBlockById(id)).toMatchObject({
+        refBlockId: null,
+        refKind: null,
+        correctedQuote: null,
+        refReviewedStaleAt: null,
+      });
+    }
+    expect((await getBlockById(target.id))!.staleAt).toBe(111);
     expect(await listPendingRefReviews()).toEqual([]);
+  });
+
+  it('P9S-2：同一次开着时取回那一块 ⇒ 引用回来；之后又退役 ⇒ 再解一次', async () => {
+    const { target, sameProject } = await seed();
+    await setBlockSupersession(sameProject.id, target.id, 'corrects', 1);
+    await setCorrectedQuote(sameProject.id, '旧结论');
 
     await setBlockStale(target.id, 111);
-    const pending = await listPendingRefReviews();
-    expect(pending).toHaveLength(1);
-    expect(pending[0]!.citing.id).toBe(sameProject.id);
-    expect(pending[0]!.cited.id).toBe(target.id);
-    // ⚠️ 按项目筛的是**引用方**的项目 —— 要动手的是引用方那一行。
-    expect(await listPendingRefReviews(a.id)).toHaveLength(1);
+    const { restored } = await setBlockStale(target.id, null);
+    expect(restored.map((e) => e.citingId)).toEqual([sameProject.id]);
+    expect(await getBlockById(sameProject.id)).toMatchObject({
+      refBlockId: target.id,
+      refKind: 'corrects',
+      correctedQuote: '旧结论',
+    });
+
+    expect((await setBlockStale(target.id, 333)).released).toHaveLength(1);
+    expect((await getBlockById(sameProject.id))!.refBlockId).toBeNull();
+  });
+
+  it('P9S-2：取回之前引用方已经指到别处 ⇒ 不覆盖', async () => {
+    const { a, target, sameProject } = await seed();
+    const other = await createBlock({ threadId: a.id, content: '另一块' });
+    sqlite.prepare('UPDATE blocks SET ref_block_id = ? WHERE id = ?').run(target.id, sameProject.id);
+    await setBlockStale(target.id, 111);
+    await repointCitation(sameProject.id, other.id, null, null);
+
+    expect((await setBlockStale(target.id, null)).restored).toEqual([]);
+    expect((await getBlockById(sameProject.id))!.refBlockId).toBe(other.id);
+  });
+
+  it('P9S-2：「保留为历史引用」过的那一次退役不解；整条取代时别的引用一起解', async () => {
+    const { a, target, sameProject, crossProject } = await seed();
+    sqlite
+      .prepare('UPDATE blocks SET ref_block_id = ?, ref_reviewed_stale_at = 111 WHERE id = ?')
+      .run(target.id, sameProject.id);
+    sqlite.prepare('UPDATE blocks SET ref_block_id = ? WHERE id = ?').run(target.id, crossProject.id);
+    sqlite.prepare('UPDATE blocks SET stale_at = 111 WHERE id = ?').run(target.id);
+
+    // 开机那一次全库扫：确认过的留着，没确认的解掉。
+    const swept = await releaseRefsToRetired();
+    expect(swept.map((e) => e.citingId)).toEqual([crossProject.id]);
+    expect((await getBlockById(sameProject.id))!.refBlockId).toBe(target.id);
+
+    // 整条取代：取代它的那一块不算，别的引用一起解。
+    const old = await createBlock({ threadId: a.id, content: '更旧的' });
+    const citer = await createBlock({ threadId: a.id, content: '引它' });
+    sqlite.prepare('UPDATE blocks SET ref_block_id = ? WHERE id = ?').run(old.id, citer.id);
+    await replaceBlock(old.id, target.id, 222);
+    expect((await getBlockById(citer.id))!.refBlockId).toBeNull();
   });
 
   it('⛔ supersedes 指着一块已退役的块不进队列 —— 那是正常状态', async () => {
@@ -950,21 +1007,6 @@ describe('provenance graph (v29)', () => {
 
     await setRefReviewed(sameProject.id, 111);
     expect(await listPendingRefReviews()).toEqual([]);
-  });
-
-  // ⛔⛔ 布尔在这一条上会答错，而这条**走的是日常路径**：退役按钮是个纯开关。
-  it('§3.2 ④ ③：目标恢复有效、以后又重新退役 ⇒ 重新进待审', async () => {
-    const { target, sameProject } = await seed();
-    await sqlite
-      .prepare('UPDATE blocks SET ref_block_id = ? WHERE id = ?')
-      .run(target.id, sameProject.id);
-    await setBlockStale(target.id, 111);
-    await setRefReviewed(sameProject.id, 111);
-
-    await setBlockStale(target.id, null); // 取回来
-    expect(await listPendingRefReviews()).toEqual([]);
-    await setBlockStale(target.id, 333); // 又退了一次 —— 是新的一次
-    expect(await listPendingRefReviews()).toHaveLength(1);
   });
 
   // ⛔⛔ §3.2 ④ ②：改到别处**不继承**确认。

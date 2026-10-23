@@ -1428,7 +1428,6 @@ function TextBlockItem({
           refBlockId={block.refBlockId}
           refKind={block.refKind}
           fromThreadId={block.threadId}
-          citing={block}
         />
       )}
 

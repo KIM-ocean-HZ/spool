@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { plainText } from '@/lib/blocks/contentRuns';
-import { incomingNeedsReview, incomingReason, incomingVerbKey } from '@/lib/blocks/provenance';
+import { incomingReason, incomingVerbKey } from '@/lib/blocks/provenance';
 import type { Block, IncomingRef } from '@/lib/db/blocks';
 import { useT } from '@/lib/i18n';
 import { formatBlockTime } from '@/lib/utils/time';
@@ -35,8 +35,6 @@ export default function ProvenanceLine({ block, incoming }: Props) {
   const highlight = useSearchStore((s) => s.highlight);
 
   if (incoming.length === 0) return null;
-
-  const pending = incoming.filter((e) => incomingNeedsReview(e, block)).length;
 
   return (
     <div className="mt-1.5 font-ui text-[11px]">
@@ -120,14 +118,6 @@ export default function ProvenanceLine({ block, incoming }: Props) {
         </ul>
       )}
 
-      {/* 收起的时候也要说出「有几条等着你看一眼」—— ⛔ 藏在折叠里的异常等于没报。
-          ⚠️ 动作不在这儿：它们长在**引用方**那一块的引用行下面（`RefReviewActions`），
-          因为判断需要引用方的正文当上下文。这一行只负责说「那边有事」。 */}
-      {pending > 0 && !open && (
-        <p className="mt-0.5 text-muted opacity-80">
-          {t('其中 {n} 处引的是已经不作数的内容，等你看一眼', { n: pending })}
-        </p>
-      )}
     </div>
   );
 }

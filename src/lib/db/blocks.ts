@@ -794,7 +794,10 @@ export const restoreBlock = async (block: Block): Promise<void> => {
  *  judgement call the user cannot reverse is a trap.
  *
  *  ⚠️ There is no MCP counterpart on purpose (§3.1 «谁能用»). */
-export const setBlockStale = async (id: string, staleAt: number | null): Promise<void> => {
+export const setBlockStale = async (
+  id: string,
+  staleAt: number | null,
+): Promise<{ released: ReleasedRef[]; restored: ReleasedRef[] }> => {
   const db = await getDb();
   // v32 (P7-3): taking a block back also forgets which block replaced it — otherwise a live
   // block would still read 「被第 n 块取代」.
@@ -802,7 +805,101 @@ export const setBlockStale = async (id: string, staleAt: number | null): Promise
     `UPDATE blocks SET stale_at = $1${staleAt === null ? ', replaced_by_block_id = NULL' : ''} WHERE id = $2`,
     [staleAt, id],
   );
+  // P9S-2: the citations pointing at it go with it, and come back if it is taken back.
+  return staleAt === null
+    ? { released: [], restored: await restoreReleasedRefs(id) }
+    : { released: await releaseRefsToRetired(id), restored: [] };
 };
+
+/** 一条被自动解掉的引用：放回去要的几样。 */
+export interface ReleasedRef {
+  citingId: string;
+  citingThreadId: string;
+  citedId: string;
+  refKind: RefKind | null;
+  correctedQuote: string | null;
+}
+
+/** 这一次开着 Spool 期间自动解掉的，按被引块记。只为一件事：退役按钮是个纯开关（没有撤销），
+ *  点错了再点回来，引用跟着回来。⚠️ 只在内存里 —— 重启之后取回那一块，引用不会回来（Ocean 看过
+ *  「解了哪些看不到」这个代价）。 */
+const releasedThisSession = new Map<string, ReleasedRef[]>();
+
+/** P9S-2（Ocean 2026-10-23，HANDOFF §9.2 第 171 条：「改成直接解除引用，给太多选择只会增加
+ *  摩擦」⇒ 全自动，不用审）—— 一块不作数了，指着它的引用自动解除。
+ *
+ *  解的是**原来会进「关系待审」的那几条**，判据一个字没改：引用方还有效、被引的那一块已经不作数、
+ *  关系不是取代、被引块不是被引用方自己取代的、用户没点过「保留为历史引用」。
+ *  ⛔ 只清引用方那一格关系（和「移除引用」写的是同样几列），一个块都不删，被引块的退役状态不动。
+ *
+ *  不给 `retiredId` = 全库扫一遍（开机那一次：这一版之前已经挂在待审里的）。 */
+export const releaseRefsToRetired = async (retiredId?: string): Promise<ReleasedRef[]> => {
+  const db = await getDb();
+  const rows = await db.select<
+    {
+      citing_id: string;
+      citing_thread_id: string;
+      cited_id: string;
+      ref_kind: RefKind | null;
+      corrected_quote: string | null;
+    }[]
+  >(
+    `SELECT c.id AS citing_id, c.thread_id AS citing_thread_id, d.id AS cited_id,
+            c.ref_kind, c.corrected_quote
+       FROM blocks c
+       JOIN blocks d ON d.id = c.ref_block_id
+      WHERE c.stale_at IS NULL
+        AND d.stale_at IS NOT NULL
+        AND COALESCE(c.ref_kind, 'cites') <> 'supersedes'
+        AND (d.replaced_by_block_id IS NULL OR d.replaced_by_block_id <> c.id)
+        AND (c.ref_reviewed_stale_at IS NULL OR c.ref_reviewed_stale_at <> d.stale_at)
+        ${retiredId ? 'AND d.id = $1' : ''}`,
+    retiredId ? [retiredId] : [],
+  );
+  const released: ReleasedRef[] = [];
+  for (const r of rows) {
+    // ⚠️ 带上 `ref_block_id = $2`：查和改之间那一格被别处改过（另一条路改了引），就不碰它。
+    const res = await db.execute(
+      `UPDATE blocks SET ref_block_id = NULL, ref_kind = NULL, corrected_quote = NULL,
+                         ref_reviewed_stale_at = NULL
+        WHERE id = $1 AND ref_block_id = $2`,
+      [r.citing_id, r.cited_id],
+    );
+    if (res.rowsAffected === 0) continue;
+    const edge: ReleasedRef = {
+      citingId: r.citing_id,
+      citingThreadId: r.citing_thread_id,
+      citedId: r.cited_id,
+      refKind: r.ref_kind,
+      correctedQuote: r.corrected_quote,
+    };
+    released.push(edge);
+    releasedThisSession.set(r.cited_id, [...(releasedThisSession.get(r.cited_id) ?? []), edge]);
+  }
+  return released;
+};
+
+/** 取回一块（不作数 → 作数）时，把这次开着 Spool 期间因为它解掉的引用放回去 ——
+ *  只放回引用方那一格还空着的（之后又被指到别处的，以那一次为准）。 */
+const restoreReleasedRefs = async (citedId: string): Promise<ReleasedRef[]> => {
+  const edges = releasedThisSession.get(citedId) ?? [];
+  releasedThisSession.delete(citedId);
+  if (edges.length === 0) return [];
+  const db = await getDb();
+  const restored: ReleasedRef[] = [];
+  for (const e of edges) {
+    const res = await db.execute(
+      `UPDATE blocks SET ref_block_id = $1, ref_kind = $2, corrected_quote = $3
+        WHERE id = $4 AND ref_block_id IS NULL`,
+      [e.citedId, e.refKind, e.correctedQuote, e.citingId],
+    );
+    if (res.rowsAffected > 0) restored.push(e);
+  }
+  return restored;
+};
+
+/** 测试用：这一次开着 Spool 期间的记账清空，回到刚启动的样子。 */
+export const __resetReleasedRefsForTest = (): void => releasedThisSession.clear();
 
 /** v32 (P7-3, Ocean 2026-10-07 HANDOFF §9.2 第 41 条) —— 「整条取代」：旧块退役，并记住被哪一块取代。
  *
@@ -817,6 +914,8 @@ export const replaceBlock = async (oldId: string, byId: string, now: number): Pr
     'UPDATE blocks SET stale_at = COALESCE(stale_at, $1), replaced_by_block_id = $2 WHERE id = $3',
     [now, byId, oldId],
   );
+  // P9S-2: 别的块指着它的引用跟着解除（取代它的那一块自己不算，判据里排除了）。
+  await releaseRefsToRetired(oldId);
 };
 
 // ---------------------------------------------------------------------------------------
@@ -1014,6 +1113,8 @@ export const setBlockSupersession = async (
       now,
       targetBlockId,
     ]);
+    // P9S-2: 别的块指着它的引用跟着解除（这一条取代关系本身不算）。
+    await releaseRefsToRetired(targetBlockId);
   }
 };
 

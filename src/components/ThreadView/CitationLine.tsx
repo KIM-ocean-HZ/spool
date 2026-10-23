@@ -1,12 +1,10 @@
 import { useEffect, useState } from 'react';
 import { plainText } from '@/lib/blocks/contentRuns';
-import { refNeedsReview } from '@/lib/blocks/provenance';
 import { getBlockById, type Block, type RefKind } from '@/lib/db/blocks';
 import { useT } from '@/lib/i18n';
 import { formatBlockTime } from '@/lib/utils/time';
 import { useSearchStore } from '@/stores/searchStore';
 import { selectThreadById, useThreadsStore } from '@/stores/threadsStore';
-import RefReviewActions from './RefReviewActions';
 import SeqBadge from './SeqBadge';
 
 interface Props {
@@ -15,10 +13,6 @@ interface Props {
   refKind?: RefKind | null;
   /** S4②：**引用方**所在的项目。被引的块不在这个项目里，就要把项目名显出来。 */
   fromThreadId: string;
-  /** F2 §3.2 ②③：引用方那一块本身。
-   *  ⚠️ 传整块而不是再查一次 —— 待审判据要它的 `staleAt` / `refReviewedStaleAt`，
-   *  而三个动作要作用在它身上。 */
-  citing?: Block;
 }
 
 // §20.13 v2.4 P2-3 (2026-07-12): the feed counterpart of the pack's "↩ cites:" line.
@@ -38,7 +32,7 @@ interface Props {
 // Three things Ocean read as one blob (`#1 8/7 16:50 # 申请人定位… **目标。**`) are now three:
 // a ring (SeqBadge), a clock, and the body — separated by · and by colour, with the body's
 // markdown markers dropped (plainText).
-export default function CitationLine({ refBlockId, refKind, fromThreadId, citing }: Props) {
+export default function CitationLine({ refBlockId, refKind, fromThreadId }: Props) {
   const t = useT();
   const select = useThreadsStore((s) => s.select);
   const highlight = useSearchStore((s) => s.highlight);
@@ -170,11 +164,6 @@ export default function CitationLine({ refBlockId, refKind, fromThreadId, citing
     highlight(refBlockId);
   };
 
-  // F2 §3.2 ②：这条引用**等着人看一眼**吗 —— 引用方仍有效、被引块已退役、
-  // 关系不是 `supersedes`、用户还没确认过这一次退役。
-  // ⚠️ 判据走 `refNeedsReview`，⛔ 别在这儿把四个条件再拼一遍（那就是第三种写法）。
-  const needsReview = refNeedsReview(citing, cited.block);
-
   return (
     <>
     <div className="mt-1.5 flex items-baseline gap-1.5 font-ui text-[11px] text-muted">
@@ -242,10 +231,6 @@ export default function CitationLine({ refBlockId, refKind, fromThreadId, citing
         )}
       </button>
     </div>
-    {/* ⛔⛔ 动作长在**这儿**，不是只在待审面上。Ocean 否掉纯「异常队列」那一案的理由
-        逐字是：用户审待审边时**没有上下文**可判断。引用方的正文就在这一行上面，
-        被引的那一块点一下就到 —— 这就是上下文。 */}
-    {needsReview && citing && <RefReviewActions citing={citing} cited={cited.block} />}
     </>
   );
 }

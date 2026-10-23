@@ -7,7 +7,6 @@ import LiveRun from "./LiveRun";
 import McpBar from "./McpBar";
 import ProjectFiles from "./ProjectFiles";
 import RailSection from "./RailSection";
-import RefReviewSection from "./RefReviewSection";
 import RunCard from "./RunCard";
 import { createBlock } from "@/lib/db/blocks";
 import type { EngineRun } from "@/lib/db/engineRuns";
@@ -287,10 +286,8 @@ export default function RightRail({ thread, onCollapse, onEditBrief }: Props) {
             "the first section" rather than "the first thing in the column" — the run cards
             above are transient and keep their own card shape. */}
         <div className="space-y-3">
-          {/* F2 §3.2 ②（Ocean 2026-08-30）：这个项目里等着人看一眼的引用。
-              ⚠️ 排在最前，因为它是**异常**：一条都没有的时候整节不画，
-              所以它出现本身就是消息。⛔ 它只是索引，动作在块上。 */}
-          {thread && <RefReviewSection threadId={thread.id} />}
+          {/* ⛔ 「关系待审」那一节不在了（P9S-2，Ocean 2026-10-23 第 171 条：全自动，不用审）——
+              被引的那一块一不作数，引用自动解除（lib/db/blocks `releaseRefsToRetired`）。 */}
 
           {/* ⚠️ 2026-08-17 (Ocean, Windows 验收): this section used to be gated on the local CLI
               — 「跟进是特例,MCP 也可以跟进,所以需要单独考虑」. He is right, and the old gate was

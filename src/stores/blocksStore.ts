@@ -523,9 +523,29 @@ export const useBlocksStore = create<BlocksState>((set, get) => {
     // action is its own inverse and the button sitting there says so. Nothing is deleted.
     setStale: async (id, stale) => {
       const staleAt = stale ? Date.now() : null;
-      await db.setBlockStale(id, staleAt);
+      const { released, restored } = await db.setBlockStale(id, staleAt);
       // v32 (P7-3): taking it back clears 「被第 n 块取代」 too (setBlockStale does the same).
       patchBlock(set, get, id, stale ? { staleAt } : { staleAt, replacedByBlockId: null });
+      // P9S-2: the citations that went with it (or came back with it), on whichever block shows them.
+      for (const e of released) {
+        patchBlock(set, get, e.citingId, {
+          refBlockId: null,
+          refKind: null,
+          correctedQuote: null,
+          refReviewedStaleAt: null,
+        });
+      }
+      for (const e of restored) {
+        patchBlock(set, get, e.citingId, {
+          refBlockId: e.citedId,
+          refKind: e.refKind,
+          correctedQuote: e.correctedQuote,
+        });
+      }
+      const touched = [...released, ...restored];
+      if (touched.length > 0) {
+        await refreshIncomingFor(get, [threadIdOf(get, id), ...touched.map((e) => e.citingThreadId)]);
+      }
     },
 
     // ⭐ v24（R2 §1g）：一键还原。⚠️ 原文回到 `content` 之后，`original_content` 和
