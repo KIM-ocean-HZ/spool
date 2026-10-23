@@ -213,6 +213,14 @@ Ocean 验收 P9S-1 – P9S-7 之后：
 - 偏离：见 7.5（真跑挪到验收）、7.2（文件等 Ocean 删）。
 - 新发现：`DISCOVERED-20261023-1`（织布的一条测试偶尔红）记在 HANDOFF §9.9，没修。
 
-### 7.9 换装
+### 7.9 Ocean 的答复、清理、换装（10-23）
 
-（待做）
+- Ocean：「情人节深色要不要？要；换装；请在输入框里跑一行删除命令：已经删除」⇒ 情人节深色留下（HANDOFF §9.2 第 179 条）；三个文件他用 `git rm` 删了。
+- 清理 `687ac84`：七个函数、它们的测试、15 句只在那三个文件里用的界面文字（`--dead` 回到 87）；用到它们的三处测试改成新规则。tsc 干净 · vitest **1173**（少掉的是旧待审队列那些测试）· cargo 225 · 5 跳过（Rust 这一笔没动）。
+- 构建：在 `687ac84` 上，`src` / `src-tauri` / `site` / `scripts` 没有未提交改动，命令和 P9C 一样（Developer ID 签名、不公证），日志在 scratchpad；`--verify --deep --strict` 过。另外在 `c79e9ce` 那一版上用 `VACUUM INTO` 副本起过 `--mcp`：库 v35 打得开，26 个工具、7 个提示，和装前一样。
+- 装前：`Notarized Developer ID`（v0.7.0 正式版）、`spool` sha256 `5a8fefb5…`。真库 v35 · ok · 工作区 30 / 项目 90 / 块 1294 · 正文 537392 / 文件 68 / 图片 20 / 跟进 33 / 回顾记录 27 / 待审 0；`settings.json` 26 个键。
+- 停：GUI 29466、`--overlay` 29494 按 pid `kill -TERM`，一次就退了；AI 客户端的 `--mcp` 子进程一个没碰。
+- 备份（桌面）：`spool.before-p9s-install-20261023-194756.db`（v35 · ok · 1294 块）+ `settings` / `focus` / `drafts`（空的，没有没存的字）/ `knit` 四个 json。旧包挪到 `~/Desktop/Spool/spool-pre-install/Spool-old-20261023-194756-pre-p9s.app`；新包 `ditto` 进 `/Applications`，`open --stdout/--stderr` 到同目录 `p9s-run-20261023-194756.log`。
+- 装后：sha256 `47d7464b…` 和构建产物一致；主进程 92311、`--overlay` 92327 都是 19:48:03 起的；`spctl` = `Unnotarized Developer ID`（换装用的开发版，发 v0.7.1 时才公证）；日志只有 `[overlay] helper started` 和 `[double-tap] installed at HID/active` 两行（两个授权都在）。真库那一串数逐项和装前一样（不迁移）；`settings.json` 26 个键；〈剩余推荐信〉#5 指着 #4 的那条更正**开机时自动解除了**（全库再查一遍：0 条），`ai-seen.json` 起点 = 开机那一刻。
+- 开着的 AI 客户端：库没变，旧的 `--mcp` 照常能用；但它们跑的还是旧二进制，新的跟进规则（引擎跑跟进时能关永久跟进、标「跟进」）只在 Spool 自己的引擎里生效，和聊天客户端无关 —— 重启不重启都行。
+- 状态：**已换装，等 Ocean 照 §6 验收**；验收通过后做 P9S-8（发 v0.7.1，推之前问）。
