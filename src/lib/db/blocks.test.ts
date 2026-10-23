@@ -17,7 +17,6 @@ import {
   listBlocksByThread,
   listCapturesSince,
   listIncomingRefsForTargets,
-  listPendingRefReviews,
   listStitchTimesSince,
   mergeBlocks,
   __resetReleasedRefsForTest,
@@ -29,8 +28,6 @@ import {
   setBlockStale,
   setBlockSupersession,
   setCorrectedQuote,
-  setRefReviewed,
-  repointCitation,
   togglePin,
   updateBlockGist,
 } from './blocks';
@@ -938,7 +935,6 @@ describe('provenance graph (v29)', () => {
       });
     }
     expect((await getBlockById(target.id))!.staleAt).toBe(111);
-    expect(await listPendingRefReviews()).toEqual([]);
   });
 
   it('P9S-2：同一次开着时取回那一块 ⇒ 引用回来；之后又退役 ⇒ 再解一次', async () => {
@@ -964,7 +960,7 @@ describe('provenance graph (v29)', () => {
     const other = await createBlock({ threadId: a.id, content: '另一块' });
     sqlite.prepare('UPDATE blocks SET ref_block_id = ? WHERE id = ?').run(target.id, sameProject.id);
     await setBlockStale(target.id, 111);
-    await repointCitation(sameProject.id, other.id, null, null);
+    sqlite.prepare('UPDATE blocks SET ref_block_id = ? WHERE id = ?').run(other.id, sameProject.id);
 
     expect((await setBlockStale(target.id, null)).restored).toEqual([]);
     expect((await getBlockById(sameProject.id))!.refBlockId).toBe(other.id);
@@ -991,39 +987,11 @@ describe('provenance graph (v29)', () => {
     expect((await getBlockById(citer.id))!.refBlockId).toBeNull();
   });
 
-  it('⛔ supersedes 指着一块已退役的块不进队列 —— 那是正常状态', async () => {
+  it('⛔ 整条取代那一条关系本身不解 —— 那是正常状态', async () => {
     const { target, sameProject } = await seed();
     await setBlockSupersession(sameProject.id, target.id, 'supersedes', 111);
-    // `setBlockSupersession` 自己就把目标退役了。
-    expect(await listPendingRefReviews()).toEqual([]);
-  });
-
-  it('§3.2 ④ ①：审过之后不再重复询问', async () => {
-    const { target, sameProject } = await seed();
-    await sqlite
-      .prepare('UPDATE blocks SET ref_block_id = ? WHERE id = ?')
-      .run(target.id, sameProject.id);
-    await setBlockStale(target.id, 111);
-
-    await setRefReviewed(sameProject.id, 111);
-    expect(await listPendingRefReviews()).toEqual([]);
-  });
-
-  // ⛔⛔ §3.2 ④ ②：改到别处**不继承**确认。
-  it('§3.2 ④ ②：改引之后，确认作废', async () => {
-    const { a, target, sameProject } = await seed();
-    const other = await createBlock({ threadId: a.id, content: '另一块' });
-    await sqlite
-      .prepare('UPDATE blocks SET ref_block_id = ? WHERE id = ?')
-      .run(target.id, sameProject.id);
-    await setBlockStale(target.id, 111);
-    await setRefReviewed(sameProject.id, 111);
-    expect(await listPendingRefReviews()).toEqual([]);
-
-    await repointCitation(sameProject.id, other.id, null, null);
-    const row = await getBlockById(sameProject.id);
-    expect(row!.refBlockId).toBe(other.id);
-    expect(row!.refReviewedStaleAt).toBeNull();
+    // `setBlockSupersession` 自己就把目标退役了；指着它的那条 supersedes 留着。
+    expect(await getBlockById(sameProject.id)).toMatchObject({ refBlockId: target.id, refKind: 'supersedes' });
   });
 
   it('重新声明关系（含清掉关系）也会作废确认', async () => {

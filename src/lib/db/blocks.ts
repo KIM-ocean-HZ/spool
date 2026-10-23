@@ -69,7 +69,8 @@ export interface Block {
   gistBy: AnnotationAuthor | null;
   /** v29（F2 §3.2 ④，Ocean 2026-08-30）：按下「保留为历史引用」那一刻，**被引的那一块**
    *  `staleAt` 是多少。null = 这条引用还没被审过。
-   *  ⛔ 不是布尔 —— 它同时要答三件事，见 `schema.sql` 那一列的注释和 `refNeedsReview()`。
+   *  ⛔ 不是布尔 —— 它同时要答三件事，见 `schema.sql` 那一列的注释。P9S-2 起按钮没了，这一列只剩一个用处：
+   *  点过的那一次退役，`releaseRefsToRetired` 不解。
    *  ⚠️ 只在 `refBlockId` 非空时才有意义；`setBlockSupersession` 改写目标时会清掉它。 */
   refReviewedStaleAt: number | null;
   /** v32（P7-3，Ocean 2026-10-07）：这一块被哪一块**整条取代**了 —— 记在旧块上，和 `staleAt`
@@ -1319,120 +1320,7 @@ export const listIncomingRefsForTargets = async (
   return out;
 };
 
-/** F2 §3.2 ② —— 一条**待审**的边，两头都带齐（审的人要有上下文才判断得了）。 */
-export interface PendingRefReview {
-  /** 引用方（关系的声明方 —— 三个动作都作用在它身上）。 */
-  citing: Block;
-  /** 被引方，⚠️ 已经退役的那一块。 */
-  cited: Block;
-  /** 被引方所在项目的标题，跨项目时界面要说出来。 */
-  citedThreadTitle: string;
-  /** 引用方所在项目的标题。 */
-  citingThreadTitle: string;
-}
 
-/** F2 §3.2 ② 的待审判据，⚠️ 只有**这一处**写了 SQL 版本（`listPendingRefReviews`），
- *  纯函数版本在 `lib/blocks/provenance.ts` 的 `refNeedsReview()` ——
- *  两处是同一条规则的两种写法，⛔ 改一处必须改另一处；
- *  `provenance.test.ts` 用真库那 5 条边把它们钉在一起。
- *
- *  引用方仍有效 AND 被引块已退役 AND 关系不是 supersedes AND 被引块不是被引用方自己取代的（v32）
- *  AND 用户尚未确认。
- *  ⛔ `supersedes → retired` 不进队列 —— 那正是**正常**状态，不是异常；v32 的记法同理。
- *
- *  `threadId` 给了就只看那个项目**引出去**的边（⚠️ 筛的是**引用方**的项目 ——
- *  要动手的是引用方那一行）；不给就是全库。 */
-export const listPendingRefReviews = async (
-  threadId?: string,
-): Promise<PendingRefReview[]> => {
-  const db = await getDb();
-  // ⚠️ 两步：先用那条判据取出**成对的 id**，再用 `listBlocksByIds` 把两头读回来。
-  // ⛔ 不在一句 SQL 里把 23 个列名各起两遍别名 —— 那样每加一列都要改三处，
-  // 而 `SELECT_COLS` / `fromRow` 已经是这个文件里唯一一条「一行怎么变成 Block」的路。
-  const pairs = await db.select<
-    { citing_id: string; cited_id: string; citing_title: string | null; cited_title: string | null }[]
-  >(
-    `SELECT c.id AS citing_id, d.id AS cited_id,
-            tc.title AS citing_title, td.title AS cited_title
-       FROM blocks c
-       JOIN blocks d ON d.id = c.ref_block_id
-       LEFT JOIN threads tc ON tc.id = c.thread_id
-       LEFT JOIN threads td ON td.id = d.thread_id
-      WHERE c.stale_at IS NULL
-        AND d.stale_at IS NOT NULL
-        AND COALESCE(c.ref_kind, 'cites') <> 'supersedes'
-        AND (d.replaced_by_block_id IS NULL OR d.replaced_by_block_id <> c.id)
-        AND (c.ref_reviewed_stale_at IS NULL OR c.ref_reviewed_stale_at <> d.stale_at)
-        ${threadId ? 'AND c.thread_id = $1' : ''}
-      ORDER BY c.created_at ASC`,
-    threadId ? [threadId] : [],
-  );
-  if (pairs.length === 0) return [];
-  const byId = new Map(
-    (await listBlocksByIds([...new Set(pairs.flatMap((p) => [p.citing_id, p.cited_id]))])).map(
-      (b) => [b.id, b],
-    ),
-  );
-  const out: PendingRefReview[] = [];
-  for (const p of pairs) {
-    const citing = byId.get(p.citing_id);
-    const cited = byId.get(p.cited_id);
-    if (!citing || !cited) continue;
-    out.push({
-      citing,
-      cited,
-      citingThreadTitle: p.citing_title ?? '',
-      citedThreadTitle: p.cited_title ?? '',
-    });
-  }
-  return out;
-};
-
-/** F2 §3.2 ③ 动作一「保留为历史引用」 —— **永久记住用户已经审过**。
- *
- *  存的是**被引块此刻的 `stale_at`**，⛔ 不是一个布尔或者「现在几点」：
- *  目标恢复有效、以后又重新退役的时候，新的 `stale_at` 和这里记住的值不等，
- *  这条边**会再次进入待审**（§3.2 ④ 第三条）。而「现在几点」比不出这件事。
- *
- *  ⚠️ 确认的是「我知道了」，⛔ **不是「它又有效了」** —— pack 里那一行仍然写
- *  `(cited block is no longer valid)`（§3.3 两个小决定的第一条，Ocean 08-30 定的）。 */
-export const setRefReviewed = async (
-  citingId: string,
-  citedStaleAt: number,
-): Promise<void> => {
-  const db = await getDb();
-  await db.execute('UPDATE blocks SET ref_reviewed_stale_at = $1 WHERE id = $2', [
-    citedStaleAt,
-    citingId,
-  ]);
-};
-
-/** F2 §3.2 ③ 动作二「改引当前块」 —— 把这条引用指到另一块上。
- *
- *  ⛔ **不自动猜新目标、⛔ 不自动沿 supersede 链跳**（§3.2 ③）—— 目标由用户在选择器里点。
- *
- *  ⚠️ 和 `setBlockSupersession` 分开是因为那一个把 `kind === null` 当成「清掉关系」
- *  （`ref_block_id` 也置空），而 `cites` 正是 `refKind` 为 null 的那一种 ——
- *  拿它改引一条普通引用，等于把引用删了。
- *
- *  ⛔⛔ `corrected_quote` 由调用方先验过再进来（`quoteIsInBlock`，§3.3 五）：
- *  原来那句逐字未必存在于新目标里，验不过就只能降成普通引用或者拒绝这次改引。
- *  这里只落库，⛔ 不在这一层放宽闸。 */
-export const repointCitation = async (
-  citingId: string,
-  targetBlockId: string,
-  kind: RefKind | null,
-  correctedQuote: string | null,
-): Promise<void> => {
-  const db = await getDb();
-  // v29：换了目标 ⇒ 「已经审过」作废，同 `setBlockSupersession` 那一条。
-  await db.execute(
-    `UPDATE blocks SET ref_block_id = $1, ref_kind = $2, corrected_quote = $3,
-            ref_reviewed_stale_at = NULL
-      WHERE id = $4`,
-    [targetBlockId, kind === 'cites' ? null : kind, correctedQuote, citingId],
-  );
-};
 
 // §9.13 Undo (merge): revert the merge survivor's mutable fields to their pre-merge
 // values in place. The survivor kept its id / created_at / feed position through the

@@ -7,7 +7,7 @@ import { useThreadsStore } from './threadsStore';
 import {
   createBlock,
   listBlocksByThread,
-  listPendingRefReviews,
+  releaseRefsToRetired,
   replaceBlock,
   setBlockSupersession,
   setCorrectedQuote,
@@ -175,15 +175,16 @@ describe('「整条取代」记在旧块上：一块新的能取代好几块 (P7
     expect(pack).not.toContain('↩ replaces (that block no longer holds): [');
   });
 
-  it('先更正、后取代同一块：新块那一行照旧写「不再有效」，也不进「等你看一眼」的队列', async () => {
+  it('先更正、后取代同一块：新块那一行照旧写「不再有效」，它自己的更正关系不被自动解除', async () => {
     await replaceBlock(b1.id, b4.id, 999);
     const pack = await packOf();
     expect(pack).toContain('↩ corrects one point in: (cited block is no longer valid)');
     // 退役是这条关系自己造成的 —— 和老记法 `supersedes → retired` 同一条「正常状态」。
-    expect(await listPendingRefReviews()).toEqual([]);
-    // 别的块引着它的，照样要人看一眼。
+    expect((await row(b4.id)).refBlockId).toBe(b1.id);
+    // P9S-2：别的块引着它的，开机那一次全库扫会解掉，取代它的那一块不动。
     const other = await createBlock({ threadId: thread.id, content: '引一下预算那块' });
     sqlite.prepare('UPDATE blocks SET ref_block_id = ? WHERE id = ?').run(b1.id, other.id);
-    expect((await listPendingRefReviews()).map((p) => p.citing.id)).toEqual([other.id]);
+    expect((await releaseRefsToRetired()).map((e) => e.citingId)).toEqual([other.id]);
+    expect((await row(b4.id)).refBlockId).toBe(b1.id);
   });
 });

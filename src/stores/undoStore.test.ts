@@ -13,7 +13,6 @@ import {
   setBlockStale,
   setBlockSupersession,
   setCorrectedQuote,
-  setRefReviewed,
   togglePin,
   updateBlockContent,
 } from '@/lib/db/blocks';
@@ -501,8 +500,9 @@ describe('undoStore reversal against a real SQLite engine (§9.13)', () => {
     const citing = await createBlock({ threadId: here.id, content: 'it was corrected later' });
     await setBlockSupersession(citing.id, cited.id, 'corrects', Date.now());
     await setCorrectedQuote(citing.id, 'old sentence');
-    // P9S-2：先「保留为历史引用」再退役 —— 没确认过的引用在退役那一刻就自动解掉了。
-    await setRefReviewed(citing.id, 1234);
+    // P9S-2：先「保留为历史引用」（那个按钮已经没了，直接写那一列）再退役 —— 没确认过的引用
+    // 在退役那一刻就自动解掉了。
+    sqlite.prepare('UPDATE blocks SET ref_reviewed_stale_at = 1234 WHERE id = ?').run(citing.id);
     await setBlockStale(cited.id, 1234);
     await useBlocksStore.getState().load(here.id);
     await useBlocksStore.getState().load(there.id);

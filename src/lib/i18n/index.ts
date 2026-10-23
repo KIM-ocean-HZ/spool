@@ -230,26 +230,8 @@ const EN: Record<string, string> = {
   // ⛔ 施工单原话：「没有就明确写『未记录为什么引用』」—— 留白读不出「是没人写」
   // 还是「界面没显示」，而真库 58 条边 `ref_note` 一条都没有。
   '未记录为什么引用': 'no reason recorded',
-  // 待审的三个动作。⛔ 「移除引用」只清关系，一个块都不删。
-  '关系待审': 'Citations to review',
-  '引的这一块已经不作数了 —— ': 'What this cites no longer holds — ',
-  '保留为历史引用': 'Keep as a historical citation',
-  '改引当前块': 'Point it somewhere else',
+  // 「移除引用」（块上那一个）。P9S-2（2026-10-23）起没有「关系待审」那三个动作了。
   '移除引用': 'Remove the citation',
-  '点进去，在那一块下面选：保留、改引，或者移除': 'Open one — the choices sit under that block: keep, re-point, or remove',
-  '更正了': 'corrects',
-  '已改引': 'Citation re-pointed',
-  '已改引，并降成普通引用': 'Re-pointed, and downgraded to a plain citation',
-  // ⛔⛔ §3.3 五：`corrects` 改引之后原来那句逐字未必存在于新目标里，验不过就停下来问。
-  // ⚠️ 停下来问用的是界面上的一格，⛔ 不是原生对话框。
-  '这条更正瞄准的那一句，在新的那一块里找不到。': 'The sentence this correction aims at is not in the new block.',
-  '对得上才算 —— 一个字、一个空格都不能差。': 'It has to match exactly — every character, spaces included.',
-  '照样改，降成普通引用': 'Re-point anyway, as a plain citation',
-  '（那一句不再跟着走）': '(the quoted sentence is dropped)',
-  '算了，另挑一块': 'Never mind — pick a different block',
-  // 目标选择器。⛔ 不预选任何一行 —— 不自动猜新目标，也不沿 supersede 链跳。
-  '搜一块，或者从下面挑一块': 'Search for a block, or pick one below',
-  '没有可选的块': 'Nothing to pick',
   // ⭐⭐ 2026-08-30（Ocean）：不作数的块默认折到一行。
   '点一下展开': 'Click to open',
   '点一下折起来': 'Click to fold',

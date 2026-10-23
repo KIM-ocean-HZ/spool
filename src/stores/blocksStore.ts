@@ -18,8 +18,7 @@ import {
 import { addImageBytes, addImagesFromPaths, imageErrorMessage } from '@/lib/images/blockImageIo';
 import { keepFileIdentities, locateFiles, relocateFile, type FileState, type KeptIdentity } from '@/lib/files/locate';
 import { appendImageLines, remapImageIds } from '@/lib/blocks/imageLines';
-import type { Block, CreateBlockArgs, IncomingRef, RefKind } from '@/lib/db/blocks';
-import { quoteIsInBlock } from '@/lib/blocks/quoteFold';
+import type { Block, CreateBlockArgs, IncomingRef } from '@/lib/db/blocks';
 import { computeMergedFields } from '@/lib/db/blocks';
 import {
   buildCreateUndo,
@@ -64,23 +63,9 @@ interface BlocksState {
    *  取不到 = 没人引用它。 */
   incomingByBlock: Record<string, IncomingRef[]>;
   load: (threadId: string) => Promise<void>;
-  /** 重新取一个项目的入向边。三个动作改完关系后调它 —— ⛔ 改的是**别的项目**里那一行时，
+  /** 重新取一个项目的入向边。关系变了之后调它 —— ⛔ 改的是**别的项目**里那一行时，
    *  `byThread` 那一份也可能过期，所以动作自己还要 `load` 引用方所在的项目。 */
   reloadIncoming: (threadId: string) => Promise<void>;
-  /** F2 §3.2 ③ 动作一「保留为历史引用」—— 关系不变，永久记住用户已经审过。
-   *  ⛔ 它**不让被引块重新有效**，pack 里那一行照旧写「已不作数」（§3.3 小决定一）。 */
-  keepAsHistoricalRef: (citingId: string, citedStaleAt: number) => Promise<void>;
-  /** F2 §3.2 ③ 动作二「改引当前块」—— 把引用指到用户挑的那一块上。
-   *
-   *  ⛔⛔ `corrects` 改引时**必须重验 `corrected_quote`**：原来那句逐字未必存在于新目标里。
-   *  验不过就**不写**，返回 `'quote-missing'`，由界面决定降成普通引用还是放弃这次改引。
-   *  ⚠️ 用的是库里已有的那把尺子（`quoteIsInBlock`），⛔ 别在这儿新写第二把 ——
-   *  尤其⛔ 别顺手 `.trim()`，首尾空白也算，放宽之后测试照样绿。 */
-  repointRef: (
-    citingId: string,
-    target: Block,
-    opts?: { degradeToCite?: boolean },
-  ) => Promise<'ok' | 'quote-missing'>;
   append: (args: CreateBlockArgs) => Promise<Block>;
   togglePin: (id: string) => Promise<void>;
   /** The user's own delete. v30 (P5-3): `removeFiles` says what happens to files hung off the
@@ -379,49 +364,6 @@ export const useBlocksStore = create<BlocksState>((set, get) => {
         for (const id of ids) delete next[id];
         return { incomingByBlock: { ...next, ...incoming } };
       });
-    },
-
-    keepAsHistoricalRef: async (citingId, citedStaleAt) => {
-      const citing = Object.values(get().byThread)
-        .flat()
-        .find((b) => b.id === citingId);
-      await db.setRefReviewed(citingId, citedStaleAt);
-      patchBlock(set, get, citingId, { refReviewedStaleAt: citedStaleAt });
-      // ⚠️ 刷的是**被引方**那个项目：变的是它头上那条边的「等着你看一眼」记号。
-      await refreshIncomingFor(get, [citing?.threadId, threadIdOf(get, citing?.refBlockId)]);
-    },
-
-    repointRef: async (citingId, target, opts) => {
-      const citing = Object.values(get().byThread)
-        .flat()
-        .find((b) => b.id === citingId);
-      if (!citing) return 'ok';
-      let kind: RefKind | null = citing.refKind;
-      let quote = citing.correctedQuote;
-      if (citing.refKind === 'corrects' && quote) {
-        // ⛔⛔ §3.3 五：逐字重验，用库里那把尺子。验不过**不写库** ——
-        // 一条指得对、瞄准处却不存在的更正，比没有关系更难发现。
-        if (!quoteIsInBlock(quote, target.content)) {
-          if (!opts?.degradeToCite) return 'quote-missing';
-          // 用户选了降级：关系降成普通引用，那一句跟着走（它只属于 `corrects`）。
-          kind = null;
-          quote = null;
-        }
-      }
-      await db.repointCitation(citingId, target.id, kind, quote);
-      patchBlock(set, get, citingId, {
-        refBlockId: target.id,
-        refKind: kind,
-        correctedQuote: quote,
-        refReviewedStaleAt: null,
-      });
-      // 三个项目都可能受影响：引用方的、**原来**被引的、**新**被引的。
-      await refreshIncomingFor(get, [
-        citing.threadId,
-        threadIdOf(get, citing.refBlockId),
-        target.threadId,
-      ]);
-      return 'ok';
     },
 
     append: async (args) => {

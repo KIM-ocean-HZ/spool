@@ -1,62 +1,10 @@
-import type { Block, IncomingRef, RefKind } from '@/lib/db/blocks';
+import type { IncomingRef, RefKind } from '@/lib/db/blocks';
 
 /** F2 §3.2 —— 「来龙去脉」这一屏的纯逻辑。⛔ 不碰库、不碰 React，就为了这几条判断有缝可测。
  *
  *  ⚠️⚠️ 这个文件存在的理由和 `staleGuards.ts` 逐字同一条：那两道闸原来是 `compressStore`
  *  里的局部闭包，**没有任何导出的入口调得到**，于是一个单元测试都没有，
  *  而抄出来一量就发现它们认错了维度。⛔ 别再把这几条判断写回组件里。 */
-
-/** 这条引用**等着人看一眼**吗 —— §3.2 ② 那条判据的纯函数版本。
- *
- *  ⚠️⚠️ **和 `listPendingRefReviews` 的 SQL 是同一条规则的两种写法**，⛔ 改一处必须改另一处。
- *  两处都在，是因为一处要在库里筛（画待审面），一处要在内存里对一条边问同样的问题
- *  （画那条边旁边的记号）—— 而让组件自己再拼一遍条件，就是第三种写法。
- *
- *  四个条件，缺一不可：
- *
- *  | 条件 | 为什么 |
- *  |---|---|
- *  | 引用方仍有效 | 引用方自己都不作数了，这条边不用再管 |
- *  | 被引块已退役 | 没退役就没有异常 |
- *  | 关系不是 `supersedes` | ⛔ `supersedes → retired` **正是正常状态**，不是异常 |
- *  | 用户尚未确认 | 记住的 `stale_at` == 对方现在的 `stale_at` 才算确认过 |
- *
- *  ⭐ 最后一条为什么比一个布尔复杂：退役按钮是个**纯开关**（`BlockItem.tsx`，
- *  「the action is its own inverse」，没有确认也没有 undo）。目标被取回来、以后又重新退役，
- *  那是**新的一次**退役 —— 布尔会说「审过了」并把它永远藏起来，
- *  比 `stale_at` 就会说「这是新的一次，再看一眼」。 */
-export const refNeedsReview = (
-  citing: Pick<Block, 'id' | 'refBlockId' | 'refKind' | 'staleAt' | 'refReviewedStaleAt'> | undefined,
-  cited: Pick<Block, 'id' | 'staleAt' | 'replacedByBlockId'> | undefined,
-): boolean => {
-  if (!citing || !cited) return false;
-  if (citing.refBlockId !== cited.id) return false;
-  if (citing.staleAt !== null) return false;
-  if (cited.staleAt === null) return false;
-  if (citing.refKind === 'supersedes') return false;
-  // v32（P7-3）：同一条「正常状态」，新记法 —— 被引块正是被**引用方自己**整条取代的
-  //（先更正、后来用户选了取代）。退役是这条关系自己造成的，⛔ 不是要人看的异常。
-  if (cited.replacedByBlockId === citing.id) return false;
-  return citing.refReviewedStaleAt !== cited.staleAt;
-};
-
-/** 同一条判断，问的是一条**入向**边 —— 参数摆法不一样，规则一个字不差。
- *
- *  ⚠️ 入向边手上没有 `refBlockId`（它按定义就是指着我），所以这里补上那一半再走同一把尺子。 */
-export const incomingNeedsReview = (
-  edge: Pick<IncomingRef, 'id' | 'refKind' | 'staleAt' | 'refReviewedStaleAt'>,
-  cited: Pick<Block, 'id' | 'staleAt' | 'replacedByBlockId'>,
-): boolean =>
-  refNeedsReview(
-    {
-      id: edge.id,
-      refBlockId: cited.id,
-      refKind: edge.refKind,
-      staleAt: edge.staleAt,
-      refReviewedStaleAt: edge.refReviewedStaleAt,
-    },
-    cited,
-  );
 
 /** 一条边的对方**现在是什么状态** —— §3.2 ① 要求入向边也标，⛔ 不只出向。
  *
