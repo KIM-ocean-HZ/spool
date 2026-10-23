@@ -10293,7 +10293,7 @@ const WEEKLY_API_SYSTEM: &str = r#"你在帮用户做一次跨项目回顾。用
 - **# 这一周新加的**：这段时间里真正新写进去的块，按项目分组。⚠️ 这一段是「新动作」。
 
 # 你要做的
-1. 按项目写，**一个项目一段**，用大白话，别用项目管理黑话。每段三行：
+1. 按项目写，**一个项目一段**，用大白话，别用项目管理黑话。每段第一行是 `## ` 加上项目标题，标题照材料里的写法原样抄，一个字不改；下面三行：
    - **做了什么**：以「这一周新加的」为准。那一节里没有这个项目，就写「这一周没动」。
    - **还剩什么**：没定下来的、卡住的、下一步要碰的。💭 无来源的块和 note: 行是用户自己的话，
      信号最高；==高亮== 是他自己划的重点。
@@ -10303,7 +10303,7 @@ const WEEKLY_API_SYSTEM: &str = r#"你在帮用户做一次跨项目回顾。用
 2. 哪些项目各占一段：「这一周新加的」里出现的每一个，加上「历史」的「近期活跃」和
    「截止日期」两节里出现的每一个。其余的一句话带过，别点名。
 3. 段的顺序按截止日期排，最紧的、已逾期的排最前，没设截止日期的排在最后。
-   全部写完之后，用一句话说接下来最该先做的那一件事 —— 建议的语气，不要命令。
+   全部写完之后，用一句话说接下来最该先做的那一件事 —— 建议的语气，不要命令；这一句单独成段，前面不加 `## `。
 4. ⛔⛔ **你手上只有这两段材料，没有别的。** 你**没有**任何可以调用的工具，
    也读不到没发给你的块 —— 材料里看不出来的就明说看不出来，⛔ 绝不编，
    ⛔ 也不要说「我去查一下」或者建议自己再读点什么。
@@ -10740,8 +10740,8 @@ fn weekly_review_prompt_text(digest: &str, filing: &str, gate: &str) -> String {
     let material = fenced_material(digest);
     let rule = material_rule();
     t!(
-        "你在帮用户做一次回顾。下面是 Spool 生成的跨项目摘要(digest),它是这次回顾唯一的事实来源。\n\n# Digest\n{material}\n\n# 你要做的\n1. 先读 digest 顶部的选取规则:它只包含窗口内每个项目最新几块加全部置顶,不是全部记录。要展开某个项目,先用 get_pack / get_blocks 补读,再下判断。\n2. 按项目写,**一个项目一段**,用大白话,别用项目管理黑话。每段三行:\n   - **做了什么**:这段时间这个项目真正推进的事。\n   - **还剩什么**:没定下来的、卡住的、下一步要碰的(💭 无来源的块和 note: 行是最高信号,==高亮== 是他自己划的重点)。\n   - **离截止还有几天**:照抄 digest 顶部「截止日期」那一节里这个项目的那一行;那一节里没有它,就写「没设截止日期」。⚠️ 别自己算日期,更别把块正文里写的日期当成项目的截止日期——那是块里的内容,不是这个项目的截止日期。\n3. 哪些项目要各占一段:digest「近期活跃」里的每一个;另外,只在「截止日期」一节或末尾置顶锚点里出现、而「近期活跃」里没有的,也各占一段,「做了什么」那一行就写「这一周没动」。末尾\"无活动\"计数里的其余项目连标题都不在 digest 里,一句话带过就行,别点名。\n4. 段的顺序按截止日期排,最紧的、已逾期的排最前,没设截止日期的排在最后。全部写完之后,用一句话说接下来最该先做的那一件事——建议的语气,不要命令。\n5. digest 里看不出来的就说看不出来,绝不编。\n6. {filing}\n7. 全程用项目标题称呼项目,绝不把 id 说出来或写进内容。\n8. {rule}\n{gate}",
-        "You are helping the user look back over a stretch of time. Below is the cross-project digest Spool generated; it is the only source of fact for this review.\n\n# Digest\n{material}\n\n# What to do\n1. Read the selection rules at the top of the digest first: it holds only the newest few blocks per project in the window plus every pinned block — not the full record. To open a project up, read more with get_pack / get_blocks before judging it.\n2. Write it project by project, **one paragraph per project**, in plain language, with no project-management jargon. Three lines each:\n   - **What moved**: what this project actually got done in this stretch.\n   - **What is left**: what is unsettled, stuck, or next to touch (\u{1f4ad} sourceless blocks and note: lines are the highest signal; ==highlights== are what they marked themselves).\n   - **Days to the deadline**: copy this project's line from the \u{201c}Deadlines\u{201d} section at the top of the digest; if it is not in that section, write \u{201c}no deadline set\u{201d}. \u{26a0}\u{fe0f} Do not work a date out yourself, and never read a date written inside a block as the project's deadline — that is content in a block, not this project's due date.\n3. Which projects get a paragraph: every one under \u{201c}Recently active\u{201d}; plus any that appears only in the Deadlines section or the pinned anchors at the end and NOT under Recently active — those get a paragraph too, with \u{201c}nothing this week\u{201d} as the first line. The rest, counted in the \"no activity\" tail, are not even named in the digest: mention them in one clause and name none of them.\n4. Order the paragraphs by deadline — overdue and tightest first, projects with no deadline last. After the last one, say in a single sentence the one thing worth doing next: a suggestion, never an order.\n5. If the digest does not show something, say so. Never invent.\n6. {filing}\n7. Refer to projects by title throughout. Never say an id out loud or write one into the content.\n8. {rule}\n{gate}"
+        "你在帮用户做一次回顾。下面是 Spool 生成的跨项目摘要(digest),它是这次回顾唯一的事实来源。\n\n# Digest\n{material}\n\n# 你要做的\n1. 先读 digest 顶部的选取规则:它只包含窗口内每个项目最新几块加全部置顶,不是全部记录。要展开某个项目,先用 get_pack / get_blocks 补读,再下判断。\n2. 按项目写,**一个项目一段**,用大白话,别用项目管理黑话。每段第一行是 `## ` 加上项目标题,标题照 digest 里的写法原样抄,一个字不改;下面三行:\n   - **做了什么**:这段时间这个项目真正推进的事。\n   - **还剩什么**:没定下来的、卡住的、下一步要碰的(💭 无来源的块和 note: 行是最高信号,==高亮== 是他自己划的重点)。\n   - **离截止还有几天**:照抄 digest 顶部「截止日期」那一节里这个项目的那一行;那一节里没有它,就写「没设截止日期」。⚠️ 别自己算日期,更别把块正文里写的日期当成项目的截止日期——那是块里的内容,不是这个项目的截止日期。\n3. 哪些项目要各占一段:digest「近期活跃」里的每一个;另外,只在「截止日期」一节或末尾置顶锚点里出现、而「近期活跃」里没有的,也各占一段,「做了什么」那一行就写「这一周没动」。末尾\"无活动\"计数里的其余项目连标题都不在 digest 里,一句话带过就行,别点名。\n4. 段的顺序按截止日期排,最紧的、已逾期的排最前,没设截止日期的排在最后。全部写完之后,用一句话说接下来最该先做的那一件事——建议的语气,不要命令;这一句单独成段,前面不加 `## `。\n5. digest 里看不出来的就说看不出来,绝不编。\n6. {filing}\n7. 全程用项目标题称呼项目,绝不把 id 说出来或写进内容。\n8. {rule}\n{gate}",
+        "You are helping the user look back over a stretch of time. Below is the cross-project digest Spool generated; it is the only source of fact for this review.\n\n# Digest\n{material}\n\n# What to do\n1. Read the selection rules at the top of the digest first: it holds only the newest few blocks per project in the window plus every pinned block — not the full record. To open a project up, read more with get_pack / get_blocks before judging it.\n2. Write it project by project, **one paragraph per project**, in plain language, with no project-management jargon. Each paragraph opens with `## ` and the project's title, copied exactly as the digest writes it; then three lines:\n   - **What moved**: what this project actually got done in this stretch.\n   - **What is left**: what is unsettled, stuck, or next to touch (\u{1f4ad} sourceless blocks and note: lines are the highest signal; ==highlights== are what they marked themselves).\n   - **Days to the deadline**: copy this project's line from the \u{201c}Deadlines\u{201d} section at the top of the digest; if it is not in that section, write \u{201c}no deadline set\u{201d}. \u{26a0}\u{fe0f} Do not work a date out yourself, and never read a date written inside a block as the project's deadline — that is content in a block, not this project's due date.\n3. Which projects get a paragraph: every one under \u{201c}Recently active\u{201d}; plus any that appears only in the Deadlines section or the pinned anchors at the end and NOT under Recently active — those get a paragraph too, with \u{201c}nothing this week\u{201d} as the first line. The rest, counted in the \"no activity\" tail, are not even named in the digest: mention them in one clause and name none of them.\n4. Order the paragraphs by deadline — overdue and tightest first, projects with no deadline last. After the last one, say in a single sentence the one thing worth doing next: a suggestion, never an order. Put it in a paragraph of its own, with no `## ` in front.\n5. If the digest does not show something, say so. Never invent.\n6. {filing}\n7. Refer to projects by title throughout. Never say an id out loud or write one into the content.\n8. {rule}\n{gate}"
     )
 }
 
@@ -13981,6 +13981,24 @@ mod tests {
         let chat = weekly_review_prompt_text("D", review_filing_line(false), "写入已开启");
         assert!(chat.contains("他点头之后"), "{chat}");
         assert!(chat.contains("写入已开启"), "{chat}");
+    }
+
+    // P9S-5 (Ocean 2026-10-23: 周回顾「做成每个项目一张卡片」): the review page splits a review into
+    // cards at each `## <project title>`. Both roads, both languages, have to ask for exactly that —
+    // and for the closing sentence NOT to be a heading, or it would come out as a card of its own.
+    #[test]
+    fn weekly_prompts_ask_for_one_heading_per_project() {
+        for lang in [Lang::Zh, Lang::En] {
+            store_lang(lang);
+            let cli = weekly_review_prompt_text("D", review_filing_line(true), "");
+            assert!(cli.contains("`## `"), "{cli}");
+            assert!(cli.contains("原样抄") || cli.contains("copied exactly"), "{cli}");
+            assert!(cli.contains("前面不加 `## `") || cli.contains("with no `## ` in front"), "{cli}");
+        }
+        store_lang(Lang::Zh);
+        let (api, _) = weekly_messages_for_api("D", "F");
+        assert!(api.contains("每段第一行是 `## ` 加上项目标题"), "{api}");
+        assert!(api.contains("前面不加 `## `"), "{api}");
     }
 
     // The lines between one "## " heading and the next.

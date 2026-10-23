@@ -292,6 +292,8 @@ const EN: Record<string, string> = {
     "codex's model names come from its own server and cannot be checked locally, so Spool offers no list — it runs on whatever your codex account defaults to.",
   '这一周': 'This week',
   '这一周没有跑成的回顾。': 'No review ran successfully this week.',
+  // P9S-5: a project's name on its weekly-review card.
+  '打开这个项目': 'Open this project',
   '另有 {n} 次没跑成': '{n} more did not run',
   '删掉': 'Delete',
   '把这条没跑成的记录删掉': 'Delete this failed record',

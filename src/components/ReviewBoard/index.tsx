@@ -1,8 +1,9 @@
 import { CalendarRange, Loader2, Lock, Trash2 } from 'lucide-react';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import ApiBalance from '@/components/ApiBalance';
 import LockedAiEntry, { AiSetupButton } from '@/components/AiSetup/LockedAiEntry';
 import ActivityPanel from './ActivityPanel';
+import ReviewCards from './ReviewCards';
 import Toggle from '@/components/ui/Toggle';
 import { MarkdownContent } from '@/lib/blocks/MarkdownContent';
 import {
@@ -11,6 +12,7 @@ import {
   weeklyReviewNextAt,
   type EngineRun,
 } from '@/lib/db/engineRuns';
+import { splitReview } from '@/lib/ai/reviewCards';
 import { runWeeklyReviewViaApi } from '@/lib/ai/weeklyReview';
 import { toast } from '@/stores/toastStore';
 import {
@@ -568,6 +570,7 @@ function Review({ run, onDelete }: { run: EngineRun; onDelete?: (id: string) => 
   const engineName = ENGINE_LABEL[run.engine as EngineKind] ?? run.engine;
   const cost = money(run.usage.costUsd);
   const text = (run.resultText ?? '').trim();
+  const cards = useMemo(() => (text ? splitReview(text) : null), [text]);
 
   return (
     <li className="border-b border-line pb-4 last:border-b-0">
@@ -588,11 +591,14 @@ function Review({ run, onDelete }: { run: EngineRun; onDelete?: (id: string) => 
           </button>
         )}
       </div>
-      {text ? (
+      {cards ? (
+        // P9S-5 (Ocean 2026-10-23): one card per project.
+        <ReviewCards review={cards} />
+      ) : text ? (
         // §10.1 — a review is the longest Markdown any AI writes into Spool (「## 截止日期」,
         // one section per project), and it was the last surface still showing the raw `##`.
         // Same renderer as the block feed: its sizes are in em, so the hierarchy survives the
-        // step down to 13px here.
+        // step down to 13px here. Still how a review that will not split into cards is drawn.
         <div className="mt-1.5 whitespace-pre-wrap text-[13px] leading-relaxed text-ink-2">
           <MarkdownContent content={text} />
         </div>
