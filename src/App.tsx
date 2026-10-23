@@ -381,7 +381,12 @@ export default function App() {
               not a set of blocks (the project matrix; the run of weekly reviews), so each
               takes the centre column the way a project does. Selecting any project leaves
               whichever one was open (threadsStore.select). */}
-          <main className="relative min-w-0 flex-1 overflow-hidden">
+          {/* ⛔ P9S-1（Ocean 10-23「项目名被遮住，整体页面往上移，发送框底下多出一块空白，全屏之后
+              消失」）：`overflow-hidden` 仍然是滚动容器，脚本滚得动它。合着的柜子（KnitDrawer）藏在这一栏
+              底边下面，给了它一段看不见的高度；跳到最后一块的 `scrollIntoView({ block: 'center' })`
+              在里层滚到底还不够居中，就接着滚这一层 —— 实测 152px。`overflow-clip` 不是滚动容器，
+              滚不动；`overflow-hidden` 留着给不认 `clip` 的旧 WebKit 兜底（不认就丢掉那一句）。 */}
+          <main className="relative min-w-0 flex-1 overflow-hidden overflow-clip">
             {/* ⭐ R4（2026-08-22 晚）：整理面**不再抢中间区**。它现在是项目里的一个页签
                 （见 ThreadView），所以这里只剩三个同级的面。
                 ⛔ 原来那句「它故意盖过 pinned 视图」连同那个行为一起撤了 —— 那正是
