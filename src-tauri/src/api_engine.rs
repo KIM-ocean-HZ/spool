@@ -2587,3 +2587,76 @@ mod stale_ws_tests {
         assert!(scan.blocks.is_empty() && scan.projects.is_empty() && scan.dropped.is_empty());
     }
 }
+
+/// P9V-6 real runs (`--ignored`): the packs a 「查整个工作区」 sends, built by the app's own TS code from a
+/// `VACUUM INTO` copy and written to SPOOL_P9V_PACKS (a JSON array of {title, text}) — this side never opens
+/// a library. Key (API run only) via the environment, never a file.
+#[cfg(test)]
+mod p9v_real_runs {
+    use super::*;
+
+    fn env(k: &str) -> String {
+        std::env::var(k).unwrap_or_else(|_| panic!("set {k}"))
+    }
+
+    fn packs() -> Vec<WsPack> {
+        let path = env("SPOOL_P9V_PACKS");
+        assert!(!path.contains("Application Support"), "packs come from a copy, never the live library");
+        let raw: Vec<serde_json::Value> = serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+        raw.iter()
+            .map(|v| WsPack { title: v["title"].as_str().unwrap().into(), text: v["text"].as_str().unwrap().into() })
+            .collect()
+    }
+
+    fn report(o: &CompressOutcome, packs: &[WsPack]) {
+        println!("ok={} kind={:?} msg={:?} model={:?} ms={} in={} out={}", o.ok, o.kind, o.message, o.model, o.ms, o.input_tokens, o.output_tokens);
+        let out = std::path::PathBuf::from(env("SPOOL_P9V_OUT"));
+        std::fs::write(out.join("ws-stale-raw.txt"), &o.text).unwrap();
+        let texts: Vec<String> = packs.iter().map(|p| p.text.clone()).collect();
+        let (blocks, projects, dropped) = gate_ws(&o.text, &texts);
+        let name = |i: usize| packs.get(i).map(|p| p.title.as_str()).unwrap_or("?");
+        println!("through the gate: {} block(s), {} project(s); dropped {}", blocks.len(), projects.len(), dropped.len());
+        for b in &blocks {
+            println!("  block 〈{}〉#{} → 〈{}〉#{}: {} | retyped={}", name(b.stale.project), b.stale.seq, name(b.by.project), b.by.seq, b.why, b.retyped);
+        }
+        for p in &projects {
+            println!("  project 〈{}〉 by 〈{}〉#{}: {} | retyped={}", name(p.project), name(p.by.project), p.by.seq, p.why, p.retyped);
+        }
+        for d in &dropped {
+            println!("  dropped {} {} → {}: {} ({})", d.kind, d.old_label, d.by_label, d.reason, d.why);
+        }
+    }
+
+    #[test]
+    #[ignore = "real Codex run on packs built from a library copy; see the header"]
+    fn real_cli_ws_stale_on_a_copy() {
+        let packs = packs();
+        let (system, user) = ws_messages(&packs);
+        println!("{} projects, prompt {} + {} chars", packs.len(), system.chars().count(), user.chars().count());
+        let cli = CliRoute { engine: Some("codex".into()), model: None, effort: None, manual_path: None };
+        let o = ask_cli_inner(&cli, &system, &user, 900);
+        report(&o, &packs);
+        assert!(o.ok);
+    }
+
+    #[test]
+    #[ignore = "real API run on packs built from a library copy; see the header"]
+    fn real_api_ws_stale_on_a_copy() {
+        let packs = packs();
+        let (system, user) = ws_messages(&packs);
+        let wire = ApiWire { protocol: std::env::var("SPOOL_P9V_PROTOCOL").unwrap_or_default(), temperature: None, max_output_tokens: None };
+        let request = sidecar_request(
+            &env("SPOOL_P9V_BASE_URL"),
+            &env("SPOOL_P9V_KEY"),
+            &env("SPOOL_P9V_MODEL"),
+            &system,
+            &user,
+            &std::env::var("SPOOL_P9V_REASONING").unwrap_or_default(),
+            &wire,
+            900,
+        );
+        let o = spawn_sidecar(&sidecar_path().unwrap(), serde_json::to_vec(&request).unwrap(), 900);
+        report(&o, &packs);
+        assert!(o.ok);
+    }
+}
