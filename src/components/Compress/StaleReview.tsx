@@ -9,6 +9,7 @@ import { useBlocksStore } from '@/stores/blocksStore';
 import { useCompressStore } from '@/stores/compressStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { routeFor, useRoads } from '@/lib/engine/roads';
+import RoadPicker from '@/components/AiSetup/RoadPicker';
 import type { StaleSession } from '@/stores/compressStore';
 
 // E3 · 「过期检测」（COMPRESS-UX-R2-2026-08-22 §7 / WORKPLAN §2.E3）。
@@ -302,6 +303,9 @@ export default function StaleReview({ threadId }: { threadId: string }) {
             少的只是这个按钮。⭐ 一个按钮两种身份，和压缩那一页逐字一样的写法。
             ⚠️ 引擎没开就不出这个按钮 —— 它要花钱。 */}
         {enabled && (
+        <span className="flex items-center gap-3">
+        {/* P9U-2（第 187 条）：这一次用哪条路。两条都连上才是开关。 */}
+        <RoadPicker setting="staleRoute" disabled={running || busy} />
         <button
           type="button"
           disabled={busy && !running}
@@ -313,6 +317,7 @@ export default function StaleReview({ threadId }: { threadId: string }) {
             {running ? t('停下（{n}s）', { n: elapsed }) : scanned ? t('再查一遍') : t('查一遍')}
           </span>
         </button>
+        </span>
         )}
       </footer>
     </div>

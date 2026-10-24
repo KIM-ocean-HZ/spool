@@ -22,6 +22,7 @@ import { useBlocksStore } from '@/stores/blocksStore';
 import { useCompressStore } from '@/stores/compressStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { routeFor, useRoads } from '@/lib/engine/roads';
+import RoadPicker from '@/components/AiSetup/RoadPicker';
 import { selectThreadById, useThreadsStore } from '@/stores/threadsStore';
 
 // 「压缩」页签（WORKPLAN-2026-08-20 §9.6.2 / §9.6.5 / §9.6.6）。
@@ -657,6 +658,8 @@ export default function CompressBoard({ threadId }: { threadId: string }) {
               <span>{copied ? t('已复制') : t('复制压缩稿')}</span>
             </button>
           )}
+          {/* P9U-2（第 187 条）：这一次用哪条路。两条都连上才是开关。 */}
+          <RoadPicker setting="compressRoute" disabled={running || busy} />
           <button
             onClick={() => (running ? void cancel() : void runIt(threadId))}
             disabled={!running && busy}
