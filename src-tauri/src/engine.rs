@@ -2249,7 +2249,7 @@ mod tests {
     #[test]
     fn guarded_folders_are_never_searched() {
         let home = std::path::Path::new("/Users/u");
-        for d in ["/Users/u/Desktop/nand2tetris/tools", "/Users/u/Documents/bin", "/Users/u/Downloads", "/Users/u/Library/Mobile Documents/x", "/Volumes/USB/bin"] {
+        for d in ["/Users/u/Desktop/course/tools", "/Users/u/Documents/bin", "/Users/u/Downloads", "/Users/u/Library/Mobile Documents/x", "/Volumes/USB/bin"] {
             assert!(is_guarded_dir(std::path::Path::new(d), Some(home)), "{d}");
         }
         for d in ["/Users/u/.local/bin", "/Users/u/DesktopTools/bin", "/opt/homebrew/bin"] {

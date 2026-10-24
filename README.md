@@ -39,10 +39,10 @@ Spool compresses "re-explaining" into "a single paste."
 
 ## Status
 
-**v0.7.1** — released for **macOS only**. Windows stays on **v0.6.1**, the last release that
-shipped a Windows installer; its next installer will be v0.7.1, once that build has been checked on
-a Windows machine. What changed: [v0.7.1](docs/RELEASE_NOTES_v0.7.1.md) ·
-[v0.7.0](docs/RELEASE_NOTES_v0.7.0.md).
+**v0.7.2** — released for **macOS only**. Windows stays on **v0.6.1**, the last release that
+shipped a Windows installer; its next installer will be built from the current release once it has
+been checked on a Windows machine. What changed: [v0.7.2](docs/RELEASE_NOTES_v0.7.2.md) ·
+[v0.7.1](docs/RELEASE_NOTES_v0.7.1.md) · [v0.7.0](docs/RELEASE_NOTES_v0.7.0.md).
 
 On Windows, capture is a double-tap of Ctrl instead of ⌥. What did not cross over is the
 macOS-specific work around focus handling and browser tab-title capture, so a Windows capture

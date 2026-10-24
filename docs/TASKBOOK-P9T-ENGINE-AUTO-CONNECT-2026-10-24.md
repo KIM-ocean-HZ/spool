@@ -72,7 +72,7 @@
 ### 7.1 P9T-1 · 找得到 —— `7fd643b` + 补 `fed39b6`
 
 - 根因在这台上复现：`env -i PATH=/usr/bin:/bin:/usr/sbin:/sbin … ~/.nvm/…/bin/codex --version` → `env: node: No such file or directory`；`~/.local/bin/claude`（原生）跑得通。ChatGPT.app 自带 `codex-cli 0.163.0-alpha`，Spool 用到的参数它都认；Claude 桌面版那份是 Linux 程序，不用。
-- 改：一份目录清单 `search_dirs`（登录 shell `-ilc` 的 PATH，只问一次、3 秒超时、带记号；app 自己的 PATH；常见目录；nvm 新版本在前；去重）；找 CLI 和启动 CLI（`--version` 和真正运行的 `run_env`）都用它，CLI 自己的目录排第一；Codex 最后看 ChatGPT.app（`/Applications`、`~/Applications`）；**桌面 / 文稿 / 下载 / iCloud / 外接卷不进清单**（补的那一笔：这台的 `.zshrc` 把 `~/Desktop/nand2tetris/tools` 放进了 PATH，光看一眼里面就会弹「Spool 想访问桌面」）。
+- 改：一份目录清单 `search_dirs`（登录 shell `-ilc` 的 PATH，只问一次、3 秒超时、带记号；app 自己的 PATH；常见目录；nvm 新版本在前；去重）；找 CLI 和启动 CLI（`--version` 和真正运行的 `run_env`）都用它，CLI 自己的目录排第一；Codex 最后看 ChatGPT.app（`/Applications`、`~/Applications`）；**桌面 / 文稿 / 下载 / iCloud / 外接卷不进清单**（补的那一笔：这台的 `.zshrc` 把 `~/Desktop/…/tools` 放进了 PATH，光看一眼里面就会弹「Spool 想访问桌面」）。
 - 验：单元测试 5 条（记号解析、顺序、ChatGPT 那份最后、CLI 目录排第一、受保护目录不进）；光 PATH 实测三种：正常 → Claude / Codex（nvm）/ Gemini（nvm）都认出；登录 shell 失败 → 照样都认出；空的家目录 → 只剩 ChatGPT 自带的 Codex 0.163，认出。登录 shell 那一步这台约 1.5 秒，在后台线程。cargo 229 过 · 6 跳过。
 
 ### 7.2 P9T-2 · 一键连上 —— `308fa84`

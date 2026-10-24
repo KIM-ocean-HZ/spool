@@ -4,7 +4,7 @@
      in place of the English body. -->
 
 <h1>Spool（思簿）隐私政策</h1>
-<p class="lede">最后更新：2026-10-23（对应 Spool v0.7.1）</p>
+<p class="lede">最后更新：2026-10-24（对应 Spool v0.7.2）</p>
 
 <h2>一句话版本</h2>
 <p><strong>Spool 将你的数据保存在本机，Spool 主进程自己从不打开网络连接。</strong>捕捉、存入项目、打包和搜索都在本机完成；无需注册账号，也不收集遥测数据。应用的内容安全策略（CSP）从机制上禁止 WebView 发起外部网络连接，而 Spool 这个二进制里根本没装 HTTP 客户端。</p>
@@ -44,7 +44,7 @@
   </tr>
   <tr>
     <td>「跟进」、「周回顾」或起草跟进目标（设置 → 引擎；需要已安装并登录受支持的 CLI，并开启所需的 MCP 权限）</td>
-    <td>你自行安装并登录的命令行 AI（Claude Code、Codex CLI 或 Gemini CLI；Gemini 不支持「跟进」）</td>
+    <td>你自行安装并登录的命令行 AI（Claude Code、Codex CLI 或 Gemini CLI；没单独装 Codex 时，也会用 ChatGPT 桌面版自带的那一份；Gemini 不支持「跟进」）</td>
     <td>Spool 在本机以子进程方式启动该 CLI，并将所需的项目内容交给它。<strong>网络请求由该子进程发出</strong>，使用你自己的账号额度；这条路上 Spool 不保存 API key，主进程自己也不发出 HTTP 请求。</td>
   </tr>
   <tr>
