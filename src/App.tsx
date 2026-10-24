@@ -31,6 +31,7 @@ import {
 } from '@/lib/db/client';
 import { releaseRefsToRetired } from '@/lib/db/blocks';
 import { loadDrafts } from '@/lib/db/drafts';
+import { loadStaleFile } from '@/lib/db/staleFile';
 import { startDraftPrompt } from '@/stores/draftPrompt';
 import { useAiUpdatesStore } from '@/stores/aiUpdatesStore';
 import { t } from '@/lib/i18n';
@@ -161,6 +162,9 @@ export default function App() {
       // block is gone is dropped on read. Not awaited: nothing else waits on it, and a block drawn
       // before it lands picks its draft up then. Blocks left from last time get a line (P9D-3).
       void loadDrafts().then(startDraftPrompt);
+      // P9V-3: last time's 过期检测 results and the monthly switches (stale.json). After the DB is open —
+      // a result whose project or workspace is gone is dropped on read.
+      void loadStaleFile();
       // The review queue is filled by a different process entirely (an AI client's
       // `spool --mcp`), so the count is polled, never pushed. Once at startup, and again
       // on focus below.

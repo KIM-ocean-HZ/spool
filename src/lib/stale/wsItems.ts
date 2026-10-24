@@ -67,7 +67,8 @@ export interface WsItems {
   already: number;
 }
 
-const growsWhenRetired = (pack: string, block: Block): boolean => {
+/** T6：这一块退掉之后，打包出来反而更长（它比「已被取代」那一行还短）。⚠️ 按发出去的那一份 pack 量。 */
+export const growsWhenRetired = (pack: string, block: Block): boolean => {
   const entry = splitPackEntries(pack).find((e) => e.seq === block.seq);
   return !!entry && entry.raw.length <= retirementLineChars(block);
 };

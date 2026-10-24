@@ -230,6 +230,8 @@ interface CompressState {
   /** 每个项目的过期检测页签停在哪一种范围。没记过 = 能查整个工作区就查整个工作区（第 200 条）。 */
   staleScope: Record<string, StaleScope>;
   setStaleScope: (threadId: string, scope: StaleScope) => void;
+  /** P9V-4：每个工作区的「每月自动查一次」。键是工作区 id。 */
+  staleAuto: Record<string, StaleAuto>;
   /** 查一遍整个工作区。`auto` = 每月自动查的那一次（P9V-4），结果上要标出来。 */
   runStaleScanWorkspace: (workspaceId: string, opts?: { auto?: boolean }) => Promise<void>;
   /** 对工作区结果里的一条下决定。`key` = `b<下标>`（块级）/ `p<下标>`（项目级，只有「不动」走这里 ——
@@ -239,6 +241,13 @@ interface CompressState {
 }
 
 export type StaleScope = 'workspace' | 'project';
+
+/** P9V-4：一个工作区的「每月自动查一次」。存在 stale.json（P9V-3），⛔ 不进库。 */
+export interface StaleAuto {
+  on: boolean;
+  /** 上次自动查（或试着查）的时间。0 = 还没查过。 */
+  lastRunAt: number;
+}
 
 /** P9V-2 —— 查整个工作区那一次的结果。⚠️ 存的是块 id（第 202 条要存盘，块号会变）。 */
 export interface WsStaleSession {
@@ -306,6 +315,9 @@ export interface StaleSession {
    *  用户要看得见自己刚才做了什么。 */
   decided: Record<number, StaleAction>;
   startedAt: number;
+  /** P9V-3：从 stale.json 读回来的那一份没有 `source`（不存整份 pack）—— T6 那句提示改看这里：
+   *  退掉之后打包反而更长的旧块块号，存盘那一刻量的。在内存里刚查出来的那一份不用它。 */
+  grows?: number[];
 }
 
 /** 这一份压缩稿要往库里写哪几块。
@@ -526,6 +538,7 @@ export const useCompressStore = create<CompressState>((set, get) => ({
   staleWsErrors: {},
   staleWsBlocks: {},
   staleScope: {},
+  staleAuto: {},
   results: [],
   failures: [],
   batchRunning: false,

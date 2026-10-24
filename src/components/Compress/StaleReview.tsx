@@ -444,6 +444,8 @@ function droppedSentence(
 // ⚠️ 「这一块现在有多长」按**当前这份 pack** 量（`session.source` 就是发出去的那一份），
 // ⛔ 不拿 `content.length` 代替 —— 批注、出处行、关系行都跟着一起消失，它们也算数。
 function retireGrowsPack(session: StaleSession, staleSeq: number): boolean {
+  // P9V-3：从 stale.json 读回来的那一份没有 pack，用存盘那一刻量好的。
+  if (!session.source) return session.grows?.includes(staleSeq) ?? false;
   const block = session.blocks.find((b) => b.seq === staleSeq);
   if (!block) return false;
   const entry = splitPackEntries(session.source).find((e) => e.seq === staleSeq);
