@@ -1752,10 +1752,10 @@ const EN: Record<string, string> = {
   // ⭐ 2026-08-23 Ocean 改的名：「『查旧块』名字改成『过期检测』，更加贴切」。
   '过期检测': 'Out-of-date check',
   // P9C — the 「压缩」 / 「过期检测」 tabs while DeepSeek is off.
-  '压缩：让 DeepSeek 把这个项目写短一点、合并重复的话。你一块对一块核对过之前，库里一个字都不动。这一步按字数花钱，用你自己的 DeepSeek key。':
-    'Compress: DeepSeek rewrites this project shorter and merges what repeats. Nothing in your library changes until you have checked it block by block. This step is paid per character, with your own DeepSeek key.',
-  '过期检测：让 DeepSeek 读一遍这个项目，找出已经被后面的块整条取代了的旧块。换不换由你一条一条定，你不点，库里一个字都不动。这一步按字数花钱，用你自己的 DeepSeek key。':
-    'Out-of-date check: DeepSeek reads this project and finds old blocks that a later block has fully replaced. You decide each one, and until you press something nothing in your library changes. This step is paid per character, with your own DeepSeek key.',
+  '压缩：让 AI 把这个项目写短一点、合并重复的话。你一块对一块核对过之前，库里一个字都不动。用本机的 Claude Code / Codex，或者你自己的 API key。':
+    'Compress: an AI writes this project shorter and merges what repeats. Nothing in your library changes until you have checked it block by block. Uses Claude Code / Codex on this computer, or your own API key.',
+  '过期检测：让 AI 读一遍这个项目，找出已经被后面的块整条取代了的旧块。换不换由你一条一条定，你不点，库里一个字都不动。用本机的 Claude Code / Codex，或者你自己的 API key。':
+    'Out-of-date check: an AI reads this project and finds old blocks that a later block replaces outright. You decide each one; until you click, nothing in your library changes. Uses Claude Code / Codex on this computer, or your own API key.',
   '过期检测（{n}）': 'Out-of-date check ({n})',
   '过期检测（在跑）': 'Out-of-date check (running)',
   '过期检测中': 'Checking dates',

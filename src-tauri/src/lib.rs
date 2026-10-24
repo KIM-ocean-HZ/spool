@@ -191,6 +191,7 @@ async fn ai_engine_run(
             model.as_deref(),
             effort.as_deref(),
             emit,
+            None,
         )
             .map(|(kind, env)| EngineRunResult {
                 result: env.result,
@@ -411,6 +412,8 @@ pub fn run() {
             images::clipboard_image_files,
             images::block_image_thumb,
             api_engine::compress_pack_via_api,
+            api_engine::compress_pack_via_cli,
+            api_engine::stale_scan_via_cli,
             api_engine::compress_cancel,
             api_engine::compress_sidecar_present,
             api_engine::compress_duplicate_probe,

@@ -30,7 +30,7 @@ import { buildHighlightUndo, useUndoStore } from '@/stores/undoStore';
 import { useCompressStore } from '@/stores/compressStore';
 import { askBeforeDeletingBlocks } from '@/stores/deleteFilesPromptStore';
 import { useDraftStore } from '@/stores/draftStore';
-import { useSettingsStore } from '@/stores/settingsStore';
+import { useRoads } from '@/lib/engine/roads';
 import { selectThreadById, useThreadsStore } from '@/stores/threadsStore';
 import BlockActions from './BlockActions';
 import CitationLine from './CitationLine';
@@ -152,7 +152,9 @@ function TextBlockItem({
   // §9.6.6 单块压缩：从块自己的菜单进，和右侧栏的「压缩这个项目」通向同一张核对桌。
   // P9C（第 98、99 条）：「显示 AI 功能」关着也不出现（DeepSeek 开着也一样）；没开 DeepSeek 时不放锁，
   // 项目里那个「压缩」页签上的锁就够了。
-  const apiEngineEnabled = useSettingsStore((s) => s.apiEngineEnabled && s.aiEngineActionsEnabled);
+  // P9U-1: either road compresses now (`roads` already includes 「显示 AI 功能」).
+  const roads = useRoads();
+  const compressOn = roads.cli || roads.api;
   const openCompressBlock = useCompressStore((s) => s.openBlock);
   const restoreOriginal = useBlocksStore((s) => s.restoreOriginal);
   const compressThread = useThreadsStore(selectThreadById(block.threadId));
@@ -1232,7 +1234,7 @@ function TextBlockItem({
             // 默认关闭（§6.2 约束 5），一个点了只会说「你还没配」的按钮不如没有。
             // P9E-3：私密项目里的块不给这个入口（Spool 自带的 AI 不碰私密项目；页签上那一句说了为什么）。
             onCompress={
-              apiEngineEnabled && compressThread && !compressThread.isPrivate
+              compressOn && compressThread && !compressThread.isPrivate
                 ? () => void openCompressBlock(compressThread, block)
                 : undefined
             }

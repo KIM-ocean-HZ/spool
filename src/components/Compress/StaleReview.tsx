@@ -8,6 +8,7 @@ import { retirementLineChars } from '@/lib/pack/assemble';
 import { useBlocksStore } from '@/stores/blocksStore';
 import { useCompressStore } from '@/stores/compressStore';
 import { useSettingsStore } from '@/stores/settingsStore';
+import { routeFor, useRoads } from '@/lib/engine/roads';
 import type { StaleSession } from '@/stores/compressStore';
 
 // E3 · 「过期检测」（COMPRESS-UX-R2-2026-08-22 §7 / WORKPLAN §2.E3）。
@@ -64,8 +65,13 @@ export default function StaleReview({ threadId }: { threadId: string }) {
     () => new Map((liveBlocks ?? []).flatMap((b) => (b.seq === null ? [] : [[b.seq, b] as const]))),
     [liveBlocks],
   );
-  const enabled = useSettingsStore((s) => s.apiEngineEnabled);
-  const timeoutSecs = useSettingsStore((s) => s.apiTimeoutSecs);
+  // P9U-1: either road; the time limit shown is the one of the road this run takes.
+  const roads = useRoads();
+  const enabled = roads.cli || roads.api;
+  const staleRoute = useSettingsStore((s) => s.staleRoute);
+  const timeoutSecs = useSettingsStore((s) =>
+    routeFor(staleRoute, roads) === 'cli' ? s.aiEngineTimeoutSecs : s.apiTimeoutSecs,
+  );
 
   // 和压缩那一页一样的秒表 —— 「它还在干活」需要一个看得见的证据。
   const [elapsed, setElapsed] = useState(0);

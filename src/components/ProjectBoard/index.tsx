@@ -20,6 +20,7 @@ import type { Thread } from '@/lib/db/threads';
 import { DUE_SOON_DAYS, dueInDays } from '@/lib/threads/deadline';
 import { dateLocale, useT } from '@/lib/i18n';
 import { useSettingsStore } from '@/stores/settingsStore';
+import { useRoads } from '@/lib/engine/roads';
 import { useThreadsStore } from '@/stores/threadsStore';
 import { useWorkspacesStore } from '@/stores/workspacesStore';
 import { CENTRE_HEADER_HEIGHT } from '@/lib/layout';
@@ -85,7 +86,9 @@ export default function ProjectBoard() {
   // 而这一屏是唯一一个所有项目并排在一起的地方 —— 一个一个点进去勾，正是他嫌麻烦的那件事。
   // ⛔ 压缩没开的时候这个动作不出现（和右栏、页签同一条规矩：默认关闭）。
   // P9C（第 98、99 条）：「显示 AI 功能」关着也不出现；没开压缩时这一行不放锁（项目里的页签上有）。
-  const engineOn = useSettingsStore((s) => s.apiEngineEnabled && s.aiEngineActionsEnabled);
+  // P9U-1: either road (the CLI on this machine, or an API key) can run the queue.
+  const roads = useRoads();
+  const engineOn = roads.cli || roads.api;
   const queue = useSettingsStore((s) => s.compressQueue);
   const nightlyAt = useSettingsStore((s) => s.compressNightlyAt);
   const updateSettings = useSettingsStore((s) => s.update);

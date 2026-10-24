@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { nightlyDue, useCompressStore } from '@/stores/compressStore';
 import { useSettingsStore } from '@/stores/settingsStore';
+import { useRoads } from '@/lib/engine/roads';
 
 // ⑥ 睡前排队的「调度器」（WORKPLAN-2026-08-20 §9.6.4）—— 全部就是下面这十几行。
 //
@@ -17,7 +18,9 @@ import { useSettingsStore } from '@/stores/settingsStore';
 export default function NightlyRunner() {
   // P9C (第 98 条 + Ocean 10-14): 「显示 AI 功能」 off hides tonight's queue, so it does not run
   // either — ⛔ nothing out of sight spends money. The queue itself is kept for when it is back on.
-  const enabled = useSettingsStore((s) => s.apiEngineEnabled && s.aiEngineActionsEnabled);
+  // P9U-1: tonight's queue runs on whichever road 压缩 takes (`roads` already includes 「显示 AI 功能」).
+  const roads = useRoads();
+  const enabled = roads.cli || roads.api;
   const at = useSettingsStore((s) => s.compressNightlyAt);
   const lastRunDay = useSettingsStore((s) => s.compressLastRunDay);
   const queue = useSettingsStore((s) => s.compressQueue);

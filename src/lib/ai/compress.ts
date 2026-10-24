@@ -987,6 +987,24 @@ export const PROGRESS_EVENT = 'compress://progress';
 export const compressPack = (req: CompressRequest): Promise<CompressOutcome> =>
   invoke<CompressOutcome>('compress_pack_via_api', { ...req });
 
+/** P9U-1 — what the CLI road needs (lib/engine/roads `cliRouteNow`). */
+export interface CliRoute {
+  engine: string | null;
+  model: string | null;
+  effort: string | null;
+  manualPath: string | null;
+}
+
+/** P9U-1 — 压缩 on the CLI road: the same prompt and the same checks as `compressPack`, run by the CLI on
+ *  this machine with no tools (engine.rs plain run). Same outcome shape, so everything after is shared. */
+export const compressPackViaCli = (
+  packText: string,
+  level: CompressLevel,
+  timeoutSecs: number,
+  cli: CliRoute,
+): Promise<CompressOutcome> =>
+  invoke<CompressOutcome>('compress_pack_via_cli', { packText, level, timeoutSecs, cli });
+
 export const cancelCompress = (): Promise<boolean> => invoke<boolean>('compress_cancel');
 
 export const sidecarPresent = (): Promise<boolean> => invoke<boolean>('compress_sidecar_present');
@@ -1133,15 +1151,27 @@ export const weeklyReviewViaApi = async (
     timeoutSecs: req.timeoutSecs,
   });
 
-export const staleScan = async (req: Omit<CompressRequest, 'level'>): Promise<StaleScan> => {
-  const raw = await invoke<StaleScanRaw>('stale_scan_via_api', {
-    packText: req.packText,
-    baseUrl: req.baseUrl,
-    apiKey: req.apiKey,
-    model: req.model,
-    reasoning: req.reasoning,
-    timeoutSecs: req.timeoutSecs,
-  });
+export const staleScan = async (req: Omit<CompressRequest, 'level'>): Promise<StaleScan> =>
+  fromRaw(
+    await invoke<StaleScanRaw>('stale_scan_via_api', {
+      packText: req.packText,
+      baseUrl: req.baseUrl,
+      apiKey: req.apiKey,
+      model: req.model,
+      reasoning: req.reasoning,
+      timeoutSecs: req.timeoutSecs,
+    }),
+  );
+
+/** P9U-1 — 过期检测 on the CLI road. Same prompt, same verbatim gate (Rust), same result. */
+export const staleScanViaCli = async (
+  packText: string,
+  timeoutSecs: number,
+  cli: CliRoute,
+): Promise<StaleScan> =>
+  fromRaw(await invoke<StaleScanRaw>('stale_scan_via_cli', { packText, timeoutSecs, cli }));
+
+const fromRaw = (raw: StaleScanRaw): StaleScan => {
   return {
     outcome: raw.outcome,
     dropped: raw.dropped.map((d) => ({

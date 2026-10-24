@@ -3,7 +3,7 @@ import RailSection from '@/components/RightRail/RailSection';
 import type { Thread } from '@/lib/db/threads';
 import { useT } from '@/lib/i18n';
 import { useCompressStore } from '@/stores/compressStore';
-import { useSettingsStore } from '@/stores/settingsStore';
+import { useRoads } from '@/lib/engine/roads';
 import { useThreadsStore } from '@/stores/threadsStore';
 
 // 压缩在右栏剩下的那一点东西。
@@ -22,7 +22,9 @@ import { useThreadsStore } from '@/stores/threadsStore';
 // ⚠️ 没有东西要认领的时候**整格不出现**：一个永远空着的小标题只是在占地方。
 export default function CompressRail({ thread }: { thread: Thread }) {
   const t = useT();
-  const enabled = useSettingsStore((s) => s.apiEngineEnabled);
+  // P9U-1: either road can compress now — the CLI on this machine or an API key.
+  const roads = useRoads();
+  const enabled = roads.cli || roads.api;
   const results = useCompressStore((s) => s.results);
   const failures = useCompressStore((s) => s.failures);
   const openResult = useCompressStore((s) => s.openResult);

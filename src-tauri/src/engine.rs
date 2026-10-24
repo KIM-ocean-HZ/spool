@@ -816,6 +816,63 @@ pub fn claude_effort_env(effort: Option<&str>) -> Option<(&'static str, String)>
         .then(|| ("CLAUDE_CODE_EFFORT_LEVEL", e.to_string()))
 }
 
+/// P9U-1 — a plain claude run: the system prompt as the system prompt, the material as the prompt,
+/// and nothing to act with. `--tools ""` turns every built-in tool off, `--strict-mcp-config` with no
+/// `--mcp-config` loads no MCP server at all (not the user's, not Spool's), and two turns is room for
+/// an answer and nothing else. Same stream-json output as an agent run, so the same reader parses it.
+pub fn claude_plain_args(system: &str, prompt: &str, model: Option<&str>) -> Vec<String> {
+    let mut args: Vec<String> = vec![
+        "-p".into(),
+        prompt.into(),
+        "--system-prompt".into(),
+        system.into(),
+        "--tools".into(),
+        String::new(),
+        "--strict-mcp-config".into(),
+        "--output-format".into(),
+        "stream-json".into(),
+        "--verbose".into(),
+        "--include-partial-messages".into(),
+        "--max-turns".into(),
+        "2".into(),
+    ];
+    if let Some(m) = model {
+        args.push("--model".into());
+        args.push(m.into());
+    }
+    args
+}
+
+/// P9U-1 — the codex counterpart. `--ignore-user-config` already keeps the user's own MCP servers
+/// out; no Spool server is added, the web is off, the sandbox is read-only. (Codex's shell tool
+/// cannot be removed — see `codex_args` — but read-only it can change nothing.)
+pub fn codex_plain_args(prompt: &str, last_message_path: &str) -> Vec<String> {
+    vec![
+        "exec".into(),
+        "--ignore-user-config".into(),
+        "--skip-git-repo-check".into(),
+        "--sandbox".into(),
+        "read-only".into(),
+        "--json".into(),
+        "-o".into(),
+        last_message_path.into(),
+        "-c".into(),
+        "approval_policy=\"never\"".into(),
+        "-c".into(),
+        "tools.web_search=false".into(),
+        prompt.into(),
+    ]
+}
+
+/// P9U-1 — gemini reads its tools from `.gemini/settings.json`: no MCP server, every built-in that
+/// could touch the machine or the web excluded.
+pub fn gemini_plain_settings_json() -> String {
+    let mut excluded: Vec<&str> = GEMINI_EXCLUDED_TOOLS.to_vec();
+    excluded.push("google_web_search");
+    excluded.push("web_fetch");
+    serde_json::json!({ "tools": { "exclude": excluded }, "mcpServers": {} }).to_string()
+}
+
 /// The argv for one headless `claude` run, minus the binary itself. Split out from spawning
 /// so the permission-critical parts (§2.4 probe 2: no tool outside the Spool whitelist can
 /// be reached) are assertable in a unit test without a live CLI.
@@ -1502,6 +1559,7 @@ pub fn run_action(
     model: Option<&str>,
     effort: Option<&str>,
     on_progress: Arc<dyn Fn(Progress) + Send + Sync>,
+    plain_system: Option<&str>,
 ) -> Result<(EngineKind, RunEnvelope), String> {
     // Serial, enforced HERE and not only in the queue that calls it. The queue lives in
     // one window's JS; a second window, or a hand-issued invoke, would otherwise start a
@@ -1543,6 +1601,27 @@ pub fn run_action(
     let work_dir = tmp.join(format!("spool-gemini-{}", std::process::id()));
 
     let mut cmd = std::process::Command::new(bin);
+    // P9U-1: a plain run — one system prompt + one user prompt in, one answer out, no Spool MCP, no
+    // tools (see `claude_plain_args`). Used for 压缩 / 过期检测 / 周回顾 on the CLI road, where the
+    // material is already in the prompt and the API road answers the very same text.
+    if let Some(system) = plain_system {
+        match kind {
+            EngineKind::Claude => cmd.args(claude_plain_args(system, prompt, model)),
+            EngineKind::Codex => {
+                let _ = std::fs::remove_file(&msg_path);
+                cmd.args(codex_plain_args(&format!("{system}\n\n{prompt}"), &msg_path.to_string_lossy()))
+            }
+            EngineKind::Gemini => {
+                let _ = std::fs::remove_dir_all(&work_dir);
+                std::fs::create_dir_all(work_dir.join(".gemini"))
+                    .map_err(|e| format!("could not prepare the engine's working directory: {e}"))?;
+                std::fs::write(work_dir.join(".gemini/settings.json"), gemini_plain_settings_json())
+                    .map_err(|e| format!("could not write the engine settings: {e}"))?;
+                cmd.current_dir(&work_dir);
+                cmd.args(gemini_args(&format!("{system}\n\n{prompt}"), model))
+            }
+        };
+    } else {
     match kind {
         EngineKind::Claude => {
             std::fs::write(&cfg_path, mcp_config_json(&exe.to_string_lossy(), web))
@@ -1571,6 +1650,7 @@ pub fn run_action(
             cmd.current_dir(&work_dir);
             cmd.args(gemini_args(prompt, model));
         }
+    }
     }
     cmd.env_clear();
     for (k, v) in run_env(kind, std::path::Path::new(bin)) {
@@ -2224,6 +2304,31 @@ mod tests {
         // text does not come from here.
         assert_eq!(parse_codex_error("not json\n{\"type\":\"turn.completed\"}"), None);
         assert_eq!(parse_codex_error(""), None);
+    }
+
+    // P9U-1: a plain run (压缩 / 过期检测 on the CLI road) is handed the material and nothing to act with.
+    #[test]
+    fn a_plain_run_has_no_tools_and_no_mcp_server() {
+        let a = claude_plain_args("SYSTEM", "MATERIAL", None);
+        let at = |flag: &str| a.iter().position(|x| x == flag);
+        assert_eq!(a[at("--system-prompt").unwrap() + 1], "SYSTEM");
+        assert_eq!(a[at("-p").unwrap() + 1], "MATERIAL");
+        assert_eq!(a[at("--tools").unwrap() + 1], "", "every built-in tool off");
+        assert!(at("--strict-mcp-config").is_some());
+        assert!(at("--mcp-config").is_none() && at("--allowedTools").is_none());
+
+        let c = codex_plain_args("SYSTEM\n\nMATERIAL", "/tmp/m");
+        assert!(c.iter().all(|x| !x.contains("mcp_servers")), "{c:?}");
+        assert!(c.contains(&"tools.web_search=false".to_string()));
+        assert!(c.windows(2).any(|w| w[0] == "--sandbox" && w[1] == "read-only"));
+        assert!(c.contains(&"--ignore-user-config".to_string()));
+
+        let g: serde_json::Value = serde_json::from_str(&gemini_plain_settings_json()).unwrap();
+        assert_eq!(g["mcpServers"], serde_json::json!({}));
+        let ex: Vec<&str> = g["tools"]["exclude"].as_array().unwrap().iter().map(|v| v.as_str().unwrap()).collect();
+        for t in ["run_shell_command", "write_file", "google_web_search", "web_fetch"] {
+            assert!(ex.contains(&t), "{t}");
+        }
     }
 
     // P9T (Ocean 2026-10-24): finding a CLI, and starting it so that it can actually run.

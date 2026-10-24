@@ -132,6 +132,135 @@ impl CompressOutcome {
 /// ⚠️ `api_key` 从前端传进来，在这里**只做一件事**：写进子进程的 stdin。
 /// 它不进 argv（`ps` 能看到任何进程的完整命令行）、不进环境变量（子进程的环境在 macOS 上
 /// 也可被同用户读到）、不进日志、不进错误信息。
+/// P9U-1 (Ocean 2026-10-24: 「本身的逻辑应该是 CLI 和 API 都可以使用的，既然 codex CLI 已经接入了，这两个
+/// 功能就不应该被锁住」) — the same question asked of the CLI on this machine instead of an API key.
+/// Everything the frontend already sends for an engine run, nothing about an endpoint.
+#[derive(serde::Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct CliRoute {
+    pub engine: Option<String>,
+    pub model: Option<String>,
+    pub effort: Option<String>,
+    pub manual_path: Option<String>,
+}
+
+/// One plain CLI run (engine.rs `run_action` with a system prompt: no tools, no MCP) turned into the
+/// outcome the API road returns, so whatever reads a `CompressOutcome` reads both the same way.
+static CLI_RUN: AtomicBool = AtomicBool::new(false);
+
+fn ask_cli(cli: &CliRoute, system: &str, user: &str, timeout_secs: u64) -> CompressOutcome {
+    CLI_RUN.store(true, Ordering::SeqCst);
+    let outcome = ask_cli_inner(cli, system, user, timeout_secs);
+    CLI_RUN.store(false, Ordering::SeqCst);
+    outcome
+}
+
+fn ask_cli_inner(cli: &CliRoute, system: &str, user: &str, timeout_secs: u64) -> CompressOutcome {
+    let started = std::time::Instant::now();
+    let preferred = cli.engine.as_deref().and_then(crate::engine::EngineKind::parse);
+    let quiet: std::sync::Arc<dyn Fn(crate::engine::Progress) + Send + Sync> = std::sync::Arc::new(|_| {});
+    let run = crate::engine::run_action(
+        preferred,
+        cli.manual_path.as_deref(),
+        user,
+        timeout_secs,
+        2,
+        false,
+        cli.model.as_deref(),
+        cli.effort.as_deref(),
+        quiet,
+        Some(system),
+    );
+    match run {
+        Ok((kind, env)) if !env.is_error && !env.result.trim().is_empty() => CompressOutcome {
+            ok: true,
+            text: env.result,
+            cuts: None,
+            kind: None,
+            message: None,
+            status: None,
+            input_tokens: env.usage.input_tokens.unwrap_or(0),
+            output_tokens: env.usage.output_tokens.unwrap_or(0),
+            cached_input_tokens: None,
+            reasoning_tokens: None,
+            ms: started.elapsed().as_millis(),
+            model: Some(env.usage.model.unwrap_or_else(|| kind.as_str().to_string())),
+        },
+        Ok((kind, env)) => CompressOutcome::failed(
+            "engine",
+            if env.result.trim().is_empty() {
+                format!("{} came back with nothing.", kind.as_str())
+            } else {
+                env.result
+            },
+            None,
+        ),
+        Err(e) if e.contains(crate::engine::CANCELLED_MARKER) => {
+            CompressOutcome::failed("cancelled", "stopped by the user".into(), None)
+        }
+        Err(e) => CompressOutcome::failed("engine", e, None),
+    }
+}
+
+/// P9U-1 — 压缩 on the CLI road: the very prompt `compress_pack_via_api` sends, the very checks after.
+#[tauri::command]
+pub async fn compress_pack_via_cli(
+    app: tauri::AppHandle,
+    pack_text: String,
+    level: String,
+    timeout_secs: u64,
+    cli: CliRoute,
+) -> Result<CompressOutcome, String> {
+    if RUNNING.swap(true, Ordering::SeqCst) {
+        return Err("a compression run is already in flight".into());
+    }
+    let out = tauri::async_runtime::spawn_blocking(move || {
+        if let Ok(dir) = tauri::Manager::path(&app).app_config_dir() {
+            crate::mcp::refresh_lang(&dir);
+        }
+        let level = CompressLevel::parse(&level).unwrap_or(CompressLevel::Conservative);
+        let (system, user) = compress_messages_for_api(&pack_text, level);
+        let mut outcome = ask_cli(&cli, &system, &user, timeout_secs);
+        if outcome.ok {
+            outcome.text = keep_pack_boundaries(&pack_text, &outcome.text);
+        }
+        outcome
+    })
+    .await;
+    RUNNING.store(false, Ordering::SeqCst);
+    Ok(out.unwrap_or_else(|e| CompressOutcome::failed("internal", e.to_string(), None)))
+}
+
+/// P9U-1 — 过期检测 on the CLI road: same prompt, same verbatim gate over what comes back.
+#[tauri::command]
+pub async fn stale_scan_via_cli(
+    app: tauri::AppHandle,
+    pack_text: String,
+    timeout_secs: u64,
+    cli: CliRoute,
+) -> Result<StaleScan, String> {
+    if RUNNING.swap(true, Ordering::SeqCst) {
+        return Err("a run is already in flight".into());
+    }
+    let pack_for_gate = pack_text.clone();
+    let out = tauri::async_runtime::spawn_blocking(move || {
+        if let Ok(dir) = tauri::Manager::path(&app).app_config_dir() {
+            crate::mcp::refresh_lang(&dir);
+        }
+        let (system, user) = crate::mcp::stale_messages_for_api(&pack_text);
+        ask_cli(&cli, &system, &user, timeout_secs)
+    })
+    .await;
+    RUNNING.store(false, Ordering::SeqCst);
+    let outcome = out.unwrap_or_else(|e| CompressOutcome::failed("internal", e.to_string(), None));
+    let (proposals, dropped) = if outcome.ok {
+        gate_proposals(&outcome.text, &pack_for_gate)
+    } else {
+        (Vec::new(), Vec::new())
+    };
+    Ok(StaleScan { outcome, proposals, dropped })
+}
+
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
 pub async fn compress_pack_via_api(
@@ -431,6 +560,12 @@ fn clip(s: &str) -> String {
 /// 取消。和 `engine.rs::request_cancel` 一样：没在跑也算成功——用户按的是一个已经结束的东西。
 #[tauri::command]
 pub fn compress_cancel() -> bool {
+    // P9U-1: a 压缩 / 过期检测 on the CLI road is an engine run — stop it there (its result then comes
+    // back as `cancelled`, see `ask_cli`). ⚠️ Only when THIS run is the CLI one: an unrelated engine run
+    // (a follow-up) may be going at the same time as an API 压缩, and Stop here must not end it.
+    if CLI_RUN.load(Ordering::SeqCst) {
+        return crate::engine::request_cancel();
+    }
     let guard = CHILD.lock().unwrap();
     let Some(handle) = guard.as_ref() else { return false };
     let mut child = handle.lock().unwrap();

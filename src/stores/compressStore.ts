@@ -4,10 +4,12 @@ import { listen } from '@tauri-apps/api/event';
 import {
   cancelCompress,
   compressPack,
+  compressPackViaCli,
   duplicateProbe,
   loadApiKey,
   mergeOutcomes,
   staleScan,
+  staleScanViaCli,
   PROGRESS_EVENT,
   type CompressLevel,
   type CompressOutcome,
@@ -39,6 +41,7 @@ import type { Thread } from '@/lib/db/threads';
 import { assemble } from '@/lib/pack/assemble';
 import { buildThreadPack, pictureLinesAsIs } from '@/lib/pack/forThread';
 import { t } from '@/lib/i18n';
+import { cliRouteNow, roadsNow, routeFor } from '@/lib/engine/roads';
 import { useBlocksStore } from './blocksStore';
 import { toast } from './toastStore';
 import { useSettingsStore } from './settingsStore';
@@ -392,15 +395,22 @@ const runCompress = async (
   // 摘的是「让它不可能被改」，⛔ 不是「不再核对」（`auditCompression` 一条检查都没删）。
   const shielded = shieldPack(source);
   const bare = isEmptyHeld(shielded.held);
-  const req = {
-    packText: shielded.text,
-    level,
-    baseUrl: s.apiBaseUrl,
-    apiKey: await loadApiKey(),
-    model: s.apiModel,
-    reasoning,
-    timeoutSecs: s.apiTimeoutSecs,
-  };
+  // P9U-1/2: the road this run takes — 压缩's own pick when both are connected (第 187 条), the
+  // connected one otherwise. ⛔ A CLI failure never retries on the API (that one bills per word).
+  const road = routeFor(s.compressRoute, roadsNow());
+  const ask =
+    road === 'cli'
+      ? () => compressPackViaCli(shielded.text, level, s.aiEngineTimeoutSecs, cliRouteNow())
+      : async () =>
+          compressPack({
+            packText: shielded.text,
+            level,
+            baseUrl: s.apiBaseUrl,
+            apiKey: await loadApiKey(),
+            model: s.apiModel,
+            reasoning,
+            timeoutSecs: s.apiTimeoutSecs,
+          });
   // 回来一份就当场放回去一份 —— ⚠️ 后面所有判断（值不值得重跑、核对、按块比对）
   // 看到的都必须是**放回去之后**那一份，否则它们会以为批注真的没了。
   let lost: Unshielded | null = null;
@@ -418,14 +428,14 @@ const runCompress = async (
           lostSpans: (lost as Unshielded).lostSpans,
         };
 
-  const first = put(await compressPack(req));
+  const first = put(await ask());
   // ⭐ X 批「跑完顺带刷一次」（Ocean 2026-08-26:「用户需要反复查看余额」）。
   // ⚠️ 放在**第一次回来之后**,⛔ 不是放在整件事结束之后 —— 这里可能还要自动重跑一次,
-  // 而钱在第一次就已经花掉了。这次出网已经发生,所以它不新增一条出网路径。
-  void useBalanceStore.getState().refresh();
+  // 而钱在第一次就已经花掉了。这次出网已经发生,所以它不新增一条出网路径。（CLI 那条不花余额，不查。）
+  if (road !== 'cli') void useBalanceStore.getState().refresh();
   if (!first.ok || !worthRetrying(source, first.text, level))
     return { outcome: first, retry: null, shield: report() };
-  const second = put(await compressPack(req));
+  const second = put(await ask());
   // ⛔ 用户在**自动重跑**那一次上按了停下：整件事就当停下了。
   // ⚠️ 不这么写的话，`mergeOutcomes(second, first)` 会把**第一次**那份端上桌 ——
   // 他按了停下，屏幕上却冒出一份稿子，看起来就是「停下没起作用」。
@@ -890,14 +900,18 @@ export const useCompressStore = create<CompressState>((set, get) => ({
       // 而「压过的只能被检测语义是否废除」正是他自己写的那一句。
       const { text, blocks } = await buildThreadPack(thread);
       const s = useSettingsStore.getState();
-      const scan = await staleScan({
-        packText: text,
-        baseUrl: s.apiBaseUrl,
-        apiKey: await loadApiKey(),
-        model: s.apiModel,
-        reasoning: s.apiReasoning,
-        timeoutSecs: s.apiTimeoutSecs,
-      });
+      // P9U-1/2: 过期检测's own road (第 187 条); same rule as 压缩.
+      const scan =
+        routeFor(s.staleRoute, roadsNow()) === 'cli'
+          ? await staleScanViaCli(text, s.aiEngineTimeoutSecs, cliRouteNow())
+          : await staleScan({
+              packText: text,
+              baseUrl: s.apiBaseUrl,
+              apiKey: await loadApiKey(),
+              model: s.apiModel,
+              reasoning: s.apiReasoning,
+              timeoutSecs: s.apiTimeoutSecs,
+            });
       // ⛔⛔ T2（2026-08-23，第五轮实测）：**先把库里已经有的那几条摘出去。**
       //
       // 实测撞到的是最难看的一种：5 次里最稳的那条提议（4/5）指的关系**库里本来就有**

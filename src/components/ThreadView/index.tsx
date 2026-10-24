@@ -9,6 +9,7 @@ import { t } from '@/lib/i18n';
 import { IS_MAC } from '@/lib/platform';
 import { useBlocksStore } from '@/stores/blocksStore';
 import { useSettingsStore } from '@/stores/settingsStore';
+import { useRoads } from '@/lib/engine/roads';
 import { selectThreadById, useThreadsStore } from '@/stores/threadsStore';
 import CompressBoard from '@/components/Compress/CompressBoard';
 import StaleReview from '@/components/Compress/StaleReview';
@@ -72,7 +73,9 @@ export default function ThreadView() {
     const sess = activeId ? s.stale[activeId] : null;
     return sess ? sess.proposals.filter((_, i) => sess.decided[i] === undefined).length : 0;
   });
-  const engineOn = useSettingsStore((s) => s.apiEngineEnabled);
+  // P9U-1: 压缩 and 过期检测 run on either road — the CLI on this machine or an API key.
+  const roads = useRoads();
+  const engineOn = roads.cli || roads.api;
   /** 这个项目那张卡上一共有几条（**含已经决定过的**）。
    *  ⚠️ 用它而不是 `staleLeft` 决定页签条出不出：决定完最后一条的那一刻 `staleLeft` 归零，
    *  ⛔ 页签会在用户眼皮底下消失，而他刚刚才点了那一下、还想看到「已换 / 已更正一处」那句回执。
@@ -81,13 +84,13 @@ export default function ThreadView() {
     activeId ? (s.stale[activeId]?.proposals.length ?? 0) : 0,
   );
   const showAi = useSettingsStore((s) => s.aiEngineActionsEnabled);
-  /** P9C（第 94、98、99 条）：「压缩」页签。DeepSeek 开着 ⇒ 照旧；没开 ⇒ 名字后面一把锁，点进去当场打开；
+  /** P9C（第 94、98、99 条）：「压缩」页签。本机 CLI 或 API 有一条连上 ⇒ 照旧（P9U-1，原来只认 API）；都没有 ⇒ 名字后面一把锁，点进去当场打开；
    *  「显示 AI 功能」关着 ⇒ 不画。 */
   // P9E-3（第 122 条）：私密项目里两个页签都关着，不管引擎准备好没有。
   const privateProject = thread?.isPrivate === true;
   const compressEntry: AiEntryState = aiEntryState({
     ready: engineOn,
-    route: 'api',
+    route: 'any',
     showAi,
     isMac: IS_MAC,
     privateProject,
@@ -97,7 +100,7 @@ export default function ThreadView() {
   const staleEntry: AiEntryState =
     staleAny > 0 && !privateProject
       ? 'ready'
-      : aiEntryState({ ready: engineOn, route: 'api', showAi, isMac: IS_MAC, privateProject });
+      : aiEntryState({ ready: engineOn, route: 'any', showAi, isMac: IS_MAC, privateProject });
   // ⭐⭐ Q4（2026-08-25）：**页签条从此永远画。**
   // 「摘要」是 AI 通过 MCP 写进来的，和本地引擎开没开**毫无关系** —— 一个从没开过引擎的
   // 用户照样会有一库摘要，而在这之前 `showTabs` 是整条页签排的总闸，`false` 的时候
@@ -217,7 +220,7 @@ export default function ThreadView() {
         </div>
       ) : compressEntry === 'locked' && tab === 'compress' ? (
         <LockedApiPage
-          text={t('压缩：让 DeepSeek 把这个项目写短一点、合并重复的话。你一块对一块核对过之前，库里一个字都不动。这一步按字数花钱，用你自己的 DeepSeek key。')}
+          text={t('压缩：让 AI 把这个项目写短一点、合并重复的话。你一块对一块核对过之前，库里一个字都不动。用本机的 Claude Code / Codex，或者你自己的 API key。')}
         />
       ) : compressEntry === 'private' && tab === 'compress' ? (
         <PrivateAiPage label={t('压缩')} />
@@ -227,7 +230,7 @@ export default function ThreadView() {
         </div>
       ) : staleEntry === 'locked' && tab === 'stale' ? (
         <LockedApiPage
-          text={t('过期检测：让 DeepSeek 读一遍这个项目，找出已经被后面的块整条取代了的旧块。换不换由你一条一条定，你不点，库里一个字都不动。这一步按字数花钱，用你自己的 DeepSeek key。')}
+          text={t('过期检测：让 AI 读一遍这个项目，找出已经被后面的块整条取代了的旧块。换不换由你一条一条定，你不点，库里一个字都不动。用本机的 Claude Code / Codex，或者你自己的 API key。')}
         />
       ) : staleEntry === 'private' && tab === 'stale' ? (
         <PrivateAiPage label={t('过期检测')} />
@@ -259,7 +262,7 @@ function LockedApiPage({ text }: { text: string }) {
       <div className="mx-auto max-w-[420px] space-y-4">
         <p className="text-sm leading-relaxed text-ink-2">{text}</p>
         <div className="rounded-md border border-line bg-paper p-3">
-          <AiSetupPanel route="api" />
+          <AiSetupPanel route="any" />
         </div>
       </div>
     </div>

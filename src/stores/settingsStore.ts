@@ -40,6 +40,9 @@ type PersistableKey =
   | 'railCollapsed'
   | 'aiAutoMaintain'
   | 'autoReviewRoute'
+  | 'compressRoute'
+  | 'staleRoute'
+  | 'followUpRoute'
   | 'packInstructions'
   | 'closeToTrayHintSeen'
   | 'theme'
@@ -183,6 +186,12 @@ interface SettingsState {
    *  选的那一类 —— 手动点的和每周自动跑的走同一类，原来单独的「自动那次用」选择器并掉了。
    *  键名没改（不迁移）。 */
   autoReviewRoute: 'cli' | 'api';
+  /** P9U-2 (Ocean 2026-10-24 第 187 条：两条都连上时「每个功能各自选」) — which road 压缩, 过期检测 and
+   *  跟进 take when both the CLI on this machine and an API key are connected. Only one connected ⇒
+   *  that one, whatever this says (`effectiveAutoRoute`). Default the CLI: it does not bill per word. */
+  compressRoute: 'cli' | 'api';
+  staleRoute: 'cli' | 'api';
+  followUpRoute: 'cli' | 'api';
   // DESIGN_CONTEXT_HYGIENE §1.1 — whether a clipboard pack carries the four-category
   // reading instructions. Ocean 2026-08-06: 「pack 降级成最简便操作,让纯网页端 ai 用户使用」,
   // so this shipped defaulting OFF.
@@ -337,6 +346,9 @@ const KEYS: PersistableKey[] = [
   'railCollapsed',
   'aiAutoMaintain',
   'autoReviewRoute',
+  'compressRoute',
+  'staleRoute',
+  'followUpRoute',
   'packInstructions',
   'closeToTrayHintSeen',
   'theme',
@@ -397,6 +409,9 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   aiAutoMaintain: false,
   // 今天的行为就是 CLI，而另一条按字数花钱 —— 升级不该改变账单的形状。
   autoReviewRoute: 'cli',
+  compressRoute: 'cli',
+  staleRoute: 'cli',
+  followUpRoute: 'cli',
   packInstructions: true,
   // Windows only (2026-08-18, Ocean #1): whether the 「关掉窗口 ≠ 退出」 card has been shown.
   // Written once, by the card's own button — see components/CloseToTrayHint.
@@ -467,6 +482,9 @@ export const useSettingsStore = create<SettingsState>((set) => ({
       // or an API balance, so an unrecognised word must not fall through to either.
       if (next.autoReviewRoute !== undefined && next.autoReviewRoute !== 'api') {
         next.autoReviewRoute = 'cli';
+      }
+      for (const k of ['compressRoute', 'staleRoute', 'followUpRoute'] as const) {
+        if (next[k] !== undefined && next[k] !== 'api') next[k] = 'cli';
       }
       // The rail calls array methods on this one; anything else would throw mid-render.
       if (next.expandedWorkspaceIds !== undefined && !Array.isArray(next.expandedWorkspaceIds)) {

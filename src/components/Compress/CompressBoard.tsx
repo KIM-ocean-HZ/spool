@@ -21,6 +21,7 @@ import type { Block } from '@/lib/db/blocks';
 import { useBlocksStore } from '@/stores/blocksStore';
 import { useCompressStore } from '@/stores/compressStore';
 import { useSettingsStore } from '@/stores/settingsStore';
+import { routeFor, useRoads } from '@/lib/engine/roads';
 import { selectThreadById, useThreadsStore } from '@/stores/threadsStore';
 
 // 「压缩」页签（WORKPLAN-2026-08-20 §9.6.2 / §9.6.5 / §9.6.6）。
@@ -61,7 +62,12 @@ export default function CompressBoard({ threadId }: { threadId: string }) {
   const addBack = (only?: readonly string[]) => addBackRaw(threadId, only);
 
   const level = useSettingsStore((s) => s.apiCompressLevel);
-  const timeoutSecs = useSettingsStore((s) => s.apiTimeoutSecs);
+  // P9U-1: the time limit of the road this run takes.
+  const roads = useRoads();
+  const compressRoute = useSettingsStore((s) => s.compressRoute);
+  const timeoutSecs = useSettingsStore((s) =>
+    routeFor(compressRoute, roads) === 'cli' ? s.aiEngineTimeoutSecs : s.apiTimeoutSecs,
+  );
   const keepOriginal = useSettingsStore((s) => s.compressKeepOriginal);
   const update = useSettingsStore((s) => s.update);
   // ⭐ 这个项目的块变了（比如刚把几块还原成压缩前的原文），这一份就要重组一遍 ——
