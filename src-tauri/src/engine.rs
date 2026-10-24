@@ -436,69 +436,167 @@ fn stream_with_timeout(
 /// marker between two layers of Spool, never shown to anyone.
 pub const CANCELLED_MARKER: &str = "spool:cancelled";
 
-// The PATH a GUI app inherits on macOS is the launchd one, not the shell's — a CLI
-// installed by npm/homebrew into ~/.local/bin or /opt/homebrew/bin is on the user's shell
-// PATH and invisible here. So the probe checks the usual install locations directly as
-// well, and reports the path it actually resolved (§1.4 shows it in the status line).
-fn candidate_paths(kind: EngineKind) -> Vec<std::path::PathBuf> {
-    let bin = kind.binary();
-    let mut out = Vec::new();
-    if let Some(home) = dirs_home() {
-        if kind == EngineKind::Claude {
-            out.push(home.join(".claude/local/claude"));
-        }
-        for rel in [".local/bin", ".npm-global/bin", "bin", ".bun/bin", ".volta/bin"] {
-            out.push(home.join(rel).join(bin));
-        }
-        // ⚠️ nvm keeps one bin directory PER INSTALLED NODE VERSION, so there is no fixed
-        // path to list — and this is not a corner case: on 2026-08-06 `npm i -g
-        // @openai/codex` on the author's own machine landed in
-        // ~/.nvm/versions/node/v24.11.0/bin/codex, which neither `which` (launchd PATH)
-        // nor any static entry above would ever have found. Detection would have reported
-        // "not installed" on the very machine it had just been installed on.
-        if let Ok(entries) = std::fs::read_dir(home.join(".nvm/versions/node")) {
-            for e in entries.flatten() {
-                out.push(e.path().join("bin").join(bin));
-            }
-        }
-    }
-    for abs in ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin"] {
-        out.push(std::path::PathBuf::from(abs).join(bin));
-    }
-    out
+// The PATH a GUI app inherits on macOS is the launchd one — `/usr/bin:/bin:/usr/sbin:/sbin` —
+// not the shell's. Two things follow, and P9T (Ocean 2026-10-24: 「在没有装 codex 的 mac 上模拟新用户
+// 使用 spool，发现 spool 根本找不到 codex CLI」) is the second one biting:
+//
+//   1. a CLI installed into ~/.local/bin, /opt/homebrew/bin, an nvm directory … is not on that PATH,
+//      so it has to be looked for;
+//   2. ⛔⛔ a CLI installed with npm is a `#!/usr/bin/env node` SCRIPT. Finding the file is not enough:
+//      run with the launchd PATH it dies with `env: node: No such file or directory`, so `--version`
+//      fails and it was reported as not installed. Measured on the author's own machine with the npm
+//      Codex. The official Claude Code installer ships a native binary, which is why only some users
+//      hit it. A real run had the same PATH and the same fate.
+//
+// So there is ONE list of directories (`search_dirs`), used both to find a CLI and as the PATH it is
+// started with — with the CLI's own directory first, because that is where npm put `node` (nvm,
+// Homebrew, the official Node installer, Volta all keep the two side by side).
+
+/// The user's own login-shell PATH — what `which codex` in their terminal searches. Asked once per
+/// launch (`$SHELL -ilc`, interactive so .zshrc's nvm setup runs), bracketed by markers because rc
+/// files may print, and cut off after 3 s. `None` if the shell would not answer: the static list
+/// below still covers the usual places.
+fn login_shell_path() -> Option<&'static str> {
+    static CACHE: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();
+    CACHE
+        .get_or_init(|| {
+            let shell = std::env::var("SHELL")
+                .ok()
+                .filter(|s| s.starts_with('/'))
+                .unwrap_or_else(|| "/bin/zsh".into());
+            // fish joins a list with spaces inside "$PATH"; every other shell has it as one string.
+            let print = if shell.ends_with("/fish") {
+                "printf '__SPOOL_PATH__%s__SPOOL_PATH__' (string join : $PATH)"
+            } else {
+                "printf '__SPOOL_PATH__%s__SPOOL_PATH__' \"$PATH\""
+            };
+            let mut cmd = std::process::Command::new(&shell);
+            cmd.args(["-ilc", print]);
+            // An rc file that branches on this can skip anything slow or interactive.
+            cmd.env("SPOOL_RESOLVING_ENVIRONMENT", "1").env("TERM", "dumb");
+            let out = output_with_timeout(cmd, Duration::from_secs(3)).ok()?;
+            parse_marked_path(&String::from_utf8_lossy(&out.stdout))
+        })
+        .as_deref()
+}
+
+/// The PATH between the two markers, if the shell printed one.
+fn parse_marked_path(out: &str) -> Option<String> {
+    const MARK: &str = "__SPOOL_PATH__";
+    let start = out.find(MARK)? + MARK.len();
+    let len = out[start..].find(MARK)?;
+    let path = out[start..start + len].trim();
+    (!path.is_empty()).then(|| path.to_string())
 }
 
 fn dirs_home() -> Option<std::path::PathBuf> {
     std::env::var_os("HOME").map(std::path::PathBuf::from)
 }
 
-/// §2.1, per engine: `which <bin>` first (honours a PATH the user did set for us), then the
-/// known install locations. The first candidate that answers `--version` wins.
-fn detect_one(kind: EngineKind) -> Option<DetectedEngine> {
-    let mut tried: Vec<String> = Vec::new();
-    let mut which = std::process::Command::new("/usr/bin/which");
-    which.arg(kind.binary());
-    if let Ok(out) = output_with_timeout(which, PROBE_TIMEOUT) {
-        if out.status.success() {
-            let p = String::from_utf8_lossy(&out.stdout).trim().to_string();
-            if !p.is_empty() {
-                tried.push(p);
+/// Where a CLI may live, in the order to look: the user's shell PATH, this app's own PATH, then the
+/// usual install directories. De-duplicated, order kept.
+fn search_dirs() -> Vec<std::path::PathBuf> {
+    let mut out: Vec<std::path::PathBuf> = Vec::new();
+    let mut push = |p: std::path::PathBuf| {
+        if !p.as_os_str().is_empty() && !out.contains(&p) {
+            out.push(p);
+        }
+    };
+    if let Some(p) = login_shell_path() {
+        std::env::split_paths(p).for_each(&mut push);
+    }
+    if let Some(p) = std::env::var_os("PATH") {
+        std::env::split_paths(&p).for_each(&mut push);
+    }
+    if let Some(home) = dirs_home() {
+        for rel in [".local/bin", ".npm-global/bin", "bin", ".bun/bin", ".volta/bin"] {
+            push(home.join(rel));
+        }
+        // ⚠️ nvm keeps one bin directory PER INSTALLED NODE VERSION, so there is no fixed path to
+        // list: 2026-08-06 `npm i -g @openai/codex` landed in ~/.nvm/versions/node/v24.11.0/bin.
+        // Newest first, so a stale old version's copy is not picked over the current one.
+        if let Ok(entries) = std::fs::read_dir(home.join(".nvm/versions/node")) {
+            let mut versions: Vec<std::path::PathBuf> = entries.flatten().map(|e| e.path()).collect();
+            versions.sort();
+            versions.reverse();
+            for v in versions {
+                push(v.join("bin"));
             }
         }
     }
-    for p in candidate_paths(kind) {
-        if p.is_file() {
-            tried.push(p.to_string_lossy().into_owned());
+    for abs in ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin"] {
+        push(std::path::PathBuf::from(abs));
+    }
+    out
+}
+
+/// P9T (Ocean 2026-10-24 第 183 条): the Codex the ChatGPT desktop app carries inside itself, for a user
+/// who has ChatGPT and never installed the CLI. Looked at LAST — a Codex the user installed always
+/// wins. (Claude's desktop app keeps a `claude` under Application Support too, but it is a Linux build
+/// for its own VM and cannot run here.)
+fn bundled_paths(kind: EngineKind) -> Vec<std::path::PathBuf> {
+    const CHATGPT_CODEX: &str = "ChatGPT.app/Contents/Resources/codex-cli/bin/codex";
+    if kind != EngineKind::Codex {
+        return Vec::new();
+    }
+    let mut out = vec![std::path::Path::new("/Applications").join(CHATGPT_CODEX)];
+    if let Some(home) = dirs_home() {
+        out.push(home.join("Applications").join(CHATGPT_CODEX));
+    }
+    out
+}
+
+fn candidate_paths(kind: EngineKind, dirs: &[std::path::PathBuf]) -> Vec<std::path::PathBuf> {
+    let bin = kind.binary();
+    let mut out = Vec::new();
+    if kind == EngineKind::Claude {
+        if let Some(home) = dirs_home() {
+            out.push(home.join(".claude/local/claude"));
         }
     }
-    for path in tried {
-        let mut cmd = std::process::Command::new(&path);
-        cmd.arg("--version");
-        if let Ok(out) = output_with_timeout(cmd, PROBE_TIMEOUT) {
-            if out.status.success() {
-                let text = String::from_utf8_lossy(&out.stdout).into_owned();
-                return Some(DetectedEngine { kind, version: parse_version(&text), path });
-            }
+    out.extend(dirs.iter().map(|d| d.join(bin)));
+    out.extend(bundled_paths(kind));
+    out
+}
+
+/// The PATH a CLI at `bin` is started with — for `--version` and for a real run alike: its own
+/// directory first (that is where npm's `node` is), then everything `search_dirs` knows.
+pub fn child_path(bin: &std::path::Path) -> std::ffi::OsString {
+    let mut dirs = search_dirs();
+    if let Some(own) = bin.parent() {
+        dirs.retain(|d| d != own);
+        dirs.insert(0, own.to_path_buf());
+    }
+    std::env::join_paths(dirs).unwrap_or_else(|_| std::env::var_os("PATH").unwrap_or_default())
+}
+
+/// `<cli> --version`, started the way a run starts it. `None` if it does not answer.
+fn probe_version(path: &std::path::Path) -> Option<String> {
+    let mut cmd = std::process::Command::new(path);
+    cmd.arg("--version").env("PATH", child_path(path));
+    let out = output_with_timeout(cmd, PROBE_TIMEOUT).ok()?;
+    out.status.success().then(|| String::from_utf8_lossy(&out.stdout).into_owned())
+}
+
+/// §2.1, per engine: every candidate in order; the first that answers `--version` wins.
+fn detect_one(kind: EngineKind, dirs: &[std::path::PathBuf]) -> Option<DetectedEngine> {
+    let mut seen: Vec<std::path::PathBuf> = Vec::new();
+    for p in candidate_paths(kind, dirs) {
+        if !p.is_file() {
+            continue;
+        }
+        // The same file reached through two PATH entries (a symlinked dir) is asked once.
+        let real = std::fs::canonicalize(&p).unwrap_or_else(|_| p.clone());
+        if seen.contains(&real) {
+            continue;
+        }
+        seen.push(real);
+        if let Some(text) = probe_version(&p) {
+            return Some(DetectedEngine {
+                kind,
+                version: parse_version(&text),
+                path: p.to_string_lossy().into_owned(),
+            });
         }
     }
     None
@@ -535,13 +633,7 @@ fn detect_manual(path: &str) -> Option<DetectedEngine> {
     }
     let stem = p.file_stem()?.to_string_lossy().to_ascii_lowercase();
     let kind = EngineKind::ALL.iter().copied().find(|k| k.binary() == stem)?;
-    let mut cmd = std::process::Command::new(p);
-    cmd.arg("--version");
-    let out = output_with_timeout(cmd, PROBE_TIMEOUT).ok()?;
-    if !out.status.success() {
-        return None;
-    }
-    let text = String::from_utf8_lossy(&out.stdout).into_owned();
+    let text = probe_version(p)?;
     Some(DetectedEngine { kind, version: parse_version(&text), path: path.to_string() })
 }
 
@@ -569,8 +661,9 @@ pub fn detect(preferred: Option<EngineKind>, manual: Option<&str>) -> EngineStat
     if cfg!(windows) {
         return EngineStatus::missing();
     }
+    let dirs = search_dirs();
     let mut engines: Vec<DetectedEngine> =
-        EngineKind::ALL.iter().filter_map(|k| detect_one(*k)).collect();
+        EngineKind::ALL.iter().filter_map(|k| detect_one(*k, &dirs)).collect();
     // The hand-typed one wins over a found copy of the same engine: the user typed it BECAUSE
     // the search was wrong, and two entries for one engine would make the picker meaningless.
     if let Some(m) = manual.filter(|p| !p.trim().is_empty()).and_then(detect_manual) {
@@ -979,17 +1072,19 @@ pub fn codex_args(prompt: &str, exe: &str, last_message_path: &str, web: bool) -
 /// **`~/.gemini/.env`**, its own config. That is the route to tell users about: the key lives
 /// in the CLI's config, Spool passes nothing and sees nothing. The passthrough below is kept
 /// for the user who really did export it.
-pub fn run_env(kind: EngineKind) -> Vec<(&'static str, std::ffi::OsString)> {
-    let mut keys: Vec<&'static str> = vec!["PATH", "HOME", "USER"];
+///
+/// ⛔ P9T: `PATH` is NOT the app's own. It is `child_path(bin)` — the CLI's directory first, then
+/// everything `search_dirs` knows — or an npm-installed CLI dies on `#!/usr/bin/env node` before it
+/// does anything (see `search_dirs`).
+pub fn run_env(kind: EngineKind, bin: &std::path::Path) -> Vec<(&'static str, std::ffi::OsString)> {
+    let mut keys: Vec<&'static str> = vec!["HOME", "USER"];
     match kind {
         EngineKind::Codex => keys.push("CODEX_HOME"),
         EngineKind::Gemini => keys.push("GEMINI_API_KEY"),
         EngineKind::Claude => {}
     }
-    let mut out: Vec<(&'static str, std::ffi::OsString)> = keys
-        .into_iter()
-        .filter_map(|k| std::env::var_os(k).map(|v| (k, v)))
-        .collect();
+    let mut out: Vec<(&'static str, std::ffi::OsString)> = vec![("PATH", child_path(bin))];
+    out.extend(keys.into_iter().filter_map(|k| std::env::var_os(k).map(|v| (k, v))));
     // ⚠️⚠️ Not optional, and the single most expensive thing to get wrong in this module:
     // without it gemini treats the working directory as untrusted and **silently disables
     // every MCP server** — the run completes, costs quota, and comes back having never seen
@@ -1457,7 +1552,7 @@ pub fn run_action(
         }
     }
     cmd.env_clear();
-    for (k, v) in run_env(kind) {
+    for (k, v) in run_env(kind, std::path::Path::new(bin)) {
         cmd.env(k, v);
     }
     // §9.13 — effort rides in the environment because that is the only door claude 2.0.50
@@ -1643,7 +1738,7 @@ mod tests {
     #[test]
     fn run_env_carries_the_three_load_bearing_vars() {
         for kind in EngineKind::ALL {
-            let names: Vec<&str> = run_env(kind).into_iter().map(|(k, _)| k).collect();
+            let names: Vec<&str> = run_env(kind, std::path::Path::new("/x/bin/cli")).into_iter().map(|(k, _)| k).collect();
             for k in ["PATH", "HOME", "USER"] {
                 assert!(names.contains(&k), "{k} must be handed to {}", kind.as_str());
             }
@@ -1761,7 +1856,7 @@ mod tests {
         let _home = crate::home_lock();
         let home = std::path::PathBuf::from(std::env::var("HOME").unwrap_or_default());
         for kind in EngineKind::ALL {
-            let paths = candidate_paths(kind);
+            let paths = candidate_paths(kind, &search_dirs());
             assert!(
                 paths.iter().all(|p| p.file_name().unwrap() == kind.binary()),
                 "every candidate must end in the binary's own name"
@@ -1990,14 +2085,14 @@ mod tests {
     // Measured 2026-08-10; `--skip-trust` does not substitute.
     #[test]
     fn gemini_run_env_grants_workspace_trust() {
-        let env = run_env(EngineKind::Gemini);
+        let env = run_env(EngineKind::Gemini, std::path::Path::new("/x/bin/gemini"));
         assert!(
             env.iter().any(|(k, v)| *k == "GEMINI_CLI_TRUST_WORKSPACE" && v == "true"),
             "an untrusted workspace silently disables the MCP server",
         );
         // Not granted to the engines that have no such concept.
         for kind in [EngineKind::Claude, EngineKind::Codex] {
-            assert!(!run_env(kind).iter().any(|(k, _)| *k == "GEMINI_CLI_TRUST_WORKSPACE"));
+            assert!(!run_env(kind, std::path::Path::new("/x/bin/cli")).iter().any(|(k, _)| *k == "GEMINI_CLI_TRUST_WORKSPACE"));
         }
     }
 
@@ -2108,6 +2203,51 @@ mod tests {
         // text does not come from here.
         assert_eq!(parse_codex_error("not json\n{\"type\":\"turn.completed\"}"), None);
         assert_eq!(parse_codex_error(""), None);
+    }
+
+    // P9T (Ocean 2026-10-24): finding a CLI, and starting it so that it can actually run.
+    #[test]
+    fn the_login_shell_path_is_read_between_its_markers() {
+        let noisy = "Last login: today\nwelcome!\n__SPOOL_PATH__/a/bin:/b/bin__SPOOL_PATH__\nbye";
+        assert_eq!(parse_marked_path(noisy).as_deref(), Some("/a/bin:/b/bin"));
+        assert_eq!(parse_marked_path("no markers here"), None);
+        assert_eq!(parse_marked_path("__SPOOL_PATH____SPOOL_PATH__"), None);
+    }
+
+    #[test]
+    fn chatgpts_own_codex_is_looked_at_last_and_only_for_codex() {
+        let dirs = vec![std::path::PathBuf::from("/x/bin"), std::path::PathBuf::from("/y/bin")];
+        let codex = candidate_paths(EngineKind::Codex, &dirs);
+        assert_eq!(codex[0], std::path::PathBuf::from("/x/bin/codex"));
+        assert_eq!(codex[1], std::path::PathBuf::from("/y/bin/codex"));
+        assert!(codex[2..].iter().all(|p| p.to_string_lossy().contains("ChatGPT.app/Contents/Resources/codex-cli/bin/codex")));
+        assert!(candidate_paths(EngineKind::Claude, &dirs).iter().all(|p| !p.to_string_lossy().contains("ChatGPT.app")));
+        assert!(candidate_paths(EngineKind::Gemini, &dirs).iter().all(|p| !p.to_string_lossy().contains(".app/")));
+    }
+
+    // ⛔ The whole bug: an npm CLI is `#!/usr/bin/env node`, and npm put `node` next to it.
+    #[test]
+    fn a_cli_is_started_with_its_own_directory_first_on_path() {
+        let path = child_path(std::path::Path::new("/u/.nvm/versions/node/v24/bin/codex"));
+        let dirs: Vec<std::path::PathBuf> = std::env::split_paths(&path).collect();
+        assert_eq!(dirs[0], std::path::PathBuf::from("/u/.nvm/versions/node/v24/bin"));
+        assert!(dirs.contains(&std::path::PathBuf::from("/opt/homebrew/bin")));
+        assert_eq!(dirs.iter().filter(|d| d.ends_with("v24/bin")).count(), 1);
+        let env = run_env(EngineKind::Codex, std::path::Path::new("/u/.nvm/versions/node/v24/bin/codex"));
+        let run_path = &env.iter().find(|(k, _)| *k == "PATH").unwrap().1;
+        assert_eq!(std::env::split_paths(run_path).next().unwrap(), std::path::PathBuf::from("/u/.nvm/versions/node/v24/bin"));
+    }
+
+    /// Run by hand with the PATH a Finder-launched app gets:
+    /// `env -i PATH=/usr/bin:/bin:/usr/sbin:/sbin HOME=$HOME USER=$USER SHELL=$SHELL <test binary> --ignored --nocapture detects_on_this_machine`
+    #[test]
+    #[ignore]
+    fn detects_on_this_machine() {
+        let status = detect(None, None);
+        for e in &status.engines {
+            println!("FOUND {:?} {:?} {}", e.kind, e.version, e.path);
+        }
+        assert!(status.available);
     }
 
     // The config names Spool's own binary as the server. If this ever pointed elsewhere,
