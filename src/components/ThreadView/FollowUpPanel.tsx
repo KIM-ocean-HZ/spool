@@ -5,6 +5,7 @@ import PrivateAiEntry from '@/components/AiSetup/PrivateAiEntry';
 import EngineBar from '@/components/RightRail/EngineBar';
 import FollowUpSearch from './FollowUpSearch';
 import { aiEntryState } from '@/lib/engine/gate';
+import { routeFor, useRoads } from '@/lib/engine/roads';
 import { isImeComposing } from '@/lib/utils/ime';
 import { useT } from '@/lib/i18n';
 import { IS_MAC } from '@/lib/platform';
@@ -39,7 +40,10 @@ export default function FollowUpPanel({ thread, onClose }: Props) {
   const [drafting, setDrafting] = useState(false);
   const [showAnswered, setShowAnswered] = useState(false);
   const enqueue = useEngineStore((s) => s.enqueue);
-  const timeoutSecs = useSettingsStore((s) => s.aiEngineTimeoutSecs);
+  const cliTimeoutSecs = useSettingsStore((s) => s.aiEngineTimeoutSecs);
+  const apiTimeoutSecs = useSettingsStore((s) => s.apiTimeoutSecs);
+  const followUpRoute = useSettingsStore((s) => s.followUpRoute);
+  const roads = useRoads();
   // ⚠️ Ocean, Windows 验收 2026-08-18 #5: 「ai 定一个问题的按键不应该存在，点击会报错没有 CLI,
   // 应该跟随 AI 引擎的判断」. Drafting runs a local CLI, and on a machine without one the
   // button was a control whose only outcome was an error — the same shape as the 周回顾 entry
@@ -52,12 +56,16 @@ export default function FollowUpPanel({ thread, onClose }: Props) {
   // switches. Not ready ⇒ locked on a Mac, hidden on Windows; 「显示 AI 功能」 off ⇒ hidden. Undecided
   // until the first detection answers.
   const showAi = useSettingsStore((s) => s.aiEngineActionsEnabled);
+  // P9U-5: drafting is part of 跟进 (Ocean: 「跟进功能也在内」) and needs no web — so an API key of any vendor
+  // can do it too, on 跟进's own pick of road. The CLI side keeps its old readiness (a CLI here; it writes
+  // nothing, so the MCP switches never applied).
+  const draftRoad = routeFor(followUpRoute, { cli: IS_MAC && engineAvailable, api: roads.api });
   const draftEntry =
     engineStatus === null
       ? null
       : aiEntryState({
-          ready: engineAvailable,
-          route: 'cli',
+          ready: draftRoad !== null,
+          route: 'any',
           showAi,
           isMac: IS_MAC,
           // P9E-3（第 122 条）：私密项目里 Spool 自带的 AI 不去读它。
@@ -102,6 +110,7 @@ export default function FollowUpPanel({ thread, onClose }: Props) {
   // replacing anything: whatever the user already settled on is theirs (§6-2 — the drafting
   // step exists to give them something to react to, not to decide for them).
   const askAi = (): void => {
+    const timeoutSecs = draftRoad === 'api' ? apiTimeoutSecs : cliTimeoutSecs;
     const queued = enqueue(thread.id, thread.title, 'follow_up_brief', timeoutSecs, (result) => {
       setDrafting(false);
       const lines = result
@@ -115,7 +124,7 @@ export default function FollowUpPanel({ thread, onClose }: Props) {
         for (const line of lines) await add(line, true);
         toast.notice(t('AI 加了 {n} 条，你可以改也可以删', { n: lines.length }));
       })();
-    });
+    }, false, draftRoad ?? 'cli');
     if (queued) setDrafting(true);
   };
 
@@ -224,8 +233,8 @@ export default function FollowUpPanel({ thread, onClose }: Props) {
               {draftEntry === 'locked' && (
                 <LockedAiEntry
                   label={t('让 AI 看看还缺什么')}
-                  reason={t('要用本机的 Claude Code 或 Codex。')}
-                  route="cli"
+                  reason={IS_MAC ? t('要用本机的 Claude Code / Codex，或者你自己的 API key。') : t('要用你自己的 API key。')}
+                  route="any"
                 />
               )}
               {/* Only ever shown once detection has answered 「none」 (draftEntry is null before),

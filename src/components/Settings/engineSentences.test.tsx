@@ -15,8 +15,9 @@ import ApiEngineConfig from './ApiEngineConfig';
 import EngineConfig from './EngineConfig';
 
 // P9H-5（DISCOVERED-20261014-6，Ocean 10-16 第 150 条）—— 设置「AI 引擎」页的两句：
-// ① 「……用『AI 引擎』那一节就行」指着的那一节只在 Mac 上画，Windows 上这句指向一个不存在的地方；
-// ② 「Spool 不存 API key」紧挨在 DeepSeek 的 key 框下面，单读像是在说整个 Spool 不存 key。
+// ① 原来 API 那一节说自己是「给不想装命令行工具的人的第二条路」，还指着一个 Windows 上不存在的「AI 引擎」那一节；
+//    P9U-5（Ocean 10-24：「两个比重一样」）整句拿掉了 —— 两块都不再说自己是第二条路；
+// ② 「Spool 不存 API key」紧挨在 key 框下面，单读像是在说整个 Spool 不存 key。
 
 const render = (el: JSX.Element, language: 'zh' | 'en'): string => {
   // ⚠️ zustand v5 renders on the server from `getInitialState()` (memory isolated-verify-workflow §45).
@@ -24,14 +25,19 @@ const render = (el: JSX.Element, language: 'zh' | 'en'): string => {
   return renderToStaticMarkup(el);
 };
 
-describe('设置「AI 引擎」页的两句', () => {
-  it('① 指向「AI 引擎」那一节的那句：Mac 上有，Windows 上没有（中英）', () => {
+describe('设置「AI 引擎」页的两块', () => {
+  it('① 两块分量一样：API 那一块不再说自己是第二条路、也不指向别的一节（Mac / Windows，中英）', () => {
+    for (const mac of [true, false]) {
+      platform.mac = mac;
+      const zh = render(<ApiEngineConfig />, 'zh');
+      expect(zh).not.toContain('第二条路');
+      expect(zh).not.toContain('AI 引擎」那一节');
+      expect(render(<ApiEngineConfig />, 'en')).not.toContain('section below');
+      // the same line at the bottom of both cards
+      expect(zh).toContain('能做：');
+    }
     platform.mac = true;
-    expect(render(<ApiEngineConfig />, 'zh')).toContain('用「AI 引擎」那一节就行');
-    expect(render(<ApiEngineConfig />, 'en')).toContain('use the section below instead');
-    platform.mac = false;
-    expect(render(<ApiEngineConfig />, 'zh')).not.toContain('AI 引擎」那一节');
-    expect(render(<ApiEngineConfig />, 'en')).not.toContain('section below');
+    expect(render(<EngineConfig />, 'zh')).toContain('能做：');
   });
 
   it('② 说清是「走这条路」不用存 key（中英）', () => {

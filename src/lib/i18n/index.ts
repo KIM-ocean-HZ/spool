@@ -1495,6 +1495,12 @@ const EN: Record<string, string> = {
     'The model thinks for a while before it writes, and that is billed per word too. A value the endpoint does not take is refused, and that refusal costs nothing.',
   '模型下笔之前会先想一会儿，这一段也按字数收费。「默认」就是这家自己的设定。':
     'The model thinks for a while before it writes, and that is billed per word too. \u201cDefault\u201d is the vendor\u2019s own setting.',
+  '要用本机的 Claude Code / Codex，或者你自己的 API key。': 'Needs Claude Code or Codex on this Mac, or your own API key.',
+  '要用你自己的 API key。': 'Needs your own API key.',
+  // P9U-5 — the two equal cards on the AI engine page.
+  '能做：': 'Can do: ',
+  '{vendor} 的 key 不能联网搜': 'a {vendor} key cannot search the web',
+  'Gemini CLI 不能联网搜': 'Gemini CLI cannot search the web',
   // P9U-4 — 跟进 on the API road.
   '{vendor} 的 key 不能联网搜。换一家能联网的 key（OpenAI、Claude、Gemini、Kimi、通义），或者用本机的 Claude Code / Codex。':
     'A {vendor} key cannot search the web. Use a key from a vendor that can (OpenAI, Claude, Gemini, Kimi, Qwen), or Claude Code / Codex on this Mac.',

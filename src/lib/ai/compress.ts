@@ -1233,3 +1233,14 @@ export const followUpViaApi = (req: {
   wire: ApiCall['wire'];
   timeoutSecs: number;
 }): Promise<FollowUpApiOutcome> => invoke<FollowUpApiOutcome>('follow_up_via_api', { ...req });
+
+/** 「让 AI 看看还缺什么」 on the API road — the same drafting prompt as the CLI's; the lines come back as text. */
+export const followUpBriefViaApi = (req: {
+  threadId: string;
+  baseUrl: string;
+  apiKey: string;
+  model: string;
+  reasoning: string;
+  wire: ApiCall['wire'];
+  timeoutSecs: number;
+}): Promise<CompressOutcome> => invoke<CompressOutcome>('follow_up_brief_via_api', { ...req });

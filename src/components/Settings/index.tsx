@@ -4,7 +4,7 @@ import { IS_MAC } from '@/lib/platform';
 import { useSettingsStore } from '@/stores/settingsStore';
 import AdvancedConfig from './AdvancedConfig';
 import AiFeaturesConfig from './AiFeaturesConfig';
-import ApiEngineConfig from './ApiEngineConfig';
+import ApiEngineConfig, { CompressSettings } from './ApiEngineConfig';
 import { createBackdropClose } from '@/lib/utils/backdropClose';
 import EngineConfig from './EngineConfig';
 import GeneralConfig from './GeneralConfig';
@@ -114,15 +114,15 @@ export default function Settings() {
             <>
               {/* P9C 第 98 条：管所有 AI 的地方，所以在两条路之上。 */}
               <AiFeaturesConfig />
-              {/* 形态 C 在前:它是不用先去装点什么就能用的那一条路。 */}
-              <div className="border-t border-line">
+              {/* P9U-5（Ocean 10-24：「两个比重一样」）：两块同样的框，不花钱的那条在前 —— 和锁着的地方弹出来的
+                  那一块（AiSetupPanel）同一个顺序。本机 CLI 只在 Mac 上有（engine.rs 在 Windows 上关着）。 */}
+              <div className="space-y-3 border-t border-line py-3">
+                {IS_MAC && <EngineConfig />}
                 <ApiEngineConfig />
               </div>
-              {IS_MAC && (
-                <div className="border-t border-line">
-                  <EngineConfig />
-                </div>
-              )}
+              <div className="border-t border-line">
+                <CompressSettings />
+              </div>
             </>
           )}
           {tab === 'shortcuts' && (

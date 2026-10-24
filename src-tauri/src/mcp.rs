@@ -11241,6 +11241,29 @@ pub(crate) fn follow_up_messages_for_api(thread_id: &str) -> Result<(String, Str
     Ok((title.clone(), follow_up_api_system(&title, &format_pack_date(now)), user))
 }
 
+/// 「让 AI 看看还缺什么」 on the API road: the same drafting prompt the CLI gets (`follow_up_brief_prompt_text`
+/// — it already says 「call no tools, write nothing」), as the system part; one line asking for it as the user
+/// part. Nothing is filed: the draft goes back to the panel, where the user decides (§6-2).
+pub(crate) fn follow_up_brief_messages_for_api(thread_id: &str) -> Result<(String, String), String> {
+    let dir = app_data_dir().ok_or_else(|| t!("无法定位 Spool 数据目录。", "Could not locate Spool's data directory."))?;
+    refresh_lang(&dir);
+    let conn = open_db(&dir)?;
+    let title = live_thread_title(&conn, thread_id)?;
+    let built = build_pack(&conn, thread_id, "all")?;
+    if let Some(msg) = pack_guard_message(&built, "all") {
+        return Err(msg);
+    }
+    let text = if built.text.chars().count() as i64 > PACK_DEFAULT_MAX_CHARS {
+        budgeted_pack(&built, PACK_DEFAULT_MAX_CHARS).map(|(t, _)| t).unwrap_or_else(|| built.text.clone())
+    } else {
+        built.text.clone()
+    };
+    Ok((
+        follow_up_brief_prompt_text(&title, &text),
+        t!("照上面的要求起草这几行。", "Draft those lines as described above.").to_string(),
+    ))
+}
+
 /// What filing one API answer did. Everything the model got wrong is counted, not fatal: one bad line
 /// must not throw away four good ones the user paid for.
 #[derive(serde::Serialize, Default, Debug, PartialEq)]

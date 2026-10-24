@@ -20,7 +20,7 @@ import {
   siftProposals,
 } from '@/lib/engine/followUp';
 import { toolCaption } from '@/lib/engine/progress';
-import { FAILURE_SENTENCE, followUpViaApi, loadApiKey } from '@/lib/ai/compress';
+import { FAILURE_SENTENCE, followUpBriefViaApi, followUpViaApi, loadApiKey } from '@/lib/ai/compress';
 import { apiCallFrom, vendorName } from '@/lib/ai/vendors';
 import { t } from '@/lib/i18n';
 import { useBalanceStore } from './balanceStore';
@@ -103,8 +103,8 @@ export interface EngineTask {
   /** P9S-6: started by the weekly timer, not by a click — a finished run says nothing (the review
    *  badge already shows what came back; 「跟进只能安静显示内容」). Failures still say so. */
   quiet?: boolean;
-  /** P9U-4: 跟进 through the user's API key instead of the CLI (第 187 条: each feature picks its road).
-   *  Decided by whoever queued it, from the road its own picker shows. */
+  /** P9U-4: 跟进 (the search, and drafting its lines) through the user's API key instead of the CLI (第 187
+   *  条: each feature picks its road). Decided by whoever queued it, from the road its own picker shows. */
   road?: 'cli' | 'api';
 }
 
@@ -323,6 +323,25 @@ export const useEngineStore = create<EngineState>((set, get) => {
           throw new Error(o.message ? `${sentence}（${o.message}）` : sentence);
         }
         resultText = describeApiFollowUp(o.text, t);
+      } else if (next.action === 'follow_up_brief' && next.road === 'api') {
+        // 「让 AI 看看还缺什么」: the same drafting prompt, one request, the lines come back as text.
+        const call = apiCallFrom(useSettingsStore.getState());
+        const o = await followUpBriefViaApi({
+          threadId: next.threadId,
+          baseUrl: call.baseUrl,
+          apiKey: await loadApiKey(),
+          model: call.model,
+          reasoning: call.reasoning,
+          wire: call.wire,
+          timeoutSecs,
+        });
+        ranOn = o.model ?? call.model;
+        if (!o.ok) {
+          if (o.kind === 'cancelled') throw new Error(CANCELLED_MARKER);
+          const sentence = t(FAILURE_SENTENCE[o.kind ?? 'http'] ?? FAILURE_SENTENCE.http);
+          throw new Error(o.message ? `${sentence}（${o.message}）` : sentence);
+        }
+        resultText = o.text;
       } else {
         const answer = await invoke<EngineRunResult>('ai_engine_run', {
           action: next.action,
@@ -578,7 +597,7 @@ export const useEngineStore = create<EngineState>((set, get) => {
         threadTitle,
         action,
         ...(quiet ? { quiet } : {}),
-        ...(road === 'api' && action === 'follow_up' ? { road } : {}),
+        ...(road === 'api' && (action === 'follow_up' || action === 'follow_up_brief') ? { road } : {}),
       };
       timeouts.set(task.id, timeoutSecs);
       if (onResult) resultHandlers.set(task.id, onResult);

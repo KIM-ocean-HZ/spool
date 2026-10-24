@@ -1821,6 +1821,48 @@ pub async fn follow_up_via_api(
     }))
 }
 
+/// 「让 AI 看看还缺什么」走这条路（P9U-5 补：它也是跟进的一部分 —— Ocean「跟进功能也在内」）。
+/// ⚠️ 不联网、不写库：起草出来的几行回给面板，由用户决定要不要（§6-2），和 CLI 那条一样。
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub async fn follow_up_brief_via_api(
+    app: tauri::AppHandle,
+    thread_id: String,
+    base_url: String,
+    api_key: String,
+    model: String,
+    reasoning: String,
+    wire: Option<ApiWire>,
+    timeout_secs: u64,
+) -> Result<CompressOutcome, String> {
+    if RUNNING.swap(true, Ordering::SeqCst) {
+        return Err("a run is already in flight".into());
+    }
+    let wire = ApiWire::or_legacy(wire);
+    let out = tauri::async_runtime::spawn_blocking(move || {
+        let (system, user) = match crate::mcp::follow_up_brief_messages_for_api(&thread_id) {
+            Ok(m) => m,
+            Err(e) => return CompressOutcome::failed("internal", e, None),
+        };
+        let bin = match sidecar_path() {
+            Ok(p) => p,
+            Err(e) => return CompressOutcome::failed("no_sidecar", e, None),
+        };
+        let timeout_secs = clamp_timeout(timeout_secs);
+        let request =
+            sidecar_request(&base_url, &api_key, &model, &system, &user, &reasoning, &wire, timeout_secs);
+        let payload = match serde_json::to_vec(&request) {
+            Ok(v) => v,
+            Err(e) => return CompressOutcome::failed("internal", e.to_string(), None),
+        };
+        spawn_sidecar_with(&bin, payload, timeout_secs, Some(app.clone()))
+    })
+    .await;
+    RUNNING.store(false, Ordering::SeqCst);
+    *CHILD.lock().unwrap() = None;
+    Ok(out.unwrap_or_else(|e| CompressOutcome::failed("internal", e.to_string(), None)))
+}
+
 #[cfg(test)]
 mod stale_gate_tests {
     use super::*;

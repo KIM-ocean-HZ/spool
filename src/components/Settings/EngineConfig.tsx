@@ -1,7 +1,8 @@
 import { useEffect } from 'react';
 import LocalEngine from '@/components/AiSetup/LocalEngine';
 import { useT } from '@/lib/i18n';
-import { useEngineStore } from '@/stores/engineStore';
+import { engineSupportsWeb, useEngineStore } from '@/stores/engineStore';
+import RoadCard from './RoadCard';
 import { useSettingsStore } from '@/stores/settingsStore';
 
 // DESIGN_WORKBENCH §3.5 / §9.2 R5 — 「设置里 ai 引擎单独一项，不和 mcp 挤」: this is the 请进来 half (a CLI
@@ -28,28 +29,25 @@ export default function EngineConfig() {
   }, [probe]);
 
   return (
-    <div className="py-2.5">
-      <div className="text-sm text-ink">{t('本机 AI 引擎')}</div>
-      {/* P9H-5（第 150 条）：紧挨在 DeepSeek 的 key 框下面 —— 「不存 key」说的是这条路，不是整个 Spool。 */}
-      <div className="mt-0.5 text-xs text-muted">
-        {t('用你电脑上已经登录的 Claude Code 或 Codex。走这条路 Spool 不存 key。')}
-      </div>
-      <div className="mt-2">
-        <LocalEngine />
-      </div>
+    // P9U-5: one of the two equal cards (RoadCard). P9H-5（第 150 条）：「不存 key」说的是这条路，不是整个 Spool。
+    <RoadCard
+      title={t('本机 CLI')}
+      note={t('用你电脑上已经登录的 Claude Code 或 Codex。走这条路 Spool 不存 key。')}
+      followUp={status?.available && !engineSupportsWeb(status.selected) ? t('Gemini CLI 不能联网搜') : null}
+    >
+      <LocalEngine />
 
       {status?.available && (
-        <div className="mt-3 flex items-center justify-between gap-4">
-          <div className="min-w-0">
-            <div className="text-sm text-ink">{t('单次最长运行时间')}</div>
-            <div className="mt-0.5 text-xs text-muted">
-              {t('超过就停下（已经写进去的块会留着——Spool 只追加，不回滚）。上限 10 分钟。')}
-            </div>
-          </div>
+        // P9U-5: the same row as the API card's 「单次最长等待」 — two equal cards, so the same weight inside.
+        <label
+          className="mt-2.5 flex items-center justify-between gap-3"
+          title={t('超过就停下（已经写进去的块会留着——Spool 只追加，不回滚）。上限 10 分钟。')}
+        >
+          <span className="text-[11px] text-muted">{t('单次最长运行时间')}</span>
           <select
             value={timeoutSecs}
             onChange={(e) => void update({ aiEngineTimeoutSecs: Number(e.target.value) })}
-            className="flex-none rounded border border-line bg-paper px-2 py-0.5 text-xs text-ink outline-none focus:border-accent"
+            className="flex-none rounded border border-line bg-paper px-2 py-0.5 text-[11px] text-ink outline-none focus:border-accent"
           >
             {[60, 180, 300, 600].map((s) => (
               <option key={s} value={s}>
@@ -57,8 +55,8 @@ export default function EngineConfig() {
               </option>
             ))}
           </select>
-        </div>
+        </label>
       )}
-    </div>
+    </RoadCard>
   );
 }
