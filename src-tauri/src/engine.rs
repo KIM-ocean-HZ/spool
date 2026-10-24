@@ -493,12 +493,33 @@ fn dirs_home() -> Option<std::path::PathBuf> {
     std::env::var_os("HOME").map(std::path::PathBuf::from)
 }
 
+/// ⛔ Folders macOS guards per app (Desktop, Documents, Downloads, iCloud Drive) and other volumes.
+/// Merely checking whether `codex` exists in one of them makes macOS ask 「“Spool” would like to access
+/// files in your Desktop folder」 — and the CLI started with such a PATH would make it ask again, in
+/// Spool's name. A login PATH can name one (the author's own `.zshrc` has `~/Desktop/…/tools`). A CLI
+/// kept there is still reachable through 「手动选择…」.
+fn is_guarded_dir(dir: &std::path::Path, home: Option<&std::path::Path>) -> bool {
+    if dir.starts_with("/Volumes") {
+        return true;
+    }
+    home.is_some_and(|h| {
+        ["Desktop", "Documents", "Downloads", "Library/Mobile Documents"]
+            .iter()
+            .any(|g| dir.starts_with(h.join(g)))
+    })
+}
+
 /// Where a CLI may live, in the order to look: the user's shell PATH, this app's own PATH, then the
-/// usual install directories. De-duplicated, order kept.
+/// usual install directories. De-duplicated, order kept, guarded folders left out.
 fn search_dirs() -> Vec<std::path::PathBuf> {
+    let home = dirs_home();
     let mut out: Vec<std::path::PathBuf> = Vec::new();
     let mut push = |p: std::path::PathBuf| {
-        if !p.as_os_str().is_empty() && !out.contains(&p) {
+        if !p.as_os_str().is_empty()
+            && p.is_absolute()
+            && !is_guarded_dir(&p, home.as_deref())
+            && !out.contains(&p)
+        {
             out.push(p);
         }
     };
@@ -2223,6 +2244,18 @@ mod tests {
         assert!(codex[2..].iter().all(|p| p.to_string_lossy().contains("ChatGPT.app/Contents/Resources/codex-cli/bin/codex")));
         assert!(candidate_paths(EngineKind::Claude, &dirs).iter().all(|p| !p.to_string_lossy().contains("ChatGPT.app")));
         assert!(candidate_paths(EngineKind::Gemini, &dirs).iter().all(|p| !p.to_string_lossy().contains(".app/")));
+    }
+
+    #[test]
+    fn guarded_folders_are_never_searched() {
+        let home = std::path::Path::new("/Users/u");
+        for d in ["/Users/u/Desktop/nand2tetris/tools", "/Users/u/Documents/bin", "/Users/u/Downloads", "/Users/u/Library/Mobile Documents/x", "/Volumes/USB/bin"] {
+            assert!(is_guarded_dir(std::path::Path::new(d), Some(home)), "{d}");
+        }
+        for d in ["/Users/u/.local/bin", "/Users/u/DesktopTools/bin", "/opt/homebrew/bin"] {
+            assert!(!is_guarded_dir(std::path::Path::new(d), Some(home)), "{d}");
+        }
+        assert!(search_dirs().iter().all(|d| !is_guarded_dir(d, dirs_home().as_deref())));
     }
 
     // ⛔ The whole bug: an npm CLI is `#!/usr/bin/env node`, and npm put `node` next to it.
