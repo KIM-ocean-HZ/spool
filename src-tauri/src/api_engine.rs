@@ -1863,6 +1863,104 @@ pub async fn follow_up_brief_via_api(
     Ok(out.unwrap_or_else(|e| CompressOutcome::failed("internal", e.to_string(), None)))
 }
 
+// ---------------------------------------------------------------------------------------
+// P9U 真跑（Ocean 2026-10-24 同意：「真跑本机 Codex 要，项目你选」「OpenAI 的 key 给你」）。
+//
+// ⛔ 只在库的**副本**上跑：`SPOOL_DATA_DIR` 指向一份 `VACUUM INTO` 出来的副本。压缩和过期检测本来就
+// 一个字不写；跟进那一条会把提议写进**副本**的待审表，用来看放进去的样子。key 只从环境变量读、不打印。
+//
+//   SPOOL_DATA_DIR=<副本目录> SPOOL_P9U_THREAD=<项目 id> SPOOL_P9U_OUT=<输出目录> \
+//     cargo test --lib real_cli_ -- --ignored --nocapture
+//   SPOOL_DATA_DIR=… SPOOL_P9U_THREAD=… SPOOL_P9U_OPENAI_KEY=… SPOOL_P9U_MODEL=… \
+//     cargo test --lib real_api_follow_up -- --ignored --nocapture
+// ---------------------------------------------------------------------------------------
+#[cfg(test)]
+mod p9u_real_runs {
+    use super::*;
+
+    fn env(k: &str) -> String {
+        std::env::var(k).unwrap_or_else(|_| panic!("set {k}"))
+    }
+
+    fn assert_on_a_copy() {
+        let dir = env("SPOOL_DATA_DIR");
+        assert!(!dir.contains("Application Support"), "real runs go against a copy, never the live library");
+    }
+
+    #[test]
+    #[ignore = "real Codex run against a library copy; see the header"]
+    fn real_cli_compress_and_stale_on_a_copy() {
+        assert_on_a_copy();
+        let thread = env("SPOOL_P9U_THREAD");
+        let out = std::path::PathBuf::from(env("SPOOL_P9U_OUT"));
+        let pack = crate::mcp::pack_text_for_test(&thread).unwrap();
+        std::fs::write(out.join("pack.txt"), &pack).unwrap();
+        let cli = CliRoute { engine: Some("codex".into()), model: None, effort: None, manual_path: None };
+
+        // The GUI sends the SHIELDED pack (notes, relation lines and ==highlights== taken out, put back after —
+        // compressStore `shieldPack`); SPOOL_P9U_SEND names that file when the TS side has made it.
+        let send = std::env::var("SPOOL_P9U_SEND").ok().map(|f| std::fs::read_to_string(f).unwrap()).unwrap_or_else(|| pack.clone());
+        let (system, user) = compress_messages_for_api(&send, CompressLevel::Balanced);
+        let mut c = ask_cli_inner(&cli, &system, &user, 600);
+        println!("compress: ok={} kind={:?} msg={:?} model={:?} ms={} in={} out={}", c.ok, c.kind, c.message, c.model, c.ms, c.input_tokens, c.output_tokens);
+        if c.ok {
+            c.text = keep_pack_boundaries(&send, &c.text);
+            println!("compress: {} → {} chars; cuts={:?}", send.chars().count(), c.text.chars().count(), c.cuts);
+            let name = if std::env::var("SPOOL_P9U_SEND").is_ok() { "compressed-shielded.txt" } else { "compressed.txt" };
+            std::fs::write(out.join(name), &c.text).unwrap();
+        }
+        if std::env::var("SPOOL_P9U_ONLY_COMPRESS").is_ok() {
+            assert!(c.ok);
+            return;
+        }
+
+        let (system, user) = crate::mcp::stale_messages_for_api(&pack);
+        let s = ask_cli_inner(&cli, &system, &user, 600);
+        println!("stale: ok={} kind={:?} msg={:?} ms={}", s.ok, s.kind, s.message, s.ms);
+        if s.ok {
+            let (proposals, dropped) = gate_proposals(&s.text, &pack);
+            println!("stale: {} through the verbatim gate, {} dropped", proposals.len(), dropped.len());
+            for p in &proposals {
+                println!("  #{} → #{}: {} | retyped={}", p.stale_seq, p.by_seq, p.why, p.retyped);
+            }
+            for d in &dropped {
+                println!("  dropped: {:?}", d.reason);
+            }
+            std::fs::write(out.join("stale-raw.txt"), &s.text).unwrap();
+        }
+        assert!(c.ok && s.ok, "both runs should come back");
+    }
+
+    #[test]
+    #[ignore = "real OpenAI web search against a library copy; see the header"]
+    fn real_api_follow_up_on_a_copy() {
+        assert_on_a_copy();
+        let thread = env("SPOOL_P9U_THREAD");
+        let (title, system, user) = crate::mcp::follow_up_messages_for_api(&thread).unwrap();
+        println!("project: {title}; prompt {} + {} chars", system.chars().count(), user.chars().count());
+        let wire = ApiWire { protocol: "openai".into(), temperature: None, max_output_tokens: None };
+        let mut request = sidecar_request(
+            "https://api.openai.com/v1",
+            &env("SPOOL_P9U_OPENAI_KEY"),
+            &env("SPOOL_P9U_MODEL"),
+            &system,
+            &user,
+            "",
+            &wire,
+            600,
+        );
+        request["kind"] = serde_json::json!("search");
+        request["search"] = serde_json::json!("openai");
+        let bin = sidecar_path().unwrap();
+        let o = spawn_sidecar(&bin, serde_json::to_vec(&request).unwrap(), 600);
+        println!("search: ok={} kind={:?} msg={:?} model={:?} ms={} in={} out={} reasoning={:?}", o.ok, o.kind, o.message, o.model, o.ms, o.input_tokens, o.output_tokens, o.reasoning_tokens);
+        assert!(o.ok);
+        println!("--- answer ---\n{}\n---", o.text);
+        let filed = crate::mcp::apply_follow_up_answer(&thread, &o.text, "OpenAI").unwrap();
+        println!("filed: {filed:?}");
+    }
+}
+
 #[cfg(test)]
 mod stale_gate_tests {
     use super::*;

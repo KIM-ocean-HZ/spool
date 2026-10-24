@@ -4105,6 +4105,15 @@ fn pack_floor_message(built: &PackBuilt, max_chars: i64) -> String {
     )
 }
 
+/// P9U real runs (api_engine `real_*`, `--ignored`): one project's pack, from whatever library
+/// `app_data_dir` points at — always a copy there (`SPOOL_DATA_DIR`), never the live one.
+#[cfg(test)]
+pub(crate) fn pack_text_for_test(thread_id: &str) -> Result<String, String> {
+    let dir = app_data_dir().ok_or("no data dir")?;
+    let conn = open_db(&dir)?;
+    get_pack_text(&conn, thread_id, "all")
+}
+
 fn get_pack_text(conn: &Connection, thread_id: &str, range: &str) -> Result<String, String> {
     Ok(build_pack(conn, thread_id, range)?.text)
 }

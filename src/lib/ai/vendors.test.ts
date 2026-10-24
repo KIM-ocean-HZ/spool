@@ -97,6 +97,10 @@ describe('which model is pre-selected', () => {
       'gemini-3-flash',
     );
     expect(pickModel(v('deepseek'), ['deepseek-v4-pro', 'deepseek-v4-flash'], '')).toBe('deepseek-v4-flash');
+    // Ocean 10-24 (第 191 条): Claude defaults to Haiku 5.5, not Opus.
+    expect(pickModel(v('anthropic'), ['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5'], '')).toBe(
+      'claude-haiku-5-5',
+    );
   });
 
   it('a model the user already chose is kept while the vendor still lists it', () => {

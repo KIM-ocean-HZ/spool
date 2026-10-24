@@ -79,8 +79,9 @@ export const VENDORS: Vendor[] = [
     defaultReasoning: '',
     temperature: false,
     maxOutputTokens: null,
-    preferModel: [/^claude-opus-5-5$/],
-    fallbackModel: 'claude-opus-5-5',
+    // Ocean 2026-10-24 (HANDOFF §9.2 第 191 条): Haiku 5.5 by default — the cheap tier, like the others.
+    preferModel: [/^claude-haiku-5-5$/, /^claude-haiku-\d+(-\d+)?$/],
+    fallbackModel: 'claude-haiku-5-5',
     balance: false,
     search: 'anthropic',
   },
