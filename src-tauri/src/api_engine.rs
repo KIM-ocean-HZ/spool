@@ -2644,7 +2644,12 @@ mod p9v_real_runs {
     fn real_api_ws_stale_on_a_copy() {
         let packs = packs();
         let (system, user) = ws_messages(&packs);
-        let wire = ApiWire { protocol: std::env::var("SPOOL_P9V_PROTOCOL").unwrap_or_default(), temperature: None, max_output_tokens: None };
+        // Same wire the app sends for that vendor (vendors.ts `wireFor`) — DeepSeek: openai · temperature 0.2.
+        let wire = ApiWire {
+            protocol: std::env::var("SPOOL_P9V_PROTOCOL").unwrap_or_default(),
+            temperature: std::env::var("SPOOL_P9V_TEMPERATURE").ok().and_then(|t| t.parse().ok()),
+            max_output_tokens: None,
+        };
         let request = sidecar_request(
             &env("SPOOL_P9V_BASE_URL"),
             &env("SPOOL_P9V_KEY"),
