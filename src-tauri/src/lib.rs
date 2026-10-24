@@ -419,6 +419,8 @@ pub fn run() {
             api_engine::compress_duplicate_probe,
             api_engine::forward_duplicate_check,
             api_engine::stale_scan_via_api,
+            api_engine::stale_scan_ws_via_cli,
+            api_engine::stale_scan_ws_via_api,
             api_engine::weekly_review_via_api,
             api_engine::api_balance,
             api_engine::api_models,

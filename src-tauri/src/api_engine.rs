@@ -1462,6 +1462,323 @@ pub async fn stale_scan_via_api(
 }
 
 // ---------------------------------------------------------------------------------------
+// P9V-1 · 一整个工作区一起查（Ocean 10-24 第 192、196 条）
+// ---------------------------------------------------------------------------------------
+//
+// ⚠️ 进来的是**各项目分开的** pack（顺序 = 提示词里的 P1、P2……，`mcp::stale_ws_messages_for_api`），
+// 闸在每个项目自己的 pack 里拆块、找引文 —— ⛔ 不从拼起来的那份材料里倒着拆：`#3` 在三个项目里
+// 各有一个，拼起来之后 `blocks_of` 只会留下第一个。
+// ⛔ 引文那一道和「只查这个项目」是**同一个** `locate`，规矩一个字不放宽。
+
+/// 工作区那一次的一个项目：名字（进提示词的分隔行）+ 它的 pack。
+#[derive(serde::Deserialize, Clone)]
+pub struct WsPack {
+    pub title: String,
+    pub text: String,
+}
+
+/// 「P2#3」—— 第几个项目（⚠️ 从 0 数，是 `packs` 的下标）、它里面的第几块（块自己的 `#N`）。
+#[derive(serde::Serialize, Clone, Copy, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct WsRef {
+    pub project: usize,
+    pub seq: i64,
+}
+
+/// 块级的一条：`stale` 那一块被 `by` 那一块整条取代了（可以跨项目）。
+#[derive(serde::Serialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct WsBlockProposal {
+    pub stale: WsRef,
+    pub by: WsRef,
+    pub why: String,
+    pub quote_stale: String,
+    pub quote_new: String,
+    pub retyped: bool,
+}
+
+/// 项目级的一条：`project` 那个项目整个已经过时了，证据是 `by` 那一块。
+#[derive(serde::Serialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct WsProjectProposal {
+    pub project: usize,
+    pub by: WsRef,
+    pub why: String,
+    pub quote_old: String,
+    pub quote_new: String,
+    pub retyped: bool,
+}
+
+/// ⛔ 没过闸的那一条 —— 和 `StaleDropped` 同一个理由：**连它说了什么一起带出去**。
+/// `old_label` / `by_label` 是它写的原样（认不出来的编号界面照抄）；认得出来的同时给 `old` / `by`。
+#[derive(serde::Serialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct WsDropped {
+    /// `block` = A 那一类（整条取代），`project` = B 那一类（整个项目过时）。
+    pub kind: &'static str,
+    pub old_label: String,
+    pub by_label: String,
+    /// 块级：旧块。项目级：`seq` 是 0（只有项目）。
+    pub old: Option<WsRef>,
+    pub by: Option<WsRef>,
+    pub why: String,
+    /// 块级是 quote_stale，项目级是 quote_old。
+    pub quote_old: String,
+    pub quote_new: String,
+    /// `no_ref` 编号认不出 · `no_project` 没有这个项目 · `no_block` 那个项目里没有这一块 ·
+    /// `same_block` 指到了自己 · `quote_old` / `quote_new` 那一句找不到。
+    pub reason: &'static str,
+}
+
+#[derive(serde::Serialize)]
+pub struct WsStaleScan {
+    pub outcome: CompressOutcome,
+    pub blocks: Vec<WsBlockProposal>,
+    pub projects: Vec<WsProjectProposal>,
+    pub dropped: Vec<WsDropped>,
+}
+
+/// 「P3」→ `Some(2)`。⚠️ 大小写、首尾空白都放过 —— 编号不是引文，放宽它不会放进一句编出来的话。
+fn ws_project_label(s: &str) -> Option<usize> {
+    let s = s.trim();
+    let digits = s.strip_prefix('P').or_else(|| s.strip_prefix('p'))?.trim();
+    let n: usize = digits.parse().ok()?;
+    n.checked_sub(1)
+}
+
+/// 「P2#3」/「P2 #3」→ `Some((1, 3))`。
+fn ws_block_label(s: &str) -> Option<(usize, i64)> {
+    let (p, b) = s.split_once('#')?;
+    let project = ws_project_label(p)?;
+    let seq: i64 = b.trim().parse().ok()?;
+    Some((project, seq))
+}
+
+/// 回答里的那个 JSON 对象。⚠️ 它要是只回了一个数组（照「只查这个项目」那一份的老格式），
+/// 就当成 A 那一类 —— 和 `json_array_slice` 一样，不把「它守规矩」当成前提。
+fn ws_answer(text: &str) -> (Vec<serde_json::Value>, Vec<serde_json::Value>) {
+    let t = text.trim();
+    let array_first = match (t.find('['), t.find('{')) {
+        (Some(a), Some(o)) => a < o,
+        (Some(_), None) => true,
+        _ => false,
+    };
+    if array_first {
+        let items: Vec<serde_json::Value> = serde_json::from_str(json_array_slice(t)).unwrap_or_default();
+        return (items, Vec::new());
+    }
+    let parsed: serde_json::Value = match (t.find('{'), t.rfind('}')) {
+        (Some(a), Some(b)) if b > a => serde_json::from_str(&t[a..=b]).unwrap_or_default(),
+        _ => serde_json::Value::Null,
+    };
+    let list = |k: &str| parsed.get(k).and_then(serde_json::Value::as_array).cloned().unwrap_or_default();
+    (list("blocks"), list("projects"))
+}
+
+/// 一句引文在一个项目的哪一块里都行（项目级的 `quote_old`）。⚠️ 有一块一字不差就算一字不差，
+/// 没有再看有没有「只差标点」的 —— 结果和 HashMap 的遍历顺序无关。
+fn locate_in_any(quote: &str, blocks: &std::collections::HashMap<i64, String>) -> Quoted {
+    let mut best = Quoted::Absent;
+    for text in blocks.values() {
+        match locate(quote, text) {
+            Quoted::Verbatim => return Quoted::Verbatim,
+            Quoted::Retyped => best = Quoted::Retyped,
+            _ => {}
+        }
+    }
+    best
+}
+
+/// 逐条过闸 —— `gate_proposals` 的工作区版。
+fn gate_ws(raw: &str, packs: &[String]) -> (Vec<WsBlockProposal>, Vec<WsProjectProposal>, Vec<WsDropped>) {
+    let per: Vec<std::collections::HashMap<i64, String>> = packs.iter().map(|p| blocks_of(p)).collect();
+    let block_text = |r: WsRef| per.get(r.project).and_then(|m| m.get(&r.seq));
+    let ok = |q: &Quoted| matches!(q, Quoted::Verbatim | Quoted::Retyped);
+    let (block_items, project_items) = ws_answer(raw);
+    let (mut blocks, mut projects, mut dropped) = (Vec::new(), Vec::new(), Vec::new());
+
+    for item in block_items {
+        let s = |k: &str| item.get(k).and_then(serde_json::Value::as_str).unwrap_or_default().to_string();
+        // ⛔ 引文一个字符都不动（`gate_proposals` 里那段话）；只有 why 是给人读的，它才 trim。
+        let (old_label, by_label, why, qs, qn) = (s("stale"), s("by"), s("why").trim().to_string(), s("quote_stale"), s("quote_new"));
+        let old = ws_block_label(&old_label).map(|(project, seq)| WsRef { project, seq });
+        let by = ws_block_label(&by_label).map(|(project, seq)| WsRef { project, seq });
+        let drop = |reason: &'static str| WsDropped {
+            kind: "block",
+            old_label: old_label.clone(),
+            by_label: by_label.clone(),
+            old,
+            by,
+            why: why.clone(),
+            quote_old: qs.clone(),
+            quote_new: qn.clone(),
+            reason,
+        };
+        let (Some(o), Some(b)) = (old, by) else {
+            dropped.push(drop("no_ref"));
+            continue;
+        };
+        if o.project >= packs.len() || b.project >= packs.len() {
+            dropped.push(drop("no_project"));
+            continue;
+        }
+        if o == b {
+            dropped.push(drop("same_block"));
+            continue;
+        }
+        let (Some(old_text), Some(new_text)) = (block_text(o), block_text(b)) else {
+            dropped.push(drop("no_block"));
+            continue;
+        };
+        let (a, c) = (locate(&qs, old_text), locate(&qn, new_text));
+        if !ok(&a) {
+            dropped.push(drop("quote_old"));
+            continue;
+        }
+        if !ok(&c) {
+            dropped.push(drop("quote_new"));
+            continue;
+        }
+        blocks.push(WsBlockProposal {
+            stale: o,
+            by: b,
+            why,
+            quote_stale: qs,
+            quote_new: qn,
+            retyped: a == Quoted::Retyped || c == Quoted::Retyped,
+        });
+    }
+
+    for item in project_items {
+        let s = |k: &str| item.get(k).and_then(serde_json::Value::as_str).unwrap_or_default().to_string();
+        let (old_label, by_label, why, qo, qn) = (s("project"), s("by"), s("why").trim().to_string(), s("quote_old"), s("quote_new"));
+        let project = ws_project_label(&old_label);
+        let by = ws_block_label(&by_label).map(|(project, seq)| WsRef { project, seq });
+        let drop = |reason: &'static str| WsDropped {
+            kind: "project",
+            old_label: old_label.clone(),
+            by_label: by_label.clone(),
+            old: project.map(|p| WsRef { project: p, seq: 0 }),
+            by,
+            why: why.clone(),
+            quote_old: qo.clone(),
+            quote_new: qn.clone(),
+            reason,
+        };
+        let (Some(p), Some(b)) = (project, by) else {
+            dropped.push(drop("no_ref"));
+            continue;
+        };
+        if p >= packs.len() || b.project >= packs.len() {
+            dropped.push(drop("no_project"));
+            continue;
+        }
+        let Some(new_text) = block_text(b) else {
+            dropped.push(drop("no_block"));
+            continue;
+        };
+        let (a, c) = (locate_in_any(&qo, &per[p]), locate(&qn, new_text));
+        if !ok(&a) {
+            dropped.push(drop("quote_old"));
+            continue;
+        }
+        if !ok(&c) {
+            dropped.push(drop("quote_new"));
+            continue;
+        }
+        projects.push(WsProjectProposal {
+            project: p,
+            by: b,
+            why,
+            quote_old: qo,
+            quote_new: qn,
+            retyped: a == Quoted::Retyped || c == Quoted::Retyped,
+        });
+    }
+    (blocks, projects, dropped)
+}
+
+fn ws_scan(outcome: CompressOutcome, packs: &[String]) -> WsStaleScan {
+    let (blocks, projects, dropped) =
+        if outcome.ok { gate_ws(&outcome.text, packs) } else { (Vec::new(), Vec::new(), Vec::new()) };
+    WsStaleScan { outcome, blocks, projects, dropped }
+}
+
+fn ws_messages(packs: &[WsPack]) -> (String, String) {
+    let pairs: Vec<(String, String)> = packs.iter().map(|p| (p.title.clone(), p.text.clone())).collect();
+    crate::mcp::stale_ws_messages_for_api(&pairs)
+}
+
+/// P9V-1 — 过期检测查整个工作区，本机 CLI 那条路。和 `stale_scan_via_cli` 同一把锁、同一个 `ask_cli`
+/// （不给工具、不连 MCP）。
+#[tauri::command]
+pub async fn stale_scan_ws_via_cli(
+    app: tauri::AppHandle,
+    packs: Vec<WsPack>,
+    timeout_secs: u64,
+    cli: CliRoute,
+) -> Result<WsStaleScan, String> {
+    if RUNNING.swap(true, Ordering::SeqCst) {
+        return Err("a run is already in flight".into());
+    }
+    let texts: Vec<String> = packs.iter().map(|p| p.text.clone()).collect();
+    let out = tauri::async_runtime::spawn_blocking(move || {
+        if let Ok(dir) = tauri::Manager::path(&app).app_config_dir() {
+            crate::mcp::refresh_lang(&dir);
+        }
+        let (system, user) = ws_messages(&packs);
+        ask_cli(&cli, &system, &user, timeout_secs)
+    })
+    .await;
+    RUNNING.store(false, Ordering::SeqCst);
+    let outcome = out.unwrap_or_else(|e| CompressOutcome::failed("internal", e.to_string(), None));
+    Ok(ws_scan(outcome, &texts))
+}
+
+/// P9V-1 — 过期检测查整个工作区，API 那条路。请求和 `stale_scan_via_api` 一模一样，只换了提示词。
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub async fn stale_scan_ws_via_api(
+    app: tauri::AppHandle,
+    packs: Vec<WsPack>,
+    base_url: String,
+    api_key: String,
+    model: String,
+    reasoning: String,
+    wire: Option<ApiWire>,
+    timeout_secs: u64,
+) -> Result<WsStaleScan, String> {
+    if RUNNING.swap(true, Ordering::SeqCst) {
+        return Err("a run is already in flight".into());
+    }
+    let wire = ApiWire::or_legacy(wire);
+    let texts: Vec<String> = packs.iter().map(|p| p.text.clone()).collect();
+    let out = tauri::async_runtime::spawn_blocking(move || {
+        if let Ok(dir) = tauri::Manager::path(&app).app_config_dir() {
+            crate::mcp::refresh_lang(&dir);
+        }
+        let (system, user) = ws_messages(&packs);
+        let bin = match sidecar_path() {
+            Ok(p) => p,
+            Err(e) => return CompressOutcome::failed("no_sidecar", e, None),
+        };
+        let timeout_secs = clamp_timeout(timeout_secs);
+        let request =
+            sidecar_request(&base_url, &api_key, &model, &system, &user, &reasoning, &wire, timeout_secs);
+        let payload = match serde_json::to_vec(&request) {
+            Ok(v) => v,
+            Err(e) => return CompressOutcome::failed("internal", e.to_string(), None),
+        };
+        spawn_sidecar_with(&bin, payload, timeout_secs, Some(app.clone()))
+    })
+    .await;
+    RUNNING.store(false, Ordering::SeqCst);
+    *CHILD.lock().unwrap() = None;
+    let outcome = out.unwrap_or_else(|e| CompressOutcome::failed("internal", e.to_string(), None));
+    Ok(ws_scan(outcome, &texts))
+}
+
+// ---------------------------------------------------------------------------------------
 // 余额 —— 2026-08-26，Ocean：「能不能拿到用户的 api 剩余额度，目前使用 api 摩擦还是比较大，
 // 用户需要反复查看余额，但是尽可能保住不出网叙事。」
 //
@@ -2113,5 +2430,160 @@ mod stale_gate_tests {
         // 正文里的 `#12` 不是条目头行。
         assert_eq!(crate::mcp::entry_seq("见 #12 那一条"), None);
         assert_eq!(crate::mcp::entry_seq("#12 没有方括号"), None);
+    }
+}
+
+#[cfg(test)]
+mod stale_ws_tests {
+    use super::*;
+
+    // Two projects; both have a `#3` on purpose — the numbering collides across projects.
+    const A: &str = "# Project Context: midi-GPT\n\
+\n\
+## Full Record (chronological)\n\
+\n\
+#2 [2026-10-01 09:00 · from Claude] 方案定了：用 REMI 编码，训练集 2 万首。\n\
+#3 [2026-10-02 10:00] 下周三前交开题报告。\n";
+    const B: &str = "# Project Context: Flux\n\
+\n\
+## Full Record (chronological)\n\
+\n\
+#3 [2026-10-05 11:00] 导师说别再单独做 midi-GPT 了。\n\
+#5 [2026-10-07 21:00 · from Claude] 改方案：放弃 REMI，改用 Compound Word 编码，midi-GPT 并进 Flux。\n";
+
+    fn packs() -> Vec<String> {
+        vec![A.to_string(), B.to_string()]
+    }
+
+    #[test]
+    fn the_prompt_numbers_projects_in_order_and_fences_them() {
+        let (system, user) = crate::mcp::stale_ws_messages_for_api(&[
+            ("midi-GPT".into(), A.into()),
+            ("Flux".into(), B.into()),
+        ]);
+        assert!(system.contains("P2#3"), "{system}");
+        assert!(system.contains(r##"{"blocks": [], "projects": []}"##));
+        assert!(!system.contains("{rule}") && !system.contains("{why_lang}"));
+        let (p1, p2) = (user.find("==== P1 · 〈midi-GPT〉 ====").unwrap(), user.find("==== P2 · 〈Flux〉 ====").unwrap());
+        assert!(p1 < p2);
+        assert!(user.starts_with('\u{27e6}') && user.trim_end().ends_with('\u{27e7}'), "{user}");
+    }
+
+    #[test]
+    fn a_cross_project_pair_gets_through() {
+        let (blocks, projects, dropped) = gate_ws(
+            r##"{"blocks":[{"stale":"P1#2","by":"P2#5","why":"编码换了","quote_stale":"用 REMI 编码","quote_new":"放弃 REMI"}],"projects":[]}"##,
+            &packs(),
+        );
+        assert!(dropped.is_empty(), "{dropped:?}");
+        assert!(projects.is_empty());
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks[0].stale, WsRef { project: 0, seq: 2 });
+        assert_eq!(blocks[0].by, WsRef { project: 1, seq: 5 });
+        assert!(!blocks[0].retyped);
+    }
+
+    #[test]
+    fn the_same_number_in_two_projects_is_two_blocks() {
+        // The quote is in Flux's #3, not midi-GPT's #3 — so P1#3 does not hold it.
+        let (blocks, _, dropped) = gate_ws(
+            r##"{"blocks":[{"stale":"P1#3","by":"P2#5","why":"x","quote_stale":"别再单独做 midi-GPT 了","quote_new":"midi-GPT 并进 Flux"}]}"##,
+            &packs(),
+        );
+        assert!(blocks.is_empty());
+        assert_eq!(dropped.len(), 1);
+        assert_eq!(dropped[0].reason, "quote_old");
+        assert_eq!(dropped[0].old, Some(WsRef { project: 0, seq: 3 }));
+    }
+
+    #[test]
+    fn bad_references_are_dropped_with_what_was_said() {
+        let (blocks, projects, dropped) = gate_ws(
+            r##"{"blocks":[
+                {"stale":"#2","by":"P2#5","why":"没写项目","quote_stale":"用 REMI 编码","quote_new":"放弃 REMI"},
+                {"stale":"P9#2","by":"P2#5","why":"没有 P9","quote_stale":"用 REMI 编码","quote_new":"放弃 REMI"},
+                {"stale":"P1#99","by":"P2#5","why":"没有这一块","quote_stale":"用 REMI 编码","quote_new":"放弃 REMI"},
+                {"stale":"P2#5","by":"P2 #5","why":"自己","quote_stale":"放弃 REMI","quote_new":"放弃 REMI"}
+            ],"projects":[]}"##,
+            &packs(),
+        );
+        assert!(blocks.is_empty() && projects.is_empty());
+        let reasons: Vec<&str> = dropped.iter().map(|d| d.reason).collect();
+        assert_eq!(reasons, ["no_ref", "no_project", "no_block", "same_block"]);
+        assert_eq!(dropped[0].old_label, "#2");
+        assert_eq!(dropped[0].why, "没写项目");
+        assert_eq!(dropped[0].kind, "block");
+    }
+
+    #[test]
+    fn a_changed_digit_is_not_a_retype() {
+        let (blocks, _, dropped) = gate_ws(
+            r##"{"blocks":[{"stale":"P1#2","by":"P2#5","why":"x","quote_stale":"训练集 3 万首","quote_new":"放弃 REMI"}]}"##,
+            &packs(),
+        );
+        assert!(blocks.is_empty());
+        assert_eq!(dropped[0].reason, "quote_old");
+    }
+
+    #[test]
+    fn a_whole_project_gets_through_with_a_quote_from_any_of_its_blocks() {
+        let (blocks, projects, dropped) = gate_ws(
+            r##"{"blocks":[],"projects":[{"project":"P1","by":"P2#3","why":"并进 Flux 了","quote_old":"下周三前交开题报告","quote_new":"别再单独做 midi-GPT 了"}]}"##,
+            &packs(),
+        );
+        assert!(blocks.is_empty() && dropped.is_empty(), "{dropped:?}");
+        assert_eq!(projects.len(), 1);
+        assert_eq!(projects[0].project, 0);
+        assert_eq!(projects[0].by, WsRef { project: 1, seq: 3 });
+    }
+
+    #[test]
+    fn a_project_quote_from_another_project_is_dropped() {
+        let (_, projects, dropped) = gate_ws(
+            r##"{"projects":[{"project":"P1","by":"P2#3","why":"x","quote_old":"改用 Compound Word 编码","quote_new":"别再单独做 midi-GPT 了"}]}"##,
+            &packs(),
+        );
+        assert!(projects.is_empty());
+        assert_eq!(dropped[0].kind, "project");
+        assert_eq!(dropped[0].reason, "quote_old");
+        assert_eq!(dropped[0].old, Some(WsRef { project: 0, seq: 0 }));
+    }
+
+    #[test]
+    fn a_project_without_evidence_block_is_dropped() {
+        let (_, projects, dropped) = gate_ws(
+            r##"{"projects":[{"project":"P1","by":"P2","why":"x","quote_old":"下周三前交开题报告","quote_new":"别再单独做 midi-GPT 了"}]}"##,
+            &packs(),
+        );
+        assert!(projects.is_empty());
+        assert_eq!(dropped[0].reason, "no_ref");
+    }
+
+    #[test]
+    fn a_bare_array_or_a_fenced_answer_still_reads() {
+        let (blocks, _, _) = gate_ws(
+            r##"[{"stale":"P1#2","by":"P2#5","why":"x","quote_stale":"用 REMI 编码","quote_new":"放弃 REMI"}]"##,
+            &packs(),
+        );
+        assert_eq!(blocks.len(), 1);
+        let (blocks, _, _) = gate_ws(
+            "```json\n{\"blocks\":[{\"stale\":\"p1 # 2\",\"by\":\"P2#5\",\"why\":\"x\",\"quote_stale\":\"用 REMI 编码\",\"quote_new\":\"放弃 REMI\"}],\"projects\":[]}\n```",
+            &packs(),
+        );
+        assert_eq!(blocks.len(), 1);
+    }
+
+    #[test]
+    fn nothing_found_or_nonsense_is_nothing() {
+        for raw in [r##"{"blocks": [], "projects": []}"##, "我没找到。", ""] {
+            let (b, p, d) = gate_ws(raw, &packs());
+            assert!(b.is_empty() && p.is_empty() && d.is_empty(), "{raw}");
+        }
+    }
+
+    #[test]
+    fn a_failed_run_is_not_gated() {
+        let scan = ws_scan(CompressOutcome::failed("http", "boom".into(), Some(500)), &packs());
+        assert!(scan.blocks.is_empty() && scan.projects.is_empty() && scan.dropped.is_empty());
     }
 }
