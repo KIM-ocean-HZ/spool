@@ -57,6 +57,33 @@
 
 ## 6. 给 Ocean 的验收单（换装后给）
 
-换装后单独写。
+截图在桌面 `Spool/P9T-screenshots-20261024/`。
+
+1. **这台 Mac**：打开 设置 → AI 引擎，拉到最下面「本机 AI 引擎」。应该写「✓ 已连接 Codex（还装了另外 2 个）」—— 你设置里选的就是 Codex，之前它装在 nvm 里、app 里找不到，实际跑的多半是 Claude Code。
+2. **新用户（那台没装 Codex 的 Mac / 那个测试用的 macOS 用户）**，什么都不装，打开同一个地方：应该写「找到了 Codex（ChatGPT 自带的）」和一个「连接」按钮（那台装了 ChatGPT 桌面版的话）。点「连接」，变成「✓ 已连接 Codex（ChatGPT 自带的）」。
+3. 同一个新用户，用你上次的办法装 Codex，回到 Spool，把设置关掉再打开：「（ChatGPT 自带的）」那几个字没了 —— 用的是你装的那一份。没装 ChatGPT 的话：装完切回 Spool，不用点任何东西，几秒内就从「没找到」变成「找到了 Codex」。
+4. 一个锁着的 AI 按钮（比如周回顾那一条，连接之前）点开：弹出来的是同一块，按「连接」就通，弹块自己合上。
+5. 整个过程中**不应该**弹出「“Spool”想访问你的桌面 / 文稿 / 下载文件夹」。
+
+只要告诉我：哪几条不对；第 2、3 条是在另一台 Mac 上试的还是同一台的另一个用户（另一台的话要先把这一版装过去）。
 
 ## 7. 回执（执行窗填写）
+
+### 7.1 P9T-1 · 找得到 —— `7fd643b` + 补 `fed39b6`
+
+- 根因在这台上复现：`env -i PATH=/usr/bin:/bin:/usr/sbin:/sbin … ~/.nvm/…/bin/codex --version` → `env: node: No such file or directory`；`~/.local/bin/claude`（原生）跑得通。ChatGPT.app 自带 `codex-cli 0.163.0-alpha`，Spool 用到的参数它都认；Claude 桌面版那份是 Linux 程序，不用。
+- 改：一份目录清单 `search_dirs`（登录 shell `-ilc` 的 PATH，只问一次、3 秒超时、带记号；app 自己的 PATH；常见目录；nvm 新版本在前；去重）；找 CLI 和启动 CLI（`--version` 和真正运行的 `run_env`）都用它，CLI 自己的目录排第一；Codex 最后看 ChatGPT.app（`/Applications`、`~/Applications`）；**桌面 / 文稿 / 下载 / iCloud / 外接卷不进清单**（补的那一笔：这台的 `.zshrc` 把 `~/Desktop/nand2tetris/tools` 放进了 PATH，光看一眼里面就会弹「Spool 想访问桌面」）。
+- 验：单元测试 5 条（记号解析、顺序、ChatGPT 那份最后、CLI 目录排第一、受保护目录不进）；光 PATH 实测三种：正常 → Claude / Codex（nvm）/ Gemini（nvm）都认出；登录 shell 失败 → 照样都认出；空的家目录 → 只剩 ChatGPT 自带的 Codex 0.163，认出。登录 shell 那一步这台约 1.5 秒，在后台线程。cargo 229 过 · 6 跳过。
+
+### 7.2 P9T-2 · 一键连上 —— `308fa84`
+
+- `AiSetup/LocalEngine.tsx`：没找到 / 找到了·连接 / 已连接三种，设置页和锁的弹出块共用；「连接」只开关着的那个开关；ChatGPT 自带的写明；路径在悬停提示里。设置页「详细说明」七段、填路径框和 `which` 教程、指去 MCP 页的那句都去掉；`turnOnCli` 和它的测试删了（补丁本身 `cliSwitchesPatch` 在 gate.test 里有测）；26 句死字删了（`--dead` 回到 87，`用哪个引擎` 本来就死，没动）。
+- 没找到时窗口拿到焦点再找（`probeIfMissing`，至少隔 10 秒）。右栏 / 跟进面板的锁改成「找到了 {engine}，还没连接」。
+- 验：tsc 干净 · vitest 1177（新加 LocalEngine 5 条；engineSentences ② 改成新句子，意思不变）· i18n 无缺。截图：四种样子 + 弹出块 + 英文。
+
+### 7.3 换装（10-24 凌晨，两次）
+
+- 装前：v0.7.1 正式版（`Notarized Developer ID`）；`drafts.json` 两个都空；真库 v35 · ok · 项目 90 / 块 1297 · 正文 538045。
+- 第一次（01:08，`308fa84`）装完才查到桌面那个问题 ⇒ 补一笔、重编、**第二次（01:10，`fed39b6`）**。每次都：备份到 `~/Desktop/Spool/db/`（`…before-p9t-install-…` / `…before-p9t2-install-20261024-011014…`，库 + 五个 json），旧包进 `spool-pre-install/`，`open --stdout/--stderr` 留日志（`~/Desktop/Spool/logs/spool-p9t2-20261024-011014.log`）。
+- 装后：sha256 和构建一致；日志两行（overlay、双击 ⌥ HID/active）；真库那几个数一样；四个 json 逐字节一样。`spctl` 是开发版（没公证），版本号还是 0.7.1。
+- **没验的**：界面上的三种样子只在离屏渲染里看过；真机上「装完切回来自己出现」和「没有弹访问桌面」等 Ocean。
