@@ -1741,6 +1741,86 @@ pub async fn weekly_review_via_api(
     })
 }
 
+// ---------------------------------------------------------------------------------------
+// 跟进走这条路 —— P9U-4（Ocean 2026-10-24 第 186 条：「API 的跟进用各家自带的联网搜索」）。
+//
+// ⚠️ 和 CLI 那条的区别只在「谁来把结果放进待审」：CLI 带着 MCP 自己调 propose_blocks；这一条没有 MCP，
+// 那家搜完回一个 JSON 对象，由 Spool 拿**同一批函数**放进去（`mcp::apply_follow_up_answer`）——
+// 标签、上限、待审面一样，回到前端之后过的也是同一道去重闸（engineStore `siftFollowUp`）。
+// ⛔ 私密项目读不到（`open_db`），所以这里也跑不了它 —— 和 P9E-3 那条规矩一致。
+// ---------------------------------------------------------------------------------------
+
+/// 一次 API 跟进的结果：那一趟的信封（钱、模型、失败原因），和放进去了多少。
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FollowUpApiOutcome {
+    pub outcome: CompressOutcome,
+    /// `None` = 没走到放进去那一步（那一趟失败了，或者回答不是约定的 JSON —— 原因在 outcome 里）。
+    pub filed: Option<crate::mcp::FollowUpFiled>,
+}
+
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub async fn follow_up_via_api(
+    app: tauri::AppHandle,
+    thread_id: String,
+    vendor: String,
+    search: String,
+    base_url: String,
+    api_key: String,
+    model: String,
+    reasoning: String,
+    wire: Option<ApiWire>,
+    timeout_secs: u64,
+) -> Result<FollowUpApiOutcome, String> {
+    if RUNNING.swap(true, Ordering::SeqCst) {
+        return Err("a run is already in flight".into());
+    }
+    let wire = ApiWire::or_legacy(wire);
+    let out = tauri::async_runtime::spawn_blocking(move || {
+        let (_, system, user) = match crate::mcp::follow_up_messages_for_api(&thread_id) {
+            Ok(m) => m,
+            Err(e) => return FollowUpApiOutcome { outcome: CompressOutcome::failed("internal", e, None), filed: None },
+        };
+        let bin = match sidecar_path() {
+            Ok(p) => p,
+            Err(e) => return FollowUpApiOutcome { outcome: CompressOutcome::failed("no_sidecar", e, None), filed: None },
+        };
+        let timeout_secs = clamp_timeout(timeout_secs);
+        let mut request =
+            sidecar_request(&base_url, &api_key, &model, &system, &user, &reasoning, &wire, timeout_secs);
+        request["kind"] = serde_json::json!("search");
+        request["search"] = serde_json::json!(search);
+        let payload = match serde_json::to_vec(&request) {
+            Ok(v) => v,
+            Err(e) => {
+                return FollowUpApiOutcome { outcome: CompressOutcome::failed("internal", e.to_string(), None), filed: None }
+            }
+        };
+        let mut outcome = spawn_sidecar_with(&bin, payload, timeout_secs, Some(app.clone()));
+        if !outcome.ok {
+            return FollowUpApiOutcome { outcome, filed: None };
+        }
+        match crate::mcp::apply_follow_up_answer(&thread_id, &outcome.text, &vendor) {
+            Ok(filed) => FollowUpApiOutcome { outcome, filed: Some(filed) },
+            // ⚠️ 钱已经花了、回答也拿到了，只是没法照约定放进去 —— 报成失败，⛔ 不报成「这次没有新东西」。
+            Err(e) => {
+                outcome.ok = false;
+                outcome.kind = Some("bad_response".into());
+                outcome.message = Some(e);
+                FollowUpApiOutcome { outcome, filed: None }
+            }
+        }
+    })
+    .await;
+    RUNNING.store(false, Ordering::SeqCst);
+    *CHILD.lock().unwrap() = None;
+    Ok(out.unwrap_or_else(|e| FollowUpApiOutcome {
+        outcome: CompressOutcome::failed("internal", e.to_string(), None),
+        filed: None,
+    }))
+}
+
 #[cfg(test)]
 mod stale_gate_tests {
     use super::*;

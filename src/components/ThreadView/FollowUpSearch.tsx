@@ -1,10 +1,13 @@
 import { Globe } from 'lucide-react';
 import LockedAiEntry from '@/components/AiSetup/LockedAiEntry';
 import PrivateAiEntry from '@/components/AiSetup/PrivateAiEntry';
+import RoadPicker from '@/components/AiSetup/RoadPicker';
+import { resolveVendor, vendorName } from '@/lib/ai/vendors';
+import { routeFor, useFollowUpRoads, useRoads } from '@/lib/engine/roads';
 import Toggle from '@/components/ui/Toggle';
 import type { Thread } from '@/lib/db/threads';
 import type { FollowUpState } from '@/lib/engine/followUp';
-import { aiEntryState, canShowEngineActions, engineActionsDisabled } from '@/lib/engine/gate';
+import { aiEntryState, engineActionsDisabled } from '@/lib/engine/gate';
 import { MarkdownContent } from '@/lib/blocks/MarkdownContent';
 import { dateLocale, useT } from '@/lib/i18n';
 import { IS_MAC } from '@/lib/platform';
@@ -38,7 +41,15 @@ export default function FollowUpSearch({ thread, hasLines }: { thread: Thread; h
   const mcpEnabled = useSettingsStore((s) => s.mcpEnabled);
   const mcpWriteEnabled = useSettingsStore((s) => s.mcpWriteEnabled);
   const actionsEnabled = useSettingsStore((s) => s.aiEngineActionsEnabled);
-  const timeoutSecs = useSettingsStore((s) => s.aiEngineTimeoutSecs);
+  const cliTimeoutSecs = useSettingsStore((s) => s.aiEngineTimeoutSecs);
+  const apiTimeoutSecs = useSettingsStore((s) => s.apiTimeoutSecs);
+  const followUpRoute = useSettingsStore((s) => s.followUpRoute);
+  const vendor = useSettingsStore((s) => resolveVendor(s.apiVendor, s.apiBaseUrl));
+  // P9U-4 (第 186 / 187 条): 跟进 runs on either road — the local CLI, or an API key whose vendor has its
+  // own web search — and which one is this feature's own pick when both are there.
+  const allRoads = useRoads();
+  const roads = useFollowUpRoads();
+  const road = routeFor(followUpRoute, roads);
   const run = useFollowUpStore((s) => s.run);
   const setAuto = useFollowUpStore((s) => s.setAuto);
 
@@ -49,13 +60,14 @@ export default function FollowUpSearch({ thread, hasLines }: { thread: Thread; h
     status === null
       ? null
       : aiEntryState({
-          ready: canShowEngineActions(gate),
-          route: 'cli',
+          ready: road !== null,
+          route: 'any',
           showAi: actionsEnabled,
           isMac: IS_MAC,
           privateProject: thread.isPrivate,
         });
   const disabled = engineActionsDisabled(gate);
+  const engineName = status?.selected ? ENGINE_LABEL[status.selected] : 'Claude Code / Codex';
   const last = lastSearchLine(t, run);
   // The AI's own words from the last search of this project — they used to sit on a card at the top of
   // the rail. Here, folded, for whoever wants to read them.
@@ -68,25 +80,21 @@ export default function FollowUpSearch({ thread, hasLines }: { thread: Thread; h
     if (entry === 'private') return <PrivateAiEntry label={t('联网搜索')} />;
     if (!hasLines) return null;
     if (entry === 'locked') {
-      return (
-        <LockedAiEntry
-          label={t('联网搜索')}
-          reason={
-            cliAvailable && status?.selected
+      // Say what is actually in the way: a key whose vendor cannot search (第 186 条: 「这家的 key 不能联网
+      // 搜」), Gemini CLI (its free tier ran out in one follow-up), a CLI found but not connected, or nothing.
+      const reason =
+        allRoads.api && vendor.search === null
+          ? t('{vendor} 的 key 不能联网搜。换一家能联网的 key（OpenAI、Claude、Gemini、Kimi、通义），或者用本机的 Claude Code / Codex。', {
+              vendor: vendorName(vendor, t),
+            })
+          : allRoads.cli && !engineSupportsWeb(status?.selected ?? null)
+            ? t('联网搜索这一项 Gemini CLI 跑不了——它的免费额度一次跟进就用完了。换成 Claude Code 或 Codex 才有。')
+            : cliAvailable && status?.selected
               ? t('找到了 {engine}，还没连接。', { engine: ENGINE_LABEL[status.selected] })
-              : t('联网搜索要用本机的 Claude Code 或 Codex。')
-          }
-          route="cli"
-        />
-      );
-    }
-    if (entry !== 'ready') return null;
-    if (!engineSupportsWeb(status?.selected ?? null)) {
-      return (
-        <p className="text-[11px] leading-relaxed text-muted">
-          {t('联网搜索这一项 Gemini CLI 跑不了——它的免费额度一次跟进就用完了。换成 Claude Code 或 Codex 才有。')}
-        </p>
-      );
+              : IS_MAC
+                ? t('联网搜索要用本机的 Claude Code / Codex，或者一家能联网的 API key。')
+                : t('联网搜索要用一家能联网的 API key（OpenAI、Claude、Gemini、Kimi、通义）。');
+      return <LockedAiEntry label={t('联网搜索')} reason={reason} route="any" />;
     }
     return null;
   })();
@@ -95,26 +103,41 @@ export default function FollowUpSearch({ thread, hasLines }: { thread: Thread; h
 
   return (
     <div className="mt-3 space-y-2 border-t border-line pt-3">
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <button
           type="button"
           disabled={disabled}
-          onClick={() => enqueue(thread.id, thread.title, 'follow_up', timeoutSecs)}
+          onClick={() =>
+            enqueue(
+              thread.id,
+              thread.title,
+              'follow_up',
+              road === 'api' ? apiTimeoutSecs : cliTimeoutSecs,
+              undefined,
+              false,
+              road ?? 'cli',
+            )
+          }
           title={t('照你定的那几行联网搜索')}
           className="flex items-center gap-1.5 rounded border border-line bg-paper px-2.5 py-1 text-[11px] text-ink-2 transition-colors enabled:hover:border-accent enabled:hover:text-accent disabled:text-muted disabled:opacity-60"
         >
           <Globe size={11} className="flex-none" />
           {t('联网搜索')}
         </button>
+        <RoadPicker setting="followUpRoute" roads={roads} disabled={disabled} />
         {last && <span className="text-[10px] text-muted">{last}</span>}
       </div>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="text-[12px] text-ink-2">{t('每周自动查一次')}</div>
           <p className="mt-0.5 text-[10px] leading-relaxed text-muted">
-            {t('用本机的 {engine}。查到新东西才放进待审，并标着「跟进」；没有就什么都不说。', {
-              engine: status?.selected ? ENGINE_LABEL[status.selected] : 'Claude Code / Codex',
-            })}
+            {road === 'api'
+              ? t('用 {vendor} 的联网搜索（按字数花钱）。查到新东西才放进待审，并标着「跟进」；没有就什么都不说。', {
+                  vendor: vendorName(vendor, t),
+                })
+              : t('用本机的 {engine}。查到新东西才放进待审，并标着「跟进」；没有就什么都不说。', {
+                  engine: engineName,
+                })}
           </p>
         </div>
         <Toggle checked={run?.auto === true} onChange={(on) => void setAuto(on)} />

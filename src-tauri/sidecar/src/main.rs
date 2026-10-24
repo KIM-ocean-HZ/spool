@@ -94,6 +94,9 @@ struct Request {
     /// 不先问一句，一个错的 key 在设置里会显示成「已连接」，要等第一次真跑才露馅。它的 `/key` 认 key。
     #[serde(default)]
     key_check_path: String,
+    /// 跟进用哪家的联网搜索（只对 `"search"` 有效，P9U-4）：`openai` / `anthropic` / `gemini` / `kimi` / `qwen`。
+    #[serde(default)]
+    search: String,
 }
 
 /// 吐到 stdout 的信封。`ok` 是判别字段，两种形态的字段不重叠。
@@ -214,6 +217,9 @@ fn run(req: Request) -> Envelope {
     }
     if req.kind == "models" {
         return list_models(base, &req);
+    }
+    if req.kind == "search" {
+        return search(base, &req);
     }
     if req.protocol == "anthropic" {
         return run_anthropic(base, &req);
@@ -731,6 +737,381 @@ impl AnthropicStream {
     }
 }
 
+// ---------------------------------------------------------------------------------------
+// 跟进：用那家自带的联网搜索问一次（P9U-4，Ocean 10-24 第 186 条）
+// ---------------------------------------------------------------------------------------
+//
+// ⚠️ 五家五种接法，没有一种是 `/chat/completions` 那条标准路：
+//   * OpenAI    —— Responses 接口（`/responses`）+ `web_search` 工具；
+//   * Claude    —— Messages 接口 + `web_search` 服务端工具（搜到一半会 `pause_turn`，要接着发）；
+//   * Gemini    —— 它自己的 `generateContent` + `google_search`（OpenAI 兼容那条地址不给联网）；
+//   * Kimi      —— `/chat/completions` + 内置函数 `$web_search`（它回 tool_calls，要原样递回去再问一次）；
+//   * 通义      —— `/chat/completions` + `enable_search: true`。
+// 回答都很短（一个 JSON 对象），所以这里**不流式**：一次 POST、一个响应体，出错时厂商原话照旧带回。
+// 回答是什么格式由提示词定（mcp.rs `follow_up_api_system`），这里只负责把那段字拿回来。
+
+/// 搜索那一趟的输出上限。回答是一个 JSON 对象，但会思考的模型先想再写，留足。
+const SEARCH_MAX_TOKENS: u32 = 16_000;
+/// Claude 的 `pause_turn` / Kimi 的 tool_calls 最多接几轮。到了还没完就当失败报出来。
+const SEARCH_MAX_ROUNDS: usize = 6;
+/// Claude 一次跟进最多搜几次（按次计费，$10 / 千次）。
+const ANTHROPIC_SEARCH_MAX_USES: u32 = 8;
+/// 认带动态筛选那一版（`web_search_20260209`）的 Claude 模型；别的用基础版。
+const ANTHROPIC_DYNAMIC_SEARCH_MODELS: &[&str] = &[
+    "claude-opus-5-5",
+    "claude-opus-5",
+    "claude-opus-4-8",
+    "claude-opus-4-7",
+    "claude-opus-4-6",
+    "claude-sonnet-5-5",
+    "claude-sonnet-5",
+    "claude-sonnet-4-6",
+];
+
+fn anthropic_search_tool(model: &str) -> &'static str {
+    if ANTHROPIC_DYNAMIC_SEARCH_MODELS.contains(&model) {
+        "web_search_20260209"
+    } else {
+        "web_search_20250305"
+    }
+}
+
+fn search(base: &str, req: &Request) -> Envelope {
+    let timeout = Duration::from_secs(req.timeout_secs.clamp(10, 900));
+    let agent: ureq::Agent = ureq::Agent::config_builder()
+        .timeout_global(Some(timeout))
+        .max_idle_connections(0)
+        .http_status_as_error(false)
+        .build()
+        .into();
+    progress(&serde_json::json!({ "stage": "sending" }));
+    let started = Instant::now();
+    let out = match req.search.as_str() {
+        "openai" => search_openai(&agent, base, req),
+        "anthropic" => search_anthropic(&agent, base, req),
+        "gemini" => search_gemini(&agent, base, req),
+        "kimi" => search_kimi(&agent, base, req),
+        "qwen" => search_qwen(&agent, base, req),
+        other => Err(err(
+            "unsupported",
+            format!("This provider has no web search Spool can use ({other:?})."),
+            None,
+        )),
+    };
+    match out {
+        Ok((text, usage, model)) => Envelope::Ok { ok: true, text, usage, model, ms: started.elapsed().as_millis() },
+        Err(e) => e,
+    }
+}
+
+type SearchOut = Result<(String, Usage, String), Envelope>;
+
+/// 发一次 JSON POST，拿回 (状态码, 解析后的体, 原文)。连不上 / 超时直接是失败信封。
+fn post_json(
+    agent: &ureq::Agent,
+    url: &str,
+    headers: &[(&str, String)],
+    body: &serde_json::Value,
+    base: &str,
+) -> Result<(u16, serde_json::Value, String), Envelope> {
+    let mut call = agent.post(url).header("Content-Type", "application/json");
+    for (k, v) in headers {
+        call = call.header(*k, v);
+    }
+    let mut resp = match call.send_json(body) {
+        Ok(r) => r,
+        Err(ureq::Error::Timeout(_)) => {
+            return Err(err("timeout", "The search did not come back in time.", None))
+        }
+        Err(e) => return Err(err("network", format!("Could not reach {base} — {e}"), None)),
+    };
+    let status = resp.status().as_u16();
+    let text = resp.body_mut().read_to_string().unwrap_or_default();
+    let parsed = serde_json::from_str::<serde_json::Value>(&text).unwrap_or(serde_json::Value::Null);
+    Ok((status, parsed, text))
+}
+
+/// 4xx / 5xx → 带厂商原话的失败信封（Gemini 坏 key 的 400 也认成 auth，见 `classify_with`）。
+fn http_failure(status: u16, parsed: &serde_json::Value, raw: &str) -> Envelope {
+    let msg = vendor_error(parsed).unwrap_or_else(|| format!("{} — {}", http_message(status), clip(raw)));
+    err(classify_with(status, &msg), msg, Some(status))
+}
+
+fn bearer(req: &Request) -> Vec<(&'static str, String)> {
+    vec![("Authorization", format!("Bearer {}", req.api_key))]
+}
+
+fn effort(req: &Request) -> Option<&str> {
+    req.reasoning_effort.as_deref().filter(|s| !s.is_empty())
+}
+
+fn openai_search_body(req: &Request) -> serde_json::Value {
+    let mut body = serde_json::json!({
+        "model": req.model,
+        "instructions": req.system,
+        "input": req.user,
+        "tools": [{ "type": "web_search" }],
+    });
+    if let Some(e) = effort(req) {
+        body["reasoning"] = serde_json::json!({ "effort": e });
+    }
+    body
+}
+
+/// Responses 接口的回答 → 正文。正文在 `output[]` 里 type 为 message 的那几项的 `output_text` 里。
+fn openai_search_text(v: &serde_json::Value) -> Result<(String, Usage, String), Envelope> {
+    if v.get("status").and_then(|s| s.as_str()) == Some("incomplete") {
+        let why = v.pointer("/incomplete_details/reason").and_then(|s| s.as_str()).unwrap_or("not reported");
+        return Err(err("truncated", format!("The search answer was cut off ({why})."), None));
+    }
+    let mut text = String::new();
+    for item in v.get("output").and_then(|o| o.as_array()).into_iter().flatten() {
+        if item.get("type").and_then(|t| t.as_str()) != Some("message") {
+            continue;
+        }
+        for c in item.get("content").and_then(|c| c.as_array()).into_iter().flatten() {
+            if c.get("type").and_then(|t| t.as_str()) == Some("output_text") {
+                text.push_str(c.get("text").and_then(|t| t.as_str()).unwrap_or(""));
+            }
+        }
+    }
+    if text.trim().is_empty() {
+        return Err(err("bad_response", "The search came back with no answer text.", None));
+    }
+    let u = v.get("usage");
+    let n = |p: &str| u.and_then(|u| u.pointer(p)).and_then(|x| x.as_u64());
+    let usage = Usage {
+        input_tokens: n("/input_tokens").unwrap_or(0),
+        output_tokens: n("/output_tokens").unwrap_or(0),
+        cached_input_tokens: n("/input_tokens_details/cached_tokens"),
+        reasoning_tokens: n("/output_tokens_details/reasoning_tokens"),
+    };
+    let model = v.get("model").and_then(|m| m.as_str()).unwrap_or("").to_string();
+    Ok((text, usage, model))
+}
+
+fn search_openai(agent: &ureq::Agent, base: &str, req: &Request) -> SearchOut {
+    let (status, v, raw) = post_json(agent, &format!("{base}/responses"), &bearer(req), &openai_search_body(req), base)?;
+    if status >= 400 {
+        return Err(http_failure(status, &v, &raw));
+    }
+    let (text, usage, model) = openai_search_text(&v)?;
+    Ok((text, usage, if model.is_empty() { req.model.clone() } else { model }))
+}
+
+fn anthropic_search_body(req: &Request, messages: &serde_json::Value) -> serde_json::Value {
+    let mut body = serde_json::json!({
+        "model": req.model,
+        "max_tokens": SEARCH_MAX_TOKENS,
+        "system": [{ "type": "text", "text": req.system, "cache_control": { "type": "ephemeral" } }],
+        "messages": messages,
+        "tools": [{ "type": anthropic_search_tool(&req.model), "name": "web_search", "max_uses": ANTHROPIC_SEARCH_MAX_USES }],
+    });
+    if let Some(e) = effort(req) {
+        body["output_config"] = serde_json::json!({ "effort": e });
+    }
+    if anthropic_takes_fallback(&req.model) {
+        body["fallbacks"] = serde_json::json!("default");
+    }
+    body
+}
+
+fn search_anthropic(agent: &ureq::Agent, base: &str, req: &Request) -> SearchOut {
+    let mut headers = vec![
+        ("x-api-key", req.api_key.clone()),
+        ("anthropic-version", ANTHROPIC_VERSION.to_string()),
+    ];
+    if anthropic_takes_fallback(&req.model) {
+        headers.push(("anthropic-beta", ANTHROPIC_FALLBACK_BETA.to_string()));
+    }
+    let mut messages = serde_json::json!([{ "role": "user", "content": req.user }]);
+    let (mut text, mut usage, mut model) = (String::new(), Usage::default(), req.model.clone());
+    for _ in 0..SEARCH_MAX_ROUNDS {
+        let (status, v, raw) =
+            post_json(agent, &format!("{base}/v1/messages"), &headers, &anthropic_search_body(req, &messages), base)?;
+        if status >= 400 {
+            return Err(http_failure(status, &v, &raw));
+        }
+        let u = v.get("usage");
+        let n = |k: &str| u.and_then(|u| u.get(k)).and_then(|x| x.as_u64()).unwrap_or(0);
+        let cached = n("cache_read_input_tokens");
+        usage.input_tokens += n("input_tokens") + cached + n("cache_creation_input_tokens");
+        usage.output_tokens += n("output_tokens");
+        usage.cached_input_tokens = Some(usage.cached_input_tokens.unwrap_or(0) + cached);
+        if let Some(m) = v.get("model").and_then(|m| m.as_str()) {
+            model = m.to_string();
+        }
+        let content = v.get("content").cloned().unwrap_or(serde_json::json!([]));
+        for b in content.as_array().into_iter().flatten() {
+            if b.get("type").and_then(|t| t.as_str()) == Some("text") {
+                text.push_str(b.get("text").and_then(|t| t.as_str()).unwrap_or(""));
+            }
+        }
+        match v.get("stop_reason").and_then(|s| s.as_str()) {
+            // 服务端那一圈搜到上限停了一下：把它这一轮原样接回去，它从断点接着做（不加「继续」）。
+            Some("pause_turn") => {
+                messages.as_array_mut().unwrap().push(serde_json::json!({ "role": "assistant", "content": content }));
+                continue;
+            }
+            Some("refusal") => return Err(err("refused", "The model declined this search (stop_reason: refusal).", Some(status))),
+            Some("max_tokens") => return Err(err("truncated", "The search answer was cut off by the output-token limit.", Some(status))),
+            _ => {}
+        }
+        if text.trim().is_empty() {
+            return Err(err("bad_response", "The search came back with no answer text.", Some(status)));
+        }
+        return Ok((text, usage, model));
+    }
+    Err(err("cut_off", format!("The search was still going after {SEARCH_MAX_ROUNDS} rounds."), None))
+}
+
+/// Gemini 自己的接口根：OpenAI 兼容地址去掉末尾的 `/openai`。
+fn gemini_root(base: &str) -> &str {
+    base.trim_end_matches('/').trim_end_matches("/openai")
+}
+
+fn gemini_search_body(req: &Request) -> serde_json::Value {
+    serde_json::json!({
+        "systemInstruction": { "parts": [{ "text": req.system }] },
+        "contents": [{ "role": "user", "parts": [{ "text": req.user }] }],
+        "tools": [{ "google_search": {} }],
+    })
+}
+
+fn gemini_search_text(v: &serde_json::Value) -> Result<(String, Usage, String), Envelope> {
+    let cand = v.pointer("/candidates/0");
+    let finish = cand.and_then(|c| c.get("finishReason")).and_then(|f| f.as_str()).unwrap_or("");
+    let mut text = String::new();
+    for p in cand.and_then(|c| c.pointer("/content/parts")).and_then(|p| p.as_array()).into_iter().flatten() {
+        // 思考摘要那几段（thought: true）不是回答。
+        if p.get("thought").and_then(|t| t.as_bool()) == Some(true) {
+            continue;
+        }
+        text.push_str(p.get("text").and_then(|t| t.as_str()).unwrap_or(""));
+    }
+    if finish == "MAX_TOKENS" {
+        return Err(err("truncated", "The search answer was cut off by the output-token limit.", None));
+    }
+    if text.trim().is_empty() {
+        let why = if finish.is_empty() { "no candidate".to_string() } else { format!("finishReason: {finish}") };
+        let kind = if finish == "SAFETY" || finish == "PROHIBITED_CONTENT" { "refused" } else { "bad_response" };
+        return Err(err(kind, format!("The search came back with no answer text ({why})."), None));
+    }
+    let u = v.get("usageMetadata");
+    let n = |k: &str| u.and_then(|u| u.get(k)).and_then(|x| x.as_u64());
+    let thoughts = n("thoughtsTokenCount");
+    let usage = Usage {
+        input_tokens: n("promptTokenCount").unwrap_or(0),
+        output_tokens: n("candidatesTokenCount").unwrap_or(0) + thoughts.unwrap_or(0),
+        cached_input_tokens: n("cachedContentTokenCount"),
+        reasoning_tokens: thoughts,
+    };
+    let model = v.get("modelVersion").and_then(|m| m.as_str()).unwrap_or("").to_string();
+    Ok((text, usage, model))
+}
+
+fn search_gemini(agent: &ureq::Agent, base: &str, req: &Request) -> SearchOut {
+    let url = format!("{}/models/{}:generateContent", gemini_root(base), req.model);
+    let headers = vec![("x-goog-api-key", req.api_key.clone())];
+    let (status, v, raw) = post_json(agent, &url, &headers, &gemini_search_body(req), base)?;
+    if status >= 400 {
+        return Err(http_failure(status, &v, &raw));
+    }
+    let (text, usage, model) = gemini_search_text(&v)?;
+    Ok((text, usage, if model.is_empty() { req.model.clone() } else { model }))
+}
+
+fn add_openai_usage(total: &mut Usage, u: Option<&serde_json::Value>) {
+    let u = read_usage(u);
+    total.input_tokens += u.input_tokens;
+    total.output_tokens += u.output_tokens;
+    if let Some(c) = u.cached_input_tokens {
+        total.cached_input_tokens = Some(total.cached_input_tokens.unwrap_or(0) + c);
+    }
+    if let Some(r) = u.reasoning_tokens {
+        total.reasoning_tokens = Some(total.reasoning_tokens.unwrap_or(0) + r);
+    }
+}
+
+/// `/chat/completions` 那一套的一次回答 → 正文；`length` 掐断的、空的都是失败。
+fn chat_answer(v: &serde_json::Value, status: u16) -> Result<String, Envelope> {
+    let content = v.pointer("/choices/0/message/content").and_then(|c| c.as_str()).unwrap_or("");
+    if v.pointer("/choices/0/finish_reason").and_then(|f| f.as_str()) == Some("length") {
+        return Err(err("truncated", "The search answer was cut off by the output-token limit.", Some(status)));
+    }
+    if content.trim().is_empty() {
+        return Err(err("bad_response", "The search came back with no answer text.", Some(status)));
+    }
+    Ok(content.to_string())
+}
+
+fn kimi_search_body(req: &Request, messages: &serde_json::Value) -> serde_json::Value {
+    let mut body = serde_json::json!({
+        "model": req.model,
+        "messages": messages,
+        "tools": [{ "type": "builtin_function", "function": { "name": "$web_search" } }],
+    });
+    if let Some(n) = req.max_output_tokens {
+        body["max_tokens"] = serde_json::json!(n);
+    }
+    body
+}
+
+fn search_kimi(agent: &ureq::Agent, base: &str, req: &Request) -> SearchOut {
+    let mut messages = serde_json::json!([
+        { "role": "system", "content": req.system },
+        { "role": "user", "content": req.user },
+    ]);
+    let mut usage = Usage::default();
+    let url = format!("{base}/chat/completions");
+    for _ in 0..SEARCH_MAX_ROUNDS {
+        let (status, v, raw) = post_json(agent, &url, &bearer(req), &kimi_search_body(req, &messages), base)?;
+        if status >= 400 {
+            return Err(http_failure(status, &v, &raw));
+        }
+        add_openai_usage(&mut usage, v.get("usage"));
+        // `$web_search` 是 Kimi 自己执行的：它回 tool_calls，我们把那一轮和参数原样递回去，它就带着搜到的东西接着答。
+        if v.pointer("/choices/0/finish_reason").and_then(|f| f.as_str()) == Some("tool_calls") {
+            let msg = v.pointer("/choices/0/message").cloned().unwrap_or(serde_json::Value::Null);
+            let calls = msg.get("tool_calls").and_then(|c| c.as_array()).cloned().unwrap_or_default();
+            let list = messages.as_array_mut().unwrap();
+            list.push(msg);
+            for c in calls {
+                list.push(serde_json::json!({
+                    "role": "tool",
+                    "tool_call_id": c.get("id").cloned().unwrap_or(serde_json::Value::Null),
+                    "name": c.pointer("/function/name").cloned().unwrap_or(serde_json::json!("$web_search")),
+                    "content": c.pointer("/function/arguments").and_then(|a| a.as_str()).unwrap_or("{}"),
+                }));
+            }
+            continue;
+        }
+        let text = chat_answer(&v, status)?;
+        let model = v.get("model").and_then(|m| m.as_str()).unwrap_or(&req.model).to_string();
+        return Ok((text, usage, model));
+    }
+    Err(err("cut_off", format!("The search was still going after {SEARCH_MAX_ROUNDS} rounds."), None))
+}
+
+fn qwen_search_body(req: &Request) -> serde_json::Value {
+    let mut body = openai_body(req);
+    body["enable_search"] = serde_json::json!(true);
+    body
+}
+
+fn search_qwen(agent: &ureq::Agent, base: &str, req: &Request) -> SearchOut {
+    let (status, v, raw) =
+        post_json(agent, &format!("{base}/chat/completions"), &bearer(req), &qwen_search_body(req), base)?;
+    if status >= 400 {
+        return Err(http_failure(status, &v, &raw));
+    }
+    let text = chat_answer(&v, status)?;
+    let mut usage = Usage::default();
+    add_openai_usage(&mut usage, v.get("usage"));
+    let model = v.get("model").and_then(|m| m.as_str()).unwrap_or(&req.model).to_string();
+    Ok((text, usage, model))
+}
+
 /// 发一次请求，把流读完。
 ///
 /// ⚠️⚠️ **这条路是流式的，而这不是为了好看。** 2026-08-20 实测：一份 26,615 字符的 pack
@@ -1089,6 +1470,7 @@ mod tests {
             protocol: String::new(),
             temperature: None,
             key_check_path: String::new(),
+            search: String::new(),
         }
     }
 
@@ -1398,6 +1780,94 @@ mod tests {
         assert!(openai_body(&r).get("temperature").is_none());
         r.temperature = Some(0.2);
         assert_eq!(openai_body(&r)["temperature"], 0.2);
+    }
+
+    // ---- P9U-4：跟进的联网搜索，每家一种接法 ----
+
+    fn search_req(search: &str, model: &str) -> Request {
+        let mut r = req("https://x", "k");
+        r.kind = "search".into();
+        r.search = search.into();
+        r.model = model.into();
+        r.max_output_tokens = None;
+        r
+    }
+
+    #[test]
+    fn each_vendor_is_asked_with_its_own_search_tool() {
+        let o = openai_search_body(&search_req("openai", "gpt-x"));
+        assert_eq!(o["tools"][0]["type"], "web_search");
+        assert_eq!(o["instructions"], "s");
+        assert_eq!(o["input"], "u");
+        assert!(o.get("temperature").is_none());
+
+        let c = anthropic_search_body(&search_req("anthropic", "claude-opus-5-5"), &serde_json::json!([]));
+        assert_eq!(c["tools"][0]["type"], "web_search_20260209");
+        assert_eq!(c["tools"][0]["name"], "web_search");
+        assert!(c["max_tokens"].as_u64().unwrap() > 0);
+        let h = anthropic_search_body(&search_req("anthropic", "claude-haiku-5-5"), &serde_json::json!([]));
+        assert_eq!(h["tools"][0]["type"], "web_search_20250305", "the basic variant for other models");
+        assert!(h.get("fallbacks").is_none());
+
+        let g = gemini_search_body(&search_req("gemini", "gemini-x"));
+        assert!(g["tools"][0].get("google_search").is_some());
+        assert_eq!(gemini_root("https://generativelanguage.googleapis.com/v1beta/openai"), "https://generativelanguage.googleapis.com/v1beta");
+
+        let k = kimi_search_body(&search_req("kimi", "kimi-x"), &serde_json::json!([]));
+        assert_eq!(k["tools"][0]["function"]["name"], "$web_search");
+        assert_eq!(k["tools"][0]["type"], "builtin_function");
+
+        let q = qwen_search_body(&search_req("qwen", "qwen-x"));
+        assert_eq!(q["enable_search"], true);
+    }
+
+    #[test]
+    fn an_unknown_search_is_unsupported_not_sent() {
+        let mut r = search_req("deepseek", "m");
+        r.base_url = "https://api.deepseek.com".into();
+        assert_eq!(kind_of(&run(r)), "unsupported");
+    }
+
+    #[test]
+    fn openais_answer_text_is_read_out_of_the_output_items() {
+        let v = serde_json::json!({
+            "status": "completed", "model": "gpt-x",
+            "output": [
+                {"type": "web_search_call", "status": "completed"},
+                {"type": "message", "content": [{"type": "output_text", "text": "{\"findings\":[]}"}]}
+            ],
+            "usage": {"input_tokens": 10, "output_tokens": 5, "output_tokens_details": {"reasoning_tokens": 2}}
+        });
+        let (text, usage, model) = openai_search_text(&v).ok().unwrap();
+        assert_eq!(text, "{\"findings\":[]}");
+        assert_eq!((usage.input_tokens, usage.output_tokens, usage.reasoning_tokens), (10, 5, Some(2)));
+        assert_eq!(model, "gpt-x");
+        let cut = serde_json::json!({"status": "incomplete", "incomplete_details": {"reason": "max_output_tokens"}});
+        assert_eq!(kind_of(&openai_search_text(&cut).err().unwrap()), "truncated");
+    }
+
+    #[test]
+    fn geminis_answer_skips_its_thought_parts() {
+        let v = serde_json::json!({
+            "candidates": [{"finishReason": "STOP", "content": {"parts": [
+                {"text": "thinking…", "thought": true}, {"text": "{}"}
+            ]}}],
+            "usageMetadata": {"promptTokenCount": 7, "candidatesTokenCount": 3, "thoughtsTokenCount": 4},
+            "modelVersion": "gemini-x"
+        });
+        let (text, usage, _) = gemini_search_text(&v).ok().unwrap();
+        assert_eq!(text, "{}");
+        assert_eq!((usage.output_tokens, usage.reasoning_tokens), (7, Some(4)));
+        let blocked = serde_json::json!({"candidates": [{"finishReason": "SAFETY", "content": {"parts": []}}]});
+        assert_eq!(kind_of(&gemini_search_text(&blocked).err().unwrap()), "refused");
+    }
+
+    #[test]
+    fn a_chat_search_answer_cut_by_length_is_a_failure() {
+        let v = serde_json::json!({"choices": [{"finish_reason": "length", "message": {"content": "{\"fin"}}]});
+        assert_eq!(kind_of(&chat_answer(&v, 200).err().unwrap()), "truncated");
+        let ok = serde_json::json!({"choices": [{"finish_reason": "stop", "message": {"content": "{}"}}]});
+        assert_eq!(chat_answer(&ok, 200).ok().unwrap(), "{}");
     }
 
     #[test]

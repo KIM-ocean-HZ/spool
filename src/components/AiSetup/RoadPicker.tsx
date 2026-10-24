@@ -1,4 +1,4 @@
-import { routeFor, useRoads } from '@/lib/engine/roads';
+import { routeFor, useRoads, type Roads } from '@/lib/engine/roads';
 import { useT } from '@/lib/i18n';
 import { useSettingsStore } from '@/stores/settingsStore';
 
@@ -8,9 +8,19 @@ import { useSettingsStore } from '@/stores/settingsStore';
  *  feature is locked then, and the lock says why). */
 export type RoadKey = 'compressRoute' | 'staleRoute' | 'followUpRoute';
 
-export default function RoadPicker({ setting, disabled = false }: { setting: RoadKey; disabled?: boolean }) {
+export default function RoadPicker({
+  setting,
+  disabled = false,
+  roads: only,
+}: {
+  setting: RoadKey;
+  disabled?: boolean;
+  /** A feature with narrower roads than the rest (跟进: `useFollowUpRoads`). */
+  roads?: Roads;
+}) {
   const t = useT();
-  const roads = useRoads();
+  const all = useRoads();
+  const roads = only ?? all;
   const preferred = useSettingsStore((s) => s[setting]);
   const update = useSettingsStore((s) => s.update);
   const road = routeFor(preferred, roads);

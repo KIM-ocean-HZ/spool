@@ -23,6 +23,8 @@ export type VendorId =
   | 'custom';
 
 export type Protocol = 'openai' | 'anthropic';
+/** spool-ai's `"search"` request, one per vendor's own web search (sidecar `search`). */
+export type SearchKind = 'openai' | 'anthropic' | 'gemini' | 'kimi' | 'qwen';
 /** '' = send nothing (the vendor's own default). */
 export type Reasoning = '' | 'high' | 'medium' | 'low' | 'off';
 
@@ -45,8 +47,9 @@ export interface Vendor {
   fallbackModel: string;
   /** Answers `GET /user/balance` (only DeepSeek does). */
   balance: boolean;
-  /** Has its own web search the follow-up can use (P9U-4, 第 186 条). */
-  webSearch: boolean;
+  /** Its own web search, as the follow-up uses it (P9U-4, 第 186 条) — which of the sidecar's search
+   *  requests to send. null = this vendor's key cannot search; 跟进 says so instead of failing. */
+  search: SearchKind | null;
   /** A path that refuses a bad key, asked before the model list — for a vendor whose list is public
    *  (OpenRouter's is: 2026-10-24 a fake key got the whole list back). */
   keyCheckPath?: string;
@@ -65,7 +68,7 @@ export const VENDORS: Vendor[] = [
     preferModel: [/^gpt-\d+(\.\d+)?-(mini|terra)$/, /^gpt-\d+(\.\d+)?$/],
     fallbackModel: 'gpt-5-mini',
     balance: false,
-    webSearch: true,
+    search: 'openai',
   },
   {
     id: 'anthropic',
@@ -79,7 +82,7 @@ export const VENDORS: Vendor[] = [
     preferModel: [/^claude-opus-5-5$/],
     fallbackModel: 'claude-opus-5-5',
     balance: false,
-    webSearch: true,
+    search: 'anthropic',
   },
   {
     id: 'gemini',
@@ -93,7 +96,7 @@ export const VENDORS: Vendor[] = [
     preferModel: [/^gemini-\d+(\.\d+)?-flash$/],
     fallbackModel: 'gemini-2.5-flash',
     balance: false,
-    webSearch: true,
+    search: 'gemini',
   },
   {
     id: 'deepseek',
@@ -108,7 +111,7 @@ export const VENDORS: Vendor[] = [
     preferModel: [/^deepseek-v\d+(\.\d+)?-flash$/, /^deepseek-chat$/],
     fallbackModel: 'deepseek-v4-flash',
     balance: true,
-    webSearch: false,
+    search: null,
   },
   {
     id: 'kimi',
@@ -122,7 +125,7 @@ export const VENDORS: Vendor[] = [
     preferModel: [/^kimi-k\d+(\.\d+)?$/],
     fallbackModel: '',
     balance: false,
-    webSearch: true,
+    search: 'kimi',
   },
   {
     id: 'qwen',
@@ -140,7 +143,7 @@ export const VENDORS: Vendor[] = [
     preferModel: [/^qwen-flash$/, /^qwen\d*(\.\d+)?-flash$/, /^qwen-plus$/],
     fallbackModel: 'qwen-plus',
     balance: false,
-    webSearch: true,
+    search: 'qwen',
   },
   {
     id: 'zhipu',
@@ -154,7 +157,7 @@ export const VENDORS: Vendor[] = [
     preferModel: [/^glm-\d+(\.\d+)?-flash$/, /^glm-\d+(\.\d+)?-air$/],
     fallbackModel: '',
     balance: false,
-    webSearch: false,
+    search: null,
   },
   {
     id: 'openrouter',
@@ -169,7 +172,7 @@ export const VENDORS: Vendor[] = [
     preferModel: [],
     fallbackModel: '',
     balance: false,
-    webSearch: false,
+    search: null,
     keyCheckPath: '/key',
   },
   {
@@ -185,11 +188,17 @@ export const VENDORS: Vendor[] = [
     preferModel: [],
     fallbackModel: '',
     balance: true,
-    webSearch: false,
+    search: null,
   },
 ];
 
 const BY_ID = new Map(VENDORS.map((v) => [v.id, v]));
+
+/** The names that are written in Chinese go through t() (English: Qwen, Zhipu GLM, Custom endpoint). */
+const NAME_KEY: Partial<Record<VendorId, string>> = { qwen: '通义千问', zhipu: '智谱 GLM', custom: '自定义地址' };
+
+export const vendorName = (v: Vendor, t: (key: string) => string): string =>
+  NAME_KEY[v.id] ? t(NAME_KEY[v.id]!) : v.name;
 
 export const vendorById = (id: string): Vendor | null => BY_ID.get(id as VendorId) ?? null;
 

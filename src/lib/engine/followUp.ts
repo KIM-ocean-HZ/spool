@@ -279,3 +279,34 @@ export const dueAutoFollowUp = <T extends { state: string | null }>(
   }
   return best?.c ?? null;
 };
+
+/** P9U-4 — what the run card says after an API follow-up. The CLI writes its own closing words; the API
+ *  answers a JSON object (mcp.rs `follow_up_api_system`), which is no sentence for a person. So the card
+ *  lists what it found, closed and suggested, in that order — or says there was nothing new. */
+export const describeApiFollowUp = (raw: string, t: (key: string, vars?: Record<string, string | number>) => string): string => {
+  let v: unknown;
+  try {
+    const a = raw.indexOf('{');
+    const b = raw.lastIndexOf('}');
+    v = a >= 0 && b > a ? JSON.parse(raw.slice(a, b + 1)) : null;
+  } catch {
+    v = null;
+  }
+  const list = (k: string): Record<string, unknown>[] => {
+    const x = v && typeof v === 'object' ? (v as Record<string, unknown>)[k] : null;
+    return Array.isArray(x) ? (x.filter((i) => i && typeof i === 'object') as Record<string, unknown>[]) : [];
+  };
+  const str = (o: Record<string, unknown>, k: string): string => (typeof o[k] === 'string' ? (o[k] as string).trim() : '');
+  const lines: string[] = [];
+  for (const f of list('findings')) {
+    const c = str(f, 'conclusion');
+    if (c) lines.push(`- ${c}${str(f, 'url') ? ` ${str(f, 'url')}` : ''}`);
+  }
+  for (const c of list('close')) {
+    if (str(c, 'outcome')) lines.push(`- ${t('收掉了一条：{why}', { why: str(c, 'outcome') })}`);
+  }
+  for (const s of list('suggest')) {
+    if (str(s, 'text')) lines.push(`- ${t('提了一条新的跟进：{text}', { text: str(s, 'text') })}`);
+  }
+  return lines.length ? lines.join('\n') : t('这次没有新进展。');
+};

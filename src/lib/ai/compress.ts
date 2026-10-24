@@ -7,7 +7,7 @@
 //    先确认质量，再开写入那一段。
 
 import { invoke } from '@tauri-apps/api/core';
-import type { ApiCall } from '@/lib/ai/vendors';
+import type { ApiCall, SearchKind } from '@/lib/ai/vendors';
 
 /** §6.4.1：压缩比例是**显式档位**，不是在提示词里求模型「少删一点」。 */
 export type CompressLevel = 'conservative' | 'balanced' | 'aggressive';
@@ -1201,3 +1201,35 @@ const fromRaw = (raw: StaleScanRaw): StaleScan => {
     })),
   };
 };
+
+// ---------------------------------------------------------------------------------------
+// P9U-4 · 跟进 on the API road (第 186 条: 用各家自带的联网搜索)
+// ---------------------------------------------------------------------------------------
+
+/** What Rust filed from one answer (mcp.rs `FollowUpFiled`), before the GUI's dedup gate. */
+export interface FollowUpFiled {
+  queued: number;
+  closed: number;
+  suggested: number;
+  dropped: number;
+  notes: string[];
+}
+
+export interface FollowUpApiOutcome {
+  outcome: CompressOutcome;
+  /** null = it never got as far as filing (the run failed — why is in `outcome`). */
+  filed: FollowUpFiled | null;
+}
+
+export const followUpViaApi = (req: {
+  threadId: string;
+  /** Who searched — goes into the label the proposals carry («OpenAI · 跟进 · MCP»). */
+  vendor: string;
+  search: SearchKind;
+  baseUrl: string;
+  apiKey: string;
+  model: string;
+  reasoning: string;
+  wire: ApiCall['wire'];
+  timeoutSecs: number;
+}): Promise<FollowUpApiOutcome> => invoke<FollowUpApiOutcome>('follow_up_via_api', { ...req });

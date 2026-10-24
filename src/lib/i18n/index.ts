@@ -1495,6 +1495,19 @@ const EN: Record<string, string> = {
     'The model thinks for a while before it writes, and that is billed per word too. A value the endpoint does not take is refused, and that refusal costs nothing.',
   '模型下笔之前会先想一会儿，这一段也按字数收费。「默认」就是这家自己的设定。':
     'The model thinks for a while before it writes, and that is billed per word too. \u201cDefault\u201d is the vendor\u2019s own setting.',
+  // P9U-4 — 跟进 on the API road.
+  '{vendor} 的 key 不能联网搜。换一家能联网的 key（OpenAI、Claude、Gemini、Kimi、通义），或者用本机的 Claude Code / Codex。':
+    'A {vendor} key cannot search the web. Use a key from a vendor that can (OpenAI, Claude, Gemini, Kimi, Qwen), or Claude Code / Codex on this Mac.',
+  '联网搜索要用本机的 Claude Code / Codex，或者一家能联网的 API key。':
+    'Searching the web takes Claude Code or Codex on this Mac, or an API key from a vendor that can search.',
+  '联网搜索要用一家能联网的 API key（OpenAI、Claude、Gemini、Kimi、通义）。':
+    'Searching the web takes an API key from a vendor that can search (OpenAI, Claude, Gemini, Kimi, Qwen).',
+  '用 {vendor} 的联网搜索（按字数花钱）。查到新东西才放进待审，并标着「跟进」；没有就什么都不说。':
+    'Uses {vendor}\u2019s web search (paid per word). Only something new goes to review, marked \u201cFollow-up\u201d; otherwise it says nothing.',
+  '收掉了一条：{why}': 'Retired a line: {why}',
+  '提了一条新的跟进：{text}': 'Suggested a new line: {text}',
+  '这次没有新进展。': 'Nothing new this time.',
+  '这家的 key 不能联网搜，换一家或用本机 CLI。': 'This vendor\u2019s key cannot search the web \u2014 use another vendor or the local CLI.',
   '夜里跑，你不用守在电脑前，早上起来核对就行。': 'It runs overnight \u2014 no need to sit there; check the drafts in the morning.',
   '已经装了 claude / codex 这类命令行工具的话，用「AI 引擎」那一节就行，一分钱不花、一个 key 不用填。这一节是给不想装命令行工具的人的第二条路。':
     'If you already have a CLI like claude or codex, use the section below instead — it costs nothing and needs no key. This section is the other route, for people who would rather not install one.',

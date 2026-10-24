@@ -13,13 +13,17 @@ import {
 import { dropProposals, listBatchesCreatedSince } from '@/lib/db/proposals';
 import { getFollowUpState, setFollowUpState } from '@/lib/db/threads';
 import {
+  describeApiFollowUp,
   parseFollowUpState,
   rememberProposals,
   serializeFollowUpState,
   siftProposals,
 } from '@/lib/engine/followUp';
 import { toolCaption } from '@/lib/engine/progress';
+import { FAILURE_SENTENCE, followUpViaApi, loadApiKey } from '@/lib/ai/compress';
+import { apiCallFrom, vendorName } from '@/lib/ai/vendors';
 import { t } from '@/lib/i18n';
+import { useBalanceStore } from './balanceStore';
 import { useFollowUpStore } from './followUpStore';
 import { reloadOutsideWrites } from './outsideWrites';
 import { useSettingsStore } from './settingsStore';
@@ -99,6 +103,9 @@ export interface EngineTask {
   /** P9S-6: started by the weekly timer, not by a click — a finished run says nothing (the review
    *  badge already shows what came back; 「跟进只能安静显示内容」). Failures still say so. */
   quiet?: boolean;
+  /** P9U-4: 跟进 through the user's API key instead of the CLI (第 187 条: each feature picks its road).
+   *  Decided by whoever queued it, from the road its own picker shows. */
+  road?: 'cli' | 'api';
 }
 
 /** DESIGN_FOLLOW_UP §3.2: 找出还没解决的问题 is the one action whose OUTPUT is the point — the
@@ -169,6 +176,7 @@ interface EngineState {
     timeoutSecs: number,
     onResult?: ResultHandler,
     quiet?: boolean,
+    road?: 'cli' | 'api',
   ) => boolean;
   /** Stop the running task and drop everything still waiting (§1.2 — the pill is one
    *  control, and a user stopping "the AI" does not mean "and then start the next one"). */
@@ -284,37 +292,70 @@ export const useEngineStore = create<EngineState>((set, get) => {
       outputTokens: null,
     };
     try {
-      const answer = await invoke<EngineRunResult>('ai_engine_run', {
-        action: next.action,
-        project: next.threadTitle,
-        timeoutSecs,
-        // Read at the moment the task starts, not when it was queued: a run that waited
-        // out three others should use the engine the settings page says now.
-        engine: useSettingsStore.getState().aiEngine,
-        // W3-c. Null means "the account's default" and Rust omits the flag entirely.
-        //
-        // §9.13.6-bis: the picker is back (2026-08-10, with the third engine), so this reads
-        // the setting again — per engine, because the two catalogues share no names.
-        //
-        // ⚠️ Sending the WRONG engine's name is harmless by construction: `run_action`
-        // filters the value against the catalogue of the engine that actually runs, which is
-        // not always the one asked for (a preference naming an uninstalled engine falls
-        // back). That is also what neutralises an `opus` left in settings.json by a build
-        // from 2026-08-07 — it is no longer in any catalogue, so it is dropped.
-        model:
-          useSettingsStore.getState().aiEngine === 'gemini'
-            ? useSettingsStore.getState().aiModelGemini
-            : useSettingsStore.getState().aiModelClaude,
-        // §9.13. Same shape, different door: effort has no CLI flag, so Rust turns this
-        // into `CLAUDE_CODE_EFFORT_LEVEL` on the child's env (engine.rs claude_effort_env).
-        effort: useSettingsStore.getState().aiEffortClaude,
-        // See probe(): the run resolves the engine again, so it needs the same extra place
-        // to look.
-        manualPath: useSettingsStore.getState().aiEnginePath,
-      });
-      resultText = answer.result;
-      ranOn = answer.engine;
-      usage = answer.usage;
+      if (isFollowUp && next.road === 'api') {
+        // P9U-4: one request with the vendor's own web search; Rust files the answer through the same
+        // propose / close / suggest functions the CLI run calls, and the dedup gate below runs as usual.
+        const s = useSettingsStore.getState();
+        const call = apiCallFrom(s);
+        if (!call.vendor.search) throw new Error(t('这家的 key 不能联网搜，换一家或用本机 CLI。'));
+        const out = await followUpViaApi({
+          threadId: next.threadId,
+          vendor: vendorName(call.vendor, t),
+          search: call.vendor.search,
+          baseUrl: call.baseUrl,
+          apiKey: await loadApiKey(),
+          model: call.model,
+          reasoning: call.reasoning,
+          wire: call.wire,
+          timeoutSecs,
+        });
+        const o = out.outcome;
+        ranOn = o.model ?? call.model;
+        usage = {
+          model: o.model ?? call.model,
+          costUsd: null,
+          inputTokens: o.inputTokens || null,
+          outputTokens: o.outputTokens || null,
+        };
+        if (!o.ok) {
+          if (o.kind === 'cancelled') throw new Error(CANCELLED_MARKER);
+          const sentence = t(FAILURE_SENTENCE[o.kind ?? 'http'] ?? FAILURE_SENTENCE.http);
+          throw new Error(o.message ? `${sentence}（${o.message}）` : sentence);
+        }
+        resultText = describeApiFollowUp(o.text, t);
+      } else {
+        const answer = await invoke<EngineRunResult>('ai_engine_run', {
+          action: next.action,
+          project: next.threadTitle,
+          timeoutSecs,
+          // Read at the moment the task starts, not when it was queued: a run that waited
+          // out three others should use the engine the settings page says now.
+          engine: useSettingsStore.getState().aiEngine,
+          // W3-c. Null means "the account's default" and Rust omits the flag entirely.
+          //
+          // §9.13.6-bis: the picker is back (2026-08-10, with the third engine), so this reads
+          // the setting again — per engine, because the two catalogues share no names.
+          //
+          // ⚠️ Sending the WRONG engine's name is harmless by construction: `run_action`
+          // filters the value against the catalogue of the engine that actually runs, which is
+          // not always the one asked for (a preference naming an uninstalled engine falls
+          // back). That is also what neutralises an `opus` left in settings.json by a build
+          // from 2026-08-07 — it is no longer in any catalogue, so it is dropped.
+          model:
+            useSettingsStore.getState().aiEngine === 'gemini'
+              ? useSettingsStore.getState().aiModelGemini
+              : useSettingsStore.getState().aiModelClaude,
+          // §9.13. Same shape, different door: effort has no CLI flag, so Rust turns this
+          // into `CLAUDE_CODE_EFFORT_LEVEL` on the child's env (engine.rs claude_effort_env).
+          effort: useSettingsStore.getState().aiEffortClaude,
+          // See probe(): the run resolves the engine again, so it needs the same extra place
+          // to look.
+          manualPath: useSettingsStore.getState().aiEnginePath,
+        });
+        resultText = answer.result;
+        ranOn = answer.engine;
+        usage = answer.usage;
+      }
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       outcome = message.includes(CANCELLED_MARKER) ? 'cancelled' : 'failed';
@@ -354,6 +395,9 @@ export const useEngineStore = create<EngineState>((set, get) => {
     } catch (e) {
       console.warn('[engine] post-run reload failed', e);
     }
+
+    // 「跑完顺带刷一次」（X 批）— the request already went out; only vendors that report a balance answer.
+    if (next.road === 'api') void useBalanceStore.getState().refresh();
 
     const label = t(ACTION_LABEL[next.action]);
     if (outcome === 'ok' && next.action === 'follow_up_brief') {
@@ -512,7 +556,7 @@ export const useEngineStore = create<EngineState>((set, get) => {
       }
     },
 
-    enqueue: (threadId, threadTitle, action, timeoutSecs, onResult, quiet) => {
+    enqueue: (threadId, threadTitle, action, timeoutSecs, onResult, quiet, road) => {
       const { current, queue } = get();
       // P9E-3（第 122 条）：私密项目不交给本机 AI。界面上那几处是锁着的，这里是后面那道门。
       // （周回顾的 threadId 是空的 —— 它读整个库，私密的那几个在 MCP 那一侧就看不见。）
@@ -528,7 +572,14 @@ export const useEngineStore = create<EngineState>((set, get) => {
         toast.notice(t('这条脉络已经排上了，等它跑完'));
         return false;
       }
-      const task: EngineTask = { id: nextTaskId++, threadId, threadTitle, action, ...(quiet ? { quiet } : {}) };
+      const task: EngineTask = {
+        id: nextTaskId++,
+        threadId,
+        threadTitle,
+        action,
+        ...(quiet ? { quiet } : {}),
+        ...(road === 'api' && action === 'follow_up' ? { road } : {}),
+      };
       timeouts.set(task.id, timeoutSecs);
       if (onResult) resultHandlers.set(task.id, onResult);
       set({ queue: [...queue, task] });
@@ -541,9 +592,11 @@ export const useEngineStore = create<EngineState>((set, get) => {
       // empty queue is what stops it from starting the next one.
       timeouts.clear();
       resultHandlers.clear();
+      const viaApi = get().current?.road === 'api';
       set({ queue: [], progress: null });
       try {
-        await invoke<boolean>('ai_engine_cancel');
+        // P9U-4: an API follow-up is spool-ai's child, which the API road's own stop button kills.
+        await invoke<boolean>(viaApi ? 'compress_cancel' : 'ai_engine_cancel');
       } catch (e) {
         console.warn('[engine] cancel failed', e);
       }

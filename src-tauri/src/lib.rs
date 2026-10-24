@@ -422,6 +422,7 @@ pub fn run() {
             api_engine::weekly_review_via_api,
             api_engine::api_balance,
             api_engine::api_models,
+            api_engine::follow_up_via_api,
             api_engine::api_key_save,
             api_engine::api_key_load,
             api_engine::api_key_present,

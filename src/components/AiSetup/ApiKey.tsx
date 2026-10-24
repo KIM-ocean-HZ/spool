@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import ApiBalance from '@/components/ApiBalance';
 import { apiKeyPresent, loadApiKey, saveApiKey, sidecarPresent } from '@/lib/ai/compress';
 import { connectedPatch, probeVendor, useModelListStore } from '@/lib/ai/connectKey';
-import { detectVendor, resolveVendor, vendorById, VENDORS, type Vendor } from '@/lib/ai/vendors';
+import { detectVendor, resolveVendor, vendorById, vendorName as nameOf, VENDORS, type Vendor } from '@/lib/ai/vendors';
 import { useT } from '@/lib/i18n';
 import { useSettingsStore } from '@/stores/settingsStore';
 
@@ -19,8 +19,6 @@ import { useSettingsStore } from '@/stores/settingsStore';
 //
 // ⛔ No vendor is the example any more (Ocean: 「去掉 deepseek 这个例子」), and the address only shows
 // for 「自定义地址」 — the others fill it in themselves (vendors.ts).
-
-const NAME_KEY: Partial<Record<string, string>> = { qwen: '通义千问', zhipu: '智谱 GLM', custom: '自定义地址' };
 
 type Phase =
   | { at: 'idle' }
@@ -39,7 +37,7 @@ export default function ApiKey({ onConnected }: { onConnected?: () => void }) {
   const update = useSettingsStore((s) => s.update);
   const list = useModelListStore();
   const vendor = resolveVendor(apiVendor, apiBaseUrl);
-  const vendorName = (v: Vendor): string => (NAME_KEY[v.id] ? t(NAME_KEY[v.id]!) : v.name);
+  const vendorName = (v: Vendor): string => nameOf(v, t);
 
   const [hasKey, setHasKey] = useState<boolean | null>(null);
   const [sidecar, setSidecar] = useState<boolean | null>(null);

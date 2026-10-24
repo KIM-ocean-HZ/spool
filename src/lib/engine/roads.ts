@@ -1,6 +1,7 @@
+import { resolveVendor } from '@/lib/ai/vendors';
 import { canShowEngineActions, effectiveAutoRoute } from '@/lib/engine/gate';
 import { IS_MAC } from '@/lib/platform';
-import { useEngineStore } from '@/stores/engineStore';
+import { engineSupportsWeb, useEngineStore } from '@/stores/engineStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 
 // P9U (Ocean 2026-10-24: 「用户让 CLI 和 API 的功能范围完全一致」) — the two roads every AI feature can
@@ -63,6 +64,29 @@ export const useRoads = (): Roads => {
   const actionsEnabled = useSettingsStore((s) => s.aiEngineActionsEnabled);
   const apiEngineEnabled = useSettingsStore((s) => s.apiEngineEnabled);
   return roadsOf({ cliAvailable, mcpEnabled, mcpWriteEnabled, actionsEnabled, apiEngineEnabled, isMac: IS_MAC });
+};
+
+/** P9U-4 — 跟进's own two roads, narrower than the others: the CLI one also needs a CLI that can search
+ *  (not Gemini CLI, DESIGN_AI_ENGINE §7.8.5-2), the API one a vendor with its own web search. */
+export const followUpRoadsOf = (r: Roads, cliCanSearch: boolean, apiCanSearch: boolean): Roads => ({
+  cli: r.cli && cliCanSearch,
+  api: r.api && apiCanSearch,
+});
+
+export const followUpRoadsNow = (): Roads => {
+  const s = useSettingsStore.getState();
+  return followUpRoadsOf(
+    roadsNow(),
+    engineSupportsWeb(useEngineStore.getState().status?.selected ?? null),
+    resolveVendor(s.apiVendor, s.apiBaseUrl).search !== null,
+  );
+};
+
+export const useFollowUpRoads = (): Roads => {
+  const roads = useRoads();
+  const selected = useEngineStore((s) => s.status?.selected ?? null);
+  const apiCanSearch = useSettingsStore((s) => resolveVendor(s.apiVendor, s.apiBaseUrl).search !== null);
+  return followUpRoadsOf(roads, engineSupportsWeb(selected), apiCanSearch);
 };
 
 /** What the CLI road needs from settings for a run — the same four things an engine run sends. */
