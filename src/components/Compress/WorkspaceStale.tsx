@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, Loader2, ScanSearch } from 'lucide-react';
 import { estimateCost, formatYuan, FAILURE_SENTENCE } from '@/lib/ai/compress';
 import { alreadyCorrects } from '@/lib/blocks/staleGuards';
-import { useT } from '@/lib/i18n';
+import { dateLocale, useT } from '@/lib/i18n';
 import type { WsBlockRef, WsDroppedItem } from '@/lib/stale/wsItems';
 import { staleAutoNextAt, tenThousands, type WsStalePlan } from '@/lib/stale/workspace';
 import { resolveVendor, vendorName } from '@/lib/ai/vendors';
@@ -387,11 +387,9 @@ export default function WorkspaceStale({
   );
 }
 
-/** 「10-24」。 */
-const monthDay = (ms: number): string => {
-  const d = new Date(ms);
-  return `${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-};
+/** 「10月24日」/「Oct 24」—— 和右栏「上次查」「下次大约」同一种写法。 */
+const monthDay = (ms: number): string =>
+  new Date(ms).toLocaleDateString(dateLocale(), { month: 'short', day: 'numeric' });
 
 /** 没过闸的那几条 —— 和「只查这个项目」那一页同一个理由（Ocean 08-23「不允许」Spool 知道而不告诉他）。 */
 function WsDroppedNote({ t, dropped }: { t: T; dropped: WsDroppedItem[] }) {
