@@ -67,7 +67,7 @@ describe('P9V-2 · 过期检测查整个工作区', () => {
     sqlite = new DatabaseSync(':memory:');
     sqlite.exec(schemaSql);
     __setTestDb(makeAdapter(sqlite));
-    useCompressStore.setState({ staleWs: {}, staleWsErrors: {}, staleWsBlocks: {}, running: false,
+    useCompressStore.setState({ staleWs: {}, staleWsErrors: {}, staleWsBlocks: {}, staleAuto: {}, running: false,
                                 runningThreadId: null, runningKind: null, runningKey: null });
     useSettingsStore.setState({ aiEngineActionsEnabled: true, apiEngineEnabled: true, staleRoute: 'api' });
     sent.packs = null;
@@ -148,6 +148,30 @@ describe('P9V-2 · 过期检测查整个工作区', () => {
     await useCompressStore.getState().decideStaleWs(ws.id, 'p0', 'keep');
     expect(useCompressStore.getState().staleWs[ws.id]!.decided).toEqual({ p0: 'keep' });
     expect(sqlite.prepare('SELECT status FROM threads WHERE id = ?').get(midi.id)).toEqual({ status: 'active' });
+  });
+
+  it('P9V-4：开着每月自动查的工作区，查一次就记上时间 —— 超上限没发也记（不会每 10 分钟重试）', async () => {
+    await createBlock({ threadId: flux.id, content: '字'.repeat(130_000) });
+    put([midi, flux], [ws, sub]);
+    useCompressStore.getState().setStaleAuto(ws.id, true);
+    expect(useCompressStore.getState().staleAuto[ws.id]).toEqual({ on: true, lastRunAt: 0 });
+
+    await useCompressStore.getState().runStaleScanWorkspace(ws.id, { auto: true });
+
+    const a = useCompressStore.getState().staleAuto[ws.id]!;
+    expect(a.lastRunAt).toBeGreaterThan(0);
+    expect(useCompressStore.getState().staleWs[ws.id]!.auto).toBe(true);
+    expect(useCompressStore.getState().staleWs[ws.id]!.tooBig).not.toBeNull();
+    // 关掉再打开不忘上次时间。
+    useCompressStore.getState().setStaleAuto(ws.id, false);
+    useCompressStore.getState().setStaleAuto(ws.id, true);
+    expect(useCompressStore.getState().staleAuto[ws.id]!.lastRunAt).toBe(a.lastRunAt);
+  });
+
+  it('没开每月自动查的工作区，手动查一次不平白多出一个开关', async () => {
+    put([midi, flux], [ws, sub]);
+    await useCompressStore.getState().runStaleScanWorkspace(ws.id);
+    expect(useCompressStore.getState().staleAuto[ws.id]).toBeUndefined();
   });
 
   it('两条路都没连上就不跑', async () => {

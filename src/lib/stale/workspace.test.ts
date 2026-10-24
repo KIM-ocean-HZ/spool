@@ -1,7 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import type { Thread } from '@/lib/db/threads';
 import type { Workspace } from '@/lib/db/workspaces';
-import { tenThousands, wsMaterialChars, wsStaleAvailable, wsStalePlan, workspaceSubtree } from './workspace';
+import {
+  STALE_AUTO_PERIOD_MS,
+  dueStaleAuto,
+  staleAutoNextAt,
+  tenThousands,
+  wsMaterialChars,
+  wsStaleAvailable,
+  wsStalePlan,
+  workspaceSubtree,
+} from './workspace';
 
 const ws = (id: string, parentId: string | null = null): Workspace => ({
   id,
@@ -69,5 +78,34 @@ describe('P9V-2 · 查整个工作区发哪些项目', () => {
     expect(tenThousands(58_000)).toBe('5.8');
     expect(tenThousands(120_000)).toBe('12');
     expect(tenThousands(30_000)).toBe('3');
+  });
+});
+
+describe('P9V-4 · 每月自动查一次', () => {
+  const now = 100 * 86_400_000;
+  const all = () => true;
+
+  it('关着的、没满 30 天的不查；满了的挑上次最久的那一个', () => {
+    expect(dueStaleAuto({ a: { on: false, lastRunAt: 0 } }, all, now)).toBeNull();
+    expect(dueStaleAuto({ a: { on: true, lastRunAt: now - STALE_AUTO_PERIOD_MS + 1 } }, all, now)).toBeNull();
+    expect(
+      dueStaleAuto(
+        { a: { on: true, lastRunAt: now - STALE_AUTO_PERIOD_MS }, b: { on: true, lastRunAt: 0 } },
+        all,
+        now,
+      ),
+    ).toBe('b');
+  });
+
+  it('刚打开、还没查过的 = 下一次看的时候就查', () => {
+    expect(dueStaleAuto({ a: { on: true, lastRunAt: 0 } }, all, now)).toBe('a');
+    expect(staleAutoNextAt({ on: true, lastRunAt: 0 })).toBeNull();
+    expect(staleAutoNextAt({ on: true, lastRunAt: 5 })).toBe(5 + STALE_AUTO_PERIOD_MS);
+  });
+
+  it('此刻查不了的（能查的项目不到两个）跳过，换下一个', () => {
+    expect(
+      dueStaleAuto({ a: { on: true, lastRunAt: 0 }, b: { on: true, lastRunAt: 1 } }, (id) => id === 'b', now),
+    ).toBe('b');
   });
 });

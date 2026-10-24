@@ -232,6 +232,8 @@ interface CompressState {
   setStaleScope: (threadId: string, scope: StaleScope) => void;
   /** P9V-4：每个工作区的「每月自动查一次」。键是工作区 id。 */
   staleAuto: Record<string, StaleAuto>;
+  /** 开 / 关。⚠️ 关掉不忘上次时间 —— 再打开不会马上又查一遍刚查过的。 */
+  setStaleAuto: (workspaceId: string, on: boolean) => void;
   /** 查一遍整个工作区。`auto` = 每月自动查的那一次（P9V-4），结果上要标出来。 */
   runStaleScanWorkspace: (workspaceId: string, opts?: { auto?: boolean }) => Promise<void>;
   /** 对工作区结果里的一条下决定。`key` = `b<下标>`（块级）/ `p<下标>`（项目级，只有「不动」走这里 ——
@@ -1109,6 +1111,11 @@ export const useCompressStore = create<CompressState>((set, get) => ({
   setStaleScope: (threadId, scope) =>
     set((st) => ({ staleScope: { ...st.staleScope, [threadId]: scope } })),
 
+  setStaleAuto: (workspaceId, on) =>
+    set((st) => ({
+      staleAuto: { ...st.staleAuto, [workspaceId]: { on, lastRunAt: st.staleAuto[workspaceId]?.lastRunAt ?? 0 } },
+    })),
+
   runStaleScanWorkspace: async (workspaceId, opts) => {
     if (get().running || get().batchRunning) return;
     const plan = wsStalePlan(
@@ -1120,6 +1127,9 @@ export const useCompressStore = create<CompressState>((set, get) => ({
     const s = useSettingsStore.getState();
     const road = routeFor(s.staleRoute, roadsNow());
     if (road === null) return;
+    // P9V-4：开着每月自动查的工作区，这一次（手动、自动都算）就是「上次」—— 先记上，
+    // 后面失败、超上限、停下都不会让它每 10 分钟重试一次。
+    const autoState = get().staleAuto[workspaceId];
     set((st) => ({
       running: true,
       runningThreadId: null,
@@ -1127,6 +1137,9 @@ export const useCompressStore = create<CompressState>((set, get) => ({
       runningKey: `w:${workspaceId}`,
       progress: { stage: 'starting' },
       staleWsErrors: omit(st.staleWsErrors, workspaceId),
+      ...(autoState
+        ? { staleAuto: { ...st.staleAuto, [workspaceId]: { ...autoState, lastRunAt: Date.now() } } }
+        : {}),
     }));
     try {
       // ⚠️ 和只查一个项目一样查**完整**的 pack（压过的块也算）；⛔ 不带每份开头那段「怎么读」。

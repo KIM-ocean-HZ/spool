@@ -4,7 +4,10 @@ import { estimateCost, formatYuan, FAILURE_SENTENCE } from '@/lib/ai/compress';
 import { alreadyCorrects } from '@/lib/blocks/staleGuards';
 import { useT } from '@/lib/i18n';
 import type { WsBlockRef, WsDroppedItem } from '@/lib/stale/wsItems';
-import { tenThousands, type WsStalePlan } from '@/lib/stale/workspace';
+import { staleAutoNextAt, tenThousands, type WsStalePlan } from '@/lib/stale/workspace';
+import { resolveVendor, vendorName } from '@/lib/ai/vendors';
+import Toggle from '@/components/ui/Toggle';
+import { ENGINE_LABEL, useEngineStore } from '@/stores/engineStore';
 import { useCompressStore, wsStaleLeft } from '@/stores/compressStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { useThreadsStore } from '@/stores/threadsStore';
@@ -51,6 +54,14 @@ export default function WorkspaceStale({
   const timeoutSecs = useSettingsStore((s) =>
     routeFor(staleRoute, roads) === 'cli' ? s.aiEngineTimeoutSecs : s.apiTimeoutSecs,
   );
+  // P9V-4（第 198 条）：每月自动查一次，管的是整个工作区。
+  const auto = useCompressStore((s) => s.staleAuto[workspaceId]);
+  const setAuto = useCompressStore((s) => s.setStaleAuto);
+  const road = routeFor(staleRoute, roads);
+  const vendor = useSettingsStore((s) => resolveVendor(s.apiVendor, s.apiBaseUrl));
+  const engineStatus = useEngineStore((s) => s.status);
+  const engineName = engineStatus?.selected ? ENGINE_LABEL[engineStatus.selected] : 'Claude Code / Codex';
+  const nextAt = auto ? staleAutoNextAt(auto) : null;
 
   // 结果是存盘的（第 202 条）—— 读回来的那一份没有块的样子，要的时候从库里现读。
   useEffect(() => {
@@ -328,6 +339,30 @@ export default function WorkspaceStale({
           </div>
         )}
       </div>
+
+      {enabled && (
+        <div className="flex flex-none items-start justify-between gap-3 border-t border-line px-5 py-2">
+          <div className="min-w-0">
+            <div className="text-[12px] text-ink-2">{t('每月自动查一次〈{ws}〉', { ws: wsTitle })}</div>
+            <p className="mt-0.5 text-[10px] leading-relaxed text-muted">
+              {road === 'api'
+                ? t('用 {vendor} 的 API（按字数花钱）。Spool 开着的时候才查；查到的放在这一页，页签上会有数，不进待审。', {
+                    vendor: vendorName(vendor, t),
+                  })
+                : t('用本机的 {engine}。Spool 开着的时候才查；查到的放在这一页，页签上会有数，不进待审。', {
+                    engine: engineName,
+                  })}
+              {auto?.on &&
+                ` ${
+                  nextAt !== null && nextAt > Date.now()
+                    ? t('下次大约 {d}。', { d: monthDay(nextAt) })
+                    : t('10 分钟内查下一次。')
+                }`}
+            </p>
+          </div>
+          <Toggle checked={auto?.on === true} onChange={(on) => setAuto(workspaceId, on)} />
+        </div>
+      )}
 
       <footer className="flex flex-none items-center justify-between gap-3 border-t border-line bg-paper-2/40 px-5 py-3 text-xs">
         <span className="text-muted">{t('这一页只连线、标完成，不改任何一块的正文。')}</span>

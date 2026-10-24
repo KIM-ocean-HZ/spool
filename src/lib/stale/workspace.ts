@@ -65,3 +65,36 @@ export const tenThousands = (chars: number): string => {
   const w = chars / 10_000;
   return w >= 10 ? String(Math.round(w)) : w.toFixed(1).replace(/\.0$/, '');
 };
+
+// ---------------------------------------------------------------------------------------
+// P9V-4 · 每月自动查一次（第 198 条：比跟进长，选的每月）
+// ---------------------------------------------------------------------------------------
+
+/** 第 198 条：30 天一次。 */
+export const STALE_AUTO_PERIOD_MS = 30 * 86_400_000;
+
+/** 一个工作区的开关和上次时间（存在 stale.json）。⚠️ 和 compressStore 的 `StaleAuto` 同一个形状。 */
+interface AutoState {
+  on: boolean;
+  lastRunAt: number;
+}
+
+/** 这一次该查哪个工作区：开着、离上次满 30 天、此刻能查（`eligible`），挑上次最久的那一个。
+ *  ⚠️ 失败、超上限、停下也记了时间（`runStaleScanWorkspace`），所以坏掉的那一条一个月才重试一次，
+ *  ⛔ 不会每 10 分钟花一次他的额度（和自动跟进同一个理由）。 */
+export const dueStaleAuto = (
+  auto: Record<string, AutoState>,
+  eligible: (workspaceId: string) => boolean,
+  now: number,
+): string | null => {
+  let best: { id: string; at: number } | null = null;
+  for (const [id, a] of Object.entries(auto)) {
+    if (!a.on || now - a.lastRunAt < STALE_AUTO_PERIOD_MS || !eligible(id)) continue;
+    if (!best || a.lastRunAt < best.at) best = { id, at: a.lastRunAt };
+  }
+  return best?.id ?? null;
+};
+
+/** 下次大约什么时候查。还没查过 = `null`（下一次看的时候就查，最多 10 分钟）。 */
+export const staleAutoNextAt = (a: AutoState): number | null =>
+  a.lastRunAt > 0 ? a.lastRunAt + STALE_AUTO_PERIOD_MS : null;

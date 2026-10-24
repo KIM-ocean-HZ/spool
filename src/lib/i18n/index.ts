@@ -2003,4 +2003,12 @@ const EN: Record<string, string> = {
     'It said {old} contains “{s}” — that sentence is not in that project.',
   '它说 {old} 里有这么一句：「{s}」—— 那一块里没有这句话。':
     'It said {old} contains “{s}” — that sentence is not in that block.',
+  // P9V-4（第 198 条）：每月自动查一次。
+  '每月自动查一次〈{ws}〉': 'Check all of “{ws}” once a month',
+  '用 {vendor} 的 API（按字数花钱）。Spool 开着的时候才查；查到的放在这一页，页签上会有数，不进待审。':
+    'Uses the {vendor} API (charged by length). Only while Spool is open; what it finds lands on this page with a count on the tab, not in Review.',
+  '用本机的 {engine}。Spool 开着的时候才查；查到的放在这一页，页签上会有数，不进待审。':
+    'Uses {engine} on this Mac. Only while Spool is open; what it finds lands on this page with a count on the tab, not in Review.',
+  '下次大约 {d}。': 'Next around {d}.',
+  '10 分钟内查下一次。': 'Next check within 10 minutes.',
 };
