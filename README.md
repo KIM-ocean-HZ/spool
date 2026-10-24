@@ -283,4 +283,4 @@ Not licensed yet — all rights reserved until a license is chosen.
 
 ## Author
 
-Ocean Jin · [@KIM-ocean-HZ](https://github.com/KIM-ocean-HZ)
+Hanze Jin · [@KIM-ocean-HZ](https://github.com/KIM-ocean-HZ)

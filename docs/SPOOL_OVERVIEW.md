@@ -89,7 +89,7 @@ stage," and the open work front is now commercialisation — see §15.
 |---|---|
 | Product name | **Spool** (English) / **思簿** (Chinese, *sī bù*, "thought-ledger") |
 | Bundle identifier | `com.oceanjin.spool` |
-| Author | Ocean Jin · [@KIM-ocean-HZ](https://github.com/KIM-ocean-HZ) |
+| Author | Hanze Jin · [@KIM-ocean-HZ](https://github.com/KIM-ocean-HZ) |
 | Repository | `github.com/KIM-ocean-HZ/spool` (source-available; no licence — all rights reserved) |
 | Website | [spoolapp.org](https://spoolapp.org) — bilingual, with an interactive walkthrough of the whole loop |
 | Current version | **0.6.1**, published 2026-08-19 |
