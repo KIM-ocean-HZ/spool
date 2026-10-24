@@ -1,4 +1,5 @@
 import { loadApiKey, weeklyReviewViaApi } from '@/lib/ai/compress';
+import { apiCallFrom } from '@/lib/ai/vendors';
 import { recordRun } from '@/lib/db/engineRuns';
 
 /**
@@ -12,6 +13,7 @@ import { recordRun } from '@/lib/db/engineRuns';
  * ⭐ 范围是 Ocean 拍的：「不是整个 pack」）。这里只负责端点、key、模型和记账。
  */
 export interface ApiWeeklySettings {
+  apiVendor: string;
   apiBaseUrl: string;
   apiModel: string;
   apiReasoning: string;
@@ -21,11 +23,13 @@ export interface ApiWeeklySettings {
 export const runWeeklyReviewViaApi = async (s: ApiWeeklySettings): Promise<boolean> => {
   const startedAt = Date.now();
   const key = await loadApiKey();
+  const call = apiCallFrom(s);
   const out = await weeklyReviewViaApi({
-    baseUrl: s.apiBaseUrl,
+    baseUrl: call.baseUrl,
     apiKey: key,
-    model: s.apiModel,
-    reasoning: s.apiReasoning,
+    model: call.model,
+    reasoning: call.reasoning,
+    wire: call.wire,
     timeoutSecs: s.apiTimeoutSecs,
   });
   await recordRun({

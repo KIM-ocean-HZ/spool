@@ -23,6 +23,7 @@ import { useCompressStore } from '@/stores/compressStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { routeFor, useRoads } from '@/lib/engine/roads';
 import RoadPicker from '@/components/AiSetup/RoadPicker';
+import { resolveVendor } from '@/lib/ai/vendors';
 import { selectThreadById, useThreadsStore } from '@/stores/threadsStore';
 
 // 「压缩」页签（WORKPLAN-2026-08-20 §9.6.2 / §9.6.5 / §9.6.6）。
@@ -694,6 +695,12 @@ function NightlyQueue({ threadId }: { threadId: string }) {
   const queue = useSettingsStore((s) => s.compressQueue);
   const nightlyAt = useSettingsStore((s) => s.compressNightlyAt);
   const update = useSettingsStore((s) => s.update);
+  // P9U-3：半价是 DeepSeek 价目表上的规矩 —— 只在那条路真的会走 DeepSeek 时说。
+  const roads = useRoads();
+  const halfPriceAtNight = useSettingsStore(
+    (s) =>
+      routeFor(s.compressRoute, roads) === 'api' && resolveVendor(s.apiVendor, s.apiBaseUrl).id === 'deepseek',
+  );
   const sizes = useCompressStore((s) => s.sizes);
   const measureQueue = useCompressStore((s) => s.measureQueue);
   const runQueue = useCompressStore((s) => s.runQueue);
@@ -759,9 +766,11 @@ function NightlyQueue({ threadId }: { threadId: string }) {
           ⚠️ 端点是可以改的，所以后半句明写「换别家就看那家的价目表」—— ⛔ 发一版就让自己
           界面上多一句假话，是这个产品最不该犯的错。 */}
       <p className="pl-[18px] text-[12px] leading-relaxed text-muted">
-        {t(
-          '夜里跑更便宜 —— DeepSeek 在北京时间 00:30 到 08:30 半价（换别家就看那家的价目表）。而且你不用守在电脑前，早上起来核对就行。',
-        )}
+        {halfPriceAtNight
+          ? t(
+              '夜里跑更便宜 —— DeepSeek 在北京时间 00:30 到 08:30 半价（换别家就看那家的价目表）。而且你不用守在电脑前，早上起来核对就行。',
+            )
+          : t('夜里跑，你不用守在电脑前，早上起来核对就行。')}
       </p>
 
       {queue.length > 0 && (

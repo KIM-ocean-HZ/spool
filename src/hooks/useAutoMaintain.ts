@@ -46,6 +46,7 @@ export function useAutoMaintain(): void {
   // the manual button reads, on purpose (settingsStore's `autoReviewRoute` note).
   const route = useSettingsStore((s) => s.autoReviewRoute);
   const apiOn = useSettingsStore((s) => s.apiEngineEnabled);
+  const apiVendor = useSettingsStore((s) => s.apiVendor);
   const apiBaseUrl = useSettingsStore((s) => s.apiBaseUrl);
   const apiModel = useSettingsStore((s) => s.apiModel);
   const apiReasoning = useSettingsStore((s) => s.apiReasoning);
@@ -55,11 +56,11 @@ export function useAutoMaintain(): void {
   // setting changes mid-cycle — the tick reads the latest values when it fires.
   const gate = useRef({
     enabled, mcpEnabled, mcpWriteEnabled, actionsEnabled, cliAvailable, timeoutSecs,
-    route, apiOn, apiBaseUrl, apiModel, apiReasoning, apiTimeoutSecs,
+    route, apiOn, apiVendor, apiBaseUrl, apiModel, apiReasoning, apiTimeoutSecs,
   });
   gate.current = {
     enabled, mcpEnabled, mcpWriteEnabled, actionsEnabled, cliAvailable, timeoutSecs,
-    route, apiOn, apiBaseUrl, apiModel, apiReasoning, apiTimeoutSecs,
+    route, apiOn, apiVendor, apiBaseUrl, apiModel, apiReasoning, apiTimeoutSecs,
   };
 
   useEffect(() => {
@@ -114,6 +115,7 @@ export function useAutoMaintain(): void {
           // road has no child of Spool's to stop. The row it writes is the same shape,
           // which is why 周回顾 that page needs no second list.
           await runWeeklyReviewViaApi({
+            apiVendor: g.apiVendor,
             apiBaseUrl: g.apiBaseUrl,
             apiModel: g.apiModel,
             apiReasoning: g.apiReasoning,

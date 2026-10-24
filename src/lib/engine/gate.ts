@@ -48,7 +48,7 @@ export const canShowEngineActions = (g: EngineGateInput): boolean =>
 export const engineActionsDisabled = (g: EngineGateInput): boolean =>
   g.busyOnThisThread === true;
 
-/** Which road an AI entry runs on. `any` = a local CLI or DeepSeek, whichever is there. */
+/** Which road an AI entry runs on. `any` = a local CLI or an API key, whichever is there. */
 export type AiRoute = 'any' | 'cli' | 'api';
 
 /** `private` (P9E-3) = the entry is in a private project: closed whatever the engine says. */
@@ -97,7 +97,7 @@ export interface AiSetupInput {
  *
  * - `cli`: the local Claude Code / Codex half, Mac only. `install` = none found; `switches` =
  *   one is there and these MCP switches are what is missing.
- * - `api`: the DeepSeek half. `enable` turns the switch on — `needsKey` when no key is stored
+ * - `api`: the API key half (any vendor since P9U-3). `enable` turns the switch on — `needsKey` when no key is stored
  *   yet; `no-sidecar` = the small program that makes the requests is missing, nothing to offer.
  *
  * A half is `null` when its road does not apply to the entry or is already open.

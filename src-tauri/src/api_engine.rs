@@ -261,6 +261,28 @@ pub async fn stale_scan_via_cli(
     Ok(StaleScan { outcome, proposals, dropped })
 }
 
+/// P9U-3（Ocean 10-24 第 188 条：「用户放入每家模型的 key 都能正常使用」）—— 这一家怎么说话。
+///
+/// ⚠️ 厂商表只放在一处（`src/lib/ai/vendors.ts`），这里只收它算好的结果：说哪种协议、发不发温度、
+/// 要不要给输出上限。「思考力度」照旧是 `reasoning` 那个参数，⭐ 前端已经把这家不认的值滤掉了。
+/// `None`（老的调用方、实测台）= P9U-3 之前那条路：OpenAI 那一套 + 温度 0.2。
+#[derive(serde::Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ApiWire {
+    #[serde(default)]
+    pub protocol: String,
+    #[serde(default)]
+    pub temperature: Option<f64>,
+    #[serde(default)]
+    pub max_output_tokens: Option<u32>,
+}
+
+impl ApiWire {
+    fn or_legacy(w: Option<ApiWire>) -> ApiWire {
+        w.unwrap_or(ApiWire { protocol: String::new(), temperature: Some(0.2), max_output_tokens: None })
+    }
+}
+
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
 pub async fn compress_pack_via_api(
@@ -271,13 +293,15 @@ pub async fn compress_pack_via_api(
     api_key: String,
     model: String,
     reasoning: String,
+    wire: Option<ApiWire>,
     timeout_secs: u64,
 ) -> Result<CompressOutcome, String> {
     if RUNNING.swap(true, Ordering::SeqCst) {
         return Err("a compression run is already in flight".into());
     }
+    let wire = ApiWire::or_legacy(wire);
     let out = tauri::async_runtime::spawn_blocking(move || {
-        run_blocking(&app, pack_text, level, base_url, api_key, model, reasoning, timeout_secs)
+        run_blocking(&app, pack_text, level, base_url, api_key, model, reasoning, &wire, timeout_secs)
     })
     .await;
     RUNNING.store(false, Ordering::SeqCst);
@@ -297,6 +321,7 @@ fn run_blocking(
     api_key: String,
     model: String,
     reasoning: String,
+    wire: &ApiWire,
     timeout_secs: u64,
 ) -> CompressOutcome {
     // 提示词跟着 app 的语言走，和 MCP 那条路每次请求重读一次是同一个做法。
@@ -316,7 +341,7 @@ fn run_blocking(
         Err(e) => return CompressOutcome::failed("no_sidecar", e, None),
     };
     let timeout_secs = clamp_timeout(timeout_secs);
-    let request = sidecar_request(&base_url, &api_key, &model, &system, &user, &reasoning, timeout_secs);
+    let request = sidecar_request(&base_url, &api_key, &model, &system, &user, &reasoning, wire, timeout_secs);
     let payload = match serde_json::to_vec(&request) {
         Ok(v) => v,
         Err(e) => return CompressOutcome::failed("internal", e.to_string(), None),
@@ -335,6 +360,7 @@ fn run_blocking(
 /// ⚠️ **拆出来是为了让第二轮实测量的是产品本身**（WORKPLAN §9.6.3）。自动化实测台
 /// 绕开界面直接喂子进程，如果它自己另拼一份请求，测出来的就是那份脚本，不是 Spool。
 /// 两边共用这一个函数，参数一旦改了，实测跟着改。
+#[allow(clippy::too_many_arguments)]
 fn sidecar_request(
     base_url: &str,
     api_key: &str,
@@ -342,9 +368,14 @@ fn sidecar_request(
     system: &str,
     user: &str,
     reasoning: &str,
+    wire: &ApiWire,
     timeout_secs: u64,
 ) -> serde_json::Value {
     serde_json::json!({
+        "protocol": wire.protocol,
+        "temperature": wire.temperature,
+        // `None` = 不发（见下面那段注释）；只有认得的几家要它（Claude 的接口必须给，Kimi 不给就很短）。
+        "max_output_tokens": wire.max_output_tokens,
         "base_url": base_url,
         "api_key": api_key,
         "model": model,
@@ -874,8 +905,16 @@ pub(crate) fn compress_for_test(
     max_output_tokens: Option<u32>,
 ) -> CompressOutcome {
     let timeout_secs = clamp_timeout(timeout_secs);
-    let mut request =
-        sidecar_request(base_url, api_key, model, system, user, reasoning, timeout_secs);
+    let mut request = sidecar_request(
+        base_url,
+        api_key,
+        model,
+        system,
+        user,
+        reasoning,
+        &ApiWire::or_legacy(None),
+        timeout_secs,
+    );
     if let Some(cap) = max_output_tokens {
         request["max_output_tokens"] = serde_json::json!(cap);
     }
@@ -925,6 +964,31 @@ mod tests {
         assert!(!b.ok);
         assert_eq!(b.kind.as_deref(), Some("bad_response"));
         assert!(b.total.is_empty());
+    }
+
+    // P9U-3：厂商表算好的三样东西原样进请求；老的调用方（None）还是原来那条路。
+    #[test]
+    fn the_vendor_wire_goes_into_the_request() {
+        let w = ApiWire { protocol: "anthropic".into(), temperature: None, max_output_tokens: Some(64_000) };
+        let r = sidecar_request("https://api.anthropic.com", "k", "m", "s", "u", "low", &w, 60);
+        assert_eq!(r["protocol"], "anthropic");
+        assert!(r["temperature"].is_null());
+        assert_eq!(r["max_output_tokens"], 64_000);
+        assert_eq!(r["reasoning_effort"], "low");
+        let legacy = sidecar_request("https://api.deepseek.com", "k", "m", "s", "u", "", &ApiWire::or_legacy(None), 60);
+        assert_eq!(legacy["protocol"], "");
+        assert_eq!(legacy["temperature"], 0.2);
+        assert!(legacy["max_output_tokens"].is_null());
+    }
+
+    #[test]
+    fn a_model_list_comes_through_and_a_refused_key_says_auth() {
+        let ok = parse_models(r#"{"ok":true,"models":["a","b"]}"#);
+        assert!(ok.ok);
+        assert_eq!(ok.models, vec!["a", "b"]);
+        let no = parse_models(r#"{"ok":false,"kind":"auth","message":"401","status":401}"#);
+        assert_eq!(no.kind.as_deref(), Some("auth"));
+        assert!(!parse_models("garbage").ok);
     }
 
     #[test]
@@ -1356,11 +1420,13 @@ pub async fn stale_scan_via_api(
     api_key: String,
     model: String,
     reasoning: String,
+    wire: Option<ApiWire>,
     timeout_secs: u64,
 ) -> Result<StaleScan, String> {
     if RUNNING.swap(true, Ordering::SeqCst) {
         return Err("a run is already in flight".into());
     }
+    let wire = ApiWire::or_legacy(wire);
     let pack_for_gate = pack_text.clone();
     let out = tauri::async_runtime::spawn_blocking(move || {
         if let Ok(dir) = tauri::Manager::path(&app).app_config_dir() {
@@ -1373,7 +1439,7 @@ pub async fn stale_scan_via_api(
         };
         let timeout_secs = clamp_timeout(timeout_secs);
         let request =
-            sidecar_request(&base_url, &api_key, &model, &system, &user, &reasoning, timeout_secs);
+            sidecar_request(&base_url, &api_key, &model, &system, &user, &reasoning, &wire, timeout_secs);
         let payload = match serde_json::to_vec(&request) {
             Ok(v) => v,
             Err(e) => return CompressOutcome::failed("internal", e.to_string(), None),
@@ -1536,6 +1602,83 @@ fn run_balance_child(bin: &std::path::Path, payload: Vec<u8>) -> Result<String, 
     Ok(String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
+/// 这个 key 能用的模型（P9U-3，第 188 条：「模型从那家接口拉列表让人挑」）。
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelsOutcome {
+    pub ok: bool,
+    pub models: Vec<String>,
+    /// `auth` = 这个 key 这个地址不认（前端拿它去试同一家另一个地区）；`unsupported` = 这家不给列表。
+    pub kind: Option<String>,
+    pub message: Option<String>,
+    pub status: Option<u16>,
+}
+
+fn parse_models(stdout: &str) -> ModelsOutcome {
+    let failed = |kind: &str, message: String, status: Option<u16>| ModelsOutcome {
+        ok: false,
+        models: Vec::new(),
+        kind: Some(kind.to_string()),
+        message: Some(message),
+        status,
+    };
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(stdout.trim()) else {
+        return failed("bad_response", format!("The sidecar's answer was not JSON: {}", clip(stdout.trim())), None);
+    };
+    if v.get("ok").and_then(|b| b.as_bool()) != Some(true) {
+        return failed(
+            v.get("kind").and_then(|s| s.as_str()).unwrap_or("http"),
+            v.get("message").and_then(|s| s.as_str()).unwrap_or("").to_string(),
+            v.get("status").and_then(|n| n.as_u64()).map(|n| n as u16),
+        );
+    }
+    let models = v
+        .get("models")
+        .and_then(|m| m.as_array())
+        .map(|a| a.iter().filter_map(|x| x.as_str().map(String::from)).collect())
+        .unwrap_or_default();
+    ModelsOutcome { ok: true, models, kind: None, message: None, status: None }
+}
+
+/// 问一句「这个 key 能用哪些模型」。⚠️ 不计费（一次 GET），也不占 `RUNNING`，理由和 `api_balance` 一样；
+/// 同样自己起、自己收，不挂进 `CHILD`。
+#[tauri::command]
+pub async fn api_models(
+    base_url: String,
+    api_key: String,
+    protocol: String,
+    key_check_path: Option<String>,
+) -> Result<ModelsOutcome, String> {
+    let out = tauri::async_runtime::spawn_blocking(move || {
+        let bin = match sidecar_path() {
+            Ok(p) => p,
+            Err(e) => return parse_models(&serde_json::json!({ "ok": false, "kind": "no_sidecar", "message": e }).to_string()),
+        };
+        let request = serde_json::json!({
+            "kind": "models",
+            "protocol": protocol,
+            "key_check_path": key_check_path.unwrap_or_default(),
+            "base_url": base_url,
+            "api_key": api_key,
+            // 必填字段，这条路不读（见 `api_balance`）。
+            "model": "",
+            "system": "",
+            "user": "",
+            "timeout_secs": 25u64,
+        });
+        let payload = match serde_json::to_vec(&request) {
+            Ok(v) => v,
+            Err(e) => return parse_models(&serde_json::json!({ "ok": false, "kind": "internal", "message": e.to_string() }).to_string()),
+        };
+        match run_balance_child(&bin, payload) {
+            Ok(stdout) => parse_models(&stdout),
+            Err(e) => parse_models(&serde_json::json!({ "ok": false, "kind": "internal", "message": e }).to_string()),
+        }
+    })
+    .await;
+    Ok(out.unwrap_or_else(|e| parse_models(&serde_json::json!({ "ok": false, "kind": "internal", "message": e.to_string() }).to_string())))
+}
+
 // ---------------------------------------------------------------------------------------
 // 周回顾走这条路 —— 2026-08-25，Ocean：「CLI 只支持 codex 和 claude，这两个模型太贵了
 // （gemini 的能力有限，且额度少），加入 deepseek 的周总结，总结的 model 可以让用户自行选择」。
@@ -1550,6 +1693,7 @@ fn run_balance_child(bin: &std::path::Path, payload: Vec<u8>) -> Result<String, 
 // ⛔ 这条路一个字都不往库里写。回顾正文回给前端，由前端按老路子记进 `engine_runs`，
 // 存不存成块仍然是用户的事（和形态 B 那条一样）。
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn weekly_review_via_api(
     app: tauri::AppHandle,
     since_days: Option<i64>,
@@ -1557,11 +1701,13 @@ pub async fn weekly_review_via_api(
     api_key: String,
     model: String,
     reasoning: String,
+    wire: Option<ApiWire>,
     timeout_secs: u64,
 ) -> Result<CompressOutcome, String> {
     if RUNNING.swap(true, Ordering::SeqCst) {
         return Err("a run is already in flight".into());
     }
+    let wire = ApiWire::or_legacy(wire);
     let out = tauri::async_runtime::spawn_blocking(move || {
         if let Ok(dir) = tauri::Manager::path(&app).app_config_dir() {
             crate::mcp::refresh_lang(&dir);
@@ -1579,7 +1725,7 @@ pub async fn weekly_review_via_api(
         };
         let timeout_secs = clamp_timeout(timeout_secs);
         let request =
-            sidecar_request(&base_url, &api_key, &model, &system, &user, &reasoning, timeout_secs);
+            sidecar_request(&base_url, &api_key, &model, &system, &user, &reasoning, &wire, timeout_secs);
         let payload = match serde_json::to_vec(&request) {
             Ok(v) => v,
             Err(e) => return CompressOutcome::failed("internal", e.to_string(), None),

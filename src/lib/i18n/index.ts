@@ -1350,9 +1350,9 @@ const EN: Record<string, string> = {
     'No reviews yet. Press the button above and the AI reads every project, then says what moved this week and what is still open.',
   // P9C — the review bar while no road is open, or the free one only needs a switch.
   '用 {engine} 回顾（不花钱）—— 先打开写入': 'Review with {engine} (no extra cost) — turn on writing first',
-  '写回顾要用一个 AI：本机的 Claude Code / Codex，或者 DeepSeek。':
-    'Writing a review takes an AI: Claude Code or Codex on this Mac, or DeepSeek.',
-  '写回顾要用一个 AI：DeepSeek。': 'Writing a review takes an AI: DeepSeek.',
+  '写回顾要用一个 AI：本机的 Claude Code / Codex，或者你自己的 API key。':
+    'Writing a review takes an AI: Claude Code or Codex on this Mac, or your own API key.',
+  '写回顾要用一个 AI：你自己的 API key。': 'Writing a review takes an AI: your own API key.',
   '这次什么也没回来': 'nothing came back this time',
 
   // 「问 AI」 (§9.13) — the row's one-click question.
@@ -1458,7 +1458,7 @@ const EN: Record<string, string> = {
   '没打开': 'Could not turn it on',
   '用本机的 Claude Code / Codex（不花钱）': 'Use Claude Code or Codex on this Mac (no extra cost)',
   '用本机的 {engine}（不花钱）': 'Use {engine} on this Mac (no extra cost)',
-  '用 DeepSeek（按字数花钱，用你自己的 key）': 'Use DeepSeek (paid per character, with your own key)',
+  '用你自己的 API key（按字数花钱）': 'Use your own API key (paid per character)',
   '正在看你存没存过 key…': 'Checking whether a key is already saved…',
   '接口地址和模型在设置里改。': 'The endpoint and model can be changed in Settings.',
   // ---------------------------------------------------------------------------------------
@@ -1467,9 +1467,35 @@ const EN: Record<string, string> = {
   // ⚠️ 这一组里有几句是**在改一句对外说了很久的话**（§6.3 把「永不联网」精确化）。
   // 英文这一侧不是意译：它跟中文一样,必须把「谁发的请求、用谁的额度、内容到了谁那里」
   // 三件事说全。少说一件,英文用户读到的就是一个比中文更宽的承诺。
-  '让 Spool 自己调 AI 压缩上下文': 'Let Spool call an AI to compress a briefing',
-  'Spool 主程序不发任何网络请求。打开这个开关之后，请求由 Spool 启动的一个本地小程序发出，用你自己的 key 和额度，内容会到达你选的那家模型厂商。':
-    'Spool itself makes no network request. With this on, the request is sent by a small program Spool starts on this machine, using your own key and your own credit, and what you send reaches the model vendor you picked.',
+  '用你自己的 API key': 'Use your own API key',
+  'Spool 主程序不发任何网络请求。连上 key 之后，请求由 Spool 启动的一个本地小程序发出，用你自己的 key 和额度，内容会到达你选的那家模型厂商。':
+    'Spool itself makes no network request. Once a key is connected, the request is sent by a small program Spool starts on this machine, using your own key and your own credit, and what you send reaches the model vendor you picked.',
+  // P9U-3 — the API key block (AiSetup/ApiKey): any vendor's key, recognised when pasted.
+  '通义千问': 'Qwen',
+  '智谱 GLM': 'Zhipu GLM',
+  '自定义地址': 'Custom endpoint',
+  '正在连 {vendor}…': 'Connecting to {vendor}…',
+  '认不出这是哪一家的 key —— 点一下是哪家：': 'Can\u2019t tell whose key this is \u2014 click the vendor:',
+  '{vendor} 不认这个 key。是别家的 key 的话，点一下是哪家：':
+    '{vendor} does not accept this key. If it is another vendor\u2019s, click which one:',
+  '连不上 {vendor}。检查一下网络，或者点一家再试：': 'Could not reach {vendor}. Check the network, or click a vendor to try again:',
+  '换一个 key': 'Use another key',
+  '断开': 'Disconnect',
+  '选一个模型': 'Pick a model',
+  '模型名': 'Model name',
+  '从 {vendor} 拉一下模型列表（不花钱）': 'Fetch the model list from {vendor} (free)',
+  '先选一个模型，这条路才能用。': 'Pick a model first \u2014 this route needs one.',
+  '已经存了一个 key': 'A key is already saved',
+  '粘贴你的 API key': 'Paste your API key',
+  'OpenAI、Claude、Gemini、DeepSeek、Kimi、通义、智谱、OpenRouter 的 key 都行，粘进来就认。key 存在这台电脑的系统钥匙串里，不进设置文件，也不跟着导出的库走。':
+    'A key from OpenAI, Claude, Gemini, DeepSeek, Kimi, Qwen, Zhipu or OpenRouter all work \u2014 paste it and Spool tells whose it is. The key is kept in this computer\u2019s system keychain, never in the settings file or an exported library.',
+  '模型下笔之前会先想一会儿，这一段也按字数收费。默认 low：想得短一点，压出来的东西不比想得久的差，钱和时间都省下大半。':
+    'The model thinks for a while before it writes, and that is billed per word too. Low by default: thinking less compresses just as well and saves most of the money and the wait.',
+  '模型下笔之前会先想一会儿，这一段也按字数收费。不认的值会被接口顶回来，那一次不收费。':
+    'The model thinks for a while before it writes, and that is billed per word too. A value the endpoint does not take is refused, and that refusal costs nothing.',
+  '模型下笔之前会先想一会儿，这一段也按字数收费。「默认」就是这家自己的设定。':
+    'The model thinks for a while before it writes, and that is billed per word too. \u201cDefault\u201d is the vendor\u2019s own setting.',
+  '夜里跑，你不用守在电脑前，早上起来核对就行。': 'It runs overnight \u2014 no need to sit there; check the drafts in the morning.',
   '已经装了 claude / codex 这类命令行工具的话，用「AI 引擎」那一节就行，一分钱不花、一个 key 不用填。这一节是给不想装命令行工具的人的第二条路。':
     'If you already have a CLI like claude or codex, use the section below instead — it costs nothing and needs no key. This section is the other route, for people who would rather not install one.',
   'key 存在你这台电脑的系统钥匙串里，和别的密码放在一起。它不会进设置文件，也不会跟着导出的库走。':
@@ -1515,8 +1541,10 @@ const EN: Record<string, string> = {
     'The briefing was cut off partway, so no complete version came back. ⚠️ A half-written briefing looks exactly like an aggressively compressed one, so it is not shown. Raise “Longest wait per run” in Settings, or pack a smaller range.',
   '已经等了 {n} 秒（最长等 {max} 秒）': 'Waited {n}s so far (it gives up after {max}s)',
   '停下（{n}s）': 'Stop ({n}s)',
-  '这个模型把整次回复都用来「思考」了，正文一个字都没写出来。换一个不思考的模型（比如 pro 那一档里的非推理款），或者把范围缩小一点再试。':
-    'This model spent the whole reply thinking and wrote no briefing at all. Try a model that does not reason, or pack a smaller range.',
+  '这个模型把整次回复都用来「思考」了，正文一个字都没写出来。把思考力度调低一档、换一个不思考的模型，或者把范围缩小一点再试。':
+    'This model spent the whole reply thinking and wrote no briefing at all. Turn the thinking effort down a step, try a model that does not reason, or pack a smaller range.',
+  '模型拒绝了这一次请求（那家的安全规则），没拿到结果。换一个模型再试。':
+    'The model declined this request (that vendor\u2019s safety rules), so nothing came back. Try another model.',
   '结果被输出长度掐断了，没拿到完整的压缩稿。换个小一点的打包范围再试。':
     'The reply was cut off before a complete briefing came back. Try a smaller pack range.',
   '点右下角开始。': 'Press the button at the bottom right to start.',

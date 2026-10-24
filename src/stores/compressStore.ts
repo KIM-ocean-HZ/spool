@@ -45,6 +45,7 @@ import { cliRouteNow, roadsNow, routeFor } from '@/lib/engine/roads';
 import { useBlocksStore } from './blocksStore';
 import { toast } from './toastStore';
 import { useSettingsStore } from './settingsStore';
+import { apiCallFrom } from '@/lib/ai/vendors';
 import { useThreadsStore } from './threadsStore';
 
 // 压缩这件事的运行态（WORKPLAN-2026-08-20 §9.6.2 / §9.6.4 / §9.6.6）。
@@ -354,7 +355,8 @@ const freshSession = (
     source,
     blocks,
     level: s.apiCompressLevel,
-    reasoning: s.apiReasoning,
+    // ⚠️ 记的是**真会发出去的**那个值：这家不认的力度会被滤成「默认」（P9U-3）。
+    reasoning: apiCallFrom(s).reasoning,
     outcome: null,
     patched: null,
     addedBack: [],
@@ -401,16 +403,19 @@ const runCompress = async (
   const ask =
     road === 'cli'
       ? () => compressPackViaCli(shielded.text, level, s.aiEngineTimeoutSecs, cliRouteNow())
-      : async () =>
-          compressPack({
+      : async () => {
+          const call = apiCallFrom(s, reasoning);
+          return compressPack({
             packText: shielded.text,
             level,
-            baseUrl: s.apiBaseUrl,
+            baseUrl: call.baseUrl,
             apiKey: await loadApiKey(),
-            model: s.apiModel,
-            reasoning,
+            model: call.model,
+            reasoning: call.reasoning,
+            wire: call.wire,
             timeoutSecs: s.apiTimeoutSecs,
           });
+        };
   // 回来一份就当场放回去一份 —— ⚠️ 后面所有判断（值不值得重跑、核对、按块比对）
   // 看到的都必须是**放回去之后**那一份，否则它们会以为批注真的没了。
   let lost: Unshielded | null = null;
@@ -576,7 +581,7 @@ export const useCompressStore = create<CompressState>((set, get) => ({
     const frozen: CompressSession = {
       ...session,
       level: s.apiCompressLevel,
-      reasoning: s.apiReasoning,
+      reasoning: apiCallFrom(s).reasoning,
       outcome: null,
       // ⚠️ 重压一次，上一次补回去的那几行也跟着作废 —— 它们补的是**那一份**稿子。
       patched: null,
@@ -904,14 +909,18 @@ export const useCompressStore = create<CompressState>((set, get) => ({
       const scan =
         routeFor(s.staleRoute, roadsNow()) === 'cli'
           ? await staleScanViaCli(text, s.aiEngineTimeoutSecs, cliRouteNow())
-          : await staleScan({
-              packText: text,
-              baseUrl: s.apiBaseUrl,
-              apiKey: await loadApiKey(),
-              model: s.apiModel,
-              reasoning: s.apiReasoning,
-              timeoutSecs: s.apiTimeoutSecs,
-            });
+          : await (async () => {
+              const call = apiCallFrom(s);
+              return staleScan({
+                packText: text,
+                baseUrl: call.baseUrl,
+                apiKey: await loadApiKey(),
+                model: call.model,
+                reasoning: call.reasoning,
+                wire: call.wire,
+                timeoutSecs: s.apiTimeoutSecs,
+              });
+            })();
       // ⛔⛔ T2（2026-08-23，第五轮实测）：**先把库里已经有的那几条摘出去。**
       //
       // 实测撞到的是最难看的一种：5 次里最稳的那条提议（4/5）指的关系**库里本来就有**

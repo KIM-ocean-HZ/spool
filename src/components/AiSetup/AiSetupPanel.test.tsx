@@ -2,32 +2,12 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import { useEngineStore } from '@/stores/engineStore';
 import { useSettingsStore } from '@/stores/settingsStore';
-import { AiSetupPanel, turnOnApi } from './AiSetupPanel';
+import { AiSetupPanel } from './AiSetupPanel';
 
 vi.mock('@/lib/platform', async (orig) => ({
   ...(await orig<typeof import('@/lib/platform')>()),
   IS_MAC: true,
 }));
-
-// P9C — 「现在打开」 changes exactly what it names, and nothing is sent anywhere. (The CLI half's is
-// LocalEngine's 「连接」 since P9T; its patch is `cliSwitchesPatch`, tested in lib/engine/gate.test.ts.)
-describe('现在打开', () => {
-  it('DeepSeek half, key typed: stores the key (trimmed), then only apiEngineEnabled', async () => {
-    const update = vi.fn(async () => {});
-    const saveKey = vi.fn(async () => {});
-    await turnOnApi('  sk-test  ', update, saveKey);
-    expect(saveKey.mock.calls).toEqual([['sk-test']]);
-    expect(update.mock.calls).toEqual([[{ apiEngineEnabled: true }]]);
-  });
-
-  it('DeepSeek half, key already stored: no key write, only apiEngineEnabled', async () => {
-    const update = vi.fn(async () => {});
-    const saveKey = vi.fn(async () => {});
-    await turnOnApi(null, update, saveKey);
-    expect(saveKey).not.toHaveBeenCalled();
-    expect(update.mock.calls).toEqual([[{ apiEngineEnabled: true }]]);
-  });
-});
 
 describe('AiSetupPanel', () => {
   it('no CLI on a Mac: Claude Code and Codex to install, never Gemini', () => {
@@ -39,14 +19,18 @@ describe('AiSetupPanel', () => {
     const html = renderToStaticMarkup(<AiSetupPanel route="any" />);
     expect(html).toContain('装 Claude Code');
     expect(html).toContain('装 Codex');
-    expect(html).not.toContain('Gemini');
+    // ⛔ No Gemini CLI to install (its free tier is gone). The API half's vendor list may name
+    // Gemini — that is a key, not a CLI — but it is not drawn before the key check answers.
+    expect(html).not.toContain('装 Gemini');
     // The free road comes first.
-    expect(html.indexOf('不花钱')).toBeLessThan(html.indexOf('DeepSeek'));
+    expect(html.indexOf('不花钱')).toBeLessThan(html.indexOf('API key'));
+    // P9U-3 (Ocean: 「去掉 deepseek 这个例子」): the API half names no vendor.
+    expect(html).not.toContain('DeepSeek');
   });
 
-  it('a CLI-only entry never offers DeepSeek', () => {
+  it('a CLI-only entry never offers an API key', () => {
     Object.assign(useSettingsStore.getInitialState(), { language: 'zh', apiEngineEnabled: false });
     const html = renderToStaticMarkup(<AiSetupPanel route="cli" />);
-    expect(html).not.toContain('DeepSeek');
+    expect(html).not.toContain('API key');
   });
 });

@@ -1,6 +1,8 @@
 import { RefreshCw } from 'lucide-react';
+import { resolveVendor } from '@/lib/ai/vendors';
 import { useT } from '@/lib/i18n';
 import { useBalanceStore } from '@/stores/balanceStore';
+import { useSettingsStore } from '@/stores/settingsStore';
 
 /**
  * 「还剩多少钱」的那一行 —— `X 批`。两处用它（设置里的 API 那一段、周回顾那根引擎条），
@@ -16,6 +18,10 @@ export default function ApiBalance({ className = '' }: { className?: string }) {
   const t = useT();
   const state = useBalanceStore((s) => s.state);
   const refresh = useBalanceStore((s) => s.refresh);
+  // P9U-3：只有 DeepSeek（和不知道是谁的自定义地址）答余额 —— 别家不画这一行，⛔ 也不画「这家不报余额」：
+  // 一个永远回答「不报」的按钮只是噪音。
+  const reports = useSettingsStore((s) => resolveVendor(s.apiVendor, s.apiBaseUrl).balance);
+  if (!reports) return null;
 
   return (
     <span className={`flex items-center gap-1.5 text-[11px] text-muted ${className}`}>

@@ -377,6 +377,9 @@ describe('算钱', () => {
 
   it('认不出模型就不报价，而不是编一个', () => {
     expect(priceTier('some-local-model')).toBeNull();
+    // P9U-3: another vendor's 「flash」 is not DeepSeek's price list.
+    expect(priceTier('gemini-2.5-flash')).toBeNull();
+    expect(priceTier('deepseek-v4-flash')).toBe('flash');
     expect(estimateCost(outcome({ model: 'some-local-model' }))).toBeNull();
   });
 

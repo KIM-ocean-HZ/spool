@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { invoke } from '@tauri-apps/api/core';
 import { loadApiKey } from '@/lib/ai/compress';
 import { useSettingsStore } from '@/stores/settingsStore';
+import { baseFor, resolveVendor } from '@/lib/ai/vendors';
 
 /**
  * API 那条路还剩多少钱 —— `X 批`（Ocean 2026-08-26：「能不能拿到用户的 api 剩余额度，
@@ -48,11 +49,15 @@ export const useBalanceStore = create<BalanceStore>((set, get) => ({
     const s = useSettingsStore.getState();
     // 总开关关着的时候一个请求都不发 —— 那个开关的意思就是「什么都不许出去」。
     if (!s.apiEngineEnabled) return;
+    // P9U-3：只有 DeepSeek（和不知道是谁的自定义地址）答 `/user/balance` —— 别家问了也只会 404，
+    // 那就别问：一次本来不必要的出网。界面那一行在这些家也不画（ApiBalance）。
+    const vendor = resolveVendor(s.apiVendor, s.apiBaseUrl);
+    if (!vendor.balance) return;
     set({ state: { at: 'checking' } });
     try {
       const key = await loadApiKey();
       const out = await invoke<BalanceOutcome>('api_balance', {
-        baseUrl: s.apiBaseUrl,
+        baseUrl: baseFor(vendor, s.apiBaseUrl),
         apiKey: key,
       });
       if (out.ok) {

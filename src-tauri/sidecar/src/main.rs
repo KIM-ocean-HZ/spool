@@ -70,12 +70,30 @@ struct Request {
     thinking_disabled: bool,
     timeout_secs: u64,
     /// 这一次要它做什么。空 / `"chat"` = 压一段文字（这个进程原本唯一会做的事）；
-    /// `"balance"` = 去问一句余额。
+    /// `"balance"` = 去问一句余额；`"models"` = 列出这个 key 能用的模型（P9U-3）。
     ///
     /// ⚠️ `#[serde(default)]` 同上 —— 少了它，老的调用方（不发这个字段）会被判成
     /// 「请求不是合法 JSON」，而那是一条非零退出、界面上只剩一个数字的路。
     #[serde(default)]
     kind: String,
+    /// P9U-3（Ocean 10-24：「用户放入每家模型的 key 都能正常使用」）—— 这家说哪种话。
+    /// 空 / `"openai"` = `/chat/completions` 那一套（DeepSeek、OpenAI、Gemini、Kimi、通义、智谱、
+    /// OpenRouter 都有这种地址）；`"anthropic"` = Claude 自己的 Messages 接口（`/v1/messages`）。
+    /// ⚠️ `#[serde(default)]` 同上：老的调用方不发这个字段，就是原来那条路。
+    #[serde(default)]
+    protocol: String,
+    /// 温度。`None` = **不发**，用那家自己的默认。
+    ///
+    /// ⚠️ P9U-3 之前这里写死 0.2，那时只有 DeepSeek。别家不是都认：OpenAI 的推理模型和
+    /// 新的 Claude 模型对温度直接回 400，Kimi 的新模型把它钉在 1。所以由调用方按厂商表决定发不发。
+    #[serde(default)]
+    temperature: Option<f64>,
+    /// 列模型之前先拿这个 key 问一下这个路径（只对 `"models"` 有效）。空 = 不问。
+    ///
+    /// ⚠️ 2026-10-24 假 key 实测：OpenRouter 的 `/models` 是**公开的**，坏 key 照样回一整张表 ——
+    /// 不先问一句，一个错的 key 在设置里会显示成「已连接」，要等第一次真跑才露馅。它的 `/key` 认 key。
+    #[serde(default)]
+    key_check_path: String,
 }
 
 /// 吐到 stdout 的信封。`ok` 是判别字段，两种形态的字段不重叠。
@@ -103,6 +121,11 @@ enum Envelope {
         total: String,
         /// 厂商自己说的「这个账号现在还能不能调用」。
         usable: bool,
+    },
+    /// 这个 key 能用的模型（P9U-3）。⚠️ 字段名同样一个都不和别的形态重叠。
+    Models {
+        ok: bool,
+        models: Vec<String>,
     },
     Err {
         ok: bool,
@@ -189,6 +212,12 @@ fn run(req: Request) -> Envelope {
     if req.kind == "balance" {
         return balance(base, &req);
     }
+    if req.kind == "models" {
+        return list_models(base, &req);
+    }
+    if req.protocol == "anthropic" {
+        return run_anthropic(base, &req);
+    }
     let url = format!("{base}/chat/completions");
 
     // ⚠️ system 在前、user 在后，而这个顺序是**钱**，不是风格问题。
@@ -202,27 +231,7 @@ fn run(req: Request) -> Envelope {
     // PACK_HEADER）—— 换一天、或者项目多了一块，这一行就变了，它后面那一大片静态表头也就跟着
     // 全部未命中。所以能稳定命中的只有 system 这一截。**这正是第 5 步要去实测的东西**，别在
     // 实测出来之前就照着估算的数字对外说话。
-    let mut body = serde_json::json!({
-        "model": req.model,
-        "messages": [
-            { "role": "system", "content": req.system },
-            { "role": "user", "content": req.user },
-        ],
-        // 不流式：这个动作的产物是一整份压缩稿，要并排核对，逐字蹦出来没有意义，
-        // 而流式会把错误处理变成两条路（HTTP 层的错 + 流里的错）。
-        "stream": false,
-        // 压缩是搬运不是创作。低温让「一字不改地照抄骨架」这条规则更可能被守住。
-        "temperature": 0.2,
-    });
-    if let Some(n) = req.max_output_tokens {
-        body["max_tokens"] = serde_json::json!(n);
-    }
-    if let Some(effort) = req.reasoning_effort.as_deref().filter(|s| !s.is_empty()) {
-        body["reasoning_effort"] = serde_json::json!(effort);
-    }
-    if req.thinking_disabled {
-        body["thinking"] = serde_json::json!({ "type": "disabled" });
-    }
+    let body = openai_body(&req);
 
     let timeout = Duration::from_secs(req.timeout_secs.clamp(10, 900));
     let agent: ureq::Agent = ureq::Agent::config_builder()
@@ -248,6 +257,34 @@ fn run(req: Request) -> Envelope {
         Envelope::Err { status: Some(400), .. } => call(&agent, &url, &req, &body, false, base),
         other => other,
     }
+}
+
+/// `/chat/completions` 的请求体。拆出来好让测试钉住「温度只在要发的时候发」。
+fn openai_body(req: &Request) -> serde_json::Value {
+    let mut body = serde_json::json!({
+        "model": req.model,
+        "messages": [
+            { "role": "system", "content": req.system },
+            { "role": "user", "content": req.user },
+        ],
+        // 不流式：这个动作的产物是一整份压缩稿，要并排核对，逐字蹦出来没有意义，
+        // 而流式会把错误处理变成两条路（HTTP 层的错 + 流里的错）。
+        "stream": false,
+    });
+    // 压缩是搬运不是创作。低温让「一字不改地照抄骨架」这条规则更可能被守住 —— 只对认温度的那几家发。
+    if let Some(t) = req.temperature {
+        body["temperature"] = serde_json::json!(t);
+    }
+    if let Some(n) = req.max_output_tokens {
+        body["max_tokens"] = serde_json::json!(n);
+    }
+    if let Some(effort) = req.reasoning_effort.as_deref().filter(|s| !s.is_empty()) {
+        body["reasoning_effort"] = serde_json::json!(effort);
+    }
+    if req.thinking_disabled {
+        body["thinking"] = serde_json::json!({ "type": "disabled" });
+    }
+    body
 }
 
 /// 问一句「还剩多少钱」。
@@ -336,6 +373,362 @@ fn clip_body(s: &str) -> String {
         return s.to_string();
     }
     format!("{}…", s.chars().take(300).collect::<String>())
+}
+
+/// 一次 GET 用的 agent（余额、模型列表）。⚠️ 二十秒，**不**用外面传进来的 timeout ——
+/// 一次 GET 要是二十秒还没回话，那不是「模型在想」，是这条路不通。
+fn quick_agent() -> ureq::Agent {
+    ureq::Agent::config_builder()
+        .timeout_global(Some(Duration::from_secs(20)))
+        .max_idle_connections(0)
+        .http_status_as_error(false)
+        .build()
+        .into()
+}
+
+/// 列出这个 key 能用的模型（P9U-3，Ocean 10-24 第 188 条：「模型从那家接口拉列表让人挑」）。
+///
+/// OpenAI 那一套是 `GET {base}/models`（Bearer）；Claude 是 `GET {base}/v1/models`（`x-api-key`）。
+/// ⚠️ 不计费，和查余额一样是一次 GET —— 粘进 key 那一刻就敢去问。
+///
+///   * 401 / 403 → `auth`。⭐ 前端拿它分辨「这个 key 不是这个地区的」（Kimi、通义、智谱国内外是两个地址，
+///     key 只认自己那一个），所以它必须和别的失败分开。
+///   * 404 / 405 → `unsupported`：这家不给列表，界面退回让人自己填模型名。⛔ 不是错误。
+fn list_models(base: &str, req: &Request) -> Envelope {
+    let anthropic = req.protocol == "anthropic";
+    if !req.key_check_path.is_empty() {
+        let url = format!("{base}{}", req.key_check_path);
+        let resp = quick_agent()
+            .get(&url)
+            .header("Accept", "application/json")
+            .header("Authorization", &format!("Bearer {}", req.api_key))
+            .call();
+        match resp {
+            Ok(mut r) => {
+                let status = r.status().as_u16();
+                if status == 401 || status == 403 {
+                    let text = r.body_mut().read_to_string().unwrap_or_default();
+                    return models_from_body(status, &text, base);
+                }
+            }
+            Err(ureq::Error::Timeout(_)) => {
+                return err("timeout", "The endpoint did not answer the key check in time.", None)
+            }
+            Err(e) => return err("network", format!("Could not reach {base} — {e}"), None),
+        }
+    }
+    let url = if anthropic { format!("{base}/v1/models?limit=1000") } else { format!("{base}/models") };
+    let mut call = quick_agent().get(&url).header("Accept", "application/json");
+    call = if anthropic {
+        call.header("x-api-key", &req.api_key).header("anthropic-version", ANTHROPIC_VERSION)
+    } else {
+        call.header("Authorization", &format!("Bearer {}", req.api_key))
+    };
+    let mut resp = match call.call() {
+        Ok(r) => r,
+        Err(ureq::Error::Timeout(_)) => {
+            return err("timeout", "The endpoint did not answer the model list in time.", None)
+        }
+        // ⚠️ `e` 里不含 key（key 在 header 里，不在 URL 里）。
+        Err(e) => return err("network", format!("Could not reach {base} — {e}"), None),
+    };
+    let status = resp.status().as_u16();
+    let text = resp.body_mut().read_to_string().unwrap_or_default();
+    models_from_body(status, &text, base)
+}
+
+/// 响应体 → 模型列表。单独一个函数，好让测试钉住每家的形状。
+fn models_from_body(status: u16, text: &str, base: &str) -> Envelope {
+    if status == 404 || status == 405 {
+        return err(
+            "unsupported",
+            format!("{base} does not list its models — type the model name instead."),
+            Some(status),
+        );
+    }
+    let parsed = serde_json::from_str::<serde_json::Value>(text).unwrap_or(serde_json::Value::Null);
+    if status >= 400 {
+        let msg = vendor_error(&parsed).unwrap_or_else(|| format!("{} — {}", http_message(status), clip(text)));
+        return err(classify_with(status, &msg), msg, Some(status));
+    }
+    let Some(items) = parsed.get("data").and_then(|d| d.as_array()) else {
+        return err("bad_response", format!("The model list came back in a shape Spool can't read: {}", clip(text)), Some(status));
+    };
+    let mut models: Vec<String> = Vec::new();
+    for it in items {
+        // Gemini 的 OpenAI 兼容地址回的是 `models/gemini-…`，而发请求时用的是不带前缀的名字。
+        let Some(id) = it.get("id").and_then(|v| v.as_str()) else { continue };
+        let id = id.trim_start_matches("models/").to_string();
+        if !id.is_empty() && !models.contains(&id) {
+            models.push(id);
+        }
+    }
+    Envelope::Models { ok: true, models }
+}
+
+// ---------------------------------------------------------------------------------------
+// Claude 自己的 Messages 接口（P9U-3）
+// ---------------------------------------------------------------------------------------
+//
+// ⚠️ 为什么不走 Claude 的 OpenAI 兼容地址：那条只是过渡用的，不支持它自己的联网搜索（P9U-4 要用），
+// 也不报缓存命中。Messages 接口是一次 POST + 一条 SSE 流，和上面那条一样短。
+
+const ANTHROPIC_VERSION: &str = "2023-06-01";
+/// Messages 接口**必须**给 `max_tokens`（和上面「不发」那条相反）。当前几代模型的输出上限都是 128K，
+/// 流式所以不怕 HTTP 超时；给 64K 是留出思考那一截之后仍然够一整份压缩稿。
+const ANTHROPIC_MAX_TOKENS: u32 = 64_000;
+/// 安全分类器拒答时，让服务端在同一次调用里换一个模型接着答（`fallbacks: "default"`）。
+/// ⚠️ 只有这几个模型收这个参数；Haiku 5.5 没有备用模型，带上它会 400。
+const ANTHROPIC_FALLBACK_BETA: &str = "server-side-fallback-2026-07-01";
+const ANTHROPIC_FALLBACK_MODELS: &[&str] =
+    &["claude-fable-5-1", "claude-opus-5-5", "claude-opus-5", "claude-sonnet-5-5"];
+
+fn anthropic_takes_fallback(model: &str) -> bool {
+    ANTHROPIC_FALLBACK_MODELS.contains(&model)
+}
+
+/// 发出去的请求体。拆出来是为了测试能钉住：**不发温度**（新模型对它回 400）、
+/// 「思考力度」走 `output_config.effort`、system 那一截打缓存标记。
+fn anthropic_body(req: &Request) -> serde_json::Value {
+    let mut body = serde_json::json!({
+        "model": req.model,
+        "max_tokens": req.max_output_tokens.unwrap_or(ANTHROPIC_MAX_TOKENS),
+        // system 每次都一样，打上缓存标记；pack 在 user 那一截。顺序的理由和上面 OpenAI 那条一样。
+        "system": [{ "type": "text", "text": req.system, "cache_control": { "type": "ephemeral" } }],
+        "messages": [{ "role": "user", "content": req.user }],
+        "stream": true,
+    });
+    if let Some(effort) = req.reasoning_effort.as_deref().filter(|s| !s.is_empty()) {
+        body["output_config"] = serde_json::json!({ "effort": effort });
+    }
+    if anthropic_takes_fallback(&req.model) {
+        body["fallbacks"] = serde_json::json!("default");
+    }
+    body
+}
+
+fn run_anthropic(base: &str, req: &Request) -> Envelope {
+    let url = format!("{base}/v1/messages");
+    let body = anthropic_body(req);
+    let timeout = Duration::from_secs(req.timeout_secs.clamp(10, 900));
+    let agent: ureq::Agent = ureq::Agent::config_builder()
+        .timeout_global(Some(timeout))
+        .max_idle_connections(0)
+        // 理由同上：厂商写在响应体里的那句解释要带回界面。
+        .http_status_as_error(false)
+        .build()
+        .into();
+
+    progress(&serde_json::json!({ "stage": "sending" }));
+    let started = Instant::now();
+    let mut call = agent
+        .post(&url)
+        .header("x-api-key", &req.api_key)
+        .header("anthropic-version", ANTHROPIC_VERSION)
+        .header("Content-Type", "application/json");
+    if anthropic_takes_fallback(&req.model) {
+        call = call.header("anthropic-beta", ANTHROPIC_FALLBACK_BETA);
+    }
+    let mut resp = match call.send_json(&body) {
+        Ok(r) => r,
+        Err(ureq::Error::Timeout(_)) => {
+            return err("timeout", "The endpoint did not even send a reply header in time.", None)
+        }
+        Err(e) => return err("network", format!("Could not reach {base} — {e}"), None),
+    };
+    let status = resp.status().as_u16();
+    if status >= 400 {
+        let text = resp.body_mut().read_to_string().unwrap_or_default();
+        let parsed = serde_json::from_str::<serde_json::Value>(&text).unwrap_or(serde_json::Value::Null);
+        return envelope_from_body(&parsed, status, &text, &req.model, started.elapsed().as_millis());
+    }
+
+    let mut stream = AnthropicStream::default();
+    let mut read_error: Option<String> = None;
+    let mut last_report = Instant::now();
+    {
+        let reader = std::io::BufReader::new(resp.body_mut().as_reader());
+        for line in std::io::BufRead::lines(reader) {
+            let line = match line {
+                Ok(l) => l,
+                Err(e) => {
+                    read_error = Some(e.to_string());
+                    break;
+                }
+            };
+            let Some(payload) = line.strip_prefix("data:") else { continue };
+            let Ok(v) = serde_json::from_str::<serde_json::Value>(payload.trim()) else { continue };
+            if !stream.feed(&v) {
+                break;
+            }
+            if last_report.elapsed() >= Duration::from_millis(400) {
+                progress(&serde_json::json!({
+                    "stage": if stream.content.is_empty() { "thinking" } else { "writing" },
+                    "thinking": stream.thinking.chars().count(),
+                    "written": stream.content.chars().count(),
+                }));
+                last_report = Instant::now();
+            }
+        }
+    }
+    stream.finish(read_error, status, &req.model, started.elapsed().as_millis())
+}
+
+/// 一条 Messages 流读到哪儿了。⚠️ 纯数据，好让测试拿一串事件喂进去看结局。
+#[derive(Default)]
+struct AnthropicStream {
+    content: String,
+    thinking: String,
+    model: Option<String>,
+    input: u64,
+    cache_read: Option<u64>,
+    cache_write: u64,
+    output: u64,
+    stop: Option<String>,
+    /// 流里来的 `error` 事件（例如 `overloaded_error`）：(type, message)。
+    error: Option<(String, String)>,
+}
+
+impl AnthropicStream {
+    /// 吃一个事件。返回 false = 流结束了（`message_stop` 或 `error`）。
+    ///
+    /// ⚠️ 服务端换模型接着答时（`fallbacks`），流里会多一个 `fallback` 内容块，前面那半截正文**留着**，
+    /// 新模型从那里接着写 —— 所以正文照样一直往后拼，那个块本身不用管。
+    fn feed(&mut self, v: &serde_json::Value) -> bool {
+        match v.get("type").and_then(|t| t.as_str()).unwrap_or("") {
+            "message_start" => {
+                let m = v.get("message");
+                if let Some(id) = m.and_then(|m| m.get("model")).and_then(|x| x.as_str()) {
+                    self.model = Some(id.to_string());
+                }
+                if let Some(u) = m.and_then(|m| m.get("usage")) {
+                    self.read_usage(u);
+                }
+            }
+            "content_block_delta" => {
+                let d = v.get("delta");
+                match d.and_then(|d| d.get("type")).and_then(|t| t.as_str()) {
+                    Some("text_delta") => {
+                        if let Some(t) = d.and_then(|d| d.get("text")).and_then(|x| x.as_str()) {
+                            self.content.push_str(t);
+                        }
+                    }
+                    Some("thinking_delta") => {
+                        if let Some(t) = d.and_then(|d| d.get("thinking")).and_then(|x| x.as_str()) {
+                            self.thinking.push_str(t);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            "message_delta" => {
+                if let Some(s) = v.pointer("/delta/stop_reason").and_then(|x| x.as_str()) {
+                    self.stop = Some(s.to_string());
+                }
+                if let Some(u) = v.get("usage") {
+                    self.read_usage(u);
+                }
+            }
+            "message_stop" => return false,
+            "error" => {
+                let kind = v.pointer("/error/type").and_then(|x| x.as_str()).unwrap_or("error");
+                let msg = v.pointer("/error/message").and_then(|x| x.as_str()).unwrap_or("");
+                self.error = Some((kind.to_string(), msg.to_string()));
+                return false;
+            }
+            _ => {}
+        }
+        true
+    }
+
+    /// `message_start` 和 `message_delta` 都可能带 usage；后来的那个是累计数，所以取大的。
+    fn read_usage(&mut self, u: &serde_json::Value) {
+        let n = |k: &str| u.get(k).and_then(|x| x.as_u64());
+        if let Some(x) = n("input_tokens") {
+            self.input = self.input.max(x);
+        }
+        if let Some(x) = n("cache_read_input_tokens") {
+            self.cache_read = Some(self.cache_read.unwrap_or(0).max(x));
+        }
+        if let Some(x) = n("cache_creation_input_tokens") {
+            self.cache_write = self.cache_write.max(x);
+        }
+        if let Some(x) = n("output_tokens") {
+            self.output = self.output.max(x);
+        }
+    }
+
+    fn finish(self, read_error: Option<String>, status: u16, asked_model: &str, ms: u128) -> Envelope {
+        let (thought_n, written_n) = (self.thinking.chars().count(), self.content.chars().count());
+        if let Some((kind, msg)) = self.error {
+            let k = if kind == "overloaded_error" || kind == "api_error" { "upstream" } else { "http" };
+            return err(k, format!("{kind}: {msg}"), Some(status));
+        }
+        if let Some(e) = read_error {
+            if self.content.trim().is_empty() {
+                return err(
+                    classify_read_error(&e),
+                    format!(
+                        "The connection ended after {}s with no briefing written. By then the model had produced {thought_n} characters of thinking and {written_n} of briefing. ({e})",
+                        ms / 1000
+                    ),
+                    Some(status),
+                );
+            }
+            return err(
+                "cut_off",
+                format!(
+                    "The briefing was cut off partway: {written_n} characters had arrived after {}s (plus {thought_n} characters of thinking). ({e})",
+                    ms / 1000
+                ),
+                Some(status),
+            );
+        }
+        // ⛔ 拒答是 HTTP 200 + `stop_reason: "refusal"`，正文可能是空的，也可能是半截 —— 半截也不能交出去。
+        if self.stop.as_deref() == Some("refusal") {
+            return err(
+                "refused",
+                format!("The model declined this request (stop_reason: refusal) after {written_n} characters."),
+                Some(status),
+            );
+        }
+        if self.content.trim().is_empty() {
+            if thought_n > 0 {
+                return err(
+                    "thought_only",
+                    format!("The model spent the whole reply thinking ({thought_n} characters) and wrote no briefing."),
+                    Some(status),
+                );
+            }
+            return err("bad_response", "The stream ended without any content.", Some(status));
+        }
+        if self.stop.as_deref() == Some("max_tokens") {
+            return err(
+                "truncated",
+                format!(
+                    "The briefing was cut off by the output-token limit: {written_n} characters had arrived after {}s.",
+                    ms / 1000
+                ),
+                Some(status),
+            );
+        }
+        // ⚠️ Messages 接口的 `input_tokens` **不含**缓存读写的那两截；这里加回去，
+        // 好和 OpenAI 那一套（`prompt_tokens` 含缓存命中）是同一个口径。
+        let cached = self.cache_read;
+        Envelope::Ok {
+            ok: true,
+            text: self.content,
+            usage: Usage {
+                input_tokens: self.input + cached.unwrap_or(0) + self.cache_write,
+                output_tokens: self.output,
+                cached_input_tokens: cached,
+                // 这家不单独报思考用了多少 —— 是「不知道」，不是 0。
+                reasoning_tokens: None,
+            },
+            model: self.model.unwrap_or_else(|| asked_model.to_string()),
+            ms,
+        }
+    }
 }
 
 /// 发一次请求，把流读完。
@@ -519,8 +912,8 @@ fn envelope_from_body(
 ) -> Envelope {
     // 厂商写在响应体里的那句解释,优先于我们自己那句通用的。
     // ⚠️ 也覆盖了「200 里包一个 error 对象」这种兼容端点的写法。
-    if let Some(msg) = parsed.get("error").and_then(api_error_message) {
-        return err(classify(status), msg, Some(status));
+    if let Some(msg) = vendor_error(parsed) {
+        return err(classify_with(status, &msg), msg, Some(status));
     }
     if status >= 400 {
         // 有响应体但里面没有 error 字段。带上原文,别只报一个数字。
@@ -609,6 +1002,22 @@ fn read_usage(u: Option<&serde_json::Value>) -> Usage {
     }
 }
 
+/// 厂商写在响应体里的那个报错对象。⚠️ Gemini 的 OpenAI 兼容地址有时把它包在数组里：
+/// `[{"error":{…}}]`（2026-10-24 假 key 实测）—— 不拆这一层，它的原话就丢了。
+fn vendor_error(parsed: &serde_json::Value) -> Option<String> {
+    let p = parsed.as_array().and_then(|a| a.first()).unwrap_or(parsed);
+    p.get("error").and_then(api_error_message)
+}
+
+/// `classify`，再加一条：Gemini 对坏 key 回的是 **400** 不是 401（「Please pass a valid API key」）。
+/// ⚠️ 不认出来的话，界面会说「接口返回了一个错误」，前端也会以为是「连不上」而不是「key 不对」。
+fn classify_with(status: u16, message: &str) -> &'static str {
+    if status == 400 && message.contains("API key") && message.to_lowercase().contains("valid") {
+        return "auth";
+    }
+    classify(status)
+}
+
 fn api_error_message(e: &serde_json::Value) -> Option<String> {
     if let Some(s) = e.as_str() {
         return Some(s.to_string());
@@ -677,6 +1086,9 @@ mod tests {
             thinking_disabled: false,
             timeout_secs: 30,
             kind: String::new(),
+            protocol: String::new(),
+            temperature: None,
+            key_check_path: String::new(),
         }
     }
 
@@ -685,6 +1097,7 @@ mod tests {
             Envelope::Err { kind, .. } => kind,
             Envelope::Ok { .. } => "ok",
             Envelope::Balance { .. } => "balance",
+            Envelope::Models { .. } => "models",
         }
     }
 
@@ -822,6 +1235,169 @@ mod tests {
         for e in ["timeout: global", "connection reset by peer"] {
             assert_ne!(classify_read_error(e), "bad_response");
         }
+    }
+
+    // ---- P9U-3：每家都能用 ----
+
+    fn claude_req(model: &str, effort: Option<&str>) -> Request {
+        let mut r = req("https://api.anthropic.com", "sk-ant-x");
+        r.protocol = "anthropic".into();
+        r.model = model.into();
+        r.max_output_tokens = None;
+        r.reasoning_effort = effort.map(String::from);
+        r.temperature = Some(0.2);
+        r
+    }
+
+    // 新的 Claude 模型对温度回 400；Messages 接口必须给 max_tokens；思考力度走 output_config.effort。
+    #[test]
+    fn a_claude_request_has_no_temperature_and_says_how_long_it_may_write() {
+        let b = anthropic_body(&claude_req("claude-opus-5-5", Some("low")));
+        assert!(b.get("temperature").is_none());
+        assert_eq!(b["max_tokens"], 64_000);
+        assert_eq!(b["output_config"]["effort"], "low");
+        assert!(b.get("reasoning_effort").is_none() && b.get("thinking").is_none());
+        assert_eq!(b["system"][0]["cache_control"]["type"], "ephemeral");
+        assert_eq!(b["messages"][0]["role"], "user");
+        assert_eq!(b["fallbacks"], "default");
+    }
+
+    // Haiku 5.5 没有备用模型 —— 带上 fallbacks 会 400。「默认」力度就什么都不发。
+    #[test]
+    fn a_model_without_a_fallback_is_not_sent_one() {
+        let b = anthropic_body(&claude_req("claude-haiku-5-5", None));
+        assert!(b.get("fallbacks").is_none());
+        assert!(b.get("output_config").is_none());
+    }
+
+    fn feed_all(events: &[serde_json::Value]) -> AnthropicStream {
+        let mut s = AnthropicStream::default();
+        for e in events {
+            if !s.feed(e) {
+                break;
+            }
+        }
+        s
+    }
+
+    #[test]
+    fn a_claude_stream_is_read_into_text_and_usage() {
+        let s = feed_all(&[
+            serde_json::json!({"type":"message_start","message":{"model":"claude-opus-5-5","usage":{"input_tokens":100,"cache_read_input_tokens":2000,"cache_creation_input_tokens":0,"output_tokens":1}}}),
+            serde_json::json!({"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":""}}),
+            serde_json::json!({"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"hm"}}),
+            serde_json::json!({"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"#1 [t] "}}),
+            serde_json::json!({"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"整份。"}}),
+            serde_json::json!({"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":42}}),
+            serde_json::json!({"type":"message_stop"}),
+        ]);
+        let Envelope::Ok { text, usage, model, .. } = s.finish(None, 200, "asked", 5) else { panic!("not ok") };
+        assert_eq!(text, "#1 [t] 整份。");
+        assert_eq!(model, "claude-opus-5-5");
+        assert_eq!(usage.input_tokens, 2100);
+        assert_eq!(usage.cached_input_tokens, Some(2000));
+        assert_eq!(usage.output_tokens, 42);
+        assert_eq!(usage.reasoning_tokens, None);
+    }
+
+    // 拒答是 HTTP 200 —— 半截正文也不能当结果交出去。
+    #[test]
+    fn a_refusal_is_a_failure_even_with_some_text() {
+        let s = feed_all(&[
+            serde_json::json!({"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"#1 半"}}),
+            serde_json::json!({"type":"message_delta","delta":{"stop_reason":"refusal"},"usage":{"output_tokens":3}}),
+            serde_json::json!({"type":"message_stop"}),
+        ]);
+        assert_eq!(kind_of(&s.finish(None, 200, "m", 1)), "refused");
+    }
+
+    #[test]
+    fn a_claude_reply_cut_by_max_tokens_is_truncated() {
+        let s = feed_all(&[
+            serde_json::json!({"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"#1 前半"}}),
+            serde_json::json!({"type":"message_delta","delta":{"stop_reason":"max_tokens"}}),
+        ]);
+        assert_eq!(kind_of(&s.finish(None, 200, "m", 1)), "truncated");
+    }
+
+    #[test]
+    fn an_overloaded_event_mid_stream_is_the_providers_problem() {
+        let s = feed_all(&[
+            serde_json::json!({"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"#1"}}),
+            serde_json::json!({"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}),
+            serde_json::json!({"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"never read"}}),
+        ]);
+        assert_eq!(s.content, "#1");
+        assert_eq!(kind_of(&s.finish(None, 200, "m", 1)), "upstream");
+    }
+
+    // 服务端换模型接着答：前面半截留着，后面接上，`fallback` 块本身不进正文。
+    #[test]
+    fn a_server_side_fallback_keeps_writing_on_the_same_text() {
+        let s = feed_all(&[
+            serde_json::json!({"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"#1 前"}}),
+            serde_json::json!({"type":"content_block_start","index":1,"content_block":{"type":"fallback","from":{"model":"a"},"to":{"model":"b"}}}),
+            serde_json::json!({"type":"content_block_delta","index":2,"delta":{"type":"text_delta","text":"后"}}),
+            serde_json::json!({"type":"message_delta","delta":{"stop_reason":"end_turn"}}),
+        ]);
+        let Envelope::Ok { text, .. } = s.finish(None, 200, "m", 1) else { panic!("not ok") };
+        assert_eq!(text, "#1 前后");
+    }
+
+    // Claude 的报错体是 {"type":"error","error":{"type":…,"message":…}} —— 厂商原话要带出来。
+    #[test]
+    fn a_claude_error_body_keeps_the_vendors_words() {
+        let body = serde_json::json!({"type":"error","error":{"type":"authentication_error","message":"invalid x-api-key"}});
+        match envelope_from_body(&body, 401, "", "m", 1) {
+            Envelope::Err { kind, message, .. } => {
+                assert_eq!(kind, "auth");
+                assert_eq!(message, "invalid x-api-key");
+            }
+            _ => panic!("not an error"),
+        }
+    }
+
+    // 2026-10-24 假 key 实测：Gemini 对坏 key 回 400，报错有时还包在数组里。
+    #[test]
+    fn geminis_bad_key_is_a_refused_key_not_a_broken_endpoint() {
+        let arr = serde_json::json!([{ "error": { "code": 400, "message": "API key not valid. Please pass a valid API key.", "status": "INVALID_ARGUMENT" } }]);
+        assert_eq!(kind_of(&envelope_from_body(&arr, 400, "", "m", 1)), "auth");
+        assert_eq!(kind_of(&models_from_body(400, r#"{"error":{"code":400,"message":"Please pass a valid API key"}}"#, "b")), "auth");
+        // 别的 400 还是 400
+        assert_eq!(classify_with(400, "max_tokens is too large"), "http");
+    }
+
+    #[test]
+    fn model_lists_are_read_the_same_way_for_every_vendor() {
+        // OpenAI / DeepSeek / Kimi …
+        let e = models_from_body(200, r#"{"object":"list","data":[{"id":"gpt-x"},{"id":"gpt-y"}]}"#, "b");
+        let Envelope::Models { models, .. } = e else { panic!() };
+        assert_eq!(models, vec!["gpt-x", "gpt-y"]);
+        // Gemini 带 `models/` 前缀
+        let e = models_from_body(200, r#"{"data":[{"id":"models/gemini-9-flash"}]}"#, "b");
+        let Envelope::Models { models, .. } = e else { panic!() };
+        assert_eq!(models, vec!["gemini-9-flash"]);
+        // Claude
+        let e = models_from_body(200, r#"{"data":[{"type":"model","id":"claude-opus-5-5","display_name":"Claude Opus 5.5"}],"has_more":false}"#, "b");
+        let Envelope::Models { models, .. } = e else { panic!() };
+        assert_eq!(models, vec!["claude-opus-5-5"]);
+    }
+
+    // 不给列表 ≠ 出错；key 不对必须和它分开（前端拿 auth 去试同一家另一个地区的地址）。
+    #[test]
+    fn no_model_list_and_a_refused_key_are_told_apart() {
+        assert_eq!(kind_of(&models_from_body(404, "", "b")), "unsupported");
+        assert_eq!(kind_of(&models_from_body(401, r#"{"error":{"message":"bad key"}}"#, "b")), "auth");
+        assert_eq!(kind_of(&models_from_body(200, "<html>", "b")), "bad_response");
+    }
+
+    // 温度只在调用方要发的时候才进请求体（OpenAI 的推理模型对 0.2 回 400）。
+    #[test]
+    fn temperature_is_only_sent_when_asked_for() {
+        let mut r = req("https://api.example.com", "k");
+        assert!(openai_body(&r).get("temperature").is_none());
+        r.temperature = Some(0.2);
+        assert_eq!(openai_body(&r)["temperature"], 0.2);
     }
 
     #[test]

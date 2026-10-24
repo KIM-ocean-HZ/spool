@@ -53,6 +53,7 @@ type PersistableKey =
   // 形态 C（WORKPLAN-2026-08-20 §6.2）：Spool 自己出去调 API。
   // ⚠️ key 不在这里，也永远不要放进来 —— 见 api_engine.rs 里 api_key_save 上面那段。
   | 'apiEngineEnabled'
+  | 'apiVendor'
   | 'apiBaseUrl'
   | 'apiModel'
   | 'apiCompressLevel'
@@ -233,6 +234,9 @@ interface SettingsState {
   breakReminderEnabled: boolean;
   /** 形态 C 总开关。⚠️ 默认 false —— §6.2 约束 5。 */
   apiEngineEnabled: boolean;
+  /** P9U-3 — which vendor the key is (`lib/ai/vendors`). '' = not set yet (settings from before
+   *  P9U-3): `resolveVendor` reads it off `apiBaseUrl`, so the old DeepSeek setup keeps working. */
+  apiVendor: string;
   /** OpenAI 兼容端点的根地址。⛔ 必须 https,子进程会拒绝明文 http。 */
   apiBaseUrl: string;
   apiModel: string;
@@ -357,6 +361,7 @@ const KEYS: PersistableKey[] = [
   'breakReminderEnabled',
   'breakWorkMinutes',
   'apiEngineEnabled',
+  'apiVendor',
   'apiBaseUrl',
   'apiModel',
   'apiCompressLevel',
@@ -424,6 +429,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   // ⚠️ §6.2 设计约束 5：**默认关闭**，而且是和 MCP 分开的第二个独立开关。
   // 打开它才会有任何东西离开这台机器,而且离开的也不是主进程 —— 是 spool-ai 子进程。
   apiEngineEnabled: false,
+  apiVendor: '',
   // DeepSeek 是 §6.2 算过账的那家（兼容 OpenAI 格式）。地址可改,因为「OpenAI 兼容」
   // 的端点不止一家,而换一家不需要改一行代码。
   apiBaseUrl: 'https://api.deepseek.com',

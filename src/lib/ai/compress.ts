@@ -7,6 +7,7 @@
 //    先确认质量，再开写入那一段。
 
 import { invoke } from '@tauri-apps/api/core';
+import type { ApiCall } from '@/lib/ai/vendors';
 
 /** §6.4.1：压缩比例是**显式档位**，不是在提示词里求模型「少删一点」。 */
 export type CompressLevel = 'conservative' | 'balanced' | 'aggressive';
@@ -842,6 +843,8 @@ export type PriceTier = 'flash' | 'pro';
  *  编一个价格出来比不报价更糟：这个项目的招牌是「用实测推翻假设」。 */
 export const priceTier = (model: string | null): PriceTier | null => {
   const m = (model ?? '').toLowerCase();
+  // P9U-3：这张价目表是 DeepSeek 一家的。`gemini-…-flash` 也带 flash —— ⛔ 拿 DeepSeek 的价给它报钱就是编。
+  if (!m.startsWith('deepseek')) return null;
   if (m.includes('flash')) return 'flash';
   if (m.includes('pro')) return 'pro';
   return null;
@@ -966,6 +969,8 @@ export interface CompressRequest {
   apiKey: string;
   model: string;
   reasoning: string;
+  /** P9U-3 — how this vendor talks (`lib/ai/vendors` `apiCallFrom`). */
+  wire: ApiCall['wire'];
   timeoutSecs: number;
 }
 
@@ -1041,7 +1046,9 @@ export const FAILURE_SENTENCE: Record<string, string> = {
   bad_config: '设置有问题：接口地址必须是 https 开头，而且 key 不能是空的。',
   bad_response: '对方回来的东西看不懂，可能不是一个 OpenAI 兼容的接口。',
   thought_only:
-    '这个模型把整次回复都用来「思考」了，正文一个字都没写出来。换一个不思考的模型（比如 pro 那一档里的非推理款），或者把范围缩小一点再试。',
+    '这个模型把整次回复都用来「思考」了，正文一个字都没写出来。把思考力度调低一档、换一个不思考的模型，或者把范围缩小一点再试。',
+  /** P9U-3：厂商的安全规则拒答（HTTP 200 + `refusal`）。⚠️ 半截也不交出去 —— 和 cut_off 一样。 */
+  refused: '模型拒绝了这一次请求（那家的安全规则），没拿到结果。换一个模型再试。',
   truncated: '结果被输出长度掐断了，没拿到完整的压缩稿。换个小一点的打包范围再试。',
   cut_off:
     '压缩稿写到一半连接断了，没拿到完整的一份。⚠️ 半份稿子看起来和「删得很狠」一模一样，所以没有交给你。把设置里的「单次最长等待」调大，或者换个小一点的打包范围。',
@@ -1148,6 +1155,7 @@ export const weeklyReviewViaApi = async (
     apiKey: req.apiKey,
     model: req.model,
     reasoning: req.reasoning,
+    wire: req.wire,
     timeoutSecs: req.timeoutSecs,
   });
 
@@ -1159,6 +1167,7 @@ export const staleScan = async (req: Omit<CompressRequest, 'level'>): Promise<St
       apiKey: req.apiKey,
       model: req.model,
       reasoning: req.reasoning,
+      wire: req.wire,
       timeoutSecs: req.timeoutSecs,
     }),
   );

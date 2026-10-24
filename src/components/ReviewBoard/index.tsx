@@ -114,6 +114,7 @@ export default function ReviewBoard() {
   // 这一条（形态 C）用用户自己填的端点和模型 —— 设置里那个「模型」框本来就是他的，
   // ⛔ 这里不再发明第二套模型设置。
   const apiOn = useSettingsStore((s) => s.apiEngineEnabled);
+  const apiVendor = useSettingsStore((s) => s.apiVendor);
   const apiBaseUrl = useSettingsStore((s) => s.apiBaseUrl);
   const apiModel = useSettingsStore((s) => s.apiModel);
   const apiReasoning = useSettingsStore((s) => s.apiReasoning);
@@ -147,6 +148,7 @@ export default function ReviewBoard() {
     setApiRunning(true);
     try {
       const ok = await runWeeklyReviewViaApi({
+        apiVendor,
         apiBaseUrl,
         apiModel,
         apiReasoning,
@@ -164,7 +166,7 @@ export default function ReviewBoard() {
       // 发生了，⛔ 所以它不新增一条「app 自己往外连」的路径。
       void useBalanceStore.getState().refresh();
     }
-  }, [apiRunning, apiBaseUrl, apiModel, apiReasoning, apiTimeoutSecs, load, t]);
+  }, [apiRunning, apiVendor, apiBaseUrl, apiModel, apiReasoning, apiTimeoutSecs, load, t]);
 
   /** ⚠️ 只删没跑成的（`deleteRun` 那一侧也写着同一条），Ocean 2026-08-26:
    *  「失败的可以删除记录，另外跑成功的」。 */
@@ -248,8 +250,8 @@ export default function ReviewBoard() {
               label={t('回顾这一周')}
               reason={
                 IS_MAC
-                  ? t('写回顾要用一个 AI：本机的 Claude Code / Codex，或者 DeepSeek。')
-                  : t('写回顾要用一个 AI：DeepSeek。')
+                  ? t('写回顾要用一个 AI：本机的 Claude Code / Codex，或者你自己的 API key。')
+                  : t('写回顾要用一个 AI：你自己的 API key。')
               }
               route="any"
             />
