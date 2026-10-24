@@ -1,10 +1,10 @@
-import { invoke } from '@tauri-apps/api/core';
 import { Loader2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useMenuPosition } from '@/components/ui/useMenuPosition';
+import LocalEngine from './LocalEngine';
 import { apiKeyPresent, saveApiKey, sidecarPresent } from '@/lib/ai/compress';
-import { aiSetupPlan, cliSwitchesPatch, type AiRoute, type McpSwitch } from '@/lib/engine/gate';
+import { aiSetupPlan, type AiRoute } from '@/lib/engine/gate';
 import { useT } from '@/lib/i18n';
 import { IS_MAC } from '@/lib/platform';
 import { ENGINE_LABEL, useEngineStore } from '@/stores/engineStore';
@@ -30,10 +30,6 @@ type Update = (patch: {
   apiEngineEnabled?: boolean;
 }) => Promise<void>;
 
-/** The CLI half's 「现在打开」: exactly the switches that were off. */
-export const turnOnCli = (missing: McpSwitch[], update: Update): Promise<void> =>
-  update(cliSwitchesPatch(missing));
-
 /** The DeepSeek half's 「现在打开」: store the key when one was typed (same keychain path as
  *  Settings), then the switch. Nothing else. */
 export async function turnOnApi(
@@ -58,15 +54,12 @@ export function AiSetupPanel({ route, onDone }: PanelProps) {
   const apiOn = useSettingsStore((s) => s.apiEngineEnabled);
   const update = useSettingsStore((s) => s.update);
   const status = useEngineStore((s) => s.status);
-  const probe = useEngineStore((s) => s.probe);
 
   const [hasKey, setHasKey] = useState<boolean | null>(null);
   // null = still asking; counted as present until it says otherwise, as Settings does.
   const [sidecar, setSidecar] = useState<boolean | null>(null);
   const [key, setKey] = useState('');
   const [busy, setBusy] = useState(false);
-  const [probing, setProbing] = useState(false);
-  const [probedOnce, setProbedOnce] = useState(false);
 
   const wantsApi = route !== 'cli' && !apiOn;
   useEffect(() => {
@@ -99,17 +92,8 @@ export function AiSetupPanel({ route, onDone }: PanelProps) {
     }
   };
 
-  const recheck = async (): Promise<void> => {
-    setProbing(true);
-    await probe();
-    setProbing(false);
-    setProbedOnce(true);
-  };
-
   const primary =
     'rounded-md border border-accent bg-accent/10 px-2.5 py-1 text-xs text-accent transition-colors enabled:hover:bg-accent/20 disabled:opacity-50';
-  const secondary =
-    'rounded-md border border-line bg-paper px-2.5 py-1 text-xs text-ink-2 transition-colors enabled:hover:border-line-strong disabled:opacity-50';
 
   return (
     <div className="space-y-3 text-[11px] leading-relaxed text-muted">
@@ -120,64 +104,8 @@ export function AiSetupPanel({ route, onDone }: PanelProps) {
               ? t('用本机的 {engine}（不花钱）', { engine: engineName })
               : t('用本机的 Claude Code / Codex（不花钱）')}
           </div>
-          {plan.cli.kind === 'install' ? (
-            <>
-              <div className="flex flex-wrap gap-x-3">
-                {(['claude-code', 'codex'] as const).map((c) => (
-                  <button
-                    key={c}
-                    type="button"
-                    onClick={() =>
-                      void invoke('open_mcp_client_page', { client: c }).catch((e) =>
-                        console.warn('[ai-setup] open install page failed', e),
-                      )
-                    }
-                    className="text-xs text-accent underline-offset-2 hover:underline"
-                  >
-                    {c === 'codex' ? t('装 Codex') : t('装 Claude Code')}
-                  </button>
-                ))}
-              </div>
-              <p>{t('装好之后，在终端里登录一次它自己的账号。')}</p>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  disabled={probing}
-                  onClick={() => void recheck()}
-                  className={secondary}
-                >
-                  {probing ? t('检测中…') : t('装好了，再检测一次')}
-                </button>
-              </div>
-              {probedOnce && !probing && (
-                <p>{t('还是没检测到。装在别处的话，可以在设置的「AI 引擎」里手动指定路径。')}</p>
-              )}
-            </>
-          ) : (
-            <>
-              <p className="text-ink-2">
-                {plan.cli.missing.length === 2
-                  ? t('还差打开两个开关：「MCP 服务」和「允许 AI 写入」。')
-                  : plan.cli.missing[0] === 'mcpEnabled'
-                    ? t('还差打开「MCP 服务」。')
-                    : t('还差打开「允许 AI 写入」。')}
-              </p>
-              <p>
-                {t('这些开关也管你接的别的 AI（Claude、ChatGPT 里的 Codex 这些）：打开之后，它们也能读你的项目、往里加块；加的块都带来源标注，不会伪装成你写的。')}
-              </p>
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => {
-                  const missing = plan.cli?.kind === 'switches' ? plan.cli.missing : [];
-                  void act(() => turnOnCli(missing, update));
-                }}
-                className={primary}
-              >
-                {t('现在打开')}
-              </button>
-            </>
-          )}
+          {/* P9T: the same block as Settings → AI 引擎 — 没找到 / 找到了·连接 / 已连接, no paragraphs. */}
+          <LocalEngine onConnected={onDone} />
         </section>
       )}
 

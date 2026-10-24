@@ -2,25 +2,16 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import { useEngineStore } from '@/stores/engineStore';
 import { useSettingsStore } from '@/stores/settingsStore';
-import { AiSetupPanel, turnOnApi, turnOnCli } from './AiSetupPanel';
+import { AiSetupPanel, turnOnApi } from './AiSetupPanel';
 
 vi.mock('@/lib/platform', async (orig) => ({
   ...(await orig<typeof import('@/lib/platform')>()),
   IS_MAC: true,
 }));
 
-// P9C — 「现在打开」 changes exactly what it names, and nothing is sent anywhere.
+// P9C — 「现在打开」 changes exactly what it names, and nothing is sent anywhere. (The CLI half's is
+// LocalEngine's 「连接」 since P9T; its patch is `cliSwitchesPatch`, tested in lib/engine/gate.test.ts.)
 describe('现在打开', () => {
-  it('CLI half: only the switches that were off', async () => {
-    const update = vi.fn(async () => {});
-    await turnOnCli(['mcpWriteEnabled'], update);
-    expect(update.mock.calls).toEqual([[{ mcpWriteEnabled: true }]]);
-
-    update.mockClear();
-    await turnOnCli(['mcpEnabled', 'mcpWriteEnabled'], update);
-    expect(update.mock.calls).toEqual([[{ mcpEnabled: true, mcpWriteEnabled: true }]]);
-  });
-
   it('DeepSeek half, key typed: stores the key (trimmed), then only apiEngineEnabled', async () => {
     const update = vi.fn(async () => {});
     const saveKey = vi.fn(async () => {});

@@ -277,6 +277,8 @@ export default function App() {
   useEffect(() => {
     const onFocus = (): void => {
       void reloadOutsideWritesThrottled().catch((e) => console.warn('[focus] reload failed', e));
+      // P9T: a CLI installed while Spool was in the background shows up without anyone pressing anything.
+      void useEngineStore.getState().probeIfMissing();
     };
     window.addEventListener('focus', onFocus);
     return () => window.removeEventListener('focus', onFocus);

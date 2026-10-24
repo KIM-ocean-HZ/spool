@@ -73,7 +73,7 @@ export default function FollowUpSearch({ thread, hasLines }: { thread: Thread; h
           label={t('联网搜索')}
           reason={
             cliAvailable && status?.selected
-              ? t('{engine} 已经装好，还差打开 MCP 那边的开关。', { engine: ENGINE_LABEL[status.selected] })
+              ? t('找到了 {engine}，还没连接。', { engine: ENGINE_LABEL[status.selected] })
               : t('联网搜索要用本机的 Claude Code 或 Codex。')
           }
           route="cli"

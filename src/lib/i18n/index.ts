@@ -820,41 +820,15 @@ const EN: Record<string, string> = {
   // DESIGN_AI_ENGINE §1.4 / §3 / §7 — the on-machine engine slot (claude or codex).
   '本机 AI 引擎': 'On-machine AI engine',
   // 2026-08-18 (Ocean): the resting line names the product, not the executable — see
-  // Settings/EngineConfig's ① note. Versions and paths moved behind 详细说明.
-  // P9H-5 (第 150 条): it sits right under the DeepSeek key box — say it is THIS route that needs no key.
-  '装了 Claude Code、Codex 或 Gemini CLI，就能让它替你整理项目。用的是你自己已经登录的那个，走这条路 Spool 不用存 API key。':
-    'With Claude Code, Codex or the Gemini CLI installed, one of them can tidy your projects for you. It runs through the tool you are already signed into, so this route needs no API key in Spool.',
+  // The local engine's status line (AiSetup/LocalEngine since P9T).
   '✓ 已连接 {name}': '✓ Connected to {name}',
   '✓ 已连接 {name}（还装了另外 {n} 个）': '✓ Connected to {name} ({n} more installed)',
-  '详细说明：要装什么、装在哪、各家的限制':
-    'Details: what to install, where it lives, what each one limits',
   '检测到你装了 Claude Code 或 Codex 时，项目菜单里会多出「让 AI 维护」——用你自己已经登录的那个 CLI 跑，Spool 不存任何 API key，也不联网。':
     'When Claude Code or Codex is detected on this machine, a "Let AI maintain" group appears in the project menu. It runs through the CLI you are already logged into — Spool stores no API key and still never goes online.',
-  '检测中…': 'Checking…',
-  '没检测到 Claude Code、Codex 或 Gemini CLI': 'No Claude Code, Codex or Gemini CLI found',
   '装 Claude Code': 'Get Claude Code',
   '装 Codex': 'Get Codex',
-  '装 Gemini CLI': 'Get Gemini CLI',
-  // 2026-08-17 (Ocean): 「AI 引擎是被动搜索形式的……根本不知道需要什么,或者 api key 要放在哪里」.
-  '引擎不是 Spool 的一部分，是你自己装在电脑上的命令行工具（Claude Code / Codex / Gemini CLI）。装好之后在终端里登录一次它自己的账号，Spool 就能借它干活。':
-    'An engine is not part of Spool. It is a command-line tool you install yourself (Claude Code / Codex / Gemini CLI) and sign into once in a terminal; Spool then borrows it.',
-  '用这条路的话，key 和登录状态都在那个工具自己的目录里（比如 Gemini 是 ~/.gemini/.env），Spool 不存、也读不到。你的账单也走那边。':
-    'On this route the key and the login live in that tool’s own directory (Gemini’s is ~/.gemini/.env). Spool neither stores nor reads them, and the billing is theirs too.',
-  '装完这里还是写「没检测到」，多半是它装在了 Spool 没找的地方。终端里敲 which claude（或 codex / gemini）看一眼路径，填到下面那一行就行。':
-    'If this still says “not detected” after installing, it probably landed somewhere Spool did not look. Run `which claude` (or codex / gemini) in a terminal and paste the path into the field below.',
-  '不装也没关系——AI 那半边主要走 MCP（上一页），那条路不需要这些。':
-    'Installing one is optional — the main AI route is MCP (previous tab), which needs none of this.',
-  '手动指定 CLI 路径': 'Point at the CLI yourself',
-  '只在没检测到、但你确定装了的时候用。文件名要还是 claude / codex / gemini——Spool 靠它认出是哪个引擎。':
-    'For when it is installed but not detected. Keep the file name claude / codex / gemini — that is how Spool tells which engine it is.',
-  '留空 = 自动找': 'Empty = search automatically',
-  '选文件': 'Choose a file',
-  '这个路径没认出来：要么文件不在，要么名字不是 claude / codex / gemini，要么它跑 --version 跑不通。':
-    'That path did not resolve: the file is missing, its name is not claude / codex / gemini, or it does not answer --version.',
   // DESIGN_AI_ENGINE §7.8 — measured, not hedged: 20 requests per model per day, and one
   // follow-up run spends all of them. Per §7.4 the word 免费 never stands alone.
-  'Gemini CLI 走的是 Gemini API 的免费额度：每个模型每天大约 20 次请求。压缩和体检够用，联网跟进不够——所以那一项在这个引擎上不出现。API key 配在 gemini 自己那里（~/.gemini/.env），Spool 不存、也读不到。':
-    "The Gemini CLI runs on the Gemini API's free allowance: roughly 20 requests per model per day. That is enough for Compress and Check over, and not enough for a web follow-up — so that one action does not appear on this engine. Your API key lives in the CLI's own config (~/.gemini/.env); Spool neither stores it nor can read it.",
   'Gemini 免费额度按模型分开算，每个每天大约 20 次。用完了换一个模型还能接着跑。':
     "Gemini's free allowance is counted per model — about 20 runs a day each. When one is used up, switching model gets you going again.",
   '联网搜索这一项 Gemini CLI 跑不了——它的免费额度一次跟进就用完了。换成 Claude Code 或 Codex 才有。':
@@ -862,8 +836,6 @@ const EN: Record<string, string> = {
   '用哪个引擎': 'Engine to use',
   '两个都装了。跑的是哪个，用的就是那个账号的额度。':
     'Both are installed. Whichever runs is the account whose allowance gets spent.',
-  'Codex 这条路有一处关不掉：它自带的终端工具没法摘掉（Claude Code 那边可以）。Spool 能做的是把它锁成只读——它读得到东西，但改不了你机器上的文件。':
-    'One thing cannot be switched off on the Codex route: its built-in terminal tool has no off switch (Claude Code does). What Spool can do is lock it to read-only — it can look at things, but it cannot change files on your machine.',
   '安装方法': 'How to install',
   '在项目菜单里显示 AI 维护动作': 'Show AI maintenance actions in the project menu',
   '需要上面两个开关都打开——AI 维护的产出是写回一块，读权限不够用。':
@@ -1415,6 +1387,21 @@ const EN: Record<string, string> = {
   '定一个': 'Set one',
   '还没定。定几行「要跟进什么」，之后才能让 AI 出去查。':
     'Not set yet. Write a few lines of what to watch for, and the AI can go and look.',
+  // P9T (2026-10-24): the local engine in three states, the same block on the settings page and in the
+  // popover a locked AI button opens.
+  '用你电脑上已经登录的 Claude Code 或 Codex。走这条路 Spool 不存 key。':
+    'Uses the Claude Code or Codex you are already signed in to on this computer. On this route Spool stores no key.',
+  '没找到 Claude Code 或 Codex': 'No Claude Code or Codex found',
+  '重新查找': 'Look again',
+  '手动选择…': 'Choose by hand…',
+  '选的这个文件不是 Claude Code / Codex，或者打不开。': 'The file you chose is not Claude Code or Codex, or it would not start.',
+  '装好、在终端里登录一次之后，回到 Spool 它会自己出现。':
+    'Once it is installed and you have signed in to it once in Terminal, come back to Spool — it will show up by itself.',
+  '{engine}（ChatGPT 自带的）': '{engine} (the one inside ChatGPT)',
+  '找到了 {engine}': 'Found {engine}',
+  '连接': 'Connect',
+  '连接之后，你接过的别的 AI 也能读写项目。': 'Once connected, the other AIs you have hooked up can read and write your projects too.',
+  '找到了 {engine}，还没连接。': 'Found {engine}, not connected yet.',
   '照你定的那几行联网搜索': 'Search the web, following the lines you wrote',
   // P9S-6: searching moved into the follow-up editor, with a weekly switch; the rail keeps one quiet line.
   '上次查：{day} · 带回 {n} 条，在待审里': 'Last searched {day} · brought back {n}, waiting for your review',
@@ -1428,7 +1415,6 @@ const EN: Record<string, string> = {
   '联网搜索': 'Search the web',
   // P9C — the two follow-up buttons while locked.
   '联网搜索要用本机的 Claude Code 或 Codex。': 'Web search runs on Claude Code or Codex on this Mac.',
-  '{engine} 已经装好，还差打开 MCP 那边的开关。': '{engine} is installed; the MCP switches still need turning on.',
   '要用本机的 Claude Code 或 Codex。': 'This runs on Claude Code or Codex on this Mac.',
   // The brief editor's placeholder. Replaced 2026-08-06 (Ocean #10: the CMU example was too
   // niche) and never translated — the shape is the point, so the English keeps it concrete
@@ -1443,10 +1429,6 @@ const EN: Record<string, string> = {
 
   // The AI engine settings tab (§9.2 R5).
   'AI 引擎': 'AI engine',
-  '用哪个引擎、用哪个模型、这周花了多少——都在右侧栏最上面那一行，就在动作旁边。':
-    'Which engine, which model and what this week cost are all on the top line of the right panel, next to the actions themselves.',
-  '要让它干活，MCP 那一页的「MCP 服务」和「允许 AI 写入」要都打开。':
-    'For it to work, both “MCP server” and “Allow AI writes” on the MCP tab need to be on.',
   // P9C — 「显示 AI 功能」 and the 「AI 引擎」 piece that opens where an AI entry is locked.
   '显示 AI 功能': 'Show AI features',
   '关掉之后，所有要用 AI 的按钮和锁都藏起来，每周自动回顾和夜里的自动压缩也不跑；已经写好的回顾、AI 写的块照旧在。':
@@ -1476,16 +1458,6 @@ const EN: Record<string, string> = {
   '没打开': 'Could not turn it on',
   '用本机的 Claude Code / Codex（不花钱）': 'Use Claude Code or Codex on this Mac (no extra cost)',
   '用本机的 {engine}（不花钱）': 'Use {engine} on this Mac (no extra cost)',
-  '装好之后，在终端里登录一次它自己的账号。': 'Once it is installed, sign in to its own account once in Terminal.',
-  '装好了，再检测一次': 'Installed — check again',
-  '还是没检测到。装在别处的话，可以在设置的「AI 引擎」里手动指定路径。':
-    'Still not found. If it is installed somewhere unusual, you can point to it under Settings → AI engine.',
-  '还差打开两个开关：「MCP 服务」和「允许 AI 写入」。':
-    'Two switches are still off: “MCP server” and “Allow AI writes”.',
-  '还差打开「MCP 服务」。': '“MCP server” is still off.',
-  '还差打开「允许 AI 写入」。': '“Allow AI writes” is still off.',
-  '这些开关也管你接的别的 AI（Claude、ChatGPT 里的 Codex 这些）：打开之后，它们也能读你的项目、往里加块；加的块都带来源标注，不会伪装成你写的。':
-    'These switches also apply to the other AIs you have connected (Claude, Codex in ChatGPT and so on): once on, they can read your projects and add blocks too. Every block they add is labelled with its source and never passes as yours.',
   '用 DeepSeek（按字数花钱，用你自己的 key）': 'Use DeepSeek (paid per character, with your own key)',
   '正在看你存没存过 key…': 'Checking whether a key is already saved…',
   '接口地址和模型在设置里改。': 'The endpoint and model can be changed in Settings.',

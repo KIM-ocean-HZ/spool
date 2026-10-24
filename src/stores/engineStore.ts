@@ -151,6 +151,9 @@ interface EngineState {
    *  closing the window threw away a review that had cost real money to produce. */
   runs: EngineRun[];
   probe: () => Promise<void>;
+  /** P9T: look again only if nothing was found yet, at most every 10 s — the window regaining focus
+   *  calls it, so installing a CLI and switching back is enough for it to show up. */
+  probeIfMissing: () => Promise<void>;
   /** Load the runs the right rail shows: this project's, plus the library-wide ones
    *  (周回顾 belongs to no project — §3.4). */
   loadRuns: (threadId: string | null) => Promise<void>;
@@ -220,6 +223,8 @@ const siftFollowUp = async (threadId: string, runStartedAt: number): Promise<num
   await setFollowUpState(threadId, serializeFollowUpState(rememberProposals(state, fresh, now)));
   return fresh.length;
 };
+
+let lastMissingProbeAt = 0;
 
 export const useEngineStore = create<EngineState>((set, get) => {
   // Drain the queue one task at a time. Re-entrant by construction: it returns
@@ -479,6 +484,14 @@ export const useEngineStore = create<EngineState>((set, get) => {
       set((s) => ({
         runs: s.runs.map((r) => (r.id === id ? { ...r, reviewedAt: Date.now() } : r)),
       }));
+    },
+
+    probeIfMissing: async () => {
+      if (get().status?.available) return;
+      const now = Date.now();
+      if (now - lastMissingProbeAt < 10_000) return;
+      lastMissingProbeAt = now;
+      await get().probe();
     },
 
     probe: async () => {

@@ -37,8 +37,9 @@ describe('设置「AI 引擎」页的两句', () => {
   it('② 说清是「走这条路」不用存 key（中英）', () => {
     platform.mac = true;
     const zh = render(<EngineConfig />, 'zh');
-    expect(zh).toContain('用的是你自己已经登录的那个，走这条路 Spool 不用存 API key。');
+    // P9T（10-24）重写成一句；「走这条路」那层意思留着。
+    expect(zh).toContain('走这条路 Spool 不存 key。');
     expect(zh).not.toContain('Spool 不存 API key');
-    expect(render(<EngineConfig />, 'en')).toContain('so this route needs no API key in Spool');
+    expect(render(<EngineConfig />, 'en')).toContain('On this route Spool stores no key.');
   });
 });
