@@ -1406,7 +1406,6 @@ const EN: Record<string, string> = {
   // P9S-6: searching moved into the follow-up editor, with a weekly switch; the rail keeps one quiet line.
   '上次查：{day} · 带回 {n} 条，在待审里': 'Last searched {day} · brought back {n}, waiting for your review',
   '上次查：{day} · 没有新消息': 'Last searched {day} · nothing new',
-  ' · 每周自动查': ' · searches weekly',
   '每周自动查一次': 'Search once a week by itself',
   '用本机的 {engine}。查到新东西才放进待审，并标着「跟进」；没有就什么都不说。':
     'Uses {engine} on this Mac. Only something new reaches your review, marked as a follow-up; otherwise it says nothing.',
@@ -2011,4 +2010,8 @@ const EN: Record<string, string> = {
     'Uses {engine} on this Mac. Only while Spool is open; what it finds lands on this page with a count on the tab, not in Review.',
   '下次大约 {d}。': 'Next around {d}.',
   '10 分钟内查下一次。': 'Next check within 10 minutes.',
+  // P9V-5（第 197 条后半）：右栏看得出开没开每周自动跟进。
+  '每周自动查 · 现在没有能联网搜索的 AI 连着，先不查': 'Searches weekly · no AI that can search the web is connected, so it is waiting',
+  '每周自动查 · 10 分钟内查下一次': 'Searches weekly · next search within 10 minutes',
+  '每周自动查 · 下次大约 {day}': 'Searches weekly · next around {day}',
 };

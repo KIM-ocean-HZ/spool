@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronRight, Inbox } from "lucide-react";
+import { ChevronDown, ChevronRight, Inbox, Repeat } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import CompressRail from "@/components/Compress/CompressRail";
 import LiveRun from "./LiveRun";
@@ -10,6 +10,8 @@ import { lastSearchLine } from "@/components/ThreadView/FollowUpSearch";
 import { createBlock } from "@/lib/db/blocks";
 import type { EngineRun } from "@/lib/db/engineRuns";
 import { groupAiActivity, visibleRuns } from "@/lib/engine/activity";
+import { autoFollowUpNextAt } from "@/lib/engine/followUp";
+import { routeFor, useFollowUpRoads } from "@/lib/engine/roads";
 import { aiEntryState, canShowEngineActions } from "@/lib/engine/gate";
 import { imageLinesAsText } from "@/lib/blocks/imageLines";
 import { dateLocale, useT } from "@/lib/i18n";
@@ -107,6 +109,20 @@ export default function RightRail({ thread, onCollapse, onEditBrief }: Props) {
   );
   const followUpRun = useFollowUpStore((s) => s.run);
   const lastSearch = lastSearchLine(t, followUpRun);
+  // P9V-5 (第 197 条后半): a project that searches by itself every week says so here, always — not only as a
+  // grey tail on 「上次查」, which a project that has not searched yet never showed.
+  const followUpRoads = useFollowUpRoads();
+  const followUpRoute = useSettingsStore((s) => s.followUpRoute);
+  const autoFollowUp = ((): string | null => {
+    if (!followUpRun?.auto) return null;
+    if (routeFor(followUpRoute, followUpRoads) === null) return t("每周自动查 · 现在没有能联网搜索的 AI 连着，先不查");
+    const next = autoFollowUpNextAt(followUpRun, Date.now());
+    return next === null
+      ? t("每周自动查 · 10 分钟内查下一次")
+      : t("每周自动查 · 下次大约 {day}", {
+          day: new Date(next).toLocaleDateString(dateLocale(), { month: "short", day: "numeric" }),
+        });
+  })();
 
   const pending = useProposalsStore((s) => s.pendingCount);
   const openReview = useProposalsStore((s) => s.open);
@@ -331,11 +347,14 @@ export default function RightRail({ thread, onCollapse, onEditBrief }: Props) {
               {/* P9S-6 (Ocean 2026-10-23: 「用户主动点击联网搜索退化到二级界面，跟进只能安静显示内容」): the
                   button, its locks and the weekly switch are behind 编辑 now (ThreadView/FollowUpSearch).
                   What stays here is the list, and one quiet line about the last search. */}
-              {followUpLines.length > 0 && lastSearch && (
-                <p className="mt-1 px-3 text-[11px] text-muted">
-                  {lastSearch}
-                  {followUpRun?.auto && t(' · 每周自动查')}
+              {followUpLines.length > 0 && autoFollowUp && (
+                <p className="mt-1 flex items-center gap-1 px-3 text-[11px] text-ink-2">
+                  <Repeat size={11} className="flex-none text-accent" />
+                  <span>{autoFollowUp}</span>
                 </p>
+              )}
+              {followUpLines.length > 0 && lastSearch && (
+                <p className="mt-0.5 px-3 text-[11px] text-muted">{lastSearch}</p>
               )}
             </RailSection>
           )}

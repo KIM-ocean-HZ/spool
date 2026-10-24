@@ -264,6 +264,15 @@ export const seenUrlsForPrompt = (state: FollowUpState, now: number, cap = 40): 
 /** P9S-6 (第 173 条): once a week. */
 export const AUTO_FOLLOW_UP_PERIOD_MS = 7 * 86_400_000;
 
+/** P9V-5 (第 197 条后半: 「设置了每周一次自动follow up的项目需要在右侧栏显示出来，现在有无自动分不出来」) — when
+ *  the next weekly search is about due. `null` = it has never searched, or its time has passed: the next
+ *  ten-minute look (useAutoFollowUp) takes it. */
+export const autoFollowUpNextAt = (state: { lastRunAt: number }, now: number): number | null => {
+  if (state.lastRunAt <= 0) return null;
+  const next = state.lastRunAt + AUTO_FOLLOW_UP_PERIOD_MS;
+  return next > now ? next : null;
+};
+
 /** Which switched-on project searches next: the one whose last run is oldest, once that is a week ago.
  *  A run that failed or was stopped still stamps `lastRunAt` (engineStore `siftFollowUp` runs on every
  *  outcome), so a broken engine is retried weekly, not every ten minutes on the user's quota. */

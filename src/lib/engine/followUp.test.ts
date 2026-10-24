@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   AUTO_FOLLOW_UP_PERIOD_MS,
+  autoFollowUpNextAt,
   dueAutoFollowUp,
   emptyFollowUpState,
   fingerprint,
@@ -262,5 +263,14 @@ describe('dueAutoFollowUp (P9S-6, once a week)', () => {
     expect(dueAutoFollowUp([{ id: 'recent', state: st(now - 1) }], now)).toBeNull();
     // never ran: due straight away once switched on
     expect(dueAutoFollowUp([{ id: 'new', state: st(0) }], now)?.id).toBe('new');
+  });
+});
+
+describe('P9V-5 · 右栏「每周自动查 · 下次大约…」', () => {
+  const WEEK = AUTO_FOLLOW_UP_PERIOD_MS;
+  it('查过 = 上次 + 一周；还没查过、或者已经过了时候 = 下一次看的时候就查（null）', () => {
+    expect(autoFollowUpNextAt({ lastRunAt: 1000 }, 2000)).toBe(1000 + WEEK);
+    expect(autoFollowUpNextAt({ lastRunAt: 0 }, 2000)).toBeNull();
+    expect(autoFollowUpNextAt({ lastRunAt: 1000 }, 1000 + WEEK)).toBeNull();
   });
 });
