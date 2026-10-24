@@ -1950,4 +1950,57 @@ const EN: Record<string, string> = {
   '核对完了，从单子上去掉': 'Checked — take it off the list',
   '这个项目已经不在了': 'that project is gone',
   '这个项目的上下文组不出来：{msg}': 'Could not assemble this project\u2019s context: {msg}',
+  // P9V-2（10-24 第 192、196 – 202 条）：过期检测查整个工作区。⚠️ 三个按钮的名字和只查一个项目那一页一样。
+  '整个〈{ws}〉（{n} 个项目）': 'All of “{ws}” ({n} projects)',
+  '只查这个项目': 'Just this project',
+  '〈{name}〉#{n}': '“{name}” #{n}',
+  '〈{name}〉': '“{name}”',
+  '（已删除的项目）': '(deleted project)',
+  '查整个〈{ws}〉：哪些旧块已经被别的块整条取代了（可以跨项目），哪些项目看起来已经结束了。你不点按钮，库里一个字都不动。':
+    'Checks all of “{ws}”: which old blocks another block has replaced outright (across projects too), and which projects look finished. Nothing in your library changes unless you press a button.',
+  '发了': 'Sent',
+  '每月自动查的（{d}）': 'Monthly automatic check ({d})',
+  '被取代的旧块（{n}）': 'Replaced blocks ({n})',
+  '库里已经记着 {by} 更正了 {old}。再点「更正一处」只会把引文重写一遍；想让 {old} 不再进打包，点「整条取代」。':
+    'The library already records {by} correcting {old}. Clicking “Correct one point” again only rewrites the quote; to keep {old} out of packs, click “Replace in full”.',
+  '旧的 {b} 里：': 'In the older {b}:',
+  '新的 {b} 里：': 'In the newer {b}:',
+  '已更正一处：两块都留着，{by} 上记了一句「它更正了 {old}」。':
+    'Corrected one point: both blocks stay, and {by} now carries a note saying it corrects {old}.',
+  '已换：以后打包只带 {by}，{old} 不再放进去。': 'Replaced: packs now carry {by} only; {old} is left out.',
+  '两块都留着，只在 {by} 上记一句「它更正了 {old}」。打包的时候两块还是都在，不会因此变短。':
+    'Both blocks stay. {by} simply gets a note saying it corrects {old}. Packs still carry both, so nothing gets shorter.',
+  '以后打包只带 {by}，{old} 不再放进去（它没被删，还在原来的项目里，也搜得到）。⚠️ {old} 很短：拿掉它之后打包出来反而会多几个字 —— 顶上去的那句「这一块已经被整条取代」比它本身还长。':
+    'From now on packs carry {by} only; {old} is left out (it is not deleted — it stays in its project and is still searchable). ⚠️ {old} is short: leaving it out actually makes the pack a little longer, because the “replaced” line that stands in for it is longer than the block itself.',
+  '以后打包只带 {by}，{old} 不再放进去（它没被删，还在原来的项目里，也搜得到）。':
+    'From now on packs carry {by} only; {old} is left out (it is not deleted — it stays in its project and is still searchable).',
+  '可能已经结束的项目（{n}）': 'Projects that may be finished ({n})',
+  '〈{name}〉看起来已经结束了': '“{name}” looks finished',
+  '它自己的原话：': 'In its own words:',
+  '{b} 里：': 'In {b}:',
+  '这个项目已经不在了。': 'That project is gone.',
+  '已标完成。': 'Marked done.',
+  '标完成': 'Mark done',
+  '打开和项目顶上「完成」同一个面板，可以顺手写一句结论。以后要接着做，重新打开就行；一个工作区的项目全标完成，它会自己进归档。':
+    'Opens the same panel as “Done” at the top of the project, where you can jot a one-line conclusion. To pick it up again later, just reopen it; when every project in a workspace is done, the workspace moves to the archive by itself.',
+  '这个项目保持原样，这一条从单子上划掉。': 'The project stays as it is, and this line is struck off.',
+  '这个工作区一共约 {a} 万字，超过一次能发的 {b} 万字，所以这一次没有发。':
+    'This workspace comes to about {ac} characters — more than the {bc} one check can send — so nothing was sent this time.',
+  '可以先只查这个项目，或者把已经做完的项目标完成。':
+    'You can check just this project first, or mark the projects that are finished as done.',
+  '查完了，这个工作区里没有旧块被整条取代，也没有看起来已经结束的项目。':
+    'Done — no block in this workspace has been replaced outright, and no project looks finished.',
+  '它会把这个工作区里 {n} 个没完成的项目一起发给 AI 看一遍，问两件事：有没有旧块被别的块整条取代了（可以跨项目），有没有项目看起来已经结束了。这一步要花钱。':
+    'It sends the {n} unfinished projects in this workspace to the AI together and asks two things: has any old block been replaced outright by another block (across projects too), and does any project look finished. This step costs money.',
+  '私密项目 {n} 个不发。': '{n} private project(s) are not sent.',
+  '这一页只连线、标完成，不改任何一块的正文。': 'This page only links blocks and marks projects done; it never changes any block’s text.',
+  '它写的编号「{a}」「{b}」不是 Spool 发过去的那种写法，认不出是哪两块。':
+    'It wrote “{a}” and “{b}”, which are not numbers in the form Spool sent, so there is no telling which blocks it meant.',
+  '它说的「{a}」「{b}」里有一个项目这一次没有发过去。': 'One of the projects in “{a}” / “{b}” was not sent this time.',
+  '它说的是 {old} 和 {by}，而那个项目里没有这个编号。': 'It named {old} and {by}, and that project has no such number.',
+  '它说 {by} 取代了它自己。': 'It said {by} replaced itself.',
+  '它说 {old} 里有这么一句：「{s}」—— 那个项目里没有这句话。':
+    'It said {old} contains “{s}” — that sentence is not in that project.',
+  '它说 {old} 里有这么一句：「{s}」—— 那一块里没有这句话。':
+    'It said {old} contains “{s}” — that sentence is not in that block.',
 };

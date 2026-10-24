@@ -13,8 +13,9 @@ import { useRoads } from '@/lib/engine/roads';
 import { selectThreadById, useThreadsStore } from '@/stores/threadsStore';
 import CompressBoard from '@/components/Compress/CompressBoard';
 import StaleReview from '@/components/Compress/StaleReview';
+import { useStaleScope } from '@/components/Compress/useStaleScope';
 import GistBoard, { staleGistCount } from '@/components/Gist/GistBoard';
-import { useCompressStore } from '@/stores/compressStore';
+import { useCompressStore, wsStaleLeft } from '@/stores/compressStore';
 import { useSearchStore } from '@/stores/searchStore';
 import DigestView from './DigestView';
 import LogView from './LogView';
@@ -69,10 +70,26 @@ export default function ThreadView() {
   const runningKind = useCompressStore((s) =>
     s.running && s.runningThreadId === activeId ? s.runningKind : null,
   );
-  const staleLeft = useCompressStore((s) => {
+  // P9V-2：页签上的数和「（在跑）」照这一页**现在显示的那种范围**算（只查这个项目 / 整个工作区）。
+  const staleScope = useStaleScope(activeId);
+  const staleWsId = staleScope.scope === 'workspace' ? staleScope.workspaceId : null;
+  const staleRunning = useCompressStore(
+    (s) =>
+      s.running &&
+      s.runningKind === 'stale' &&
+      s.runningKey === (staleWsId ? `w:${staleWsId}` : `p:${activeId}`),
+  );
+  const wsSession = useCompressStore((s) => (staleWsId ? s.staleWs[staleWsId] : undefined));
+  const threadsByWorkspace = useThreadsStore((s) => s.threadsByWorkspace);
+  const projectStaleLeft = useCompressStore((s) => {
     const sess = activeId ? s.stale[activeId] : null;
     return sess ? sess.proposals.filter((_, i) => sess.decided[i] === undefined).length : 0;
   });
+  const staleLeft = staleWsId
+    ? wsStaleLeft(wsSession, (id) =>
+        Object.values(threadsByWorkspace).some((list) => list.some((th) => th.id === id && th.status === 'done')),
+      )
+    : projectStaleLeft;
   // P9U-1: 压缩 and 过期检测 run on either road — the CLI on this machine or an API key.
   const roads = useRoads();
   const engineOn = roads.cli || roads.api;
@@ -80,9 +97,12 @@ export default function ThreadView() {
    *  ⚠️ 用它而不是 `staleLeft` 决定页签条出不出：决定完最后一条的那一刻 `staleLeft` 归零，
    *  ⛔ 页签会在用户眼皮底下消失，而他刚刚才点了那一下、还想看到「已换 / 已更正一处」那句回执。
    *  已决定的那几条留在单子上（划掉，不删）——那是 E3 定的，这里跟着它。 */
-  const staleAny = useCompressStore((s) =>
+  const projectStaleAny = useCompressStore((s) =>
     activeId ? (s.stale[activeId]?.proposals.length ?? 0) : 0,
   );
+  const staleAny = staleWsId
+    ? (wsSession?.blocks.length ?? 0) + (wsSession?.projectItems.length ?? 0)
+    : projectStaleAny;
   const showAi = useSettingsStore((s) => s.aiEngineActionsEnabled);
   /** P9C（第 94、98、99 条）：「压缩」页签。本机 CLI 或 API 有一条连上 ⇒ 照旧（P9U-1，原来只认 API）；都没有 ⇒ 名字后面一把锁，点进去当场打开；
    *  「显示 AI 功能」关着 ⇒ 不画。 */
@@ -186,7 +206,7 @@ export default function ThreadView() {
               ⛔ 仍然不许出现「作废」两个字（§2.E3 写死的）——「过期」不是「作废」。 */}
           {staleEntry !== 'hidden' && (
           <Tab active={tab === 'stale'} onClick={() => setTab(thread.id, 'stale')}>
-            {runningKind === 'stale'
+            {staleRunning
               ? t('过期检测（在跑）')
               : staleLeft > 0
                 ? t('过期检测（{n}）', { n: staleLeft })

@@ -10,6 +10,8 @@ import {
   mergeOutcomes,
   staleScan,
   staleScanViaCli,
+  staleScanWs,
+  staleScanWsViaCli,
   PROGRESS_EVENT,
   type CompressLevel,
   type CompressOutcome,
@@ -30,11 +32,14 @@ import {
 } from '@/lib/ai/shield';
 import {
   applyCompression,
+  listBlocksByIds,
   setCorrectedQuote,
   replaceBlock,
   setBlockSupersession,
   type Block,
 } from '@/lib/db/blocks';
+import { WS_STALE_CAP, wsMaterialChars, wsStalePlan } from '@/lib/stale/workspace';
+import { wsItemsFromScan, type WsBlockItem, type WsBuilt, type WsDroppedItem, type WsProjectItem } from '@/lib/stale/wsItems';
 import { PINNED_SEE_ABOVE } from '@/lib/pack/templates';
 import { stripInventedSkeleton, stripPackRule } from '@/lib/pack/skeleton';
 import type { Thread } from '@/lib/db/threads';
@@ -47,6 +52,7 @@ import { toast } from './toastStore';
 import { useSettingsStore } from './settingsStore';
 import { apiCallFrom } from '@/lib/ai/vendors';
 import { useThreadsStore } from './threadsStore';
+import { useWorkspacesStore } from './workspacesStore';
 
 // 压缩这件事的运行态（WORKPLAN-2026-08-20 §9.6.2 / §9.6.4 / §9.6.6）。
 //
@@ -151,6 +157,9 @@ interface CompressState {
    *
    *  ⛔ 别用「哪个面板挂着 session」去猜：两件事可以同时有各自的历史结果。 */
   runningKind: 'compress' | 'stale' | null;
+  /** P9V-2：过期检测正在跑的是哪一个范围 —— `p:<项目 id>`（只查这个项目）/ `w:<工作区 id>`（整个工作区）。
+   *  ⚠️ 两种范围在同一个页签里切换，只问「哪个项目」会让另一种范围也跟着转圈。 */
+  runningKey: string | null;
   progress: CompressProgress | null;
   /** 压缩跑之前就失败了的（比如没填 key），按项目记。和信封里的失败分开 —— 那个在 outcome 里。 */
   startErrors: Record<string, string>;
@@ -209,7 +218,54 @@ interface CompressState {
   runStaleScan: (threadId: string) => Promise<void>;
   /** 对一条提议下决定。⛔ 三个动作的语义写在 `StaleAction` 上，别在界面里另解释一遍。 */
   decideStale: (threadId: string, index: number, action: StaleAction) => Promise<void>;
+
+  // -------------------------------------------------------------------------------
+  // P9V-2 · 过期检测查整个工作区（第 192、196 – 202 条）
+  // -------------------------------------------------------------------------------
+  /** 每个工作区最新的那一份结果。⚠️ 键是工作区 id（「整个工作区」= 这个项目所在的那一个）。 */
+  staleWs: Record<string, WsStaleSession>;
+  staleWsErrors: Record<string, string>;
+  /** 结果里那几块此刻在库里的样子 —— 卡片要问「这一对是不是已经记着更正了」。⚠️ 只在内存，按需重读。 */
+  staleWsBlocks: Record<string, Record<string, Block>>;
+  /** 每个项目的过期检测页签停在哪一种范围。没记过 = 能查整个工作区就查整个工作区（第 200 条）。 */
+  staleScope: Record<string, StaleScope>;
+  setStaleScope: (threadId: string, scope: StaleScope) => void;
+  /** 查一遍整个工作区。`auto` = 每月自动查的那一次（P9V-4），结果上要标出来。 */
+  runStaleScanWorkspace: (workspaceId: string, opts?: { auto?: boolean }) => Promise<void>;
+  /** 对工作区结果里的一条下决定。`key` = `b<下标>`（块级）/ `p<下标>`（项目级，只有「不动」走这里 ——
+   *  「标完成」开的是项目顶上那个完成面板，完没完成看项目自己的状态）。 */
+  decideStaleWs: (workspaceId: string, key: string, action: StaleAction) => Promise<void>;
+  refreshStaleWsBlocks: (workspaceId: string) => Promise<void>;
 }
+
+export type StaleScope = 'workspace' | 'project';
+
+/** P9V-2 —— 查整个工作区那一次的结果。⚠️ 存的是块 id（第 202 条要存盘，块号会变）。 */
+export interface WsStaleSession {
+  workspaceId: string;
+  /** 送出去的项目，P1、P2…… 的顺序。名字是跑那一刻的（项目后来改名了，卡片照现在的名字显示）。 */
+  projects: { threadId: string; title: string }[];
+  skippedPrivate: number;
+  startedAt: number;
+  auto: boolean;
+  /** 超上限没发 = `null`（第 201 条）。 */
+  outcome: CompressOutcome | null;
+  tooBig: { chars: number; cap: number } | null;
+  blocks: WsBlockItem[];
+  projectItems: WsProjectItem[];
+  dropped: WsDroppedItem[];
+  already: number;
+  /** `b0` / `p1` → 下过的决定。⚠️ 划掉不删，和只查一个项目同一条规矩。 */
+  decided: Record<string, StaleAction>;
+}
+
+/** 工作区结果里还没决定的条数（页签上那个数）。项目级的那条项目已经标完成了也算决定过。 */
+export const wsStaleLeft = (sess: WsStaleSession | undefined | null, isDone: (threadId: string) => boolean): number => {
+  if (!sess) return 0;
+  const b = sess.blocks.filter((_, i) => sess.decided[`b${i}`] === undefined).length;
+  const p = sess.projectItems.filter((it, i) => sess.decided[`p${i}`] === undefined && !isDone(it.threadId)).length;
+  return b + p;
+};
 
 /** ⭐ 界面**不许叫「作废」**（WORKPLAN §2.E3 写死的）。理由是实测的失败形状：
  *  39 条提议里 **35 条**是「同一件事、**旧块还剩很多**」—— 点一下「作废」会让一个
@@ -461,10 +517,15 @@ export const useCompressStore = create<CompressState>((set, get) => ({
   running: false,
   runningThreadId: null,
   runningKind: null,
+  runningKey: null,
   progress: null,
   startErrors: {},
   staleErrors: {},
   stale: {},
+  staleWs: {},
+  staleWsErrors: {},
+  staleWsBlocks: {},
+  staleScope: {},
   results: [],
   failures: [],
   batchRunning: false,
@@ -897,6 +958,7 @@ export const useCompressStore = create<CompressState>((set, get) => ({
       running: true,
       runningThreadId: threadId,
       runningKind: 'stale',
+      runningKey: `p:${threadId}`,
       progress: { stage: 'starting' },
       staleErrors: omit(st.staleErrors, threadId),
     }));
@@ -962,7 +1024,7 @@ export const useCompressStore = create<CompressState>((set, get) => ({
         staleErrors: { ...st.staleErrors, [threadId]: e instanceof Error ? e.message : String(e) },
       }));
     } finally {
-      set({ running: false, runningThreadId: null, runningKind: null, progress: null });
+      set({ running: false, runningThreadId: null, runningKind: null, runningKey: null, progress: null });
     }
   },
 
@@ -1019,6 +1081,179 @@ export const useCompressStore = create<CompressState>((set, get) => ({
           },
         };
       });
+    } catch (e) {
+      toast.error(t('写不进去：{msg}', { msg: e instanceof Error ? e.message : String(e) }));
+    }
+  },
+
+  // ---------------------------------------------------------------------------------
+  // P9V-2 · 过期检测查整个工作区
+  // ---------------------------------------------------------------------------------
+  //
+  // ⚠️ 提示词和逐字闸在 Rust（`api_engine.rs` `gate_ws`），⛔ 这边不另判。这边只管三件事：
+  // 发哪些项目（`wsStalePlan`：已完成、私密不发）、超没超上限（第 201 条：超了不发）、
+  // 回来的 `P2#3` 换成块 id（`wsItemsFromScan`，顺带摘掉库里已经记着的那几对）。
+  setStaleScope: (threadId, scope) =>
+    set((st) => ({ staleScope: { ...st.staleScope, [threadId]: scope } })),
+
+  runStaleScanWorkspace: async (workspaceId, opts) => {
+    if (get().running || get().batchRunning) return;
+    const plan = wsStalePlan(
+      workspaceId,
+      useWorkspacesStore.getState().workspaces,
+      useThreadsStore.getState().threadsByWorkspace,
+    );
+    if (!plan || plan.threads.length === 0) return;
+    const s = useSettingsStore.getState();
+    const road = routeFor(s.staleRoute, roadsNow());
+    if (road === null) return;
+    set((st) => ({
+      running: true,
+      runningThreadId: null,
+      runningKind: 'stale',
+      runningKey: `w:${workspaceId}`,
+      progress: { stage: 'starting' },
+      staleWsErrors: omit(st.staleWsErrors, workspaceId),
+    }));
+    try {
+      // ⚠️ 和只查一个项目一样查**完整**的 pack（压过的块也算）；⛔ 不带每份开头那段「怎么读」。
+      const built: WsBuilt[] = [];
+      for (const thread of plan.threads) {
+        const { text, blocks } = await buildThreadPack(thread, false, false);
+        // 一块活着的都没有 —— 没东西可比，不发。
+        if (blocks.some((b) => b.staleAt === null)) built.push({ thread, text, blocks });
+      }
+      if (built.length === 0) return;
+      const packs = built.map((b) => ({ title: b.thread.title, text: b.text }));
+      const base = {
+        workspaceId,
+        projects: built.map((b) => ({ threadId: b.thread.id, title: b.thread.title })),
+        skippedPrivate: plan.skippedPrivate,
+        startedAt: Date.now(),
+        auto: opts?.auto === true,
+        decided: {},
+      };
+      const chars = wsMaterialChars(packs);
+      const cap = WS_STALE_CAP[road];
+      if (chars > cap) {
+        // 第 201 条：整个发，超了就不发 —— ⛔ 不偷偷切成几批（切开的两批之间查不出来，而那正是这件事本身）。
+        set((st) => ({
+          staleWs: {
+            ...st.staleWs,
+            [workspaceId]: {
+              ...base,
+              outcome: null,
+              tooBig: { chars, cap },
+              blocks: [],
+              projectItems: [],
+              dropped: [],
+              already: 0,
+            },
+          },
+        }));
+        return;
+      }
+      const scan =
+        road === 'cli'
+          ? await staleScanWsViaCli(packs, s.aiEngineTimeoutSecs, cliRouteNow())
+          : await (async () => {
+              const call = apiCallFrom(s);
+              return staleScanWs({
+                packs,
+                baseUrl: call.baseUrl,
+                apiKey: await loadApiKey(),
+                model: call.model,
+                reasoning: call.reasoning,
+                wire: call.wire,
+                timeoutSecs: s.apiTimeoutSecs,
+              });
+            })();
+      if (scan.outcome.kind === 'cancelled') {
+        toast.notice(t('已经停下了。已经跑出去的那一段，模型厂商那边可能照样算钱。'));
+        return;
+      }
+      const items = wsItemsFromScan(scan, built);
+      const live: Record<string, Block> = {};
+      for (const b of built) for (const x of b.blocks) live[x.id] = x;
+      set((st) => ({
+        staleWs: {
+          ...st.staleWs,
+          [workspaceId]: { ...base, outcome: scan.outcome, tooBig: null, ...items },
+        },
+        staleWsBlocks: { ...st.staleWsBlocks, [workspaceId]: live },
+      }));
+    } catch (e) {
+      set((st) => ({
+        staleWsErrors: { ...st.staleWsErrors, [workspaceId]: e instanceof Error ? e.message : String(e) },
+      }));
+    } finally {
+      set({ running: false, runningThreadId: null, runningKind: null, runningKey: null, progress: null });
+    }
+  },
+
+  refreshStaleWsBlocks: async (workspaceId) => {
+    const sess = get().staleWs[workspaceId];
+    if (!sess) return;
+    const ids = new Set<string>();
+    for (const it of sess.blocks) {
+      ids.add(it.stale.blockId);
+      ids.add(it.by.blockId);
+    }
+    for (const it of sess.projectItems) ids.add(it.by.blockId);
+    const rows = ids.size > 0 ? await listBlocksByIds([...ids]) : [];
+    set((st) => ({
+      staleWsBlocks: { ...st.staleWsBlocks, [workspaceId]: Object.fromEntries(rows.map((b) => [b.id, b])) },
+    }));
+  },
+
+  decideStaleWs: async (workspaceId, key, action) => {
+    const sess = get().staleWs[workspaceId];
+    if (!sess || sess.decided[key]) return;
+    const mark = () =>
+      set((st) => {
+        const cur = st.staleWs[workspaceId];
+        if (!cur) return {};
+        return { staleWs: { ...st.staleWs, [workspaceId]: { ...cur, decided: { ...cur.decided, [key]: action } } } };
+      });
+    if (key.startsWith('p')) {
+      // 项目级只有「不动」走这里（见 `decideStaleWs` 上的说明）。
+      if (action === 'keep') mark();
+      return;
+    }
+    const p = sess.blocks[Number(key.slice(1))];
+    if (!p) return;
+    if (action === 'keep') {
+      mark();
+      return;
+    }
+    // ⚠️ 从库里现读这两块 —— 跑完之后到点按钮之间，用户可能已经在别处动过它们（结果是存盘的，可能隔了几天）。
+    const rows = await listBlocksByIds([p.stale.blockId, p.by.blockId]);
+    const oldBlock = rows.find((b) => b.id === p.stale.blockId);
+    const newBlock = rows.find((b) => b.id === p.by.blockId);
+    if (!oldBlock || !newBlock) {
+      toast.error(t('这两块里有一块已经不在了，这一条做不了。'));
+      return;
+    }
+    // ⛔ 和 `decideStale` 同两道闸（T2）。跨项目也一样：一块只记得住一条这样的关系。
+    if (action === 'merge' && wouldOverwriteRelation(oldBlock, newBlock)) {
+      toast.error(
+        t('第 {n} 块已经指着另一块了，一块只记得住一条这样的关系。要改的话先在那一块上撤掉原来那条。', {
+          n: p.by.seq,
+        }),
+      );
+      return;
+    }
+    try {
+      if (action === 'merge') {
+        await setBlockSupersession(newBlock.id, oldBlock.id, 'corrects', Date.now());
+        await setCorrectedQuote(newBlock.id, p.quoteStale);
+      } else if (action === 'retire') {
+        await replaceBlock(oldBlock.id, newBlock.id, Date.now());
+      }
+      const blocks = useBlocksStore.getState();
+      for (const th of new Set([p.stale.threadId, p.by.threadId])) await blocks.load(th);
+      mark();
+      await get().refreshStaleWsBlocks(workspaceId);
     } catch (e) {
       toast.error(t('写不进去：{msg}', { msg: e instanceof Error ? e.message : String(e) }));
     }

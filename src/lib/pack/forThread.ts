@@ -52,6 +52,9 @@ export const buildThreadPack = async (
    *  ⛔ 默认 false：别的调用方（真的要粘贴出去那一份）必须拿到完整的 pack。
    *  ⚠️ 压缩用的这一份还带着原样的图片行（`pictureLinesAsIs`）。 */
   skipCompressed = false,
+  /** P9V-2：查整个工作区时传 `false` —— 每份开头那段「怎么读」是给收件 AI 的，查过期用不上，
+   *  而 23 个项目一起发就会重复 23 遍。不传 = 跟设置走（和打包对话框一样）。 */
+  instructions?: boolean,
 ): Promise<ThreadPack> => {
   const all = await listBlocksByThread(thread.id);
   const blocks = skipCompressed ? all.filter((b) => b.compressedAt == null) : all;
@@ -89,7 +92,7 @@ export const buildThreadPack = async (
     refBlocks,
     scope: { range: 'all', total: blocks.length },
     images: skipCompressed ? pictureLinesAsIs(blocks) : undefined,
-    instructions: s.packInstructions,
+    instructions: instructions ?? s.packInstructions,
     outputLanguage: s.language === 'en' ? 'en' : 'zh',
   });
   return { text, blocks, skippedCompressed };

@@ -1203,6 +1203,85 @@ const fromRaw = (raw: StaleScanRaw): StaleScan => {
 };
 
 // ---------------------------------------------------------------------------------------
+// P9V-1/2 · 过期检测查整个工作区 —— 提示词和逐字闸在 Rust（`api_engine.rs` `gate_ws`）
+// ---------------------------------------------------------------------------------------
+
+/** 「P2#3」—— ⚠️ `project` 是送出去的 `packs` 的下标（从 0 数），`seq` 是那个项目里块自己的 `#N`。 */
+export interface WsRef {
+  project: number;
+  seq: number;
+}
+
+/** 块级：`stale` 那一块被 `by` 那一块整条取代了（可以跨项目）。⚠️ 已经过了逐字闸。 */
+export interface WsBlockProposal {
+  stale: WsRef;
+  by: WsRef;
+  why: string;
+  quoteStale: string;
+  quoteNew: string;
+  retyped: boolean;
+}
+
+/** 项目级：`project` 那个项目整个已经过时了，证据是 `by` 那一块。⚠️ 已经过了逐字闸。 */
+export interface WsProjectProposal {
+  project: number;
+  by: WsRef;
+  why: string;
+  quoteOld: string;
+  quoteNew: string;
+  retyped: boolean;
+}
+
+export type WsDropReason = 'no_ref' | 'no_project' | 'no_block' | 'same_block' | 'quote_old' | 'quote_new';
+
+/** ⛔ 没过闸的那一条，连它说了什么一起带回来（和 `StaleDropped` 同一个理由）。 */
+export interface WsDropped {
+  kind: 'block' | 'project';
+  /** 它写的原样（「P2#3」/「P3」）—— 认不出来的时候界面照抄这个。 */
+  oldLabel: string;
+  byLabel: string;
+  /** 认得出来的才有。项目级的 `old.seq` 是 0。 */
+  old: WsRef | null;
+  by: WsRef | null;
+  why: string;
+  quoteOld: string;
+  quoteNew: string;
+  reason: WsDropReason;
+}
+
+export interface WsStaleScan {
+  outcome: CompressOutcome;
+  blocks: WsBlockProposal[];
+  projects: WsProjectProposal[];
+  dropped: WsDropped[];
+}
+
+/** 送出去的一个项目。⚠️ 数组的顺序就是提示词里 P1、P2…… 的顺序。 */
+export interface WsPack {
+  title: string;
+  text: string;
+}
+
+export const staleScanWs = async (
+  req: Omit<CompressRequest, 'level' | 'packText'> & { packs: WsPack[] },
+): Promise<WsStaleScan> =>
+  invoke<WsStaleScan>('stale_scan_ws_via_api', {
+    packs: req.packs,
+    baseUrl: req.baseUrl,
+    apiKey: req.apiKey,
+    model: req.model,
+    reasoning: req.reasoning,
+    wire: req.wire,
+    timeoutSecs: req.timeoutSecs,
+  });
+
+export const staleScanWsViaCli = async (
+  packs: WsPack[],
+  timeoutSecs: number,
+  cli: CliRoute,
+): Promise<WsStaleScan> => invoke<WsStaleScan>('stale_scan_ws_via_cli', { packs, timeoutSecs, cli });
+
+// ---------------------------------------------------------------------------------------
 // P9U-4 · 跟进 on the API road (第 186 条: 用各家自带的联网搜索)
 // ---------------------------------------------------------------------------------------
 

@@ -11,6 +11,9 @@ import { useSettingsStore } from '@/stores/settingsStore';
 import { routeFor, useRoads } from '@/lib/engine/roads';
 import RoadPicker from '@/components/AiSetup/RoadPicker';
 import type { StaleSession } from '@/stores/compressStore';
+import { Choice, Stat } from './StaleParts';
+import WorkspaceStale from './WorkspaceStale';
+import { useStaleScope } from './useStaleScope';
 
 // E3 · 「过期检测」（COMPRESS-UX-R2-2026-08-22 §7 / WORKPLAN §2.E3）。
 //
@@ -49,11 +52,57 @@ import type { StaleSession } from '@/stores/compressStore';
 // ⛔ **不做 confidence 过滤**（§2.E3 写死的）：实测最离谱那条自标 `high`。
 export default function StaleReview({ threadId }: { threadId: string }) {
   const t = useT();
+  const { scope, available, workspaceId, plan } = useStaleScope(threadId);
+  const setScope = useCompressStore((s) => s.setStaleScope);
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      {/* P9V-2（第 200 条）：同一个页签，两种范围 —— 默认整个工作区，「只查这个项目」照旧在。
+          能查的项目不到两个（比如只有一个项目的子工作区）就不出这一行。 */}
+      {available && (
+        <div className="flex flex-none items-center gap-1 border-b border-line px-5 py-1.5 text-[11px]">
+          <ScopeButton active={scope === 'workspace'} onClick={() => setScope(threadId, 'workspace')}>
+            {t('整个〈{ws}〉（{n} 个项目）', { ws: plan?.workspace.title ?? '', n: plan?.threads.length ?? 0 })}
+          </ScopeButton>
+          <ScopeButton active={scope === 'project'} onClick={() => setScope(threadId, 'project')}>
+            {t('只查这个项目')}
+          </ScopeButton>
+        </div>
+      )}
+      <div className="min-h-0 flex-1">
+        {scope === 'workspace' && workspaceId ? (
+          <WorkspaceStale workspaceId={workspaceId} plan={plan} />
+        ) : (
+          <ProjectStale threadId={threadId} />
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ScopeButton({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={`rounded px-2 py-0.5 transition-colors ${
+        active ? 'bg-paper-2 text-ink' : 'text-muted hover:text-ink'
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
+
+/** 只查这个项目 —— P9V 之前这个页签的全部。 */
+function ProjectStale({ threadId }: { threadId: string }) {
+  const t = useT();
   const session = useCompressStore((s) => s.stale[threadId] ?? null);
   // ⚠️ **要同时问「哪个项目」和「哪一件事」。** 只问前者，压缩一跑这一页就跟着转圈；
   // 只问后者，别的项目在跑的时候这一页也会转。
+  // P9V-2：再加一问「哪一种范围」—— 查整个工作区的那一次不该让这一页也转圈。
   const running = useCompressStore(
-    (s) => s.running && s.runningThreadId === threadId && s.runningKind === 'stale',
+    (s) => s.running && s.runningKind === 'stale' && s.runningKey === `p:${threadId}`,
   );
   const busy = useCompressStore((s) => s.running || s.batchRunning);
   const error = useCompressStore((s) => s.staleErrors[threadId] ?? null);
@@ -400,37 +449,4 @@ function retireGrowsPack(session: StaleSession, staleSeq: number): boolean {
   const entry = splitPackEntries(session.source).find((e) => e.seq === staleSeq);
   if (!entry) return false;
   return entry.raw.length <= retirementLineChars(block);
-}
-
-// 一个数一格 —— ⚠️ 和压缩那一页的 `Stat` 同一个样子，⛔ 两边别长歪。
-function Stat({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="leading-tight">
-      <div className="text-[10px] uppercase tracking-wide text-muted/70">{label}</div>
-      <div className="font-mono text-[13px]">{value}</div>
-    </div>
-  );
-}
-
-// ⚠️ 三个动作**并排**，⛔ 没有一个被做成主按钮 —— 哪一个对，只有用户知道，
-// 而把其中一个做得更显眼就是在替他选。悬停说明写的是「会发生什么」，不是名词解释。
-function Choice({
-  label,
-  hint,
-  onClick,
-}: {
-  label: string;
-  hint: string;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      title={hint}
-      className="rounded border border-line bg-paper px-2 py-0.5 text-[11px] text-ink-2 transition-colors hover:border-accent hover:text-accent"
-    >
-      {label}
-    </button>
-  );
 }
