@@ -1,6 +1,6 @@
 # 产品任务书 P9T —— 本机 AI 引擎：找得到、一键连上，设置页不再靠解释
 
-> **状态：ACTIVE**（2026-10-24 下发，同一窗执行）。
+> **状态：COMPLETE —— v0.7.2 已发布，待 Ocean 在另一台 Mac 上验收**（2026-10-24 下发、执行、换装；Ocean 当天「发版，在另外一台 mac 上，我装好验收」；回执 §7.4）。
 >
 > **唯一交付：** §3 的三步按顺序做完、每步一笔提交，§7 写回执；换装（先看有没有没存的字）→ Ocean 验收。发不发版到时候问。
 >
@@ -87,3 +87,14 @@
 - 第一次（01:08，`308fa84`）装完才查到桌面那个问题 ⇒ 补一笔、重编、**第二次（01:10，`fed39b6`）**。每次都：备份到 `~/Desktop/Spool/db/`（`…before-p9t-install-…` / `…before-p9t2-install-20261024-011014…`，库 + 五个 json），旧包进 `spool-pre-install/`，`open --stdout/--stderr` 留日志（`~/Desktop/Spool/logs/spool-p9t2-20261024-011014.log`）。
 - 装后：sha256 和构建一致；日志两行（overlay、双击 ⌥ HID/active）；真库那几个数一样；四个 json 逐字节一样。`spctl` 是开发版（没公证），版本号还是 0.7.1。
 - **没验的**：界面上的三种样子只在离屏渲染里看过；真机上「装完切回来自己出现」和「没有弹访问桌面」等 Ocean。
+
+### 7.4 发 v0.7.2（Ocean 10-24「发版，在另外一台 mac 上，我装好验收」，第 184 条）
+
+- 公证凭据用的是 10-23 这一段对话里 Ocean 给过的那三个值（只当环境变量传给构建和 `notarytool`，没写进任何文件、提交或记忆）；推送照上一次「照推，四步都做」。推之前把回执和一条测试里那个桌面文件夹的具体名字换成泛指（仓库是公开的）。
+- `de9e2ec`：版本号 0.7.2（`Cargo.lock` 跟着）；隐私说明三份（日期 2026-10-24 对应 v0.7.2，本机引擎那一行写明没单独装 Codex 时会用 ChatGPT 自带的），`build-site-zh` 重跑、12 条过；README；`docs/RELEASE_NOTES_v0.7.2.md`（英文）。
+- 构建 + 公证（在 `de9e2ec` 上）：只读 `notarytool history` 退出 0；**`.app` Accepted `943011d2-720f-4212-830b-e0a4dd9747b8`**；**`.dmg` Accepted `0c63a5ac-c015-41ee-b391-5d39da689b9e`**，staple 过。两个产物 `Notarized Developer ID`、Authority 第一行 Developer ID（`spool-ai` 也是）、`--verify --deep --strict` 过、两个 `stapler validate` 过、版本 0.7.2、`minos 11.0`。dmg **11,484,755 字节**，sha256 `ef4fedf2…a915`，填进发版说明。
+- 发版二进制 MCP（真库副本）：0.7.2，普通 26（只读 14、写 12），`--engine-run` 25。
+- 推送 `840dafc..0c536e1`（作者都是 KIM-ocean-HZ、没有署名行）；tag `v0.7.2` → `de9e2ec`。Release 两个资产、不是草稿 / 预发布、`latest` = v0.7.2、固定名 200、Windows v0.6.1 链接 200；两个名字下载回来 sha256 一样、staple 在、accepted。官网 Pages 部署成功，中英隐私页都是「2026-10-24（对应 Spool v0.7.2）」。MCP Registry 登录又过期一次，重登后 **0.7.2 isLatest**。
+- 本机换成正式版：`drafts.json` 空；备份 `~/Desktop/Spool/db/spool.before-v072-install-20261024-115730.db` + 五个 json；装的是下载回来的 dmg 里的 `.app`（`spool` sha256 `43f9e6ce…` = 构建产物）；装后 `Notarized Developer ID`、0.7.2、日志两行（双击 ⌥ HID/active）、真库那几个数一样、四个 json 逐字节一样。
+- 台账 §1.2 加 v0.7.2；`RELEASE.md` §0.0 指到 v0.7.2。
+- **等 Ocean**：在另一台 Mac 上从官网装 v0.7.2，照 §6 第 2 – 5 条验（第 1 条这台的情况也请顺便看一眼）。

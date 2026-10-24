@@ -287,6 +287,36 @@ block of a project scrolled the column itself by 152 px in an off-screen WebKit 
 privacy policy changed in substance, not only in date: it now names `ai-seen.json` and says that a
 follow-up can run once a week by itself when the user switches that on for a project.
 
+---
+
+| Field | v0.7.2 |
+|---|---|
+| Published | **2026-10-24** |
+| Tagged commit | tag `v0.7.2` → `de9e2ec`, the commit the binary was built from (the commit after it on `main` changes documentation only) |
+| Signing identity — macOS | Developer ID Application (Apple Developer Program, Team `Q5Y5JRXZ58`) |
+| **Notarisation — `.app`** | submission `943011d2-720f-4212-830b-e0a4dd9747b8` · **Accepted** |
+| **Notarisation — `.dmg`** | submission `0c63a5ac-c015-41ee-b391-5d39da689b9e` · **Accepted** |
+| Artefact — macOS | `Spool_0.7.2_aarch64.dmg`, 11,484,755 bytes |
+| sha256 — macOS | `ef4fedf29a90092fae3519a9958ef82cab219efe9c5d16f596e4226a27b3a915` |
+| Gatekeeper verdict — macOS | `accepted` · `source=Notarized Developer ID` on **both** artefacts, and re-verified on copies downloaded back from the published Release under both names (byte-identical sha256, staple intact); `codesign -dvv` Authority resolved to the Developer ID certificate, the bundled `spool-ai` sidecar too; `--verify --deep --strict` passes; minimum macOS 11.0 |
+| Windows | **not built for this release**; the Windows button keeps pointing at v0.6.1 (HTTP 200) |
+| Fixed-name assets | `Spool-macOS-arm64.dmg` — **HTTP 200** through `releases/latest/download/`, redirecting to the v0.7.2 asset, byte-identical to the versioned one |
+| Database schema | **unchanged — v35** |
+| MCP surface (release binary) | 26 tools — 14 read-only, 12 write; 25 for Spool's own engine (`--engine-run`). Same counts as v0.7.0 and v0.7.1 |
+| MCP Registry | `io.github.KIM-ocean-HZ/spool` **0.7.2** published (metadata only) and listed as latest; 0.7.1, 0.7.0 and 0.6.2 remain listed |
+
+**What this row adds: a one-day release for a defect a simulated new user found.** On a Mac without
+Codex, the owner played a new user and Spool could not find the Codex CLI. The cause, reproduced on
+the developer's own machine: an app opened from the Finder starts with `PATH=/usr/bin:/bin:/usr/sbin:/sbin`,
+and a CLI installed with npm is a `#!/usr/bin/env node` script, so `codex --version` failed with
+`env: node: No such file or directory` and the CLI was reported as missing — on the developer's
+machine too, where the configured engine (Codex) had been silently falling back to another. The fix
+resolves the login shell's PATH once per launch and starts every CLI with its own directory first; it
+was verified by running detection under that bare environment in three configurations (normal, login
+shell unavailable, empty home with only the ChatGPT desktop app's bundled Codex present). A second
+defect was caught after the first internal install and before release: a login PATH can name a folder
+on the Desktop, and probing it would have made macOS ask for Desktop access in Spool's name.
+
 ## 2. Measured findings
 
 These are the rows that matter most: results obtained by measuring a running system, not
