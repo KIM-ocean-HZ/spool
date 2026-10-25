@@ -76,6 +76,10 @@ fn is_plain(name: &str) -> bool {
     PLAIN_EXTS.contains(&ext_of(name).as_str())
 }
 
+fn has_state_text(name: &str) -> bool {
+    is_plain(name) || matches!(ext_of(name).as_str(), "docx" | "pdf")
+}
+
 fn join_rel(base: &str, name: &str) -> String {
     if base.is_empty() {
         name.to_string()
@@ -581,15 +585,25 @@ pub(crate) fn spec_matches(spec: &str, rel: &str) -> bool {
 /// The file `spec` stands for now: itself, or the newest member of its series. None = nothing
 /// there (deleted, moved into an archive, or never existed).
 pub(crate) fn resolve_spec(root: &Path, spec: &str) -> Option<String> {
+    if check_specs(&[spec.to_string()]).is_err() {
+        return None;
+    }
     let Some((pre, suf)) = spec.split_once('*') else {
-        return on_disk(root, spec).is_file().then(|| spec.to_string());
+        return checked_user_file(root, Path::new(spec)).ok().map(|_| spec.to_string());
     };
     let (dir, prefix) = split_rel(pre);
-    sorted_entries(&on_disk(root, dir))
+    let real_root = std::fs::canonicalize(root).ok()?;
+    let real_dir = std::fs::canonicalize(on_disk(&real_root, dir)).ok()?;
+    if !real_dir.starts_with(&real_root) || !real_dir.is_dir() {
+        return None;
+    }
+    sorted_entries(&real_dir)
         .into_iter()
         .filter(|e| e.file_type().is_ok_and(|t| t.is_file()))
         .filter_map(|e| {
             let name = e.file_name().to_string_lossy().into_owned();
+            let rel = join_rel(dir, &name);
+            checked_user_file(root, Path::new(&rel)).ok()?;
             series_key(&name, prefix, suf).map(|k| (k, name))
         })
         .max()
@@ -607,6 +621,31 @@ pub(crate) struct Candidate {
     pub path: String,
     pub recommended: bool,
     pub modified: i64,
+}
+
+/// The user may explicitly choose any ordinary file inside their selected folder. This is
+/// narrower than a directory grant and distinct from an AI proposing a hidden/private path.
+pub(crate) fn checked_user_file(root: &Path, selected: &Path) -> Result<(PathBuf, String), String> {
+    use std::path::Component;
+    let root = std::fs::canonicalize(root).map_err(|_| "folder_file_missing")?;
+    if selected.components().any(|c| matches!(c, Component::ParentDir)) {
+        return Err("folder_file_unsafe".into());
+    }
+    let selected = if selected.is_absolute() { selected.to_path_buf() } else { root.join(selected) };
+    let path = std::fs::canonicalize(&selected).map_err(|_| "folder_file_missing")?;
+    if !path.starts_with(&root) {
+        return Err("folder_file_unsafe".into());
+    }
+    if !path.is_file() { return Err("folder_file_not_file".into()); }
+    let rel = path.strip_prefix(&root).map_err(|_| "folder_file_unsafe")?
+        .components().map(|c| c.as_os_str().to_string_lossy()).collect::<Vec<_>>().join("/");
+    Ok((path, rel))
+}
+
+fn state_file_choice(root: &str, selected: &str) -> Result<Candidate, String> {
+    let (path, rel) = checked_user_file(Path::new(root), Path::new(selected))?;
+    let (_, modified) = stamp(&path).ok_or("folder_file_missing")?;
+    Ok(Candidate { spec: rel.clone(), path: rel, recommended: false, modified })
 }
 
 const PLAN_NAMES: [&str; 8] = ["README", "HANDOFF", "WORK_PLAN", "WORKPLAN", "PLAN", "STATUS", "ROADMAP", "TODO"];
@@ -685,6 +724,15 @@ pub(crate) struct StateMark {
     pub hash: String,
 }
 
+fn state_mark(root: &Path, rel: &str) -> Option<StateMark> {
+    let (path, _) = checked_user_file(root, Path::new(rel)).ok()?;
+    let (size, mtime) = stamp(&path)?;
+    // A user can choose any file. Unsupported formats are metadata-only: do not read a binary
+    // file (or source code) just to calculate a fingerprint that an AI cannot use as text.
+    let hash = if has_state_text(rel) { fingerprint(&path)? } else { String::new() };
+    Some(StateMark { size, mtime, hash })
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub(crate) struct Snapshot {
     /// Every listed file: [size, modified ms].
@@ -720,9 +768,11 @@ pub(crate) fn take_snapshot(root: &Path, specs: &[String], by: Option<&str>, not
     };
     for spec in specs {
         if let Some(rel) = resolve_spec(root, spec) {
-            let p = on_disk(root, &rel);
-            if let (Some((size, mtime)), Some(hash)) = (stamp(&p), fingerprint(&p)) {
-                snap.state.insert(rel, StateMark { size, mtime, hash });
+            if let Some(mark) = state_mark(root, &rel) {
+                // An explicit choice can live in a hidden, generated or ignored directory that
+                // the general listing deliberately skips. It still belongs in the sync cursor.
+                snap.files.insert(rel.clone(), [mark.size, mark.mtime]);
+                snap.state.insert(rel, mark);
             }
         }
     }
@@ -752,7 +802,8 @@ pub(crate) fn state_now(root: &Path, spec: &str, snap: &Snapshot) -> StateNow {
                     if snap.files.get(rel) == Some(&[size, mtime]) {
                         false
                     } else if let Some(m) = snap.state.get(rel) {
-                        (m.size, m.mtime) != (size, mtime) && fingerprint(&p).as_deref() != Some(m.hash.as_str())
+                        (m.size, m.mtime) != (size, mtime)
+                            && (!has_state_text(rel) || fingerprint(&p).as_deref() != Some(m.hash.as_str()))
                     } else {
                         // A new member of the series, or a file that changed after the sync and
                         // had no fingerprint taken then.
@@ -1410,8 +1461,8 @@ fn regenerate(conn: &Connection, f: &FolderRow, path: &Path, mode: Mode, lang: L
 fn check_specs(specs: &[String]) -> Result<Vec<String>, String> {
     let mut out: Vec<String> = Vec::new();
     for s in specs {
-        let s = s.trim().trim_start_matches('/').to_string();
-        if s.is_empty() || s.split('/').any(|p| p == ".." || p == ".") || s.contains('\\') || s.matches('*').count() > 1 {
+        let s = s.to_string();
+        if s.is_empty() || Path::new(&s).is_absolute() || s.starts_with('/') || s.split('/').any(|p| p.is_empty() || p == ".." || p == ".") || s.contains('\\') || s.matches('*').count() > 1 {
             return Err("bad_spec".into());
         }
         if !out.contains(&s) {
@@ -1434,10 +1485,9 @@ fn add_state_marks(conn: &Connection, f: &FolderRow, path: &Path, specs: &[Strin
         if snap.state.contains_key(&rel) {
             continue;
         }
-        let p = on_disk(path, &rel);
-        if let (Some((size, mtime)), Some(hash)) = (stamp(&p), fingerprint(&p)) {
-            snap.state.insert(rel.clone(), StateMark { size, mtime, hash });
-            snap.files.insert(rel, [size, mtime]);
+        if let Some(mark) = state_mark(path, &rel) {
+            snap.files.insert(rel.clone(), [mark.size, mark.mtime]);
+            snap.state.insert(rel, mark);
             changed = true;
         }
     }
@@ -1642,11 +1692,12 @@ fn view_of(conn: &Connection, f: FolderRow, link: WsLink, asked_ws: &str, write:
     v.agents_points = has_line("AGENTS.md", &[AGENTS_POINTER_ZH, AGENTS_POINTER_EN]);
     for s in &v.state {
         let Some(rel) = &s.path else { continue };
-        if is_doc(rel) && !is_plain(rel) {
-            let fresh = stamp(&on_disk(&path, rel))
+        if matches!(ext_of(rel).as_str(), "docx" | "pdf") {
+            let Ok((file, _)) = checked_user_file(&path, Path::new(rel)) else { continue };
+            let fresh = stamp(&file)
                 .is_some_and(|(size, mtime)| v.cache.get(rel).is_some_and(|c| c.size == size && c.mtime == mtime));
             if !fresh {
-                v.needs_text.push(NeedsText { rel: rel.clone(), path: on_disk(&path, rel).to_string_lossy().into_owned() });
+                v.needs_text.push(NeedsText { rel: rel.clone(), path: file.to_string_lossy().into_owned() });
             }
         }
     }
@@ -1661,6 +1712,19 @@ fn view_of(conn: &Connection, f: FolderRow, link: WsLink, asked_ws: &str, write:
         v.commits = repo.map(|r| r.commits_since(f.synced_at)).unwrap_or_default();
     }
     Ok(v)
+}
+
+/// Metadata-only handoff to a desktop client's own file permissions. Unlike `view`, this
+/// does not inspect state-file bodies or protocol text and never updates a moved path.
+pub(crate) fn linked_root_for_thread(conn: &Connection, thread_id: &str) -> Result<Option<PathBuf>, String> {
+    let ws: Option<String> = conn.query_row(
+        "SELECT workspace_id FROM threads WHERE id = ?1 AND private = 0 AND deleted_at IS NULL",
+        [thread_id], |r| r.get(0),
+    ).optional().map_err(|e| e.to_string())?;
+    let Some(ws) = ws else { return Ok(None) };
+    let Some((f, _)) = link_of_workspace(conn, &ws)? else { return Ok(None) };
+    let (location, path) = locate(None, &f);
+    Ok(matches!(location, "in_place" | "moved").then_some(path))
 }
 
 /// The folder a project falls under. `full`: list the whole folder (the card, get_folder_status);
@@ -1689,7 +1753,11 @@ pub(crate) fn view_workspace(conn: &Connection, workspace_id: &str, write: bool,
 /// what the GUI extracted for docx / pdf — only while that is still the file's current version.
 /// (text, cut short?) — None when there is no text to give.
 pub(crate) fn state_text(v: &View, rel: &str) -> Option<(String, bool)> {
-    let p = on_disk(Path::new(&v.path), rel);
+    if !has_state_text(rel) || !v.state.iter().any(|s| s.path.as_deref() == Some(rel)) {
+        return None;
+    }
+    // Recheck every read, including a View obtained before a file was replaced with a symlink.
+    let (p, _) = checked_user_file(Path::new(&v.path), Path::new(rel)).ok()?;
     let full = if is_plain(rel) {
         String::from_utf8_lossy(&std::fs::read(&p).ok()?).into_owned()
     } else {
@@ -2124,7 +2192,11 @@ pub(crate) fn relocate(conn: &Connection, workspace_id: &str, new_path: &str) ->
 pub(crate) fn cache_text(conn: &Connection, folder_id: &str, rel: &str, text: &str) -> Result<(), String> {
     let f = folder_by_id(conn, folder_id)?.ok_or("no_link")?;
     let path = PathBuf::from(&f.path);
-    let (size, mtime) = stamp(&on_disk(&path, rel)).ok_or("missing")?;
+    if !matches!(ext_of(rel).as_str(), "docx" | "pdf") {
+        return Err("bad_spec".into());
+    }
+    let (file, _) = checked_user_file(&path, Path::new(rel))?;
+    let (size, mtime) = stamp(&file).ok_or("missing")?;
     let live: Vec<String> = listed(conn, &f.id)?.specs.iter().filter_map(|s| resolve_spec(&path, s)).collect();
     let mut cache = parse_cache(&f.state_cache);
     cache.retain(|k, _| live.contains(k));
@@ -2190,6 +2262,11 @@ fn context() -> Result<(Lang, PathBuf), String> {
 pub fn folder_inspect(app: tauri::AppHandle, path: String) -> Result<Inspect, String> {
     let conn = crate::images::open_library(&app)?;
     inspect(&conn, &path)
+}
+
+#[tauri::command(async)]
+pub fn folder_state_file_choice(root_path: String, file_path: String) -> Result<Candidate, String> {
+    state_file_choice(&root_path, &file_path)
 }
 
 #[tauri::command(async)]
@@ -2859,6 +2936,83 @@ mod tests {
         assert_eq!(set_state_files(&conn, "w1", &["a.md".into(), "b.md".into(), "c.md".into(), "d.md".into()], Lang::Zh, &backups), Err("too_many".into()));
         assert_eq!(set_state_files(&conn, "w1", &["../outside.md".into()], Lang::Zh, &backups), Err("bad_spec".into()));
         assert_eq!(set_state_files(&conn, "w2", &[], Lang::Zh, &backups), Err("no_link".into()));
+    }
+
+    #[test]
+    fn explicit_state_files_survive_listing_filters_and_sync_again() {
+        let _home = crate::home_lock();
+        let root = flux_like("state-any-file");
+        let backups = temp("state-any-file-backups");
+        write(&root, "target/recording.bin", "binary bytes");
+        write(&root, ".notes/ plan.txt", "a deliberately chosen hidden plan\n");
+        let mut conn = library();
+        let specs = ["data/runs/0000.txt", "target/recording.bin", ".notes/ plan.txt"];
+        assert!(specs.iter().all(|s| !rels(&list_folder(&root)).contains(s)));
+        connect(&mut conn, &args("w1", &root, &specs), Lang::Zh, &backups, 1).unwrap();
+        let v = view(&conn, "t1", true, false).unwrap().unwrap();
+        assert!(!v.ahead);
+        assert_eq!(v.state.iter().filter(|s| s.path.is_some()).count(), 3);
+        assert_eq!(state_text(&v, ".notes/ plan.txt"), Some(("a deliberately chosen hidden plan\n".into(), false)));
+        assert_eq!(state_text(&v, "target/recording.bin"), None);
+        let f = folder_by_id(&conn, &v.folder_id).unwrap().unwrap();
+        let snap = Snapshot::parse(&f.snapshot);
+        assert!(snap.state["target/recording.bin"].hash.is_empty(), "non-text selections never read a content fingerprint");
+        assert!(specs.iter().all(|s| snap.files.contains_key(*s)));
+
+        write(&root, "data/runs/0000.txt", "the selected ignored plan changed");
+        touch_later(&root, "target/recording.bin", 10);
+        assert!(view(&conn, "t1", true, false).unwrap().unwrap().ahead);
+        mark_synced_workspace(&conn, "w1", 2).unwrap();
+        assert!(!view(&conn, "t1", true, false).unwrap().unwrap().ahead, "explicit selections stay aligned after a sync");
+        std::fs::remove_file(root.join("target/recording.bin")).unwrap();
+        let v = view(&conn, "t1", true, false).unwrap().unwrap();
+        assert!(v.state.iter().any(|s| s.spec == "target/recording.bin" && s.changed && s.path.is_none()));
+    }
+
+    #[test]
+    fn changing_state_files_can_add_a_non_document_and_never_returns_cached_binary_text() {
+        let _home = crate::home_lock();
+        let root = flux_like("state-add-nondoc");
+        let backups = temp("state-add-nondoc-backups");
+        write(&root, "target/checkpoint.pt", "opaque checkpoint bytes");
+        let mut conn = library();
+        connect(&mut conn, &args("w1", &root, &["README.md"]), Lang::Zh, &backups, 1).unwrap();
+        set_state_files(&conn, "w1", &["target/checkpoint.pt".into()], Lang::Zh, &backups).unwrap();
+        let mut v = view(&conn, "t1", true, false).unwrap().unwrap();
+        assert!(!v.ahead);
+        assert!(v.needs_text.is_empty());
+        let (size, mtime) = stamp(&root.join("target/checkpoint.pt")).unwrap();
+        v.cache.insert("target/checkpoint.pt".into(), CachedText { size, mtime, text: "must never be handed to an AI".into() });
+        assert_eq!(state_text(&v, "target/checkpoint.pt"), None);
+        write(&root, "target/checkpoint.pt", "changed opaque checkpoint bytes");
+        assert!(view(&conn, "t1", true, false).unwrap().unwrap().ahead);
+        mark_synced_workspace(&conn, "w1", 2).unwrap();
+        assert!(!view(&conn, "t1", true, false).unwrap().unwrap().ahead);
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn state_reads_recheck_symlinks_after_the_user_selected_a_file() {
+        let _home = crate::home_lock();
+        let root = flux_like("state-link-swap");
+        let outside = temp("state-link-outside");
+        let backups = temp("state-link-swap-backups");
+        write(&root, "notes/selected.txt", "inside\n");
+        write(&outside, "selected.txt", "outside secret\n");
+        write(&outside, "HANDOFF_2026-10-30.md", "outside handoff\n");
+        let mut conn = library();
+        connect(&mut conn, &args("w1", &root, &["notes/selected.txt"]), Lang::Zh, &backups, 1).unwrap();
+        let old_view = view(&conn, "t1", true, false).unwrap().unwrap();
+        std::fs::remove_file(root.join("notes/selected.txt")).unwrap();
+        std::os::unix::fs::symlink(outside.join("selected.txt"), root.join("notes/selected.txt")).unwrap();
+        assert_eq!(state_text(&old_view, "notes/selected.txt"), None, "an old view is not a permanent path grant");
+        let v = view(&conn, "t1", true, false).unwrap().unwrap();
+        assert!(v.state[0].changed && v.state[0].path.is_none());
+        assert!(take_snapshot(&root, &["notes/selected.txt".into()], None, None).state.is_empty());
+        std::os::unix::fs::symlink(&outside, root.join("outside-notes")).unwrap();
+        assert_eq!(resolve_spec(&root, "outside-notes/HANDOFF_*.md"), None, "dated series cannot enumerate an outside directory");
+        assert_eq!(resolve_spec(&root, "../selected.txt"), None);
+        assert_eq!(check_specs(&["/absolute/file.txt".into()]), Err("bad_spec".into()));
     }
 
     #[test]

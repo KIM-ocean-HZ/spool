@@ -1,8 +1,10 @@
 import { writeText } from '@tauri-apps/plugin-clipboard-manager';
-import { Check, Copy } from 'lucide-react';
+import { open } from '@tauri-apps/plugin-dialog';
+import { Check, Copy, FilePlus2 } from 'lucide-react';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
   MAX_STATE_FILES,
+  chooseStateFile,
   connectFolder,
   disconnectFolder,
   folderError,
@@ -75,23 +77,49 @@ const primary =
 
 /** Step 2, and 「改现状文件」 on the card. */
 function StateFilesPicker({
+  rootPath,
   candidates,
   picked,
   onChange,
+  onPickingChange,
 }: {
+  rootPath: string;
   candidates: FolderCandidate[];
   picked: string[];
   onChange: (next: string[]) => void;
+  onPickingChange: (picking: boolean) => void;
 }) {
   const t = useT();
+  const [chosen, setChosen] = useState<FolderCandidate[]>([]);
+  const [picking, setPicking] = useState(false);
   // A pick that is no longer offered (its file was renamed) still shows, so it can be unticked.
   const rows = useMemo(() => {
+    const offered = [...candidates, ...chosen.filter((c) => !candidates.some((r) => r.spec === c.spec))];
     const extra = picked
-      .filter((p) => !candidates.some((c) => c.spec === p))
+      .filter((p) => !offered.some((c) => c.spec === p))
       .map((spec) => ({ spec, path: spec, recommended: false, modified: 0 }));
-    return [...candidates, ...extra];
-  }, [candidates, picked]);
+    return [...offered, ...extra];
+  }, [candidates, chosen, picked]);
   const full = picked.length >= MAX_STATE_FILES;
+  const choose = async (): Promise<void> => {
+    setPicking(true);
+    onPickingChange(true);
+    try {
+      const file = await open({ multiple: false, directory: false, defaultPath: rootPath, title: t('选择现状文件') });
+      if (typeof file !== 'string') return;
+      const choice = await chooseStateFile(rootPath, file);
+      // An already selected dated series may resolve to this exact file. Keep the series, so the
+      // newest dated file still takes its place later, without spending a second selection on it.
+      if (rows.some((r) => r.path === choice.path && picked.includes(r.spec))) return;
+      setChosen((current) => [...current.filter((c) => c.spec !== choice.spec), choice]);
+      onChange([...picked, choice.spec]);
+    } catch (e) {
+      toast.error(folderError(e));
+    } finally {
+      setPicking(false);
+      onPickingChange(false);
+    }
+  };
   return (
     <>
       <p>
@@ -99,6 +127,15 @@ function StateFilesPicker({
           '勾 1 – 3 份写着「现在做什么、做到哪」的文件，比如计划、交接、README。AI 读这几份就知道现状；它们一改，Spool 就知道文件夹走到前面去了。',
         )}
       </p>
+      <div className="space-y-1.5">
+        <button type="button" className={`${quiet} inline-flex items-center gap-1.5`} disabled={full || picking} onClick={() => void choose()}>
+          <FilePlus2 size={13} />
+          {picking ? t('正在选择…') : t('选择其他文件…')}
+        </button>
+        <p className="text-[11px] text-muted">
+          {t('可以选这个文件夹内的任意文件。Markdown、TXT 可读正文；PDF、DOCX 需启用文件文字提取，其他格式只追踪改动，不向 AI 提供正文。')}
+        </p>
+      </div>
       {rows.length === 0 ? (
         <p className="text-muted">{t('这个文件夹里没找到写给人看的文档。可以先不选，之后在卡片上再选。')}</p>
       ) : (
@@ -114,7 +151,7 @@ function StateFilesPicker({
                     type="checkbox"
                     className="mt-1 flex-none"
                     checked={on}
-                    disabled={!on && full}
+                    disabled={picking || (!on && full)}
                     onChange={() => onChange(on ? picked.filter((p) => p !== c.spec) : [...picked, c.spec])}
                   />
                   <span className="min-w-0">
@@ -124,6 +161,9 @@ function StateFilesPicker({
                       <span className="block text-[11px] text-muted">
                         {t('带日期的一组，以后总读日期最新的那一份')}
                       </span>
+                    )}
+                    {!/\.(?:md|markdown|txt|pdf|docx)$/i.test(c.path) && (
+                      <span className="block text-[11px] text-muted">{t('只追踪改动，不向 AI 提供正文。')}</span>
                     )}
                   </span>
                 </label>
@@ -261,6 +301,7 @@ export function ConnectDialog({
   const globalNow = useSettingsStore((s) => s.folderGlobalHint);
   const [ptr, setPtr] = useState({ claude: false, agents: false, global: globalNow });
   const [busy, setBusy] = useState(false);
+  const [picking, setPicking] = useState(false);
   const reloadAll = useFolderStore((s) => s.reloadAll);
   const at = steps.indexOf(step);
   const last = at === steps.length - 1;
@@ -340,7 +381,7 @@ export function ConnectDialog({
           </>
         );
       case 'state':
-        return <StateFilesPicker candidates={inspect.candidates} picked={picked} onChange={setPicked} />;
+        return <StateFilesPicker rootPath={inspect.path} candidates={inspect.candidates} picked={picked} onChange={setPicked} onPickingChange={setPicking} />;
       case 'git':
         return (
           <>
@@ -408,7 +449,7 @@ export function ConnectDialog({
           </button>
           <button
             type="button"
-            disabled={busy}
+            disabled={busy || picking}
             onClick={last ? () => void finish() : () => setStep(steps[at + 1]!)}
             className={primary}
           >
@@ -434,14 +475,19 @@ export function StateFilesDialog({
 }) {
   const t = useT();
   const [picked, setPicked] = useState<string[]>(() => view.state.map((s) => s.spec));
+  const [picking, setPicking] = useState(false);
+  const [busy, setBusy] = useState(false);
   const reloadAll = useFolderStore((s) => s.reloadAll);
   const save = async (): Promise<void> => {
+    setBusy(true);
     try {
       await setFolderStateFiles(view.workspaceId, picked);
       await reloadAll();
       onClose();
     } catch (e) {
       toast.error(folderError(e));
+    } finally {
+      setBusy(false);
     }
   };
   return (
@@ -453,13 +499,13 @@ export function StateFilesDialog({
           <button type="button" onClick={onClose} className={quiet}>
             {t('取消')}
           </button>
-          <button type="button" onClick={() => void save()} className={primary}>
+          <button type="button" disabled={busy || picking} onClick={() => void save()} className={primary}>
             {t('保存')}
           </button>
         </>
       }
     >
-      <StateFilesPicker candidates={candidates} picked={picked} onChange={setPicked} />
+      <StateFilesPicker rootPath={view.path} candidates={candidates} picked={picked} onChange={setPicked} onPickingChange={setPicking} />
     </Dialog>
   );
 }

@@ -1399,7 +1399,7 @@ thread_local! {
 pub(crate) const ENGINE_RUN_FLAG: &str = "--engine-run";
 // P9Y (task book §3.8): 「已经对过了」 is said by a person, or by the AI they are talking to — never by a
 // background run that read the folder on its own.
-pub(crate) const ENGINE_EXCLUDED_TOOLS: [&str; 2] = ["propose_split", "mark_folder_synced"];
+pub(crate) const ENGINE_EXCLUDED_TOOLS: [&str; 3] = ["propose_split", "mark_folder_synced", "request_folder_file"];
 
 #[cfg(test)]
 thread_local! {
@@ -1928,8 +1928,8 @@ fn get_folder_status_json(conn: &Connection, thread_id: &str) -> Result<String, 
                     None => {
                         o["text"] = Value::Null;
                         o["note"] = json!(t!(
-                            "Spool 还没读到这个文件现在这一版的文字（docx / pdf 要在 Spool 里打开这个项目时才读）。",
-                            "Spool has not read this version of the file yet (a docx / pdf is read when the project is open in Spool)."
+                            "这份文件目前没有可读文字（docx / pdf 要在 Spool 中打开工作区或项目后抽取；其他格式只追踪变化，需要正文时在当前桌面对话申请访问）。",
+                            "No text is available for this version (docx / pdf are extracted when its workspace or project is open in Spool; other formats track changes only — request native file access in this desktop conversation when you need their contents)."
                         ));
                     }
                 },
@@ -1961,6 +1961,11 @@ fn get_folder_status_json(conn: &Connection, thread_id: &str) -> Result<String, 
         "state_files": state,
         "changes_since_sync": changes,
         "changes_total": v.changes.len(),
+        "other_file_access": {
+            "tool": "request_folder_file",
+            "approval_location": "the current desktop conversation",
+            "next": "For a specific file beyond the selected state files, call request_folder_file with its path and purpose. Then ask for this folder through the desktop client's native file-access tool if available; after approval read it with that native tool. Spool returns no extra file body and creates no permission. Without a native file tool, ask the user in this same conversation to connect the folder or provide the specific file."
+        },
         "commits_since_sync": v.commits.iter().map(|c| json!({
             "at": format_pack_time(c.at),
             "title": neutralize_material_markers(&c.title),
@@ -1977,6 +1982,53 @@ fn get_folder_status_json(conn: &Connection, thread_id: &str) -> Result<String, 
         out["truncated"] = json!(true);
     }
     Ok(out.to_string())
+}
+
+/// A metadata handoff, not an authorization mechanism: only the desktop host can ask for
+/// its own native file permission. No body read, grant, review row, or persistent write.
+fn request_folder_file_json(conn: &Connection, thread_id: &str, path: &str, why: &str, rules: &PathGateRules) -> Result<String, String> {
+    let title: String = conn.query_row(
+        "SELECT title FROM threads WHERE id = ?1 AND private = 0 AND deleted_at IS NULL",
+        [thread_id], |r| r.get(0),
+    ).map_err(|_| no_such_thread())?;
+    let why = why.trim();
+    if why.is_empty() || why.chars().count() > FILE_REQUEST_WHY_CAP {
+        return Err(t!("请用 1–300 字说明为什么需要这份文件。", "Explain why this file is needed in 1–300 characters."));
+    }
+    reject_raw_ids(conn, &[("why", why)])?;
+    let root = crate::folder_link::linked_root_for_thread(conn, thread_id)?.ok_or_else(|| t!(
+        "这个项目没有可用的工作区文件夹连接。请先在 Spool 的工作区页连接文件夹。",
+        "This project has no available workspace folder link. Link its workspace to a folder in Spool first."
+    ))?;
+    let selected = std::path::Path::new(path);
+    let written = if selected.is_absolute() { selected.to_path_buf() } else { root.join(selected) };
+    if path_gate_stop(&written, rules).is_some() {
+        return Err(t!("不能向桌面 AI 转交隐藏、系统或隐私位置的文件。", "Hidden, system and private locations cannot be handed to a desktop AI."));
+    }
+    let (file, rel) = crate::folder_link::checked_user_file(&root, selected).map_err(|_| t!(
+        "请指定项目最近连接的文件夹里一份存在的普通文件；目录、越界路径和越界符号链接不能转交。",
+        "Name one existing ordinary file inside the project's nearest linked folder. Directories, escaping paths and escaping symlinks cannot be handed off."
+    ))?;
+    if path_gate_stop(&file, rules).is_some() {
+        return Err(t!("不能向桌面 AI 转交隐藏、系统或隐私位置的文件。", "Hidden, system and private locations cannot be handed to a desktop AI."));
+    }
+    let size = std::fs::metadata(&file).map_err(|_| t!("找不到这份文件。", "This file could not be found."))?.len();
+    let root = root.to_string_lossy();
+    Ok(json!({
+        "status": "native_client_access_required",
+        "read_anything": false,
+        "queued": false,
+        "project": title,
+        "folder": root,
+        "file": rel,
+        "size_bytes": size,
+        "why": why,
+        "ask_user": t!(
+            "为了{why}，我想读取「{rel}」（{size} 字节），位于「{root}」。请在当前桌面客户端批准访问这个文件夹，或在这里提供这份文件。",
+            "To {why}, I would like to read {rel} ({size} bytes) in {root}. Please approve access through this desktop client's own folder controls, or provide this file here."
+        ),
+        "next": "Show ask_user in this desktop conversation before accessing the file. If Claude exposes device_request_folder_access, call that native tool for folder with why; otherwise use the host's available native local-file permission tool. After the user approves, read this file with that native tool. For ChatGPT use this session's native local-file permission/read tools if available. If no native access tool exists, ask the user here to connect the folder or provide this file. The host decides whether and how a permission prompt appears; this Spool tool cannot trigger or guarantee one. Do not send an approval flag back to Spool; Spool has created no permission or read route."
+    }).to_string())
 }
 
 /// P9Y (task book §3.6 a): the AI says the project and its folder are in line again — after it
@@ -8741,7 +8793,7 @@ fn tools_descriptor() -> Value {
         {
             // P9Y (task book §3.8). Read-only: what the folder did, not what Spool holds.
             "name": "get_folder_status",
-            "description": "For a project whose workspace is linked to a folder on the user's computer (list_threads shows `folder` on it; every unfinished project of that workspace shares the folder, and `main_project` is the one to write into by default): what changed in that folder since the project and the folder were last brought in line (`last_synced`). Returns the state files the user picked as the ones that say what is being done now — each with changed_since_sync and its text (up to 8000 characters; a docx/pdf only once Spool has read that version) —, every other file added / modified / deleted since then (paths and times only, never contents), and the titles of the commits made since. `ahead: true` means a state file changed: the folder has moved on, and what Spool holds for this project may describe a plan that no longer stands. For a linked project the folder is the authority on the current state; a block that conflicts with its state files is history. Spool cannot link a folder itself — that is the user's own step in Spool, on the workspace page.",
+            "description": "For a project whose workspace is linked to a folder on the user's computer (list_threads shows `folder` on it; every unfinished project of that workspace shares the folder, and `main_project` is the one to write into by default): what changed in that folder since the project and the folder were last brought in line (`last_synced`). Returns the state files the user picked as the ones that say what is being done now — each with changed_since_sync and its text (up to 8000 characters; a docx/pdf only once Spool has read that version) —, every other file added / modified / deleted since then (paths and times only, never contents), and the titles of the commits made since. `ahead: true` means a state file changed: the folder has moved on, and what Spool holds for this project may describe a plan that no longer stands. For a linked project the folder is the authority on the current state; a block that conflicts with its state files is history. For another concrete file, request_folder_file prepares a metadata-only request for the desktop conversation; use the host's native folder permission tool if available, and read through that native tool only after approval. Spool cannot force the host's dialog or grant access. Spool cannot link a folder itself — that is the user's own step in Spool, on the workspace page.",
             "annotations": { "readOnlyHint": true },
             "inputSchema": {
                 "type": "object",
@@ -8750,6 +8802,18 @@ fn tools_descriptor() -> Value {
                 },
                 "required": ["thread_id"],
                 "additionalProperties": false
+            }
+        },
+        {
+            "name": "request_folder_file",
+            "description": "Prepare a native desktop file-access request for ONE concrete file in this public project's nearest linked folder. Pass a root-relative (or full) path and explain why it is needed. Returns only the resolved folder/file paths, size and a user-facing request with status native_client_access_required and read_anything:false. Show the request in the current desktop conversation, then use the host's native folder-access tool if available (Claude: device_request_folder_access; ChatGPT: the session's native local-file permission tools). After the user approves, read via that native host tool. If unavailable, ask the user in the same conversation to connect the folder or provide the file. This tool cannot force a desktop permission dialog, reads no file body, creates no grant, writes nothing, and does not queue anything in Spool. Hidden/system/private locations and escaping paths are refused. Never available to background runs.",
+            "annotations": { "readOnlyHint": true },
+            "inputSchema": {
+                "type": "object", "properties": {
+                    "thread_id": { "type": "string", "description": "Public project id from list_threads." },
+                    "path": { "type": "string", "description": "One concrete file inside this project's nearest linked folder; relative paths are resolved from that folder." },
+                    "why": { "type": "string", "description": "Why this file is needed for the user's task, 1–300 characters." }
+                }, "required": ["thread_id", "path", "why"], "additionalProperties": false
             }
         },
         {
@@ -8938,7 +9002,9 @@ fn handle_tool_call(params: &Value) -> Value {
     let args = params.get("arguments").cloned().unwrap_or_else(|| json!({}));
     if serving_engine() && ENGINE_EXCLUDED_TOOLS.contains(&name) {
         return tool_result_text(
-            if name == "mark_folder_synced" {
+            if name == "request_folder_file" {
+                t!("文件访问申请只供正在和用户对话的桌面 AI，后台任务不能使用。", "File-access handoffs are only for a desktop AI in a user conversation, never background runs.")
+            } else if name == "mark_folder_synced" {
                 t!(
                     "Spool 自己的后台任务(周回顾、跟进)不说「已经对过了」—— 那是用户自己、或者正在和用户对话的 AI 说的。",
                     "Spool's own background runs (weekly review, follow-up) do not mark a folder as synced \
@@ -9011,6 +9077,13 @@ fn handle_tool_call(params: &Value) -> Value {
                 search_blocks_json(&open_db(&dir)?, query, num("limit"), num("offset"))
             }
             "check_library" => check_library_json(&open_db(&dir)?, now_ms()),
+            "request_folder_file" => request_folder_file_json(
+                &open_db(&dir)?,
+                args.get("thread_id").and_then(Value::as_str).ok_or("Missing thread_id")?,
+                args.get("path").and_then(Value::as_str).ok_or("Missing path")?,
+                args.get("why").and_then(Value::as_str).ok_or("Missing why")?,
+                &path_gate_rules().ok_or("Cannot locate home folder")?,
+            ),
             "get_folder_status" => get_folder_status_json(
                 &open_db(&dir)?,
                 args.get("thread_id")
@@ -12314,7 +12387,7 @@ fn thread_health_report(
 // ⚠️ Lifted out of the json! literal on 2026-08-09 (DESIGN_MCP_INTENT_ROUTING §4.2 B-2)
 // so that a test can read it. Nothing about the text changed in the move; what changed
 // is that `every_tool_is_reachable_from_the_routing_text` can now see it.
-const INSTRUCTION_BODY: &str = "Spool (思簿) is the user's local context hub. HARD RULE first — naming: talk to the user in project/block titles only; raw ids (sbC2zgTo…) are tool parameters — never say them, never write them into content/annotations (add_block REFUSES such a write outright — nothing is stored; cite blocks via ref_block_id instead). APPLICABILITY BEFORE AUTHORITY: a block is usable only where its scope, time and preconditions still match the task at hand — an approach that worked earlier is not the default now, and something ruled out earlier is a historical fact, not a standing ban; 📖's weight holds only inside the scope and period it was verified for. LINKED FOLDERS: a project list_threads shows with `folder` sits in a workspace the user linked to a folder on their computer (a repository, a thesis folder). For that project the folder is the authority on what is being done now and how far it has got; a block that conflicts with the folder's state files (get_folder_status) is history, not the current plan \u{2014} do not act on it, and do not copy it back into the folder. AUTHORITY (each pack opens with the full rules — this is the digest-sized version): 📖 Reference (institutional sources) = ground truth; 🧩 Synthesis (AI-written essays) = framing, not facts; 🔄 Process (chat traces) = read for the user's evolving questions; 💭 Personal (sourceless entries + note: lines) = the user's own intent, highest signal; ==spans== are user-highlighted. WORKFLOW: cross-project questions (\"最近在忙什么\") → get_digest first; its 📌 anchor lines are capped at 160 chars (a shorter pin is shown whole) — full pinned text via get_blocks(pinned=true) or get_pack(range=pinned). Pick projects with list_threads (watch approx_pack_chars; title_contains resolves a title to its id); locate topics with search_blocks, then read around a hit with get_blocks(around_block_id=…) or filter pages (pinned / has_annotation / source_contains). find_similar_blocks only reports duplicates — merging is the user's curation. get_pack is one project's full briefing; over budget it keeps the header + pinned + newest blocks and says what it omitted; pass include_ids=true when you will cite or jump from what you read. WRITING (needs the user's consent toggles in Spool settings): you are the one who answers, not a librarian — writing back is for what this conversation produced and the library lacks, not for tidying it up. ONE finding per add_block, with an annotation saying why it matters, and a `gist` \u{2014} one line, 50\u{2013}100 characters, saying what the block is AS A WHOLE. That line is what search hits show beside a block: a long block otherwise comes back as one matching fragment with nothing about the rest of it, and across dozens of projects the hit list is the only way in. It is cheap to write while you are already there and impossible to reconstruct later. Cite the block it builds on via ref_block_id, and say WHY in ref_note \u{2014} one sentence, required on every citation that is not a correction. That sentence is the citation line the user reads; without it the line is a block number and a timestamp. It is not a description of the block you are citing (that block has its own gist) \u{2014} it is what you are pointing at it FOR: \u{201c}the professor replied, the project is back on\u{201d}. create_thread only for a genuinely new topic; set_thread_summary refreshes the catalogue card — if refused (user-written), tell the user your suggestion instead of retrying. One case is not a write at all: when a passage the user handed you belongs in several DIFFERENT projects, propose_blocks queues the split for them to approve inside Spool, and saves nothing — pass source_text so the pieces cite the passage they came from, and tell the user \\\"N items are waiting for you in Spool\\\", never that you saved them. Splitting a few findings across projects is that same one case — two add_block calls into two projects is the wrong shape for it, however small it looks. What a project WATCHES is not a block either: it lives in that project's follow-up list, one line per thing, and a block titled 当前跟进 / current follow-up is wrong twice over — it is permanent, and nothing reads it when a follow-up actually runs. Add to that list with suggest_follow_up_item, one call per line, and it waits for the user rather than taking effect. That is also what to do with a question this conversation could not close: an open question you file is read by the NEXT conversation, whereas one you leave in the chat is gone. When a project's lines come back on a read (get_follow_up_brief, get_project_overview, or the counts on list_threads), say what is on them before going further — but not the ones marked raised_today, which the user has already heard about today. Answering one is only half of it: retire it with close_follow_up_item, naming what you found, or it is asked again in the next conversation and by every follow-up run — and say which line you retired, since nobody was asked first. The lines marked standing:true are the ones you may not close at all; they are watches that never complete, so if one looks finished to you, that is something to tell the user, not something to do. When what you are storing came from OUT THERE rather than out of this conversation, say so in the write itself: source_url is the page, retrieved_at (YYYY-MM-DD) is the day you read it, and recheck_after is the day it stops being safe to trust — a deadline, a fee, an entry requirement. Spool then prints that under the block and, once the recheck date passes, marks it as possibly out of date and counts it in get_project_overview's needs_attention.due_for_recheck. Without those dates a page you read today reads as timeless a year from now, and neither you nor the user can tell which of the two it is. When what you write overturns a block already in the library, YOU choose how, and either way it is only a suggestion: in add_block, ref_block_id naming that block plus ref_kind:\"corrects\" when ONE point inside it is wrong and the rest still holds, or ref_kind:\"supersedes\" when your block replaces it WHOLESALE (same project; when the two readings are close, choose corrects), and corrected_quote holding the sentence in it that no longer holds, copied verbatim. Your block is stored at once; the relation waits in Spool's review, where the user picks correct / replace / leave it \u{2014} so say it is waiting for them, never that you corrected or retired anything. A block whose text merely opens with 更正 / Correction does nothing at all: without ref_kind the user is never asked, and the old block keeps rendering as a live conclusion in every future briefing. (propose_blocks items may still carry ref_kind:\"corrects\"; propose_supersede asks the replace question about two blocks that already exist.) A correction the user has accepted leaves one thing behind that nothing else will fix: the old block's `gist` was written when it was created, so it now describes the version that was corrected \u{2014} and that frozen line is exactly what the next search hit shows. Once get_blocks shows the correction (the newer block carries ref_kind corrects), finish the job with set_block_gist on the corrected block: write what actually holds, or pass an empty gist to clear it, because a gist that has gone wrong is read as current and is worse than none. The same tool is how a block written before gists existed gets one at all. If it refuses, the user wrote that line themselves \u{2014} tell them what you would have written instead of retrying. And a yes covers the one thing you asked for and nothing else: being let into a file is not permission to write blocks. A file you cannot read is a request you have not made yet — never tell the user to send it another way, Spool already has it; ask for it with request_file_access(attachment_id). A path is never something you store: propose_attach_file / propose_replace_file only put a file in front of the user, who approves it inside Spool — until then nothing is attached or replaced, so say it is waiting for them. If you ever compress a pack: keep the skeleton, every note: line, sourceless entry and ==span== verbatim; dedupe only the Full Record; store via add_block, never as a replacement.";
+const INSTRUCTION_BODY: &str = "Spool (思簿) is the user's local context hub. HARD RULE first — naming: talk to the user in project/block titles only; raw ids (sbC2zgTo…) are tool parameters — never say them, never write them into content/annotations (add_block REFUSES such a write outright — nothing is stored; cite blocks via ref_block_id instead). APPLICABILITY BEFORE AUTHORITY: a block is usable only where its scope, time and preconditions still match the task at hand — an approach that worked earlier is not the default now, and something ruled out earlier is a historical fact, not a standing ban; 📖's weight holds only inside the scope and period it was verified for. LINKED FOLDERS: a project list_threads shows with `folder` sits in a workspace the user linked to a folder on their computer (a repository, a thesis folder). For that project the folder is the authority on what is being done now and how far it has got; a block that conflicts with the folder's state files (get_folder_status) is history, not the current plan \u{2014} do not act on it, and do not copy it back into the folder. To read another repository file, request_folder_file(thread_id,path,why) prepares paths, size and a permission request without reading text. Show it in the desktop conversation, then use the host's native local-file permission tool if available (Claude: device_request_folder_access; ChatGPT: this session's native file permission tools). After approval read with that native tool. If no native tool exists, ask the user in this same conversation to connect the folder or provide the file. Spool grants nothing and cannot force a host prompt; never claim access was approved from this tool's result. AUTHORITY (each pack opens with the full rules — this is the digest-sized version): 📖 Reference (institutional sources) = ground truth; 🧩 Synthesis (AI-written essays) = framing, not facts; 🔄 Process (chat traces) = read for the user's evolving questions; 💭 Personal (sourceless entries + note: lines) = the user's own intent, highest signal; ==spans== are user-highlighted. WORKFLOW: cross-project questions (\"最近在忙什么\") → get_digest first; its 📌 anchor lines are capped at 160 chars (a shorter pin is shown whole) — full pinned text via get_blocks(pinned=true) or get_pack(range=pinned). Pick projects with list_threads (watch approx_pack_chars; title_contains resolves a title to its id); locate topics with search_blocks, then read around a hit with get_blocks(around_block_id=…) or filter pages (pinned / has_annotation / source_contains). find_similar_blocks only reports duplicates — merging is the user's curation. get_pack is one project's full briefing; over budget it keeps the header + pinned + newest blocks and says what it omitted; pass include_ids=true when you will cite or jump from what you read. WRITING (needs the user's consent toggles in Spool settings): you are the one who answers, not a librarian — writing back is for what this conversation produced and the library lacks, not for tidying it up. ONE finding per add_block, with an annotation saying why it matters, and a `gist` \u{2014} one line, 50\u{2013}100 characters, saying what the block is AS A WHOLE. That line is what search hits show beside a block: a long block otherwise comes back as one matching fragment with nothing about the rest of it, and across dozens of projects the hit list is the only way in. It is cheap to write while you are already there and impossible to reconstruct later. Cite the block it builds on via ref_block_id, and say WHY in ref_note \u{2014} one sentence, required on every citation that is not a correction. That sentence is the citation line the user reads; without it the line is a block number and a timestamp. It is not a description of the block you are citing (that block has its own gist) \u{2014} it is what you are pointing at it FOR: \u{201c}the professor replied, the project is back on\u{201d}. create_thread only for a genuinely new topic; set_thread_summary refreshes the catalogue card — if refused (user-written), tell the user your suggestion instead of retrying. One case is not a write at all: when a passage the user handed you belongs in several DIFFERENT projects, propose_blocks queues the split for them to approve inside Spool, and saves nothing — pass source_text so the pieces cite the passage they came from, and tell the user \\\"N items are waiting for you in Spool\\\", never that you saved them. Splitting a few findings across projects is that same one case — two add_block calls into two projects is the wrong shape for it, however small it looks. What a project WATCHES is not a block either: it lives in that project's follow-up list, one line per thing, and a block titled 当前跟进 / current follow-up is wrong twice over — it is permanent, and nothing reads it when a follow-up actually runs. Add to that list with suggest_follow_up_item, one call per line, and it waits for the user rather than taking effect. That is also what to do with a question this conversation could not close: an open question you file is read by the NEXT conversation, whereas one you leave in the chat is gone. When a project's lines come back on a read (get_follow_up_brief, get_project_overview, or the counts on list_threads), say what is on them before going further — but not the ones marked raised_today, which the user has already heard about today. Answering one is only half of it: retire it with close_follow_up_item, naming what you found, or it is asked again in the next conversation and by every follow-up run — and say which line you retired, since nobody was asked first. The lines marked standing:true are the ones you may not close at all; they are watches that never complete, so if one looks finished to you, that is something to tell the user, not something to do. When what you are storing came from OUT THERE rather than out of this conversation, say so in the write itself: source_url is the page, retrieved_at (YYYY-MM-DD) is the day you read it, and recheck_after is the day it stops being safe to trust — a deadline, a fee, an entry requirement. Spool then prints that under the block and, once the recheck date passes, marks it as possibly out of date and counts it in get_project_overview's needs_attention.due_for_recheck. Without those dates a page you read today reads as timeless a year from now, and neither you nor the user can tell which of the two it is. When what you write overturns a block already in the library, YOU choose how, and either way it is only a suggestion: in add_block, ref_block_id naming that block plus ref_kind:\"corrects\" when ONE point inside it is wrong and the rest still holds, or ref_kind:\"supersedes\" when your block replaces it WHOLESALE (same project; when the two readings are close, choose corrects), and corrected_quote holding the sentence in it that no longer holds, copied verbatim. Your block is stored at once; the relation waits in Spool's review, where the user picks correct / replace / leave it \u{2014} so say it is waiting for them, never that you corrected or retired anything. A block whose text merely opens with 更正 / Correction does nothing at all: without ref_kind the user is never asked, and the old block keeps rendering as a live conclusion in every future briefing. (propose_blocks items may still carry ref_kind:\"corrects\"; propose_supersede asks the replace question about two blocks that already exist.) A correction the user has accepted leaves one thing behind that nothing else will fix: the old block's `gist` was written when it was created, so it now describes the version that was corrected \u{2014} and that frozen line is exactly what the next search hit shows. Once get_blocks shows the correction (the newer block carries ref_kind corrects), finish the job with set_block_gist on the corrected block: write what actually holds, or pass an empty gist to clear it, because a gist that has gone wrong is read as current and is worse than none. The same tool is how a block written before gists existed gets one at all. If it refuses, the user wrote that line themselves \u{2014} tell them what you would have written instead of retrying. And a yes covers the one thing you asked for and nothing else: being let into a file is not permission to write blocks. A file you cannot read is a request you have not made yet — never tell the user to send it another way, Spool already has it; ask for it with request_file_access(attachment_id). A path is never something you store: propose_attach_file / propose_replace_file only put a file in front of the user, who approves it inside Spool — until then nothing is attached or replaced, so say it is waiting for them. If you ever compress a pack: keep the skeleton, every note: line, sourceless entry and ==span== verbatim; dedupe only the Full Record; store via add_block, never as a replacement.";
 
 const OPENERS: &str = "The user speaks plain language, not tool names. Typical openers, \
 and what to call:\n\
@@ -12376,6 +12449,10 @@ down because the project is long \u{2192} ask the user whether to split it into 
 on a yes, propose_split (the groups and their block_ids, from get_blocks) \u{2014} it only queues a \
 proposal they approve in Spool, so say a split is waiting for them there, never that it is done. \
 A project marked done is not split: remind the user to reopen it in Spool first\n\
+\"需要读仓库的某份文件\" / \"read a repository file\" \u{2192} request_folder_file(thread_id,path,why). \
+Show its request in THIS desktop conversation; use the host's native file/folder permission tool if available, \
+then read via the native host tool after approval. No native tool: ask here to connect the folder or provide \
+the file. Spool returns metadata only, queues nothing, and cannot force a host permission dialog.\n\
 \"仓库里最新进度是什么\" / \"Spool 跟上仓库了吗\" / \"what's the latest in the repo\" / a project \
 list_threads shows with `folder` and folder_changed_since_sync above 0 \u{2192} get_folder_status \
 (what changed in its linked folder since the last sync, the state files' text, commit titles) \u{2014} \
@@ -18236,6 +18313,8 @@ mod tests {
             tool("get_folder_status", json!({ "thread_id": "pubGarden" })),
             tool("get_folder_status", json!({ "thread_id": "PRIVthread1" })),
             tool("get_folder_status", json!({ "thread_id": "PRIVthread2" })),
+            tool("request_folder_file", json!({ "thread_id": "PRIVthread1", "path": "private.txt", "why": "check file" })),
+            tool("request_folder_file", json!({ "thread_id": "PRIVthread2", "path": "private.txt", "why": "check file" })),
             tool("mark_folder_synced", json!({ "thread_id": "PRIVthread1", "note": "synced" })),
             tool("mark_folder_synced", json!({ "thread_id": "pubGarden", "note": "synced" })),
             tool("weekly_review", json!({})),
@@ -19370,6 +19449,98 @@ mod tests {
         assert!(!engine.iter().any(|n| n == "mark_folder_synced"));
         assert!(err && text.contains("do not mark a folder as synced"), "{text}");
         let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn desktop_file_handoff_is_metadata_only_public_nearest_and_never_grants_access() {
+        let base = std::env::temp_dir().join(format!("spool-p9y-desktop-handoff-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(base.join("repo/src")).unwrap();
+        std::fs::create_dir_all(base.join("other")).unwrap();
+        let base = base.canonicalize().unwrap();
+        let repo = base.join("repo");
+        let body = "PRIVATE_FILE_BODY_CANARY\n";
+        std::fs::write(repo.join("src/main.rs"), body).unwrap();
+        std::fs::write(repo.join(".env"), "HIDDEN_FILE_CANARY").unwrap();
+        std::fs::write(base.join("outside.txt"), "OUTSIDE_FILE_CANARY").unwrap();
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(include_str!("../../src/lib/db/schema.sql")).unwrap();
+        conn.execute_batch("INSERT INTO workspaces(id,title,created_at,updated_at) VALUES
+            ('parent','Parent',1,1),('child','Child',1,1),('none','None',1,1);
+            UPDATE workspaces SET parent_id='parent' WHERE id='child';
+            INSERT INTO threads(id,workspace_id,title,private,created_at,updated_at) VALUES
+            ('th','child','Public',0,1,1),('priv','child','SECRET_PROJECT_CANARY',1,1,1),('none','none','No link',0,1,1);").unwrap();
+        conn.execute("INSERT INTO folders(id,path,snapshot,synced_at,created_at) VALUES ('f',?1,'{}',1,1)", [repo.to_string_lossy().as_ref()]).unwrap();
+        conn.execute_batch("INSERT INTO workspace_folders(workspace_id,folder_id,state_files,created_at) VALUES ('parent','f','[]',1)").unwrap();
+        let rules = PathGateRules { home: base.clone(), system_roots: vec![], home_private: "Library", home_private_open: &[] };
+        let before: i64 = conn.query_row("SELECT total_changes()",[],|r|r.get(0)).unwrap();
+        let ask = |thread: &str, path: &str| request_folder_file_json(&conn, thread, path, "check the entry point", &rules);
+        let out = ask("th", "src/main.rs").unwrap();
+        let v: Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(v["status"], "native_client_access_required");
+        assert_eq!(v["read_anything"], false);
+        assert_eq!(v["queued"], false);
+        assert_eq!(v["folder"], repo.to_string_lossy().as_ref());
+        assert_eq!(v["file"], "src/main.rs");
+        assert_eq!(v["size_bytes"], body.len());
+        assert!(v["ask_user"].as_str().unwrap().contains("src/main.rs"));
+        assert!(v["next"].as_str().unwrap().contains("device_request_folder_access"));
+        assert!(v["next"].as_str().unwrap().contains("cannot trigger or guarantee"));
+        assert!(!out.contains(body.trim()) && !out.contains("HIDDEN_FILE_CANARY"));
+        assert!(v.get("text").is_none() && v.get("request_id").is_none());
+        for path in ["../outside.txt", "src/../main.rs", "src", ".env", "missing.rs"] {
+            assert!(ask("th", path).is_err(), "{path}");
+        }
+        let private = ask("priv", "src/main.rs").unwrap_err();
+        assert_eq!(private, ask("unknown", "src/main.rs").unwrap_err());
+        assert!(!private.contains("SECRET_PROJECT_CANARY"));
+        assert!(ask("none", "src/main.rs").is_err());
+        assert!(request_folder_file_json(&conn,"th","src/main.rs"," ",&rules).is_err());
+        let system = PathGateRules { home: base.clone(), system_roots: vec![repo.join("src")], home_private: "Library", home_private_open: &[] };
+        assert!(request_folder_file_json(&conn,"th","src/main.rs","check",&system).is_err());
+        std::fs::create_dir_all(repo.join("Library/App")).unwrap();
+        std::fs::write(repo.join("Library/App/data.txt"), "private app data").unwrap();
+        let private_rules = PathGateRules { home: repo.clone(), system_roots: vec![], home_private: "Library", home_private_open: &[] };
+        assert!(request_folder_file_json(&conn,"th","Library/App/data.txt","check",&private_rules).is_err());
+        #[cfg(unix)] {
+            std::os::unix::fs::symlink(base.join("outside.txt"),repo.join("escape.txt")).unwrap();
+            std::os::unix::fs::symlink(repo.join(".env"),repo.join("friendly.txt")).unwrap();
+            assert!(ask("th","escape.txt").is_err());
+            assert!(ask("th","friendly.txt").is_err());
+        }
+        let after: i64 = conn.query_row("SELECT total_changes()",[],|r|r.get(0)).unwrap();
+        assert_eq!(before,after,"handoff requests cannot write a grant, proposal, or any DB value");
+        assert_eq!(std::fs::read_to_string(repo.join("src/main.rs")).unwrap(),body);
+        // A new nearer connection takes precedence; the old parent's file is unavailable.
+        conn.execute("INSERT INTO folders(id,path,snapshot,synced_at,created_at) VALUES ('f2',?1,'{}',1,1)",[base.join("other").to_string_lossy().as_ref()]).unwrap();
+        conn.execute_batch("INSERT INTO workspace_folders(workspace_id,folder_id,state_files,created_at) VALUES ('child','f2','[]',1)").unwrap();
+        assert!(ask("th","src/main.rs").is_err());
+        std::fs::write(base.join("other/current.txt"),"another body").unwrap();
+        let v: Value=serde_json::from_str(&ask("th","current.txt").unwrap()).unwrap();
+        assert_eq!(v["folder"],base.join("other").to_string_lossy().as_ref());
+        let _=std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn desktop_file_handoff_is_read_only_annotated_and_unavailable_to_background_runs() {
+        let dir=std::env::temp_dir().join(format!("spool-p9y-native-engine-{}",std::process::id()));
+        split_library(&dir,false,"en");
+        let listed=|dir:&std::path::Path| -> Value { serde_json::from_str(&ai_call(dir,"tools/list",&json!({}))).unwrap() };
+        let descriptors=listed(&dir);
+        assert_eq!(descriptors["tools"].as_array().unwrap().len(), 29);
+        let tool=descriptors["tools"].as_array().unwrap().iter().find(|t|t["name"]=="request_folder_file").unwrap();
+        assert_eq!(tool["annotations"]["readOnlyHint"],true);
+        assert!(OPENERS.contains("request_folder_file") && INSTRUCTION_BODY.contains("request_folder_file"));
+        TEST_ENGINE_RUN.with(|e|e.set(true));
+        let tools=listed(&dir);
+        assert_eq!(tools["tools"].as_array().unwrap().len(), 26);
+        let out=ai_call(&dir,"tools/call",&json!({"name":"request_folder_file","arguments":{"thread_id":"th1","path":"x.txt","why":"check"}}));
+        TEST_ENGINE_RUN.with(|e|e.set(false));
+        assert!(!tools["tools"].as_array().unwrap().iter().any(|t|t["name"]=="request_folder_file"));
+        let v:Value=serde_json::from_str(&out).unwrap();
+        assert_eq!(v["isError"],true);
+        assert!(v["content"][0]["text"].as_str().unwrap().contains("background runs"));
+        let _=std::fs::remove_dir_all(&dir);
     }
 
     // P9Y (task book §3.4, third option): the global line goes only where Spool already is.

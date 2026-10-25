@@ -398,6 +398,7 @@ pub fn run() {
             file_follow::keep_file_identities,
             file_follow::restore_file_identities,
             folder_link::folder_inspect,
+            folder_link::folder_state_file_choice,
             folder_link::folder_connect,
             folder_link::folder_view,
             folder_link::folder_view_workspace,

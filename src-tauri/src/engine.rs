@@ -73,7 +73,9 @@ const MCP_SERVER_NAME: &str = "spool";
 // fails the moment the two differ. Consent still lives in each tool: the write switch, the
 // review screen, and the refusal to touch what the user wrote.
 // P9G follow-up (Ocean 2026-10-16): except the tools this engine must never have
-// (`mcp::ENGINE_EXCLUDED_TOOLS` — `propose_split`); the test allows for exactly those.
+// (`mcp::ENGINE_EXCLUDED_TOOLS`: propose_split, mark_folder_synced, request_folder_file).
+// P9Y third round: desktop clients see 29 tools; the background engine keeps these 26.
+// A native desktop file-permission handoff requires the user in that conversation.
 pub(crate) const ALLOWED_TOOL_NAMES: [&str; 26] = [
     "add_block",
     "check_library",

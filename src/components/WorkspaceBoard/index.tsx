@@ -49,6 +49,7 @@ export default function WorkspaceBoard() {
   const [stats, setStats] = useState<Record<string, ThreadBlockStats>>({});
   const [details, setDetails] = useState<Record<string, Detail>>({});
   const [doneOpen, setDoneOpen] = useState(false);
+  const [openDetails, setOpenDetails] = useState<Record<string, 'lines' | 'files' | undefined>>({});
 
   const ws = workspaces.find((w) => w.id === workspaceId);
   const title = ws?.title.trim() || t('未命名');
@@ -126,10 +127,13 @@ export default function WorkspaceBoard() {
     const s = stats[th.id] ?? EMPTY_STATS;
     const days = dueInDays(th, now);
     const isPrimary = view?.primaryId === th.id;
+    const expanded = openDetails[th.id];
+    const toggleDetails = (kind: 'lines' | 'files'): void =>
+      setOpenDetails((current) => ({ ...current, [th.id]: current[th.id] === kind ? undefined : kind }));
     const canBePrimary = ownLink && belongsToFolder(th) && !isPrimary && !th.isPrivate && th.status !== 'done';
     return (
-      <li key={th.id} className="border-b border-line/70 py-3 last:border-b-0">
-        <div className="flex items-baseline gap-2">
+      <li key={th.id} className="border-b border-line/70 py-4 last:border-b-0">
+        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
           <span className="flex-none translate-y-[1px]">
             <StatusDot status={th.status} />
           </span>
@@ -171,42 +175,67 @@ export default function WorkspaceBoard() {
             </span>
           )}
         </div>
-        {th.summary && <p className="mt-0.5 pl-5 text-[12px] italic text-muted">{th.summary}</p>}
+        {th.summary && <p className="mt-1 break-words pl-5 text-[12px] leading-relaxed text-ink-2">{th.summary}</p>}
         {d && (d.lines.length > 0 || d.files.length > 0) && (
-          <div className="mt-1.5 grid grid-cols-1 gap-x-6 gap-y-1.5 pl-5 text-[12px] md:grid-cols-2">
-            {d.lines.length > 0 && (
-              <div className="min-w-0">
-                <div className="text-[11px] text-muted">{t('跟进内容')}</div>
-                <ul>
-                  {d.lines.map((l) => (
-                    <li key={l.id} className="flex gap-1.5 leading-relaxed text-ink-2">
-                      <span className="flex-none text-muted">·</span>
-                      <span className="min-w-0 break-words">{l.text}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
+          <div className="mt-2 pl-5 text-[12px]">
+            <div className="flex flex-wrap items-center gap-2">
+              {d.lines.length > 0 && (
+                <button
+                  type="button"
+                  aria-expanded={expanded === 'lines'}
+                  aria-controls={`workspace-${th.id}-lines`}
+                  onClick={() => toggleDetails('lines')}
+                  className={`flex items-center gap-1.5 rounded border px-2 py-1 text-[11px] transition-colors ${
+                    expanded === 'lines' ? 'border-line-strong bg-paper-2 text-ink' : 'border-line/70 text-muted hover:border-line-strong hover:text-ink'
+                  }`}
+                >
+                  {t('跟进')}
+                  <span className="font-mono text-[10px] tabular-nums">{d.lines.length}</span>
+                  <ChevronDown size={11} className={`transition-transform ${expanded === 'lines' ? 'rotate-180' : ''}`} />
+                </button>
+              )}
+              {d.files.length > 0 && (
+                <button
+                  type="button"
+                  aria-expanded={expanded === 'files'}
+                  aria-controls={`workspace-${th.id}-files`}
+                  onClick={() => toggleDetails('files')}
+                  className={`flex items-center gap-1.5 rounded border px-2 py-1 text-[11px] transition-colors ${
+                    expanded === 'files' ? 'border-line-strong bg-paper-2 text-ink' : 'border-line/70 text-muted hover:border-line-strong hover:text-ink'
+                  }`}
+                >
+                  {t('项目文件')}
+                  <span className="font-mono text-[10px] tabular-nums">{d.files.length}</span>
+                  <ChevronDown size={11} className={`transition-transform ${expanded === 'files' ? 'rotate-180' : ''}`} />
+                </button>
+              )}
+            </div>
+            {expanded === 'lines' && d.lines.length > 0 && (
+              <ul id={`workspace-${th.id}-lines`} className="mt-2 space-y-1.5 border-l border-line pl-3">
+                {d.lines.map((l) => (
+                  <li key={l.id} className="flex gap-2 leading-relaxed text-ink-2">
+                    <span className="mt-[7px] h-1 w-1 flex-none rounded-full bg-muted/60" aria-hidden />
+                    <span className="min-w-0 break-words">{l.text}</span>
+                  </li>
+                ))}
+              </ul>
             )}
-            {d.files.length > 0 && (
-              <div className="min-w-0">
-                <div className="text-[11px] text-muted">{t('项目文件（{n}）', { n: d.files.length })}</div>
-                <ul>
-                  {d.files.slice(0, 8).map((f) => (
-                    <li key={f.id}>
-                      <button
-                        type="button"
-                        onClick={() => void openAttachment(f)}
-                        title={f.target}
-                        className="flex w-full min-w-0 items-center gap-1.5 text-left text-ink-2 hover:text-accent"
-                      >
-                        {f.kind === 'folder' ? <Folder size={11} className="flex-none text-muted" /> : <File size={11} className="flex-none text-muted" />}
-                        <span className="truncate">{fileLabel(f)}</span>
-                      </button>
-                    </li>
-                  ))}
-                  {d.files.length > 8 && <li className="text-[11px] text-muted">{t('还有 {n} 个', { n: d.files.length - 8 })}</li>}
-                </ul>
-              </div>
+            {expanded === 'files' && d.files.length > 0 && (
+              <ul id={`workspace-${th.id}-files`} className="mt-2 grid grid-cols-1 gap-x-4 gap-y-1 border-l border-line pl-3 md:grid-cols-2">
+                {d.files.map((f) => (
+                  <li key={f.id} className="min-w-0">
+                    <button
+                      type="button"
+                      onClick={() => void openAttachment(f)}
+                      title={f.target}
+                      className="flex w-full min-w-0 items-center gap-2 rounded px-1 py-1 text-left text-ink-2 transition-colors hover:bg-paper-2 hover:text-accent"
+                    >
+                      {f.kind === 'folder' ? <Folder size={12} className="flex-none text-muted" /> : <File size={12} className="flex-none text-muted" />}
+                      <span className="truncate">{fileLabel(f)}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
             )}
           </div>
         )}
@@ -233,12 +262,12 @@ export default function WorkspaceBoard() {
       </header>
 
       <div className="flex-1 space-y-6 overflow-y-auto px-6 py-5">
-        <section className="max-w-3xl">
+        <section className="min-w-0">
           <h3 className="mb-2 text-[12px] tracking-wide text-muted">{t('连接的文件夹')}</h3>
           {view === undefined ? null : <FolderPanel workspaceId={workspaceId} title={title} view={view} />}
         </section>
 
-        <section className="max-w-4xl">
+        <section className="min-w-0">
           {threads.length === 0 ? (
             <p className="text-sm text-muted">{t('这个工作区里还没有项目。')}</p>
           ) : (

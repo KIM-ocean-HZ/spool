@@ -104,6 +104,9 @@ export interface ConnectArgs {
 export const MAX_STATE_FILES = 3;
 
 export const inspectFolder = (path: string): Promise<FolderInspect> => invoke('folder_inspect', { path });
+/** A file the user selected, checked against the connected folder before it becomes a state file. */
+export const chooseStateFile = (rootPath: string, filePath: string): Promise<FolderCandidate> =>
+  invoke('folder_state_file_choice', { rootPath, filePath });
 export const connectFolder = (args: ConnectArgs): Promise<void> => invoke('folder_connect', { args });
 /** The folder a project falls under (its right rail). */
 export const folderView = (threadId: string): Promise<FolderView | null> => invoke('folder_view', { threadId });
@@ -158,6 +161,12 @@ export const folderError = (e: unknown): string => {
       return t('现状文件最多选 {n} 份', { n: MAX_STATE_FILES });
     case 'folder_missing':
       return t('Spool 现在找不到这个文件夹');
+    case 'folder_file_unsafe':
+      return t('只能选择连接文件夹内的文件');
+    case 'folder_file_missing':
+      return t('这个文件已经不在了');
+    case 'folder_file_not_file':
+      return t('请选择一个文件');
     default:
       return t('没改成：{msg}', { msg: code });
   }

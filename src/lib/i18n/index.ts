@@ -2260,4 +2260,13 @@ const EN: Record<string, string> = {
     'Projects',
   '项目文件（{n}）':
     'Project files ({n})',
+  '选择其他文件…': 'Choose another file…',
+  '选择现状文件': 'Choose a state file',
+  '正在选择…': 'Choosing…',
+  '可以选这个文件夹内的任意文件。Markdown、TXT 可读正文；PDF、DOCX 需启用文件文字提取，其他格式只追踪改动，不向 AI 提供正文。':
+    'Choose any file inside this folder. Markdown and TXT can be read directly; PDF and DOCX need file text extraction enabled. Other formats are tracked for changes without sharing their contents with AI.',
+  '只追踪改动，不向 AI 提供正文。': 'Tracks changes without sharing its contents with AI.',
+  '只能选择连接文件夹内的文件': 'Choose a file inside the linked folder',
+  '这个文件已经不在了': 'This file is no longer there',
+  '请选择一个文件': 'Please choose a file',
 };
