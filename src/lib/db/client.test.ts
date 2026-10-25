@@ -176,6 +176,32 @@ const sansV34Sql = (r: { name: string; sql: string | null }) => ({
   sql: r.sql?.replace(/, private INTEGER NOT NULL DEFAULT 0/g, '') ?? null,
 });
 
+// v36's two columns, off an `attachments` row, and the text their ADD COLUMNs append to its
+// CREATE statement — every migration test that rewinds below v36 walks past them.
+const V36_ATTACHMENT_COLS = ['extracted_size', 'extracted_mtime'];
+const stripV36 = (r: Record<string, unknown>): Record<string, unknown> =>
+  Object.fromEntries(Object.entries(r).filter(([k]) => !V36_ATTACHMENT_COLS.includes(k)));
+const sansV36Sql = (r: { name: string; sql: string | null }) => ({
+  name: r.name,
+  sql: r.sql?.replace(/, extracted_size INTEGER, extracted_mtime INTEGER/g, '') ?? null,
+});
+const V36_FOLDER_COLS = [
+  'id',
+  'path',
+  'identity',
+  'git_exclude',
+  'pointer_claude',
+  'pointer_agents',
+  'protocol_hash',
+  'snapshot',
+  'synced_at',
+  'state_cache',
+  'created_at',
+];
+const V36_FOLDER_LINK_COLS = ['thread_id', 'folder_id', 'is_primary', 'state_files', 'created_at'];
+// v36's two tables and their index, off a list of sqlite_master rows.
+const notV36 = (r: { name: string }): boolean => !r.name.includes('folder');
+
 const V35_SPLIT_PROPOSAL_COLS = ['id', 'thread_id', 'client', 'why', 'plan', 'created_at', 'expires_at'];
 // v35's table and its index, off a list of sqlite_master rows — every test that rewinds below
 // v35 and compares the schema across the migration walks past them.
@@ -221,10 +247,25 @@ const downgradeToV13 = (handle: Sqlite): void => {
   `);
 };
 
+// Rewind past v36: no project could be linked to a folder, and an extraction did not record
+// the file it came from.
+// ⚠️ 这四句就是 v36 的「能回滚」——`add-folders-and-extraction-stamp` 只加了两张新表和两个可空列，
+// ⛔ 一个字的既有数据都没动；退回来丢的只是连着的文件夹和抽字时记的那两个数。
+const downgradeToV35 = (handle: Sqlite): void => {
+  handle.exec(`
+    DROP TABLE IF EXISTS folder_links;
+    DROP TABLE IF EXISTS folders;
+    ALTER TABLE attachments DROP COLUMN extracted_size;
+    ALTER TABLE attachments DROP COLUMN extracted_mtime;
+    PRAGMA user_version = 35;
+  `);
+};
+
 // Rewind past v35: an AI had no way to suggest splitting a project.
 // ⚠️ 这一句 DROP 就是 v35 的「能回滚」——`add-split-proposals` 只加了一张新表，⛔ 一个字的既有
 // 数据都没动；退回来丢的只是还没点头的拆分提议。
 const downgradeToV34 = (handle: Sqlite): void => {
+  downgradeToV35(handle);
   handle.exec(`
     DROP TABLE IF EXISTS split_proposals;
     PRAGMA user_version = 34;
@@ -1132,7 +1173,8 @@ describe('migrateSchema registry (§19.3)', () => {
     expect(
       (handle.prepare('SELECT * FROM attachments ORDER BY id').all() as Record<string, unknown>[])
         .map(stripV30)
-        .map(stripV33),
+        .map(stripV33)
+        .map(stripV36),
     ).toEqual(before);
     const unwritten = { anchor_block_id: null, added_by: null, superseded_by: null, superseded_at: null };
     expect(
@@ -1202,7 +1244,7 @@ describe('migrateSchema registry (§19.3)', () => {
         .get(),
     ).toEqual({ c: 1 });
     for (const t of tables) {
-      expect(handle.prepare(`SELECT * FROM ${t} ORDER BY rowid`).all().map(stripV32).map(stripV33).map(stripV34), t).toEqual(
+      expect(handle.prepare(`SELECT * FROM ${t} ORDER BY rowid`).all().map(stripV32).map(stripV33).map(stripV34).map(stripV36), t).toEqual(
         before[t],
       );
     }
@@ -1217,7 +1259,7 @@ describe('migrateSchema registry (§19.3)', () => {
           .all() as { name: string; sql: string | null }[]
       )
         .map(sansV32Sql)
-        .map(sansV33Sql).map(sansV34Sql).filter(notV35),
+        .map(sansV33Sql).map(sansV34Sql).filter(notV35).filter(notV36).map(sansV36Sql),
     ).toEqual(schemaBefore);
   });
 
@@ -1270,7 +1312,7 @@ describe('migrateSchema registry (§19.3)', () => {
     // 每张表逐行相等（加了列的表去掉新列再比；v33 接着走过去，它那两列另有一条测试盯着）；
     // v32 以前那条 `supersedes` 一个字没动。
     for (const t of tables) {
-      expect(handle.prepare(`SELECT * FROM ${t} ORDER BY rowid`).all().map(stripV32).map(stripV33).map(stripV34), t).toEqual(
+      expect(handle.prepare(`SELECT * FROM ${t} ORDER BY rowid`).all().map(stripV32).map(stripV33).map(stripV34).map(stripV36), t).toEqual(
         before[t],
       );
     }
@@ -1281,7 +1323,7 @@ describe('migrateSchema registry (§19.3)', () => {
           name: string;
           sql: string | null;
         }[]
-      ).map(sansV33Sql).map(sansV34Sql).filter(notV35),
+      ).map(sansV36Sql).map(sansV33Sql).map(sansV34Sql).filter(notV35).filter(notV36),
     ).toEqual(schemaBefore);
   });
 
@@ -1325,7 +1367,7 @@ describe('migrateSchema registry (§19.3)', () => {
     expect(fresh).toBe(false);
     expect(userVersion(handle)).toBe(CURRENT_SCHEMA_VERSION);
     const cols = columnNames(handle, 'attachments');
-    expect(cols.slice(-2)).toEqual(V33_ATTACHMENT_COLS);
+    expect(cols.slice(-4, -2)).toEqual(V33_ATTACHMENT_COLS);
     expect(
       handle
         .prepare('SELECT COUNT(*) AS c FROM attachments WHERE target_identity IS NOT NULL OR target_notice IS NOT NULL')
@@ -1336,7 +1378,7 @@ describe('migrateSchema registry (§19.3)', () => {
     ).toEqual({ t: 'null' });
     // 每张表逐行相等（attachments 去掉两列新列再比）。
     for (const t of tables) {
-      expect(handle.prepare(`SELECT * FROM ${t} ORDER BY rowid`).all().map(stripV33).map(stripV34), t).toEqual(before[t]);
+      expect(handle.prepare(`SELECT * FROM ${t} ORDER BY rowid`).all().map(stripV33).map(stripV34).map(stripV36), t).toEqual(before[t]);
     }
     // ⛔ 只许两句 ADD COLUMN：别的表、索引、触发器的建表语句一个字没变，attachments 只在尾巴上多两列。
     // （v34 接着走过去，threads 尾巴上那一列另有测试盯着，这里先抹掉。）
@@ -1346,13 +1388,15 @@ describe('migrateSchema registry (§19.3)', () => {
           name: string;
           sql: string | null;
         }[]
-      ).map(sansV34Sql).filter(notV35),
+      ).map(sansV34Sql).filter(notV35).filter(notV36),
     ).toEqual(schemaBefore);
     expect(
-      sansV33Sql({
-        name: 'attachments',
-        sql: (handle.prepare("SELECT sql FROM sqlite_master WHERE name = 'attachments'").get() as { sql: string }).sql,
-      }).sql,
+      sansV33Sql(
+        sansV36Sql({
+          name: 'attachments',
+          sql: (handle.prepare("SELECT sql FROM sqlite_master WHERE name = 'attachments'").get() as { sql: string }).sql,
+        }),
+      ).sql,
     ).toBe(attachmentSqlBefore.sql);
   });
 
@@ -1366,12 +1410,13 @@ describe('migrateSchema registry (§19.3)', () => {
     await __migrateSchemaForTest(db);
 
     expect(userVersion(handle)).toBe(CURRENT_SCHEMA_VERSION);
-    expect(columnNames(handle, 'attachments').slice(-2)).toEqual(V33_ATTACHMENT_COLS);
+    // v36 接着在尾巴上加了两列，v33 那两列在它们前面。
+    expect(columnNames(handle, 'attachments').slice(-4, -2)).toEqual(V33_ATTACHMENT_COLS);
   });
 
   it('a fresh install builds the two v33 columns straight from schema.sql', () => {
     applySchema(handle);
-    expect(columnNames(handle, 'attachments').slice(-2)).toEqual(V33_ATTACHMENT_COLS);
+    expect(columnNames(handle, 'attachments').slice(-4, -2)).toEqual(V33_ATTACHMENT_COLS);
   });
 
   // P9E-1 (Ocean 2026-10-15 第 119 条). 一句 ADD COLUMN，默认 0：迁移之后每个项目都是公开的
@@ -1411,14 +1456,18 @@ describe('migrateSchema registry (§19.3)', () => {
       { id: 't3', private: 0 },
     ]);
     for (const t of tables) {
-      expect(handle.prepare(`SELECT * FROM ${t} ORDER BY rowid`).all().map(stripV34), t).toEqual(before[t]);
+      expect(handle.prepare(`SELECT * FROM ${t} ORDER BY rowid`).all().map(stripV34).map(stripV36), t).toEqual(before[t]);
     }
     // ⛔ 只许一句 ADD COLUMN：别的表、索引、触发器的建表语句一个字没变，threads 只在尾巴上多一列。
     // （v35 接着走过去，那张新表另有测试盯着，这里先抹掉。）
     expect(
       (handle.prepare("SELECT name, sql FROM sqlite_master WHERE name != 'threads' ORDER BY name").all() as {
         name: string;
-      }[]).filter(notV35),
+        sql: string | null;
+      }[])
+        .filter(notV35)
+        .filter(notV36)
+        .map(sansV36Sql),
     ).toEqual(schemaBefore);
     expect(
       sansV34Sql({
@@ -1476,7 +1525,6 @@ describe('migrateSchema registry (§19.3)', () => {
 
     expect(fresh).toBe(false);
     expect(userVersion(handle)).toBe(CURRENT_SCHEMA_VERSION);
-    expect(CURRENT_SCHEMA_VERSION).toBe(35);
     expect(columnNames(handle, 'split_proposals')).toEqual(V35_SPLIT_PROPOSAL_COLS);
     expect(handle.prepare('SELECT COUNT(*) AS c FROM split_proposals').get()).toEqual({ c: 0 });
     expect(
@@ -1485,13 +1533,15 @@ describe('migrateSchema registry (§19.3)', () => {
         .get(),
     ).toEqual({ c: 1 });
     for (const t of tables) {
-      expect(handle.prepare(`SELECT * FROM ${t} ORDER BY rowid`).all(), t).toEqual(before[t]);
+      expect(handle.prepare(`SELECT * FROM ${t} ORDER BY rowid`).all().map(stripV36), t).toEqual(before[t]);
     }
     // ⛔ 只许 CREATE TABLE + 它自己的索引：别的表、索引、触发器的建表语句一个字没变。
+    // （v36 接着走过去，它的两张表和 attachments 那两列另有测试盯着，这里先抹掉。）
     expect(
-      (handle.prepare('SELECT name, sql FROM sqlite_master ORDER BY name').all() as { name: string }[]).filter(
-        notV35,
-      ),
+      (handle.prepare('SELECT name, sql FROM sqlite_master ORDER BY name').all() as { name: string; sql: string | null }[])
+        .filter(notV35)
+        .filter(notV36)
+        .map(sansV36Sql),
     ).toEqual(schemaBefore);
   });
 
@@ -1507,13 +1557,89 @@ describe('migrateSchema registry (§19.3)', () => {
 
     await __migrateSchemaForTest(db);
 
-    expect(userVersion(handle)).toBe(35);
+    expect(userVersion(handle)).toBe(CURRENT_SCHEMA_VERSION);
     expect(columnNames(handle, 'split_proposals')).toEqual(V35_SPLIT_PROPOSAL_COLS);
   });
 
   it('a fresh install builds split_proposals straight from schema.sql', () => {
     applySchema(handle);
     expect(columnNames(handle, 'split_proposals')).toEqual(V35_SPLIT_PROPOSAL_COLS);
+  });
+
+  // P9Y A1 (Ocean 2026-10-25 第 206、208 条). 两张新表 + 索引 + attachments 两个可空列，
+  // ⛔ 已有的行一个字不动、⛔ 不往新列里填任何东西。
+  it('v35 → v36 adds empty folder tables and two NULL attachment columns, nothing else', async () => {
+    applySchema(handle);
+    downgradeToV35(handle);
+    seedUserData(handle);
+    handle.exec(
+      `INSERT INTO attachments (id, thread_id, kind, target, label, ai_access, created_at,
+                                extracted_text, extracted_at, extraction_kind)
+         VALUES ('a1', 't1', 'file', '/tmp/kept.md', 'kept.md', 1, ${NOW}, 'old text', ${NOW}, 'plaintext')`,
+    );
+    const tables = (
+      handle
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE '%fts%' ORDER BY name")
+        .all() as { name: string }[]
+    ).map((r) => r.name);
+    expect(tables).not.toContain('folders');
+    expect(tables).not.toContain('folder_links');
+    const before = Object.fromEntries(
+      tables.map((t) => [t, handle.prepare(`SELECT * FROM ${t} ORDER BY rowid`).all()]),
+    );
+    const schemaBefore = handle.prepare('SELECT name, sql FROM sqlite_master ORDER BY name').all();
+
+    const fresh = await __migrateSchemaForTest(db);
+
+    expect(fresh).toBe(false);
+    expect(userVersion(handle)).toBe(CURRENT_SCHEMA_VERSION);
+    expect(CURRENT_SCHEMA_VERSION).toBe(36);
+    expect(columnNames(handle, 'folders')).toEqual(V36_FOLDER_COLS);
+    expect(columnNames(handle, 'folder_links')).toEqual(V36_FOLDER_LINK_COLS);
+    expect(handle.prepare('SELECT COUNT(*) AS c FROM folders').get()).toEqual({ c: 0 });
+    expect(handle.prepare('SELECT COUNT(*) AS c FROM folder_links').get()).toEqual({ c: 0 });
+    expect(columnNames(handle, 'attachments').slice(-2)).toEqual(V36_ATTACHMENT_COLS);
+    expect(handle.prepare("SELECT extracted_size, extracted_mtime FROM attachments WHERE id = 'a1'").get()).toEqual({
+      extracted_size: null,
+      extracted_mtime: null,
+    });
+    for (const t of tables) {
+      const after = handle.prepare(`SELECT * FROM ${t} ORDER BY rowid`).all() as Record<string, unknown>[];
+      expect(t === 'attachments' ? after.map(stripV36) : after, t).toEqual(before[t]);
+    }
+    // ⛔ 只许两张新表、它们的索引、attachments 尾巴上那两列：别的建表语句一个字没变。
+    expect(
+      (handle.prepare('SELECT name, sql FROM sqlite_master ORDER BY name').all() as { name: string; sql: string | null }[])
+        .filter(notV36)
+        .map(sansV36Sql),
+    ).toEqual(schemaBefore);
+  });
+
+  it('v35 → v36 is re-runnable after a half-finished pass', async () => {
+    applySchema(handle);
+    downgradeToV35(handle);
+    seedUserData(handle);
+    // Half a pass: one column and one table went in, the version stamp did not.
+    handle.exec(`ALTER TABLE attachments ADD COLUMN extracted_size INTEGER;
+      CREATE TABLE folders (id TEXT PRIMARY KEY, path TEXT NOT NULL, identity BLOB,
+        git_exclude INTEGER NOT NULL DEFAULT 0, pointer_claude INTEGER NOT NULL DEFAULT 0,
+        pointer_agents INTEGER NOT NULL DEFAULT 0, protocol_hash TEXT,
+        snapshot TEXT NOT NULL DEFAULT '{}', synced_at INTEGER NOT NULL,
+        state_cache TEXT NOT NULL DEFAULT '{}', created_at INTEGER NOT NULL)`);
+
+    await __migrateSchemaForTest(db);
+
+    expect(userVersion(handle)).toBe(36);
+    expect(columnNames(handle, 'folders')).toEqual(V36_FOLDER_COLS);
+    expect(columnNames(handle, 'folder_links')).toEqual(V36_FOLDER_LINK_COLS);
+    expect(columnNames(handle, 'attachments').slice(-2)).toEqual(V36_ATTACHMENT_COLS);
+  });
+
+  it('a fresh install builds the folder tables straight from schema.sql', () => {
+    applySchema(handle);
+    expect(columnNames(handle, 'folders')).toEqual(V36_FOLDER_COLS);
+    expect(columnNames(handle, 'folder_links')).toEqual(V36_FOLDER_LINK_COLS);
+    expect(columnNames(handle, 'attachments').slice(-2)).toEqual(V36_ATTACHMENT_COLS);
   });
 
   // DESIGN_PROJECT_FILES §3.4 (phase three). The queue starts empty and grants nothing: a

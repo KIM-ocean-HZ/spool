@@ -4,6 +4,9 @@ import * as db from '@/lib/db/threads';
 import type { Thread, ThreadPatch } from '@/lib/db/threads';
 import { noticeRenamed } from '@/lib/names/renameNotice';
 import { buildThreadDeleteManyUndo, buildThreadDeleteUndo, useUndoStore } from './undoStore';
+import { disconnectFolder } from '@/lib/folders/api';
+import { scheduleProtocolRefresh } from '@/lib/folders/refresh';
+import { useFolderStore } from '@/stores/folderStore';
 
 /** The sidebar's pinned entries — the two "projects" whose contents are not blocks.
  *  'board' is 项目管理 (every project), 'review' is 周回顾 (every project, over time). */
@@ -192,6 +195,8 @@ export const useThreadsStore = create<ThreadsState>((set, get) => ({
     if (patch.workspaceId !== undefined && patch.title === undefined && title !== undefined) {
       noticeRenamed('project', before ?? title, title);
     }
+    // P9Y: a linked folder's SPOOL.md names the project and its workspace.
+    if (patch.title !== undefined || patch.workspaceId !== undefined) scheduleProtocolRefresh();
     return title;
   },
 
@@ -217,6 +222,7 @@ export const useThreadsStore = create<ThreadsState>((set, get) => ({
     const title = selectThreadById(id)(get())?.title ?? '';
     await db.softDeleteThread(id);
     useUndoStore.getState().pushUndo(buildThreadDeleteUndo({ threadId: id, title }));
+    scheduleProtocolRefresh();
     // If that was the capture target (or the last thread), restore a usable base + target;
     // loadAll then re-promotes a target and recomputes captureTargetId / activeId.
     await ensureBaseData();
@@ -237,6 +243,7 @@ export const useThreadsStore = create<ThreadsState>((set, get) => ({
     }));
     for (const id of ids) await db.softDeleteThread(id);
     useUndoStore.getState().pushUndo(buildThreadDeleteManyUndo({ threads }));
+    scheduleProtocolRefresh();
     set({ selectedIds: new Set<string>(), selectionAnchorId: null });
     await ensureBaseData();
     await get().loadAll();
@@ -251,6 +258,16 @@ export const useThreadsStore = create<ThreadsState>((set, get) => ({
   // P9E-4 (Ocean 2026-10-15 第 119 条). Not through `patch`: that stamps updated_at, and the
   // rail sorts by it — keeping a project away from AIs is not activity, so it stays put.
   setPrivate: async (ids, on) => {
+    // P9Y-3 (task book §3.7, 第 3 题「私密项目不能连」): going private disconnects the folder first, and
+    // takes the project's name out of that folder's SPOOL.md even where the user edited Spool's section.
+    // A failure here stops the switch: a private project still named in a file every AI in that folder
+    // reads is the one outcome this must not leave behind.
+    if (on) {
+      for (const id of ids) {
+        await disconnectFolder(id, false, true);
+        useFolderStore.getState().forget(id);
+      }
+    }
     for (const id of ids) await db.setThreadPrivate(id, on);
     const chosen = new Set(ids);
     set((st) => {

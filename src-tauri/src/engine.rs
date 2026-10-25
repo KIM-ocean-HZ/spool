@@ -74,7 +74,7 @@ const MCP_SERVER_NAME: &str = "spool";
 // review screen, and the refusal to touch what the user wrote.
 // P9G follow-up (Ocean 2026-10-16): except the tools this engine must never have
 // (`mcp::ENGINE_EXCLUDED_TOOLS` — `propose_split`); the test allows for exactly those.
-pub(crate) const ALLOWED_TOOL_NAMES: [&str; 25] = [
+pub(crate) const ALLOWED_TOOL_NAMES: [&str; 26] = [
     "add_block",
     "check_library",
     "close_follow_up_item",
@@ -87,6 +87,9 @@ pub(crate) const ALLOWED_TOOL_NAMES: [&str; 25] = [
     "get_block_original",
     "get_blocks",
     "get_digest",
+    // P9Y (task book §3.8): a follow-up checks the project's folder before going out on a premise
+    // the folder has since dropped. Read-only; its write half (mark_folder_synced) is excluded.
+    "get_folder_status",
     "get_follow_up_brief",
     "get_pack",
     "get_project_overview",

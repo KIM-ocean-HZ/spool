@@ -12,6 +12,7 @@ import { noticeRenamed } from '@/lib/names/renameNotice';
 import { startRailDrag } from '@/lib/sidebar/railDrag';
 import { isImeComposing } from '@/lib/utils/ime';
 import { useT } from '@/lib/i18n';
+import { linkedPaths } from '@/lib/folders/api';
 import { useAiUpdatesStore } from '@/stores/aiUpdatesStore';
 import { useCaptureStore } from '@/stores/captureStore';
 import { useCompressStore } from '@/stores/compressStore';
@@ -127,6 +128,9 @@ export default function ThreadListItem({
   useEffect(() => {
     if (!menu) setPrivateAsk(false);
   }, [menu]);
+  // P9Y-3 (task book §3.7): the folders the projects about to go private are linked to — going
+  // private disconnects them, and the explanation says so before the click.
+  const [privateFolders, setPrivateFolders] = useState<string[]>([]);
   useEffect(() => {
     if (!menu) return;
     const close = () => setMenu(null);
@@ -342,6 +346,7 @@ export default function ThreadListItem({
             {privateAsk ? (
               <PrivateConfirm
                 turnOn={privateTurnsOn}
+                linkedFolders={privateFolders}
                 onConfirm={() => {
                   void setPrivate(acting, privateTurnsOn);
                   setMenu(null);
@@ -371,7 +376,17 @@ export default function ThreadListItem({
                   ))
                 )}
                 <div className="mt-1 border-t border-line pt-1">
-                  <MenuPrivateItem turnOn={privateTurnsOn} onAsk={() => setPrivateAsk(true)} />
+                  <MenuPrivateItem
+                    turnOn={privateTurnsOn}
+                    onAsk={() => {
+                      setPrivateFolders([]);
+                      setPrivateAsk(true);
+                      if (privateTurnsOn)
+                        void linkedPaths(acting)
+                          .then((rows) => setPrivateFolders([...new Set(rows.map(([, p]) => p))]))
+                          .catch((e) => console.warn('[folders] linked check failed', e));
+                    }}
+                  />
                 </div>
                 <div className="mt-1 border-t border-line pt-1">
                   <MenuDeleteItem

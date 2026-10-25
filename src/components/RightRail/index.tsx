@@ -1,6 +1,7 @@
 import { ChevronDown, ChevronRight, Inbox, Repeat } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import CompressRail from "@/components/Compress/CompressRail";
+import FolderCard from "./FolderCard";
 import LiveRun from "./LiveRun";
 import McpBar from "./McpBar";
 import ProjectFiles from "./ProjectFiles";
@@ -25,6 +26,7 @@ import {
   useEngineStore,
   type EngineKind,
 } from "@/stores/engineStore";
+import { useFolderStore } from "@/stores/folderStore";
 import { useFollowUpStore } from "@/stores/followUpStore";
 import { useProposalsStore } from "@/stores/proposalsStore";
 import { useSettingsStore } from "@/stores/settingsStore";
@@ -113,8 +115,12 @@ export default function RightRail({ thread, onCollapse, onEditBrief }: Props) {
   // grey tail on 「上次查」, which a project that has not searched yet never showed.
   const followUpRoads = useFollowUpRoads();
   const followUpRoute = useSettingsStore((s) => s.followUpRoute);
+  // P9Y-b (task book §3.6 b): a linked folder whose state files changed since the last sync holds the
+  // weekly search back — it would otherwise go out on a premise the folder has since dropped.
+  const folderAhead = useFolderStore((s) => (thread ? s.views[thread.id]?.ahead === true : false));
   const autoFollowUp = ((): string | null => {
     if (!followUpRun?.auto) return null;
+    if (folderAhead) return t("每周自动查 · 连着的文件夹改了现状文件，先停着；点「已经对过了」就恢复");
     if (routeFor(followUpRoute, followUpRoads) === null) return t("每周自动查 · 现在没有能联网搜索的 AI 连着，先不查");
     const next = autoFollowUpNextAt(followUpRun, Date.now());
     return next === null
@@ -300,6 +306,10 @@ export default function RightRail({ thread, onCollapse, onEditBrief }: Props) {
             "the first section" rather than "the first thing in the column" — the run cards
             above are transient and keep their own card shape. */}
         <div className="space-y-3">
+          {/* P9Y (task book §3.1): the folder this project is linked to, first — 「现在做什么、做到哪」
+              is the folder's to say, and everything below is read against it. */}
+          {thread && <FolderCard thread={thread} />}
+
           {/* ⛔ 「关系待审」那一节不在了（P9S-2，Ocean 2026-10-23 第 171 条：全自动，不用审）——
               被引的那一块一不作数，引用自动解除（lib/db/blocks `releaseRefsToRetired`）。 */}
 

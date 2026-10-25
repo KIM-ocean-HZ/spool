@@ -38,7 +38,7 @@ export const setSeedLanguage = (lang: SeedLanguage): void => {
 // carries a database from the previous version to the new one. On startup the
 // database's PRAGMA user_version is compared against this and every applicable step
 // runs in sequence, each stamping user_version as its own checkpoint (§19.3).
-const SCHEMA_VERSION = 35;
+const SCHEMA_VERSION = 36;
 
 // Things a migration did to the user's data that the user is entitled to hear about.
 // v15 is the first migration that removes anything (the retired `url` attachments), and
@@ -1138,6 +1138,54 @@ const MIGRATIONS: Migration[] = [
       )`);
       await db.execute(`CREATE INDEX IF NOT EXISTS idx_split_proposals_thread
         ON split_proposals(thread_id, created_at ASC)`);
+    },
+  },
+  {
+    // v36 (P9Y 任务书 A1, Ocean 2026-10-25 第 206、208 条，「按推荐」)：项目连一个文件夹 + 挂上的文件改了重抽。
+    // ⚠️⚠️ **两张新表 `CREATE TABLE IF NOT EXISTS` + 它们的索引，外加 `attachments` 两句 `ADD COLUMN`**，
+    // ⛔ 已有的列一个不动、没有回填、⛔ 没有 rebuild 分支 —— v31 / v33 / v35 同一条路。`schema.sql` 那一段
+    // 写了每一列的意思。
+    //   * 往前：老库没有这两张表 = 没有项目连着文件夹；两列是 NULL = 抽字时没记大小和时间（运行时退回去
+    //     比「修改时间晚于 extracted_at」）。
+    //   * 往回：`DROP TABLE folder_links` + `DROP TABLE folders` + 两句 `ALTER TABLE attachments DROP COLUMN`
+    //     退回 v35，⛔ 不丢任何 v35 就有的数据 —— 丢的只是连着的文件夹（SPOOL.md 还在文件夹里）和那两个数。
+    // 半跑一次和跑完一次分不出来：`IF NOT EXISTS` 再跑什么都不发生，`ADD COLUMN` 撞上已有的列会抛、catch 掉。
+    from: 35,
+    to: 36,
+    name: 'add-folders-and-extraction-stamp',
+    run: async (db) => {
+      for (const [col, type] of [
+        ['extracted_size', 'INTEGER'],
+        ['extracted_mtime', 'INTEGER'],
+      ] as const) {
+        try {
+          await db.execute(`ALTER TABLE attachments ADD COLUMN ${col} ${type}`);
+        } catch (e) {
+          console.info(`[db] attachments.${col}: not added (likely exists)`, e);
+        }
+      }
+      await db.execute(`CREATE TABLE IF NOT EXISTS folders (
+        id             TEXT PRIMARY KEY,
+        path           TEXT NOT NULL,
+        identity       BLOB,
+        git_exclude    INTEGER NOT NULL DEFAULT 0,
+        pointer_claude INTEGER NOT NULL DEFAULT 0,
+        pointer_agents INTEGER NOT NULL DEFAULT 0,
+        protocol_hash  TEXT,
+        snapshot       TEXT NOT NULL DEFAULT '{}',
+        synced_at      INTEGER NOT NULL,
+        state_cache    TEXT NOT NULL DEFAULT '{}',
+        created_at     INTEGER NOT NULL
+      )`);
+      await db.execute(`CREATE TABLE IF NOT EXISTS folder_links (
+        thread_id   TEXT PRIMARY KEY REFERENCES threads(id) ON DELETE CASCADE,
+        folder_id   TEXT NOT NULL REFERENCES folders(id) ON DELETE CASCADE,
+        is_primary  INTEGER NOT NULL DEFAULT 0,
+        state_files TEXT NOT NULL DEFAULT '[]',
+        created_at  INTEGER NOT NULL
+      )`);
+      await db.execute(`CREATE INDEX IF NOT EXISTS idx_folder_links_folder
+        ON folder_links(folder_id, created_at ASC)`);
     },
   },
 ];

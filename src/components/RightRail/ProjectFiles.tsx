@@ -244,6 +244,7 @@ export default function ProjectFiles({ threadId, isPrivate = false }: { threadId
   // ⛔ Nothing else in the library is looked at.
   const locateFiles = useBlocksStore((s) => s.locateFiles);
   const fileStates = useBlocksStore((s) => s.fileStates);
+  const reExtracted = useBlocksStore((s) => s.reExtracted);
   const setFileNotice = useBlocksStore((s) => s.setFileNotice);
   const shownIds = useMemo(() => groups.map((g) => g.file.id), [groups]);
   const idsKey = shownIds.join(',');
@@ -364,6 +365,17 @@ export default function ProjectFiles({ threadId, isPrivate = false }: { threadId
                     >
                       {t('已跟到新位置')}
                     </button>
+                  )}
+                  {/* P9Y-c: the file changed after its text was read, so Spool read it again — what the
+                      pack and every AI get is the current version. Said for as long as Spool is open. */}
+                  {reExtracted.has(a.id) && (
+                    <span
+                      title={t('这个文件挂上之后改过，Spool 已经重新读了它的文字。')}
+                      className="flex-none whitespace-nowrap text-[10.5px]"
+                      style={ATTENTION}
+                    >
+                      {t('改过')}
+                    </span>
                   )}
                   {older.length > 0 && (
                     <button

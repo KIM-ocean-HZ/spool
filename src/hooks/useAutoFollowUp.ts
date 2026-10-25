@@ -1,6 +1,8 @@
 import { useEffect } from 'react';
 import { listAutoFollowUpCandidates } from '@/lib/db/threads';
 import { dueAutoFollowUp } from '@/lib/engine/followUp';
+import { aheadThreads } from '@/lib/folders/api';
+import { withoutAhead } from '@/lib/folders/view';
 import { followUpRoadsNow, routeFor } from '@/lib/engine/roads';
 import { useEngineStore } from '@/stores/engineStore';
 import { useSettingsStore } from '@/stores/settingsStore';
@@ -30,7 +32,15 @@ export function useAutoFollowUp(): void {
       if (road === null) return;
       if (engine.current || engine.queue.length > 0) return;
       try {
-        const next = dueAutoFollowUp(await listAutoFollowUpCandidates(), Date.now());
+        // P9Y-b (task book §3.6 b, Ocean 「按推荐」): a project whose linked folder changed a state file
+        // since the last sync waits — the rule is fixed, no AI judges it — until someone says
+        // 「已经对过了」. DISCOVERED-20261025-3: 10-24 it searched for 「学院 GPU 跑 RFT」, a plan the
+        // repository had dropped on 10-21. Only that project waits; the next one due runs.
+        const ahead = await aheadThreads().catch((e) => {
+          console.warn('[auto-follow-up] folder check failed', e);
+          return [] as string[];
+        });
+        const next = dueAutoFollowUp(withoutAhead(await listAutoFollowUpCandidates(), ahead), Date.now());
         if (!next) return;
         const timeout = road === 'api' ? st.apiTimeoutSecs : st.aiEngineTimeoutSecs;
         engine.enqueue(next.id, next.title, 'follow_up', timeout, undefined, true, road);

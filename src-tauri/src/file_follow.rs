@@ -19,6 +19,10 @@
 //! Spool changes the recorded path in only two cases: the user said so (「是这个」/「重新选位置」,
 //! `relocate`), or the identity found the file somewhere new. ⛔ Never from a name alone.
 //! ⛔ The user's file itself is never moved, copied, written or deleted — only looked at.
+//!    The one exception anywhere in Spool is a folder the user linked to a project (P9Y,
+//!    `folder_link.rs`), and there exactly four things, each shown to the user when connecting:
+//!    the folder's `SPOOL.md`, one line in `.git/info/exclude`, one line in the folder's CLAUDE.md,
+//!    one line in its AGENTS.md. Nothing else in that folder is written either.
 //! ⛔ No sweep of the whole library: only the files of what is on screen are looked at.
 
 use std::path::Path;
@@ -61,6 +65,10 @@ pub struct FileState {
     pub found_at: Option<String>,
     /// `target_notice` as it stands after this look (the JSON text).
     pub notice: Option<String>,
+    /// P9Y-c (DISCOVERED-20261025-1): the file is there, and its text in the library was extracted
+    /// from an older version of it — the webview extracts it again.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub changed: bool,
 }
 
 struct Row {
@@ -69,11 +77,19 @@ struct Row {
     identity: Option<Vec<u8>>,
     notice: Option<String>,
     ai_access: bool,
+    /// When the text was extracted, by which extractor, and (v36) the file's size and modified time
+    /// at that moment.
+    extracted: Option<Extracted>,
 }
+
+/// (extracted_at, extraction_kind, extracted_size, extracted_mtime).
+type Extracted = (i64, Option<String>, Option<i64>, Option<i64>);
 
 fn read_row(conn: &Connection, id: &str) -> Result<Option<Row>, String> {
     conn.query_row(
-        "SELECT target, kind, target_identity, target_notice, ai_access FROM attachments WHERE id = ?1",
+        "SELECT target, kind, target_identity, target_notice, ai_access,
+                extracted_at, extraction_kind, extracted_size, extracted_mtime
+           FROM attachments WHERE id = ?1",
         [id],
         |r| {
             Ok(Row {
@@ -82,6 +98,10 @@ fn read_row(conn: &Connection, id: &str) -> Result<Option<Row>, String> {
                 identity: r.get(2)?,
                 notice: r.get(3)?,
                 ai_access: r.get::<_, i64>(4)? == 1,
+                extracted: match r.get::<_, Option<i64>>(5)? {
+                    Some(at) => Some((at, r.get(6)?, r.get(7)?, r.get(8)?)),
+                    None => None,
+                },
             })
         },
     )
@@ -103,6 +123,22 @@ fn file_name_of(p: &str) -> String {
 /// `old` / `new` are the statement's parameter numbers for the two names.
 fn follow_label(old: usize, new: usize) -> String {
     format!("label = CASE WHEN label = ?{old} THEN ?{new} ELSE label END")
+}
+
+/// P9Y-c: was the text Spool holds for this file extracted from the version at `path` now? Only for
+/// text an extractor actually produced (a failed or unsupported file has nothing to go stale).
+/// Rows extracted before v36 carry no size / time: then a file modified after the extraction is the
+/// sign.
+fn extracted_from_older(row: &Row, path: &Path) -> bool {
+    let Some((at, kind, size, mtime)) = &row.extracted else { return false };
+    if !matches!(kind.as_deref(), Some("pdf" | "docx" | "plaintext")) {
+        return false;
+    }
+    let Some((now_size, now_mtime)) = crate::folder_link::stamp(path) else { return false };
+    match (size, mtime) {
+        (Some(s), Some(m)) => *s != now_size || *m != now_mtime,
+        _ => now_mtime > *at,
+    }
 }
 
 /// Where a file is now — the decision a look makes, before anything is written down.
@@ -211,6 +247,7 @@ pub(crate) fn look(
         path: row.target.clone(),
         found_at,
         notice,
+        changed: false,
     };
 
     let found = match where_now(path, identity, row.ai_access, rules) {
@@ -230,7 +267,9 @@ pub(crate) fn look(
                 )
                 .map_err(|e| e.to_string())?;
             }
-            return Ok(Some(state("in_place", None, notice_after)));
+            let mut st = state("in_place", None, notice_after);
+            st.changed = extracted_from_older(&row, path);
+            return Ok(Some(st));
         }
         Where::Offline => return Ok(Some(state("offline", None, row.notice.clone()))),
         Where::Unknown => return Ok(Some(state("unknown", None, row.notice.clone()))),
@@ -264,6 +303,7 @@ pub(crate) fn look(
     Ok(Some(FileState {
         id: id.to_string(),
         state: "moved",
+        changed: extracted_from_older(&row, &found),
         path: new_path,
         found_at: None,
         notice: Some(moved),
@@ -291,6 +331,7 @@ pub(crate) fn relocate(conn: &Connection, id: &str, new_path: &str) -> Result<Fi
     Ok(FileState {
         id: id.to_string(),
         state: "in_place",
+        changed: extracted_from_older(&row, p),
         path: new_path.to_string(),
         found_at: None,
         notice: None,
@@ -526,7 +567,8 @@ mod tests {
             "CREATE TABLE attachments (
                id TEXT PRIMARY KEY, thread_id TEXT, kind TEXT NOT NULL, target TEXT NOT NULL,
                label TEXT NOT NULL DEFAULT '', extracted_text TEXT, ai_access INTEGER NOT NULL DEFAULT 0,
-               target_identity BLOB, target_notice TEXT
+               target_identity BLOB, target_notice TEXT,
+               extracted_at INTEGER, extraction_kind TEXT, extracted_size INTEGER, extracted_mtime INTEGER
              );",
         )
         .unwrap();
@@ -912,5 +954,36 @@ mod tests {
             &[KeptIdentity { id: "a".into(), identity: Some("abc".into()), notice: None }]
         )
         .is_err());
+    }
+
+    // P9Y-c (DISCOVERED-20261025-1): 〈Flux〉 held the 10-02 text of a work plan rewritten on 10-24.
+    #[test]
+    fn a_file_changed_after_its_text_was_extracted_says_so() {
+        let dir = temp("changed");
+        let f = dir.join("WORK_PLAN.md");
+        std::fs::write(&f, "plan v1").unwrap();
+        let conn = library();
+        attach(&conn, "a1", "file", &f);
+        let (size, mtime) = crate::folder_link::stamp(&f).unwrap();
+        conn.execute(
+            "UPDATE attachments SET extracted_at = ?1, extraction_kind = 'plaintext', extracted_size = ?2, extracted_mtime = ?3 WHERE id = 'a1'",
+            params![mtime + 10, size, mtime],
+        )
+        .unwrap();
+        assert!(!state_of(&conn, "a1").changed);
+        std::fs::write(&f, "plan v2, after the proposal").unwrap();
+        assert!(state_of(&conn, "a1").changed);
+
+        // Extracted before v36: no size or time kept — a modification after the extraction tells.
+        conn.execute("UPDATE attachments SET extracted_size = NULL, extracted_mtime = NULL, extracted_at = 1 WHERE id = 'a1'", [])
+            .unwrap();
+        assert!(state_of(&conn, "a1").changed);
+        conn.execute("UPDATE attachments SET extracted_at = ?1 WHERE id = 'a1'", [i64::MAX / 2]).unwrap();
+        assert!(!state_of(&conn, "a1").changed);
+        // Nothing was extracted, or the extractor could not read it: nothing to go stale.
+        conn.execute("UPDATE attachments SET extracted_at = 1, extraction_kind = 'failed' WHERE id = 'a1'", []).unwrap();
+        assert!(!state_of(&conn, "a1").changed);
+        conn.execute("UPDATE attachments SET extracted_at = NULL, extraction_kind = NULL WHERE id = 'a1'", []).unwrap();
+        assert!(!state_of(&conn, "a1").changed);
     }
 }

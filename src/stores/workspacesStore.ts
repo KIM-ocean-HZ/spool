@@ -7,6 +7,7 @@ import type { Workspace } from '@/lib/db/workspaces';
 import { archivePlan } from '@/lib/workspaces/archive';
 import { buildWorkspaceTree } from '@/lib/workspaces/tree';
 import { selectAllThreadsFlat, useThreadsStore } from './threadsStore';
+import { scheduleProtocolRefresh } from '@/lib/folders/refresh';
 import {
   buildWorkspaceArchiveUndo,
   buildWorkspaceDeleteUndo,
@@ -76,6 +77,8 @@ export const useWorkspacesStore = create<WorkspacesState>((set, get) => ({
     set((s) => ({
       workspaces: s.workspaces.map((w) => (w.id === id ? { ...w, title, updatedAt } : w)),
     }));
+    // P9Y: SPOOL.md groups its projects under their workspace's name.
+    scheduleProtocolRefresh();
     return title;
   },
 
@@ -106,6 +109,7 @@ export const useWorkspacesStore = create<WorkspacesState>((set, get) => ({
       ),
     }));
     noticeRenamed('workspace', before ?? title, title);
+    scheduleProtocolRefresh();
   },
 
   remove: async (id) => {
@@ -121,6 +125,7 @@ export const useWorkspacesStore = create<WorkspacesState>((set, get) => ({
     await ensureBaseData();
     await get().load();
     await useThreadsStore.getState().loadAll();
+    scheduleProtocolRefresh();
   },
 
   // 归档 (Ocean 2026-09-30 #9). Nothing about the workspace itself is written — archived is

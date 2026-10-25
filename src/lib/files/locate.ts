@@ -26,6 +26,8 @@ export interface FileState {
   foundAt: string | null;
   /** `target_notice`, as JSON text — read it with `readNotice`. */
   notice: string | null;
+  /** P9Y-c: the file changed since its text was extracted (absent = no). */
+  changed?: boolean;
 }
 
 /** `target_notice`: what the user still has to hear. The shapes are file_follow.rs's `Notice`. */

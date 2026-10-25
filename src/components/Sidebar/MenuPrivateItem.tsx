@@ -15,10 +15,13 @@ export const privateMenuTurnsOn = (flags: boolean[]): boolean => flags.some((p) 
 
 export function PrivateConfirm({
   turnOn,
+  linkedFolders = [],
   onConfirm,
   onCancel,
 }: {
   turnOn: boolean;
+  /** P9Y-3: folders these projects are linked to (shortened). Going private disconnects them. */
+  linkedFolders?: string[];
   onConfirm: () => void;
   onCancel: () => void;
 }) {
@@ -32,6 +35,13 @@ export function PrivateConfirm({
           <p className="text-muted">
             {t('管不了的一种：能直接读你电脑上文件的 AI，绕开 Spool 去读，还是读得到。')}
           </p>
+          {linkedFolders.length > 0 && (
+            <p style={{ color: 'var(--status-parked)' }}>
+              {t('它连着 {path}。设成私密会断开，并把它从那里的 SPOOL.md 里拿掉。', {
+                path: linkedFolders.join(t('、')),
+              })}
+            </p>
+          )}
         </>
       ) : (
         <p>{t('取消私密之后，通过 Spool 连接的 AI 又能读到它，Spool 自带的 AI 功能也能用了。')}</p>

@@ -12,6 +12,8 @@ mod capture;
 mod double_tap;
 mod file_follow;
 mod file_identity;
+// P9Y: a project linked to a folder on disk, and the SPOOL.md it keeps there.
+mod folder_link;
 mod images;
 // Windows peer of double_tap: the same double-tap-modifier gesture (Ctrl there, ⌥ on
 // macOS), built on Raw Input instead of a CGEventTap. Cfg'd out everywhere else.
@@ -395,6 +397,23 @@ pub fn run() {
             file_follow::relocate_file,
             file_follow::keep_file_identities,
             file_follow::restore_file_identities,
+            folder_link::folder_inspect,
+            folder_link::folder_connect,
+            folder_link::folder_view,
+            folder_link::folder_mark_synced,
+            folder_link::folder_set_state_files,
+            folder_link::folder_set_primary,
+            folder_link::folder_disconnect,
+            folder_link::folder_refresh_protocols,
+            folder_link::folder_rewrite_protocol,
+            folder_link::folder_protocol_diff,
+            folder_link::folder_relocate,
+            folder_link::folder_cache_text,
+            folder_link::folder_ahead_threads,
+            folder_link::folder_set_pointers,
+            folder_link::folder_global_hint,
+            folder_link::folder_linked_paths,
+            folder_link::file_stamp,
             transfer::export_library,
             transfer::stage_import_db,
             transfer::discard_import_staging,

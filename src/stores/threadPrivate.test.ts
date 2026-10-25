@@ -1,6 +1,11 @@
 import { createRequire } from 'node:module';
 import type Database from '@tauri-apps/plugin-sql';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+// P9Y-3: going private disconnects the project's folder first — a Rust command.
+const invoke = vi.fn(async (..._a: unknown[]): Promise<unknown> => undefined);
+vi.mock('@tauri-apps/api/core', () => ({ invoke: (...a: unknown[]) => invoke(...a) }));
+
 import { __setTestDb } from '@/lib/db/client';
 import schemaSql from '@/lib/db/schema.sql?raw';
 import { createThread } from '@/lib/db/threads';
@@ -54,7 +59,13 @@ describe('setPrivate (P9E-4)', () => {
     const order = () => (useThreadsStore.getState().threadsByWorkspace[ws.id] ?? []).map((t) => t.id);
     const before = order();
 
+    invoke.mockClear();
     await useThreadsStore.getState().setPrivate([a.id, c.id], true);
+    // P9Y-3 (task book §3.7): each one is disconnected as going private — its name leaves SPOOL.md.
+    expect(invoke.mock.calls).toEqual([
+      ['folder_disconnect', { threadId: a.id, remove: false, private: true }],
+      ['folder_disconnect', { threadId: c.id, remove: false, private: true }],
+    ]);
 
     const flags = () =>
       Object.fromEntries((useThreadsStore.getState().threadsByWorkspace[ws.id] ?? []).map((t) => [t.title, t.isPrivate]));
@@ -66,7 +77,9 @@ describe('setPrivate (P9E-4)', () => {
     ]);
     expect(order()).toEqual(before);
 
+    invoke.mockClear();
     await useThreadsStore.getState().setPrivate([a.id, c.id], false);
     expect(flags()).toEqual({ a: false, b: false, c: false });
+    expect(invoke).not.toHaveBeenCalled();
   });
 });

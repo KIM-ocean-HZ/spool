@@ -12,6 +12,7 @@ import { MarkdownContent } from '@/lib/blocks/MarkdownContent';
 import { dateLocale, useT } from '@/lib/i18n';
 import { IS_MAC } from '@/lib/platform';
 import { ENGINE_LABEL, engineSupportsWeb, useEngineStore } from '@/stores/engineStore';
+import { useFolderStore } from '@/stores/folderStore';
 import { useFollowUpStore } from '@/stores/followUpStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 
@@ -52,6 +53,8 @@ export default function FollowUpSearch({ thread, hasLines }: { thread: Thread; h
   const road = routeFor(followUpRoute, roads);
   const run = useFollowUpStore((s) => s.run);
   const setAuto = useFollowUpStore((s) => s.setAuto);
+  // P9Y-b: the weekly search waits while the project's folder has moved ahead (useAutoFollowUp).
+  const folderAhead = useFolderStore((s) => s.views[thread.id]?.ahead === true);
 
   const busyOnThisThread = current?.threadId === thread.id || queue.some((q) => q.threadId === thread.id);
   const cliAvailable = status?.available === true;
@@ -142,6 +145,11 @@ export default function FollowUpSearch({ thread, hasLines }: { thread: Thread; h
         </div>
         <Toggle checked={run?.auto === true} onChange={(on) => void setAuto(on)} />
       </div>
+      {run?.auto === true && folderAhead && (
+        <p className="text-[10px] leading-relaxed" style={{ color: 'var(--status-parked)' }}>
+          {t('这个项目连着的文件夹在上次同步之后改了现状文件，自动查先停着，免得拿已经变了的计划去查。在右栏点「已经对过了」就恢复。')}
+        </p>
+      )}
       {reply && (
         <details className="text-[11px]">
           <summary className="cursor-pointer text-muted transition-colors hover:text-ink">

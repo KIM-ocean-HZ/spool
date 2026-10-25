@@ -212,17 +212,22 @@ export const insertAttachments = async (attachments: Attachment[]): Promise<void
 // extraction pipeline once `extractAttachmentText` resolves — with the text and the
 // extractor kind on success, or `(null, 'failed')` on failure / unsupported type.
 // `extracted_at` is always stamped, marking that extraction was attempted.
+// v36 (P9Y-c): `stamp` is the file's [size, modified ms] taken just BEFORE it was read — so a file
+// that changes while it is being read still reads as changed afterwards. Null when the file could
+// not be looked at; the next look then falls back to comparing its modified time with extracted_at.
 export const updateAttachmentExtraction = async (
   id: string,
   text: string | null,
   kind: AttachmentExtractionKind,
+  stamp: [number, number] | null = null,
 ): Promise<void> => {
   const db = await getDb();
   await db.execute(
     `UPDATE attachments
-        SET extracted_text = $1, extracted_at = $2, extraction_kind = $3
-      WHERE id = $4`,
-    [text, Date.now(), kind, id],
+        SET extracted_text = $1, extracted_at = $2, extraction_kind = $3,
+            extracted_size = $4, extracted_mtime = $5
+      WHERE id = $6`,
+    [text, Date.now(), kind, stamp?.[0] ?? null, stamp?.[1] ?? null, id],
   );
 };
 

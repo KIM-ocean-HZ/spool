@@ -2014,4 +2014,211 @@ const EN: Record<string, string> = {
   '每周自动查 · 现在没有能联网搜索的 AI 连着，先不查': 'Searches weekly · no AI that can search the web is connected, so it is waiting',
   '每周自动查 · 10 分钟内查下一次': 'Searches weekly · next search within 10 minutes',
   '每周自动查 · 下次大约 {day}': 'Searches weekly · next around {day}',
+  // P9Y（第 206、208 条）：项目连文件夹 + SPOOL.md。
+  '连接的文件夹':
+    'Linked folder',
+  '连接文件夹…':
+    'Connect a folder…',
+  '私密项目不连文件夹：连了之后仓库里的 AI 会知道它存在。':
+    'A private project cannot be linked to a folder: the AI working in that folder would learn it exists.',
+  '上次同步 {day} · 还没选现状文件':
+    'Last synced {day} · no state files picked yet',
+  '上次同步 {day} · 之后改了 {n} 份现状文件':
+    'Last synced {day} · {n} state file(s) changed since',
+  '上次同步 {day} · 现状文件没变':
+    'Last synced {day} · state files unchanged',
+  '更多':
+    'More',
+  '文件夹挪了位置，Spool 跟过去了。':
+    'The folder moved; Spool followed it.',
+  '改过':
+    'changed',
+  '没了':
+    'gone',
+  '现状':
+    'state',
+  '另外 {n} 个文件有改动':
+    '{n} other file(s) changed',
+  '{n} 次提交':
+    '{n} commit(s)',
+  '新增':
+    'new',
+  '删了':
+    'gone',
+  '还有 {n} 个':
+    '{n} more',
+  '让 AI 读到它':
+    'Let AI read it',
+  'SPOOL.md 里 Spool 那一段你改过，项目有变化时 Spool 先不覆盖。':
+    'You edited Spool’s section of SPOOL.md, so Spool will not overwrite it when the project changes.',
+  '看差别':
+    'See the difference',
+  '文件夹里没有 SPOOL.md 了。':
+    'SPOOL.md is no longer in the folder.',
+  'SPOOL.md 里没有 Spool 那一段了。':
+    'Spool’s section is no longer in SPOOL.md.',
+  '重新写一份':
+    'Write it again',
+  '同一个文件夹还连着{them}':
+    'The same folder is also linked to {them}',
+  '；这个项目是主项目':
+    '; this project is the main one',
+  '记下了：从现在起再看改动':
+    'Noted: changes are counted from now on',
+  '仓库里的新情况已经记进 Spool 了：从现在起重新算改动':
+    'What is new in the folder is in Spool now: count changes from here',
+  '已经对过了':
+    'In sync now',
+  '改现状文件':
+    'Change state files',
+  '设为主项目':
+    'Make main project',
+  '换文件夹':
+    'Change folder',
+  '这个文件夹在一块没接上的磁盘上':
+    'This folder is on a disk that is not connected',
+  '这个文件夹在废纸篓里':
+    'This folder is in the Trash',
+  '这个文件夹已经删掉了':
+    'This folder has been deleted',
+  '找不到这个文件夹了':
+    'Spool cannot find this folder',
+  '勾 1 – 3 份写着「现在做什么、做到哪」的文件，比如计划、交接、README。AI 读这几份就知道现状；它们一改，Spool 就知道文件夹走到前面去了。':
+    'Tick 1 – 3 files that say what is being done now and how far it has got — a plan, a hand-off, a README. An AI reads these to know where things stand, and when one changes Spool knows the folder has moved ahead.',
+  '这个文件夹里没找到写给人看的文档。可以先不选，之后在卡片上再选。':
+    'No documents written for people were found in this folder. You can skip this and pick later from the card.',
+  '推荐':
+    'Suggested',
+  '带日期的一组，以后总读日期最新的那一份':
+    'A dated series: from now on the newest by date is read',
+  '最多 {n} 份。':
+    '{n} at most.',
+  '在这个文件夹里工作的 AI 不会自己去读 SPOOL.md。选一种或几种让它读到；都不选也行，之后在卡片上还能改。':
+    'An AI working in this folder will not read SPOOL.md on its own. Pick one or more ways for it to see it — or none; you can change this later from the card.',
+  '这个文件夹的 CLAUDE.md 加一行 @SPOOL.md':
+    'Add the line @SPOOL.md to this folder’s CLAUDE.md',
+  'Claude Code（VS Code、终端里的）开工时会把 SPOOL.md 一起读进去。':
+    'Claude Code (in VS Code or the terminal) then reads SPOOL.md along with it when it starts.',
+  '这个文件夹没有 CLAUDE.md，Spool 不会新建。':
+    'This folder has no CLAUDE.md, and Spool will not create one.',
+  '这个文件夹的 AGENTS.md 加一句「开工前先读 SPOOL.md」':
+    'Add “read SPOOL.md before starting” to this folder’s AGENTS.md',
+  'Codex（命令行和桌面版）读 AGENTS.md。它没有导入的写法，只能靠这句话。':
+    'Codex (command line and desktop) reads AGENTS.md. It has no way to import a file, so it relies on this sentence.',
+  '这个文件夹没有 AGENTS.md，Spool 不会新建。':
+    'This folder has no AGENTS.md, and Spool will not create one.',
+  '全局说明里加一句「工作目录里有 SPOOL.md 就先读它」':
+    'Add “read SPOOL.md if the working folder has one” to the global instructions',
+  '改「一键接入」写在 ~/.claude/CLAUDE.md、~/.codex/AGENTS.md 里的那一段。以后连的文件夹都算数；只对做过一键接入的客户端有用。':
+    'Changes the section one-click setup wrote into ~/.claude/CLAUDE.md and ~/.codex/AGENTS.md. Covers every folder you link from now on; only works for clients set up with one-click setup.',
+  '不读这些文件的 AI（比如 Claude 桌面版的普通聊天、ChatGPT），开工时把这句贴给它：':
+    'For an AI that reads none of these files (a regular chat in the Claude desktop app, ChatGPT), paste this when you start:',
+  '这个文件夹连着 Spool，开工前先读根目录的 SPOOL.md。':
+    'This folder is linked to Spool. Read SPOOL.md at its top level before starting.',
+  '复制好了':
+    'Copied',
+  '连好了：SPOOL.md 在「{name}」最外面':
+    'Linked: SPOOL.md is at the top of “{name}”',
+  '连上之后，Spool 会：':
+    'Once linked, Spool will:',
+  '列出里面的文件，看上次之后改了什么。只看文件名、大小和修改时间。':
+    'List the files in it and see what changed since last time — names, sizes and modified times only.',
+  '读你下一步勾的几份现状文件。':
+    'Read the state files you tick in the next step.',
+  '在这个文件夹最外面放一份 SPOOL.md，告诉在这里工作的 AI：对应哪个 Spool 项目、冲突时谁说了算、什么时候写回。你可以打开看、自己改。':
+    'Put a SPOOL.md at the top of this folder that tells an AI working here which Spool project it belongs to, which side is the authority when they disagree, and when to write back. You can open it and edit it.',
+  '不读代码，不在后台盯着，不调用 git。':
+    'It does not read code, does not watch in the background, and does not run git.',
+  '这个文件夹已经连着{them}，〈{title}〉会加进同一份 SPOOL.md。':
+    'This folder is already linked to {them}; ‹{title}› will be added to the same SPOOL.md.',
+  '上层的 {path} 已经连着 Spool。这里会再有一份 SPOOL.md，在这个子文件夹里工作的 AI 读近的那份。':
+    '{path} above is already linked to Spool. This folder gets a SPOOL.md of its own; an AI working in this subfolder reads the nearer one.',
+  '下面的 {path} 已经连着 Spool，它那份 SPOOL.md 不受影响。':
+    '{path} below is already linked to Spool; its SPOOL.md is not affected.',
+  '文件夹里已经有一份 SPOOL.md。Spool 先备份，再把自己那一段放在最上面，你的内容留在下面。':
+    'The folder already has a SPOOL.md. Spool backs it up first, then puts its own section at the top and keeps what you wrote below.',
+  '{dirs} 被 .gitignore 忽略、里面文件太多，不列。':
+    '{dirs} is ignored by .gitignore and holds too many files, so it is not listed.',
+  '文件太多，Spool 只看前 20,000 个。':
+    'Too many files: Spool looks at the first 20,000.',
+  '这是一个 git 仓库。SPOOL.md 要不要跟着提交？':
+    'This is a git repository. Should SPOOL.md be committed with it?',
+  '只留在这台电脑（推荐）':
+    'Keep it on this computer only (suggested)',
+  '仓库公开也不会把你的 Spool 项目名推上 GitHub；不动 .gitignore。':
+    'Even in a public repository your Spool project names never reach GitHub; .gitignore is untouched.',
+  '换一台电脑 clone 下来没有这份文件，要在那台电脑的 Spool 里重新连一次。':
+    'A clone on another computer has no such file; link it again in Spool on that computer.',
+  '跟着提交':
+    'Commit it',
+  '别的电脑、合作者 clone 下来就有。':
+    'Other computers and collaborators get it when they clone.',
+  '项目名会进 git 历史；没装 Spool 的人看到这个文件没用。':
+    'Project names go into the git history, and the file means nothing to anyone without Spool.',
+  '好处：{x}':
+    'Good: {x}',
+  '代价：{x}':
+    'Cost: {x}',
+  '「只留在这台电脑」是往 .git/info/exclude 加一行 SPOOL.md。那是 git 自带的、只对这台电脑生效的忽略清单。':
+    '“On this computer only” adds a SPOOL.md line to .git/info/exclude — git’s own ignore list that applies to this computer alone.',
+  '连接文件夹「{name}」':
+    'Connect the folder “{name}”',
+  '哪几份文件写着现状':
+    'Which files say where things stand',
+  'SPOOL.md 跟不跟 git':
+    'SPOOL.md and git',
+  '第 {i} / {n} 步':
+    'Step {i} of {n}',
+  '上一步':
+    'Back',
+  '下一步':
+    'Next',
+  '换一个文件夹':
+    'Change the folder',
+  '断开〈{title}〉和 {path}':
+    'Disconnect ‹{title}› from {path}',
+  '断开，选新的':
+    'Disconnect and choose',
+  '先断开现在这个（{path}），再选新的。':
+    'First the current one ({path}) is disconnected, then you choose the new one.',
+  '{path} 里的 SPOOL.md 怎么办？':
+    'What should happen to the SPOOL.md in {path}?',
+  '删掉 Spool 那一段':
+    'Remove Spool’s section',
+  '只剩 Spool 放的那个标题时，整个文件一起删；CLAUDE.md、AGENTS.md、.git/info/exclude 里 Spool 加的那一行也拿掉（你改过的不动）。':
+    'If only the heading Spool put there is left, the whole file goes; the lines Spool added to CLAUDE.md, AGENTS.md and .git/info/exclude go too (any you changed stay).',
+  '留着':
+    'Keep it',
+  '文件夹里什么都不动。SPOOL.md 以后不再更新。':
+    'Nothing in the folder changes. SPOOL.md is no longer updated.',
+  '这个文件夹还连着{them}。SPOOL.md 留着，只把〈{title}〉从里面拿掉。':
+    'This folder is still linked to {them}. SPOOL.md stays; only ‹{title}› is taken out of it.',
+  'SPOOL.md 里 Spool 那一段':
+    'Spool’s section of SPOOL.md',
+  '留着我改的':
+    'Keep my edit',
+  '换成新的':
+    'Use the new one',
+  '带 − 的是文件里现在的样子（你改过的），带 + 的是 Spool 现在要写的。换成新的之前，旧的会先备份。':
+    'Lines with − are what the file says now (your edit); lines with + are what Spool would write. The old version is backed up before it is replaced.',
+  '这个文件挂上之后改过，Spool 已经重新读了它的文字。':
+    'This file changed after it was attached; Spool has read its text again.',
+  '每周自动查 · 连着的文件夹改了现状文件，先停着；点「已经对过了」就恢复':
+    'Searches weekly · the linked folder changed a state file, so it is waiting; press “In sync now” to resume',
+  '它连着 {path}。设成私密会断开，并把它从那里的 SPOOL.md 里拿掉。':
+    'It is linked to {path}. Making it private disconnects it and takes it out of the SPOOL.md there.',
+  '这个项目连着的文件夹在上次同步之后改了现状文件，自动查先停着，免得拿已经变了的计划去查。在右栏点「已经对过了」就恢复。':
+    'This project’s linked folder changed a state file since the last sync, so the weekly search is waiting rather than searching on a plan that has changed. Press “In sync now” in the right rail to resume.',
+  '私密项目不连文件夹：连了之后仓库里的 AI 会知道它存在':
+    'A private project cannot be linked to a folder: the AI working in that folder would learn it exists',
+  '这个项目已经连着一个文件夹了':
+    'This project is already linked to a folder',
+  '那个位置上已经没有这个文件夹了':
+    'That folder is no longer there',
+  '现状文件最多选 {n} 份':
+    'Pick {n} state files at most',
+  'Spool 现在找不到这个文件夹':
+    'Spool cannot find this folder right now',
+  '没改成：{msg}':
+    'Not changed: {msg}',
 };

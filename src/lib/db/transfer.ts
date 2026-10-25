@@ -58,8 +58,10 @@ const BLOB_COLUMNS: Partial<Record<MergeTable, readonly string[]>> = { block_ima
 // for a file that may well be sitting right there. So they stay behind and land NULL here; the
 // identity is recorded again the first time this machine sees the file in place (P9-3).
 // (`target_identity` is also a BLOB, which this path could not carry intact anyway.)
+// v36 (P9Y-c): the size and time of the file a text was extracted from are about that computer's file
+// too — left behind, the next look compares the file's modified time with when it was extracted.
 const LOCAL_ONLY_COLUMNS: Partial<Record<MergeTable, readonly string[]>> = {
-  attachments: ['target_identity', 'target_notice'],
+  attachments: ['target_identity', 'target_notice', 'extracted_size', 'extracted_mtime'],
 };
 
 const emptyAdded = (): Record<MergeTable, number> =>

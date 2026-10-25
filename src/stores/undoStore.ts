@@ -48,6 +48,7 @@ import type {
   WorkspaceArchivePayload,
   WorkspaceDeletePayload,
 } from '@/lib/undo/undoLog';
+import { scheduleProtocolRefresh } from '@/lib/folders/refresh';
 
 // The single most-recent undo, kept so the overlay confirmation's 重做 (redo) action can
 // re-apply it.
@@ -394,8 +395,10 @@ const reverseAndBuildRedo = async (
     case 'thread_delete': {
       const { threadId } = entry.payload;
       await restoreThread(threadId);
+      scheduleProtocolRefresh();
       return async () => {
         await softDeleteThread(threadId);
+        scheduleProtocolRefresh();
       };
     }
     // v23 multi-select delete. Restoring one at a time is the same call the single case
@@ -404,16 +407,20 @@ const reverseAndBuildRedo = async (
     case 'thread_delete_many': {
       const { threads } = entry.payload;
       for (const { threadId } of threads) await restoreThread(threadId);
+      scheduleProtocolRefresh();
       return async () => {
         for (const { threadId } of threads) await softDeleteThread(threadId);
+        scheduleProtocolRefresh();
       };
     }
     case 'workspace_delete': {
       const { workspaceId, deleteTimestamp } = entry.payload;
       await restoreWorkspace(workspaceId, deleteTimestamp);
+      scheduleProtocolRefresh();
       // Redo re-stamps with the SAME timestamp so a following undo still matches.
       return async () => {
         await softDeleteWorkspace(workspaceId, deleteTimestamp);
+        scheduleProtocolRefresh();
       };
     }
     // 归档: put back exactly the projects it finished, as they were; redo writes the same

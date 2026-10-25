@@ -30,6 +30,7 @@ import {
   useUndoStore,
 } from './undoStore';
 import type { MovePayload } from '@/lib/undo/undoLog';
+import { invoke } from '@tauri-apps/api/core';
 import { useSettingsStore } from './settingsStore';
 import { toast } from './toastStore';
 import { t } from '@/lib/i18n';
@@ -107,6 +108,9 @@ interface BlocksState {
   /** P9-3: where each project file is now, by attachment id — only files looked at since
    *  launch have an entry. */
   fileStates: Record<string, FileState>;
+  /** P9Y-c: files whose text was extracted again in this session because the file had changed
+   *  since — the right rail marks them 「改过」. */
+  reExtracted: Set<string>;
   /** P9-3: look at these files of `threadId` (the right rail, a file about to open, the
    *  export list). A file that moved is followed — its `target` here is updated to match. */
   locateFiles: (threadId: string, ids: string[]) => Promise<FileState[]>;
@@ -239,6 +243,10 @@ const refreshIncomingFor = async (
   }
 };
 
+// P9Y-c: files being extracted again right now — a second look while one is reading must not start
+// another.
+const reExtracting = new Set<string>();
+
 export const useBlocksStore = create<BlocksState>((set, get) => {
   // v2.7: extract text for one file attachment, persist the result, and patch it into
   // the by-block index so an open thread / a later Pack reflects the text. Never throws —
@@ -247,9 +255,11 @@ export const useBlocksStore = create<BlocksState>((set, get) => {
   // toast — used on attach so the user sees why a file's text is missing; off for backfill.
   const extractAndStore = async (a: Attachment, notify: boolean): Promise<void> => {
     try {
+      // P9Y-c: what the file was when it was read, so a later change can be told (file_follow.rs).
+      const stamp = await invoke<[number, number] | null>('file_stamp', { path: a.target }).catch(() => null);
       const result = await extractAttachmentText(a.target);
       const text = result.ok ? result.text : null;
-      await adb.updateAttachmentExtraction(a.id, text, result.kind);
+      await adb.updateAttachmentExtraction(a.id, text, result.kind, stamp);
       set((s) => ({
         attachmentsByThread: applyExtraction(
           s.attachmentsByThread,
@@ -275,6 +285,7 @@ export const useBlocksStore = create<BlocksState>((set, get) => {
     imagesByBlock: {},
     incomingByBlock: {},
     fileStates: {},
+    reExtracted: new Set<string>(),
     selectedBlockIds: new Set<string>(),
 
     load: async (threadId) => {
@@ -668,6 +679,20 @@ export const useBlocksStore = create<BlocksState>((set, get) => {
         return [];
       }
       const byId = new Map(states.map((st) => [st.id, st]));
+      // P9Y-c (DISCOVERED-20261025-1, Ocean 「按推荐」): a file that changed since its text was extracted
+      // is read again — the pack and every AI then get the current version, not the one from the day
+      // it was attached. Same privacy switch as extraction on attach (§2.5).
+      if (useSettingsStore.getState().autoExtractAttachments) {
+        const list = get().attachmentsByThread[threadId] ?? [];
+        for (const st of states) {
+          if (!st.changed || reExtracting.has(st.id)) continue;
+          const a = list.find((x) => x.id === st.id);
+          if (!a || a.kind !== 'file') continue;
+          reExtracting.add(st.id);
+          set((s) => ({ reExtracted: new Set(s.reExtracted).add(st.id) }));
+          void extractAndStore({ ...a, target: st.path }, false).finally(() => reExtracting.delete(st.id));
+        }
+      }
       set((s) => {
         const list = s.attachmentsByThread[threadId];
         return {

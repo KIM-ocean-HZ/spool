@@ -402,10 +402,14 @@ CREATE TABLE IF NOT EXISTS attachments (
                                                    --   (macOS bookmark / Windows volume + file id);
                                                    --   ⚠️ written and read by Rust only — the front
                                                    --   end's SQL plugin cannot carry bytes
-  target_notice   TEXT                             -- v33: JSON, what the user still has to hear:
+  target_notice   TEXT,                            -- v33: JSON, what the user still has to hear:
                                                    --   {"kind":"moved","from":<old path>} = Spool
                                                    --   followed it, not seen yet; {"kind":"dismissed"}
                                                    --   = the user confirmed it is gone, stay quiet
+  -- v36 (P9Y-c, DISCOVERED-20261025-1)：抽字那一刻文件的大小和修改时间。之后再看文件时两样有一样
+  -- 变了，就说明文件改过，正文要重抽。NULL = v36 以前抽的（这时退回去比「修改时间晚于 extracted_at」）。
+  extracted_size  INTEGER,                         -- v36: bytes when the text was extracted
+  extracted_mtime INTEGER                          -- v36: ms epoch modified time when extracted
 );
 
 CREATE INDEX IF NOT EXISTS idx_attachments_thread
@@ -768,3 +772,42 @@ CREATE TABLE IF NOT EXISTS split_proposals (
 
 CREATE INDEX IF NOT EXISTS idx_split_proposals_thread
   ON split_proposals(thread_id, created_at ASC);
+
+-- v36 (P9Y, Ocean 2026-10-25 第 206、208 条) —— 一个项目连上电脑上的一个文件夹（代码仓库、论文文件夹都行）。
+--
+-- ⭐ 规矩：协议跟着文件夹走，不跟着项目走（任务书 §3.5）。一个文件夹 = `folders` 一行 = 文件夹根目录
+-- 一份 SPOOL.md；连着它的项目在 `folder_links` 里，一个项目最多连一个文件夹，一个文件夹可以有很多项目。
+-- ⚠️ `identity` 是 BLOB（和 `attachments.target_identity` 同一套，file_identity.rs），⛔ 前端的 SQL 插件
+-- 搬不了字节 —— 这两张表只由 Rust 读写（folder_link.rs）。
+-- ⛔ 不跟着库搬（`transfer.ts` 的 `MERGE_TABLES` 不列它们）：路径、身份、快照说的都是这台电脑上的那个
+-- 文件夹，SPOOL.md 也在那台电脑上。换一台电脑要在那边重新连。
+-- 往回：`DROP TABLE folder_links; DROP TABLE folders;` 加 attachments 的两句 `DROP COLUMN` 退回 v35，
+-- ⛔ 不丢任何 v35 就有的数据。
+CREATE TABLE IF NOT EXISTS folders (
+  id             TEXT PRIMARY KEY,
+  path           TEXT NOT NULL,                  -- absolute, symlinks resolved when connected
+  identity       BLOB,                           -- what the OS recognises the folder by (Rust only)
+  git_exclude    INTEGER NOT NULL DEFAULT 0,     -- 1 = Spool added the SPOOL.md line to .git/info/exclude
+  pointer_claude INTEGER NOT NULL DEFAULT 0,     -- 1 = Spool added `@SPOOL.md` to this folder's CLAUDE.md
+  pointer_agents INTEGER NOT NULL DEFAULT 0,     -- 1 = Spool added the 「先读 SPOOL.md」 line to AGENTS.md
+  protocol_hash  TEXT,                           -- fingerprint of what Spool last wrote between the markers;
+                                                 --   a different one there = the user edited it, ask first
+  snapshot       TEXT NOT NULL DEFAULT '{}',     -- JSON, the folder at the last sync (folder_link.rs `Snapshot`)
+  synced_at      INTEGER NOT NULL,               -- ms epoch of the last 「已经对过了」 (connecting counts as one)
+  state_cache    TEXT NOT NULL DEFAULT '{}',     -- JSON, the text of docx / pdf state files, extracted by the
+                                                 --   GUI for the MCP server (which cannot read them itself)
+  created_at     INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS folder_links (
+  thread_id   TEXT PRIMARY KEY REFERENCES threads(id) ON DELETE CASCADE,
+  folder_id   TEXT NOT NULL REFERENCES folders(id) ON DELETE CASCADE,
+  is_primary  INTEGER NOT NULL DEFAULT 0,        -- the first project connected; listed first in SPOOL.md
+  state_files TEXT NOT NULL DEFAULT '[]',        -- JSON array of paths inside the folder, `/`-separated;
+                                                 --   a `*` stands for the date in a dated series
+                                                 --   (`plans/HANDOFF_*.md` = the newest of them)
+  created_at  INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_folder_links_folder
+  ON folder_links(folder_id, created_at ASC);

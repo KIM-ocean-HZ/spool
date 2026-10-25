@@ -49,6 +49,7 @@ type PersistableKey =
   | 'colorScheme'
   | 'blockFontSize'
   | 'breakReminderEnabled'
+  | 'folderGlobalHint'
   | 'breakWorkMinutes'
   // 形态 C（WORKPLAN-2026-08-20 §6.2）：Spool 自己出去调 API。
   // ⚠️ key 不在这里，也永远不要放进来 —— 见 api_engine.rs 里 api_key_save 上面那段。
@@ -232,6 +233,10 @@ interface SettingsState {
    *  ⚠️ This is the only key in this file that changes what 经典 does rather than how it looks,
    *  which is why it is a switch the user can find in one place and turn off in one click. */
   breakReminderEnabled: boolean;
+  /** P9Y（任务书 §3.4 第三个选项）：一键接入写进 `~/.claude/CLAUDE.md`、`~/.codex/AGENTS.md` 的那一段
+   *  多一句「工作目录里有 SPOOL.md 就先读它」。默认关，用户在连文件夹那一步自己勾。⚠️ Rust 那边
+   *  （`folder_link::global_hint_on`）直接读 settings.json 里这个键 —— 名字两边要一样。 */
+  folderGlobalHint: boolean;
   /** 形态 C 总开关。⚠️ 默认 false —— §6.2 约束 5。 */
   apiEngineEnabled: boolean;
   /** P9U-3 — which vendor the key is (`lib/ai/vendors`). '' = not set yet (settings from before
@@ -359,6 +364,7 @@ const KEYS: PersistableKey[] = [
   'colorScheme',
   'blockFontSize',
   'breakReminderEnabled',
+  'folderGlobalHint',
   'breakWorkMinutes',
   'apiEngineEnabled',
   'apiVendor',
@@ -425,6 +431,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   colorScheme: DEFAULT_COLOR_SCHEME,
   blockFontSize: DEFAULT_BLOCK_FONT,
   breakReminderEnabled: true,
+  folderGlobalHint: false,
   breakWorkMinutes: DEFAULT_WORK_MINUTES,
   // ⚠️ §6.2 设计约束 5：**默认关闭**，而且是和 MCP 分开的第二个独立开关。
   // 打开它才会有任何东西离开这台机器,而且离开的也不是主进程 —— 是 spool-ai 子进程。
