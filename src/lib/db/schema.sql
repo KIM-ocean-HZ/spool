@@ -799,6 +799,8 @@ CREATE TABLE IF NOT EXISTS folders (
   created_at     INTEGER NOT NULL
 );
 
+-- ⚠️ v37 起不再读写（P9Y 第二轮，Ocean 10-25 第 210 条：连接改成「整个工作区连一个文件夹」，见下面的
+-- `workspace_folders`）。v36 没发过版，真库里这张表是空的；按「迁移只加不删」的老规矩留着不删。
 CREATE TABLE IF NOT EXISTS folder_links (
   thread_id   TEXT PRIMARY KEY REFERENCES threads(id) ON DELETE CASCADE,
   folder_id   TEXT NOT NULL REFERENCES folders(id) ON DELETE CASCADE,
@@ -811,3 +813,20 @@ CREATE TABLE IF NOT EXISTS folder_links (
 
 CREATE INDEX IF NOT EXISTS idx_folder_links_folder
   ON folder_links(folder_id, created_at ASC);
+
+-- v37 (P9Y 第二轮, Ocean 2026-10-25 第 210 条「需要整个工作区直接连接到一个项目文件夹上」) —— 连到文件夹的是
+-- 工作区，不是单个项目。工作区里（和它下面没有自己连文件夹的子工作区里）没完成、不私密的项目都写进那个文件夹的
+-- SPOOL.md；一个项目归离它最近的、连着文件夹的那一层工作区。现状文件和主项目跟着这条连接走。
+-- 一个工作区最多连一个文件夹；一个文件夹可以被好几个工作区连（同一份 SPOOL.md，按工作区分组）。
+-- ⛔ 和 `folders` 一样不跟着库搬（`transfer.ts` 不列它）。往回：`DROP TABLE workspace_folders` 退回 v36。
+CREATE TABLE IF NOT EXISTS workspace_folders (
+  workspace_id      TEXT PRIMARY KEY REFERENCES workspaces(id) ON DELETE CASCADE,
+  folder_id         TEXT NOT NULL REFERENCES folders(id) ON DELETE CASCADE,
+  primary_thread_id TEXT,                         -- the project an AI writes into by default; NULL or
+                                                  --   gone = the first project of the workspace
+  state_files       TEXT NOT NULL DEFAULT '[]',   -- JSON, as `folder_links.state_files` was
+  created_at        INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_workspace_folders_folder
+  ON workspace_folders(folder_id, created_at ASC);

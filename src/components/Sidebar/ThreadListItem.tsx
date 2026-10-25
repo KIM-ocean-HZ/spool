@@ -348,7 +348,7 @@ export default function ThreadListItem({
                 turnOn={privateTurnsOn}
                 linkedFolders={privateFolders}
                 onConfirm={() => {
-                  void setPrivate(acting, privateTurnsOn);
+                  void setPrivate(acting, privateTurnsOn).catch((e) => console.error('[threads] privacy switch failed', e));
                   setMenu(null);
                 }}
                 onCancel={() => setPrivateAsk(false)}

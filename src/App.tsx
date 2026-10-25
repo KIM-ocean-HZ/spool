@@ -16,6 +16,9 @@ import KnitDrawer from '@/components/Knit/KnitDrawer';
 import Sidebar from '@/components/Sidebar';
 import ProjectBoard from '@/components/ProjectBoard';
 import ReviewBoard from '@/components/ReviewBoard';
+import WorkspaceBoard from '@/components/WorkspaceBoard';
+import { useFolderStore } from '@/stores/folderStore';
+import { scheduleProtocolRefresh } from '@/lib/folders/refresh';
 import NightlyRunner from '@/components/Compress/NightlyRunner';
 import ThreadView from '@/components/ThreadView';
 import CompleteThreadPanel from '@/components/ThreadView/CompleteThreadPanel';
@@ -159,6 +162,9 @@ export default function App() {
       // this version used to hold in 「关系待审」, and any retired while the window was closed.
       await releaseRefsToRetired().catch((e) => console.warn('[refs] release sweep failed', e));
       await loadThreads();
+      // Existing folder links may have migrated from projects to workspaces. Update their protocol
+      // once after startup, with the usual backup and protection for sections the user edited.
+      scheduleProtocolRefresh();
       // P9S-4: which projects an AI wrote into since they were last looked at (the green dot).
       void useAiUpdatesStore.getState().refresh().catch((e) => console.warn('[ai-seen] refresh failed', e));
       // P9D: text not yet in the library (drafts.json). After the DB is open — a draft whose
@@ -296,6 +302,18 @@ export default function App() {
   // same reload, same throttle as the focus one.
   useEffect(() => watchOutsideWrites(), []);
 
+  // P9Y 第二轮: the sidebar marks the workspaces linked to a folder. Once the library is up (the
+  // migration that makes the table runs before the projects load), and again whenever Spool comes
+  // back to the front — a folder may have moved on while it was behind.
+  const loadLinkedFolders = useFolderStore((s) => s.loadLinked);
+  useEffect(() => {
+    if (thLoading) return;
+    void loadLinkedFolders();
+    const look = (): void => void loadLinkedFolders();
+    window.addEventListener('focus', look);
+    return () => window.removeEventListener('focus', look);
+  }, [thLoading, loadLinkedFolders]);
+
   useEffect(() => {
     (window as unknown as Record<string, unknown>).__spool = {
       workspaces: useWorkspacesStore,
@@ -414,6 +432,8 @@ export default function App() {
               <ProjectBoard />
             ) : pinnedView === 'review' ? (
               <ReviewBoard />
+            ) : pinnedView === 'workspace' ? (
+              <WorkspaceBoard />
             ) : (
               <ThreadView />
             )}

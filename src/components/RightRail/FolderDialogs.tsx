@@ -237,14 +237,15 @@ const applyGlobalHint = async (on: boolean): Promise<void> => {
 
 type Step = 'what' | 'state' | 'git' | 'ai';
 
-/** The four steps (task book §5 A1 / A2). */
+/** The four steps (task book §5 A1 / A2), for a workspace (§8, 第 210 条). */
 export function ConnectDialog({
-  threadId,
+  workspaceId,
   title,
   inspect,
   onClose,
 }: {
-  threadId: string;
+  workspaceId: string;
+  /** The workspace's name. */
   title: string;
   inspect: FolderInspect;
   onClose: () => void;
@@ -260,16 +261,16 @@ export function ConnectDialog({
   const globalNow = useSettingsStore((s) => s.folderGlobalHint);
   const [ptr, setPtr] = useState({ claude: false, agents: false, global: globalNow });
   const [busy, setBusy] = useState(false);
-  const load = useFolderStore((s) => s.load);
+  const reloadAll = useFolderStore((s) => s.reloadAll);
   const at = steps.indexOf(step);
   const last = at === steps.length - 1;
-  const join = (names: string[]): string => names.map((n) => t('〈{name}〉', { name: n })).join(t('、'));
+  const join = (names: string[]): string => names.map((n) => t('「{name}」', { name: n })).join(t('、'));
 
   const finish = async (): Promise<void> => {
     setBusy(true);
     try {
       await connectFolder({
-        threadId,
+        workspaceId,
         path: inspect.path,
         stateFiles: picked,
         gitExclude: inspect.git && localOnly,
@@ -277,7 +278,7 @@ export function ConnectDialog({
         pointerAgents: ptr.agents,
       });
       if (!joining) await applyGlobalHint(ptr.global);
-      await load(threadId);
+      await reloadAll();
       toast.notice(t('连好了：SPOOL.md 在「{name}」最外面', { name: inspect.name }));
       onClose();
     } catch (e) {
@@ -293,6 +294,9 @@ export function ConnectDialog({
         return (
           <>
             <p className="select-text break-all font-mono text-[12px] text-muted">{inspect.short}</p>
+            <p className="text-ink">
+              {t('把工作区「{title}」连到这个文件夹。工作区里没完成、不私密的项目都算它的，以后新建的也算；子工作区跟着它，除非另连一个。', { title })}
+            </p>
             <p>{t('连上之后，Spool 会：')}</p>
             <ul className="list-disc space-y-1 pl-5">
               <li>{t('列出里面的文件，看上次之后改了什么。只看文件名、大小和修改时间。')}</li>
@@ -304,7 +308,7 @@ export function ConnectDialog({
             </ul>
             {joining && (
               <p className="text-ink">
-                {t('这个文件夹已经连着{them}，〈{title}〉会加进同一份 SPOOL.md。', {
+                {t('这个文件夹已经连着工作区{them}，「{title}」会加进同一份 SPOOL.md。', {
                   them: join(inspect.linkedTo),
                   title,
                 })}
@@ -384,7 +388,7 @@ export function ConnectDialog({
   })();
 
   const heading: Record<Step, string> = {
-    what: t('连接文件夹「{name}」', { name: inspect.name }),
+    what: t('把「{ws}」连到文件夹「{name}」', { ws: title, name: inspect.name }),
     state: t('哪几份文件写着现状'),
     git: t('SPOOL.md 跟不跟 git'),
     ai: t('让 AI 读到它'),
@@ -420,23 +424,21 @@ export function ConnectDialog({
 
 /** 「改现状文件」 on the card. */
 export function StateFilesDialog({
-  threadId,
   view,
   candidates,
   onClose,
 }: {
-  threadId: string;
   view: FolderView;
   candidates: FolderCandidate[];
   onClose: () => void;
 }) {
   const t = useT();
   const [picked, setPicked] = useState<string[]>(() => view.state.map((s) => s.spec));
-  const load = useFolderStore((s) => s.load);
+  const reloadAll = useFolderStore((s) => s.reloadAll);
   const save = async (): Promise<void> => {
     try {
-      await setFolderStateFiles(threadId, picked);
-      await load(threadId);
+      await setFolderStateFiles(view.workspaceId, picked);
+      await reloadAll();
       onClose();
     } catch (e) {
       toast.error(folderError(e));
@@ -463,16 +465,16 @@ export function StateFilesDialog({
 }
 
 /** 「让 AI 读到它」 on the card. */
-export function PointersDialog({ threadId, view, onClose }: { threadId: string; view: FolderView; onClose: () => void }) {
+export function PointersDialog({ view, onClose }: { view: FolderView; onClose: () => void }) {
   const t = useT();
   const globalNow = useSettingsStore((s) => s.folderGlobalHint);
   const [ptr, setPtr] = useState({ claude: view.claudePoints, agents: view.agentsPoints, global: globalNow });
-  const load = useFolderStore((s) => s.load);
+  const reloadAll = useFolderStore((s) => s.reloadAll);
   const save = async (): Promise<void> => {
     try {
-      await setFolderPointers(threadId, ptr.claude, ptr.agents);
+      await setFolderPointers(view.workspaceId, ptr.claude, ptr.agents);
       await applyGlobalHint(ptr.global);
-      await load(threadId);
+      await reloadAll();
       onClose();
     } catch (e) {
       toast.error(folderError(e));
@@ -507,28 +509,23 @@ export function PointersDialog({ threadId, view, onClose }: { threadId: string; 
 
 /** 「断开」 (and 「换文件夹」, which is this, then connecting again). */
 export function DisconnectDialog({
-  threadId,
-  title,
   view,
   replacing,
   onClose,
   onDone,
 }: {
-  threadId: string;
-  title: string;
   view: FolderView;
   replacing: boolean;
   onClose: () => void;
   onDone: () => void;
 }) {
   const t = useT();
-  const last = view.others.length === 0;
   const [remove, setRemove] = useState(true);
-  const forget = useFolderStore((s) => s.forget);
+  const reloadAll = useFolderStore((s) => s.reloadAll);
   const go = async (): Promise<void> => {
     try {
-      await disconnectFolder(threadId, last && remove);
-      forget(threadId);
+      await disconnectFolder(view.workspaceId, remove);
+      await reloadAll();
       onDone();
     } catch (e) {
       toast.error(folderError(e));
@@ -536,7 +533,7 @@ export function DisconnectDialog({
   };
   return (
     <Dialog
-      title={replacing ? t('换一个文件夹') : t('断开〈{title}〉和 {path}', { title, path: view.short })}
+      title={replacing ? t('换一个文件夹') : t('断开工作区「{title}」和 {path}', { title: view.workspace, path: view.short })}
       onClose={onClose}
       footer={
         <>
@@ -550,8 +547,7 @@ export function DisconnectDialog({
       }
     >
       {replacing && <p>{t('先断开现在这个（{path}），再选新的。', { path: view.short })}</p>}
-      {last ? (
-        <>
+      <>
           <p>{t('{path} 里的 SPOOL.md 怎么办？', { path: view.short })}</p>
           {[
             {
@@ -575,36 +571,31 @@ export function DisconnectDialog({
               </span>
             </label>
           ))}
-        </>
-      ) : (
-        <p>
-          {t('这个文件夹还连着{them}。SPOOL.md 留着，只把〈{title}〉从里面拿掉。', {
-            them: view.others.map((n) => t('〈{name}〉', { name: n })).join(t('、')),
-            title,
-          })}
-        </p>
-      )}
+          <p className="text-[11px] text-muted">
+            {t('还有别的工作区连着这个文件夹的话，SPOOL.md 留着，只把这个工作区从里面拿掉。')}
+          </p>
+      </>
     </Dialog>
   );
 }
 
 /** 「看差别」: Spool's section as the file has it, against what Spool would write now. */
 export function DiffDialog({
-  threadId,
+  workspaceId,
   onClose,
   onReplace,
 }: {
-  threadId: string;
+  workspaceId: string;
   onClose: () => void;
   onReplace: () => void;
 }) {
   const t = useT();
   const [pair, setPair] = useState<[string, string] | null>(null);
   useEffect(() => {
-    protocolDiff(threadId)
+    protocolDiff(workspaceId)
       .then(setPair)
       .catch((e) => toast.error(folderError(e)));
-  }, [threadId]);
+  }, [workspaceId]);
   const lines = pair ? lineDiff(pair[0], pair[1]) : [];
   return (
     <Dialog

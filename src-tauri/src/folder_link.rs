@@ -33,7 +33,7 @@
 //! watches the folder in the background: it is looked at when its project is on screen, or when
 //! an AI asks.
 
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::path::{Path, PathBuf};
 
 use rusqlite::{params, Connection, OptionalExtension};
@@ -808,31 +808,16 @@ pub(crate) fn changes_since(listing: &Listing, snap: &Snapshot) -> Vec<Change> {
 // for), ⛔ no ids (the MCP hard rule), ⛔ no private project.
 // ---------------------------------------------------------------------------------------------
 
-/// A project linked to a folder, as SPOOL.md names it.
-#[derive(Debug, Clone)]
-pub(crate) struct Linked {
-    pub thread_id: String,
-    pub title: String,
-    pub workspace_id: String,
+/// One workspace as SPOOL.md lists it: its name and its projects — (title, is the main project).
+/// P9Y 第二轮 (Ocean 10-25 第 210 条): a folder is linked to a WORKSPACE, and every unfinished,
+/// public project in it (and in sub-workspaces without a folder of their own) belongs to the folder.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct Group {
     pub workspace: String,
-    pub primary: bool,
-    pub state_files: Vec<String>,
+    pub projects: Vec<(String, bool)>,
 }
 
-/// The state files of these projects, primary first, each once.
-pub(crate) fn union_specs(projects: &[Linked]) -> Vec<String> {
-    let mut out: Vec<String> = Vec::new();
-    for p in projects {
-        for s in &p.state_files {
-            if !out.contains(s) {
-                out.push(s.clone());
-            }
-        }
-    }
-    out
-}
-
-pub(crate) fn protocol_block(lang: Lang, projects: &[Linked], specs: &[String], parent: Option<&str>) -> String {
+pub(crate) fn protocol_block(lang: Lang, groups: &[Group], specs: &[String], parent: Option<&str>) -> String {
     let zh = lang == Lang::Zh;
     let mut s = String::new();
     s.push_str(BEGIN);
@@ -850,31 +835,23 @@ pub(crate) fn protocol_block(lang: Lang, projects: &[Linked], specs: &[String], 
         }
         s.push_str("\n### The Spool projects it belongs to\n\n");
     }
-    // Grouped by workspace, in the order the projects come (primary first).
-    let mut groups: Vec<(String, String, Vec<&Linked>)> = Vec::new();
-    for p in projects {
-        match groups.iter_mut().find(|g| g.0 == p.workspace_id) {
-            Some(g) => g.2.push(p),
-            None => groups.push((p.workspace_id.clone(), p.workspace.clone(), vec![p])),
-        }
-    }
-    let several = projects.len() > 1;
-    for (i, (_, ws, members)) in groups.iter().enumerate() {
+    let several = groups.iter().map(|g| g.projects.len()).sum::<usize>() > 1;
+    for (i, g) in groups.iter().enumerate() {
         if i > 0 {
             s.push('\n');
         }
+        let ws = &g.workspace;
         s.push_str(&if zh { format!("工作区「{ws}」：\n") } else { format!("Workspace \u{201c}{ws}\u{201d}:\n") });
-        for p in members {
-            let mark = match (several && p.primary, zh) {
+        if g.projects.is_empty() {
+            s.push_str(if zh { "- （这里还没有项目）\n" } else { "- (no projects here yet)\n" });
+        }
+        for (title, primary) in &g.projects {
+            let mark = match (several && *primary, zh) {
                 (true, true) => "（主项目）",
                 (true, false) => " (main project)",
                 _ => "",
             };
-            s.push_str(&if zh {
-                format!("- 〈{}〉{mark}\n", p.title)
-            } else {
-                format!("- \u{2039}{}\u{203a}{mark}\n", p.title)
-            });
+            s.push_str(&if zh { format!("- 〈{title}〉{mark}\n") } else { format!("- \u{2039}{title}\u{203a}{mark}\n") });
         }
     }
     let files: Vec<String> = specs
@@ -886,7 +863,7 @@ pub(crate) fn protocol_block(lang: Lang, projects: &[Linked], specs: &[String], 
         })
         .collect();
     if zh {
-        s.push_str("\n用 Spool 的 `list_threads`，`title_contains` 填项目名，就能拿到项目 id。私密项目不会出现在这里。\n\n### 谁说了算\n\n");
+        s.push_str("\n用 Spool 的 `list_threads`，`title_contains` 填项目名，就能拿到项目 id。工作区里以后新建的项目也算，Spool 会更新这一段；私密项目和已完成的项目不会出现在这里。\n\n### 谁说了算\n\n");
         if files.is_empty() {
             s.push_str("- **现在做什么、做到哪，以这个文件夹为准**：看这里写给人看的计划和交接文档。\n");
         } else {
@@ -913,7 +890,7 @@ pub(crate) fn protocol_block(lang: Lang, projects: &[Linked], specs: &[String], 
              这一段由 Spool 维护。项目改名、连接变化时 Spool 会更新 `spool:begin` 和 `spool:end` 之间的内容；你改过的话它会先问你。在 Spool 里断开这个文件夹，或者把这一段整段删掉，都能移除。\n",
         );
     } else {
-        s.push_str("\nCall Spool's `list_threads` with the project name as `title_contains` to get its id. Private projects never appear here.\n\n### Which side is the authority\n\n");
+        s.push_str("\nCall Spool's `list_threads` with the project name as `title_contains` to get its id. Projects added to the workspace later belong here too, and Spool updates this section; private and finished projects never appear here.\n\n### Which side is the authority\n\n");
         if files.is_empty() {
             s.push_str("- **What is being done now, and how far it has got, is whatever this folder says**: read the plans and hand-off notes written here for people.\n");
         } else {
@@ -1126,9 +1103,14 @@ fn remove_line(file: &Path, lines: &[&str], backups: &Path, folder_id: &str) -> 
 }
 
 // ---------------------------------------------------------------------------------------------
-// The library side. ⚠️ Reads name the tables unqualified — an MCP connection shadows them with
-// views that leave private projects out (`mcp::hide_private_projects`) — and writes name
+// The library side. ⚠️ Reads name the tables unqualified — an MCP connection shadows `threads`
+// with a view that leaves private projects out (`mcp::hide_private_projects`) — and writes name
 // `main.<table>` (an unqualified write to a shadowed table fails).
+//
+// P9Y 第二轮 (Ocean 10-25 第 210 条:「需要整个工作区直接连接到一个项目文件夹上」): what is linked to a
+// folder is a WORKSPACE (`workspace_folders`, v37). A project belongs to the folder of the nearest
+// workspace above it that has one — its own, or a parent's — so a sub-workspace follows its parent
+// unless it is linked to a folder of its own. The v36 `folder_links` (project → folder) is not read.
 // ---------------------------------------------------------------------------------------------
 
 struct FolderRow {
@@ -1162,32 +1144,37 @@ fn folder_from(r: &rusqlite::Row, at: usize) -> rusqlite::Result<FolderRow> {
     })
 }
 
-struct LinkRow {
-    is_primary: bool,
-    state_files: Vec<String>,
-}
-
 fn parse_specs(raw: &str) -> Vec<String> {
     serde_json::from_str(raw).unwrap_or_default()
 }
 
-fn link_of(conn: &Connection, thread_id: &str) -> Result<Option<(FolderRow, LinkRow)>, String> {
-    conn.query_row(
-        &format!(
-            "SELECT {FOLDER_COLS}, l.is_primary, l.state_files
-               FROM folder_links l JOIN folders f ON f.id = l.folder_id
-              WHERE l.thread_id = ?1"
-        ),
-        [thread_id],
-        |r| {
-            Ok((
-                folder_from(r, 0)?,
-                LinkRow { is_primary: r.get::<_, i64>(10)? == 1, state_files: parse_specs(&r.get::<_, String>(11)?) },
-            ))
-        },
-    )
-    .optional()
-    .map_err(|e| e.to_string())
+/// A workspace's link to a folder.
+#[derive(Debug, Clone)]
+struct WsLink {
+    workspace_id: String,
+    folder_id: String,
+    primary_thread_id: Option<String>,
+    state_files: Vec<String>,
+}
+
+fn all_links(conn: &Connection) -> Result<Vec<WsLink>, String> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT workspace_id, folder_id, primary_thread_id, state_files FROM workspace_folders
+              ORDER BY created_at ASC, workspace_id ASC",
+        )
+        .map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map([], |r| {
+            Ok(WsLink {
+                workspace_id: r.get(0)?,
+                folder_id: r.get(1)?,
+                primary_thread_id: r.get(2)?,
+                state_files: parse_specs(&r.get::<_, String>(3)?),
+            })
+        })
+        .map_err(|e| e.to_string())?;
+    rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
 }
 
 fn folder_by_id(conn: &Connection, id: &str) -> Result<Option<FolderRow>, String> {
@@ -1196,32 +1183,155 @@ fn folder_by_id(conn: &Connection, id: &str) -> Result<Option<FolderRow>, String
         .map_err(|e| e.to_string())
 }
 
-/// The live, public projects linked to a folder, primary first. ⚠️ `private = 0` spelled out:
-/// the GUI's connection has no view doing it.
-pub(crate) fn linked_projects(conn: &Connection, folder_id: &str) -> Result<Vec<Linked>, String> {
+/// The live workspaces: parent and name, in the order the sidebar draws them.
+struct Tree {
+    parent: HashMap<String, Option<String>>,
+    title: HashMap<String, String>,
+    /// Depth-first, siblings by sort order: a workspace before its sub-workspaces.
+    order: Vec<String>,
+}
+
+fn tree(conn: &Connection) -> Result<Tree, String> {
     let mut stmt = conn
         .prepare(
-            "SELECT t.id, t.title, w.id, w.title, l.is_primary, l.state_files
-               FROM folder_links l
-               JOIN threads t ON t.id = l.thread_id
-               JOIN workspaces w ON w.id = t.workspace_id
-              WHERE l.folder_id = ?1 AND t.deleted_at IS NULL AND w.deleted_at IS NULL AND t.private = 0
-              ORDER BY l.is_primary DESC, l.created_at ASC, t.id ASC",
+            "SELECT id, parent_id, title FROM workspaces WHERE deleted_at IS NULL
+              ORDER BY sort_order ASC, created_at ASC, id ASC",
+        )
+        .map_err(|e| e.to_string())?;
+    let rows: Vec<(String, Option<String>, String)> = stmt
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+        .map_err(|e| e.to_string())?
+        .collect::<Result<_, _>>()
+        .map_err(|e| e.to_string())?;
+    let parent: HashMap<String, Option<String>> = rows.iter().map(|(id, p, _)| (id.clone(), p.clone())).collect();
+    let title = rows.iter().map(|(id, _, t)| (id.clone(), t.clone())).collect();
+    let mut order = Vec::new();
+    fn walk(at: Option<&str>, rows: &[(String, Option<String>, String)], parent: &HashMap<String, Option<String>>, out: &mut Vec<String>, depth: usize) {
+        if depth > 64 {
+            return;
+        }
+        for (id, p, _) in rows {
+            // A parent that is gone (deleted) counts as the top.
+            let p = p.as_deref().filter(|p| parent.contains_key(*p));
+            if p == at && !out.contains(id) {
+                out.push(id.clone());
+                walk(Some(id), rows, parent, out, depth + 1);
+            }
+        }
+    }
+    walk(None, &rows, &parent, &mut order, 0);
+    Ok(Tree { parent, title, order })
+}
+
+impl Tree {
+    /// The nearest workspace from `ws` upwards that `linked` contains.
+    fn nearest<'a>(&self, ws: &str, linked: &'a HashMap<String, WsLink>) -> Option<&'a WsLink> {
+        let mut cur = Some(ws.to_string());
+        for _ in 0..64 {
+            let w = cur?;
+            if !self.parent.contains_key(&w) {
+                return None;
+            }
+            if let Some(l) = linked.get(&w) {
+                return Some(l);
+            }
+            cur = self.parent.get(&w).cloned().flatten();
+        }
+        None
+    }
+}
+
+fn links_by_ws(links: Vec<WsLink>) -> HashMap<String, WsLink> {
+    links.into_iter().map(|l| (l.workspace_id.clone(), l)).collect()
+}
+
+/// A project SPOOL.md can name: live, public, not finished.
+struct Member {
+    id: String,
+    title: String,
+    workspace_id: String,
+}
+
+fn members(conn: &Connection) -> Result<Vec<Member>, String> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, title, workspace_id FROM threads
+              WHERE deleted_at IS NULL AND private = 0 AND status <> 'done'
+              ORDER BY created_at ASC, id ASC",
         )
         .map_err(|e| e.to_string())?;
     let rows = stmt
-        .query_map([folder_id], |r| {
-            Ok(Linked {
-                thread_id: r.get(0)?,
-                title: r.get(1)?,
-                workspace_id: r.get(2)?,
-                workspace: r.get(3)?,
-                primary: r.get::<_, i64>(4)? == 1,
-                state_files: parse_specs(&r.get::<_, String>(5)?),
-            })
-        })
+        .query_map([], |r| Ok(Member { id: r.get(0)?, title: r.get(1)?, workspace_id: r.get(2)? }))
         .map_err(|e| e.to_string())?;
     rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+}
+
+/// What one folder's SPOOL.md lists: every workspace linked to it and the workspaces under them
+/// that follow it, each with its projects; the main project; the state files of all its links.
+struct Listed {
+    groups: Vec<Group>,
+    /// (thread id, title) of the main project — one pick shared by the folder's links.
+    primary: Option<(String, String)>,
+    specs: Vec<String>,
+}
+
+fn listed(conn: &Connection, folder_id: &str) -> Result<Listed, String> {
+    let links = all_links(conn)?;
+    let mine: Vec<&WsLink> = links.iter().filter(|l| l.folder_id == folder_id).collect();
+    let t = tree(conn)?;
+    let by_ws = links_by_ws(links.clone());
+    let ms = members(conn)?;
+    // Each member, by the workspace it sits in, when its nearest link is one of this folder's.
+    let mut by_group: HashMap<String, Vec<&Member>> = HashMap::new();
+    for m in &ms {
+        if t.nearest(&m.workspace_id, &by_ws).is_some_and(|l| l.folder_id == folder_id) {
+            by_group.entry(m.workspace_id.clone()).or_default().push(m);
+        }
+    }
+    let theirs: Vec<&Member> = ms
+        .iter()
+        .filter(|m| t.nearest(&m.workspace_id, &by_ws).is_some_and(|l| l.folder_id == folder_id))
+        .collect();
+    let primary = mine
+        .iter()
+        .filter_map(|l| l.primary_thread_id.as_deref())
+        .find_map(|p| theirs.iter().find(|m| m.id == p))
+        .or_else(|| mine.iter().find_map(|l| {
+            theirs.iter().find(|m| t.nearest(&m.workspace_id, &by_ws).is_some_and(|n| n.workspace_id == l.workspace_id))
+        }))
+        .map(|m| (m.id.clone(), m.title.clone()));
+    // Linked workspaces in link order, each followed by its sub-workspaces in sidebar order; a
+    // sub-workspace shows only when it has projects here.
+    let mut groups = Vec::new();
+    for l in &mine {
+        for ws in &t.order {
+            let is_link = ws == &l.workspace_id;
+            let under = !is_link && t.nearest(ws, &by_ws).is_some_and(|n| n.workspace_id == l.workspace_id);
+            if !is_link && !under {
+                continue;
+            }
+            let list = by_group.get(ws).map(Vec::as_slice).unwrap_or(&[]);
+            if under && list.is_empty() {
+                continue;
+            }
+            groups.push(Group {
+                workspace: t.title.get(ws).cloned().unwrap_or_default(),
+                projects: list
+                    .iter()
+                    .map(|m| (m.title.clone(), primary.as_ref().is_some_and(|(id, _)| id == &m.id)))
+                    .collect(),
+            });
+        }
+    }
+    let mut specs: Vec<String> = Vec::new();
+    for l in &mine {
+        for s in &l.state_files {
+            if !specs.contains(s) {
+                specs.push(s.clone());
+            }
+        }
+    }
+    Ok(Listed { groups, primary, specs })
 }
 
 /// Where a linked folder is now (the same states as a project file, `file_follow.rs`). With a
@@ -1275,18 +1385,18 @@ fn parent_protocol(conn: &Connection, folder_id: &str, path: &Path) -> Result<Op
     Ok(nearest.map(|n| format!("{}{PROTOCOL_FILE}", "../".repeat(n))))
 }
 
-/// Write the folder's SPOOL.md for the projects linked to it now, and remember what was written.
-/// No live project left: the file is left alone, unless a private project's name has to come out
-/// (`Mode::Force`), when Spool's section is taken out.
+/// Write the folder's SPOOL.md for what is linked to it now, and remember what was written.
+/// A folder no workspace is linked to any more is left alone, unless a private project's name has
+/// to come out (`Mode::Force`), when Spool's section is taken out.
 fn regenerate(conn: &Connection, f: &FolderRow, path: &Path, mode: Mode, lang: Lang, backups: &Path) -> Result<Written, String> {
-    let projects = linked_projects(conn, &f.id)?;
-    if projects.is_empty() {
+    let l = listed(conn, &f.id)?;
+    if l.groups.is_empty() {
         if mode == Mode::Force {
             remove_protocol(path, backups, &f.id)?;
         }
         return Ok(Written::Removed);
     }
-    let block = protocol_block(lang, &projects, &union_specs(&projects), parent_protocol(conn, &f.id, path)?.as_deref());
+    let block = protocol_block(lang, &l.groups, &l.specs, parent_protocol(conn, &f.id, path)?.as_deref());
     let out = write_protocol(path, &block, f.protocol_hash.as_deref(), mode, lang, backups, &f.id)?;
     if let Written::Ok(hash) = &out {
         if f.protocol_hash.as_deref() != Some(hash.as_str()) {
@@ -1314,8 +1424,8 @@ fn check_specs(specs: &[String]) -> Result<Vec<String>, String> {
     Ok(out)
 }
 
-/// Record the state files a project just started using, as they are now — so picking a file is
-/// not read as the folder having moved ahead. Files already in the snapshot keep their mark.
+/// Record the state files just picked, as they are now — so picking a file is not read as the
+/// folder having moved ahead. Files already in the snapshot keep their mark.
 fn add_state_marks(conn: &Connection, f: &FolderRow, path: &Path, specs: &[String]) -> Result<(), String> {
     let mut snap = Snapshot::parse(&f.snapshot);
     let mut changed = false;
@@ -1339,18 +1449,6 @@ fn add_state_marks(conn: &Connection, f: &FolderRow, path: &Path, specs: &[Strin
         .map_err(|e| e.to_string())?;
     }
     Ok(())
-}
-
-fn thread_check(conn: &Connection, thread_id: &str) -> Result<(), String> {
-    let row: Option<(i64, Option<i64>)> = conn
-        .query_row("SELECT private, deleted_at FROM threads WHERE id = ?1", [thread_id], |r| Ok((r.get(0)?, r.get(1)?)))
-        .optional()
-        .map_err(|e| e.to_string())?;
-    match row {
-        None | Some((_, Some(_))) => Err("no_project".into()),
-        Some((1, _)) => Err("private".into()),
-        Some(_) => Ok(()),
-    }
 }
 
 /// A folder already in the library that is this one: the same real path, or the same identity
@@ -1389,9 +1487,38 @@ fn plain(p: PathBuf) -> PathBuf {
     p
 }
 
+/// The link a workspace itself has (not one inherited from above). "no_link" without one.
+fn own_link(conn: &Connection, workspace_id: &str) -> Result<(FolderRow, WsLink), String> {
+    let link = all_links(conn)?.into_iter().find(|l| l.workspace_id == workspace_id).ok_or("no_link")?;
+    let f = folder_by_id(conn, &link.folder_id)?.ok_or("no_link")?;
+    Ok((f, link))
+}
+
+/// The link a project falls under: its workspace's, or the nearest one above. None for a project
+/// that is gone, or that an AI's connection does not show (private).
+fn link_of_thread(conn: &Connection, thread_id: &str) -> Result<Option<(FolderRow, WsLink)>, String> {
+    let ws: Option<String> = conn
+        .query_row("SELECT workspace_id FROM threads WHERE id = ?1 AND deleted_at IS NULL", [thread_id], |r| r.get(0))
+        .optional()
+        .map_err(|e| e.to_string())?;
+    let Some(ws) = ws else { return Ok(None) };
+    link_of_workspace(conn, &ws)
+}
+
+/// The link a workspace falls under: its own, or the nearest one above.
+fn link_of_workspace(conn: &Connection, workspace_id: &str) -> Result<Option<(FolderRow, WsLink)>, String> {
+    let by_ws = links_by_ws(all_links(conn)?);
+    if by_ws.is_empty() {
+        return Ok(None);
+    }
+    let t = tree(conn)?;
+    let Some(l) = t.nearest(workspace_id, &by_ws).cloned() else { return Ok(None) };
+    Ok(folder_by_id(conn, &l.folder_id)?.map(|f| (f, l)))
+}
+
 // ---------------------------------------------------------------------------------------------
-// What a linked project's folder looks like now — one shape for the right rail's card and for
-// what MCP hands an AI (which renders it in mcp.rs).
+// What a linked folder looks like now — one shape for the workspace page, a project's right rail
+// and what MCP hands an AI (which renders it in mcp.rs).
 // ---------------------------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -1417,15 +1544,23 @@ pub(crate) struct NeedsText {
 #[serde(rename_all = "camelCase")]
 pub(crate) struct View {
     pub folder_id: String,
+    /// The workspace that is linked (the one asked about, or the nearest one above it).
+    pub workspace_id: String,
+    pub workspace: String,
+    /// The link was found above: the workspace asked about, or the project's own, is not the one
+    /// linked.
+    pub inherited: bool,
     /// Where the folder is now.
     pub path: String,
     pub short: String,
     pub name: String,
     /// in_place | moved | offline | trash | deleted | unknown
     pub location: &'static str,
-    pub primary: bool,
-    /// The other live, public projects linked to the same folder.
-    pub others: Vec<String>,
+    /// The main project of this folder — the one an AI writes into by default.
+    pub primary_id: Option<String>,
+    pub primary_title: Option<String>,
+    /// How many projects SPOOL.md lists.
+    pub project_count: usize,
     pub synced_at: i64,
     pub sync_note: Option<String>,
     pub sync_by: Option<String>,
@@ -1453,26 +1588,24 @@ pub(crate) struct View {
     pub cache: BTreeMap<String, CachedText>,
 }
 
-/// `full`: list the whole folder (the card, get_folder_status). Without it only the state files
-/// are looked at — cheap enough for list_threads, which covers every project.
-pub(crate) fn view(conn: &Connection, thread_id: &str, write: bool, full: bool) -> Result<Option<View>, String> {
-    let Some((f, link)) = link_of(conn, thread_id)? else { return Ok(None) };
+fn view_of(conn: &Connection, f: FolderRow, link: WsLink, asked_ws: &str, write: bool, full: bool) -> Result<View, String> {
     let (location, path) = locate(write.then_some(conn), &f);
     let snap = Snapshot::parse(&f.snapshot);
-    let others: Vec<String> = linked_projects(conn, &f.id)?
-        .into_iter()
-        .filter(|p| p.thread_id != thread_id)
-        .map(|p| p.title)
-        .collect();
+    let t = tree(conn)?;
+    let l = listed(conn, &f.id)?;
     let path_text = path.to_string_lossy().into_owned();
     let mut v = View {
         folder_id: f.id.clone(),
+        workspace: t.title.get(&link.workspace_id).cloned().unwrap_or_default(),
+        inherited: asked_ws != link.workspace_id,
+        workspace_id: link.workspace_id.clone(),
         short: short_path(&path_text),
         name: path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| path_text.clone()),
         path: path_text,
         location,
-        primary: link.is_primary,
-        others,
+        primary_id: l.primary.as_ref().map(|(id, _)| id.clone()),
+        primary_title: l.primary.map(|(_, t)| t),
+        project_count: l.groups.iter().map(|g| g.projects.len()).sum(),
         synced_at: f.synced_at,
         sync_note: snap.note.clone(),
         sync_by: snap.by.clone(),
@@ -1495,7 +1628,7 @@ pub(crate) fn view(conn: &Connection, thread_id: &str, write: bool, full: bool) 
         cache: parse_cache(&f.state_cache),
     };
     if !matches!(location, "in_place" | "moved") {
-        return Ok(Some(v));
+        return Ok(v);
     }
     v.state = link.state_files.iter().map(|s| state_now(&path, s, &snap)).collect();
     v.ahead = v.state.iter().any(|s| s.changed);
@@ -1527,7 +1660,29 @@ pub(crate) fn view(conn: &Connection, thread_id: &str, write: bool, full: bool) 
         v.not_listed = listing.not_listed;
         v.commits = repo.map(|r| r.commits_since(f.synced_at)).unwrap_or_default();
     }
-    Ok(Some(v))
+    Ok(v)
+}
+
+/// The folder a project falls under. `full`: list the whole folder (the card, get_folder_status);
+/// without it only the state files are looked at — cheap enough for list_threads.
+pub(crate) fn view(conn: &Connection, thread_id: &str, write: bool, full: bool) -> Result<Option<View>, String> {
+    let ws: Option<String> = conn
+        .query_row("SELECT workspace_id FROM threads WHERE id = ?1 AND deleted_at IS NULL", [thread_id], |r| r.get(0))
+        .optional()
+        .map_err(|e| e.to_string())?;
+    let Some(ws) = ws else { return Ok(None) };
+    match link_of_workspace(conn, &ws)? {
+        Some((f, l)) => view_of(conn, f, l, &ws, write, full).map(Some),
+        None => Ok(None),
+    }
+}
+
+/// The folder a workspace falls under (its own, or the nearest one above).
+pub(crate) fn view_workspace(conn: &Connection, workspace_id: &str, write: bool, full: bool) -> Result<Option<View>, String> {
+    match link_of_workspace(conn, workspace_id)? {
+        Some((f, l)) => view_of(conn, f, l, workspace_id, write, full).map(Some),
+        None => Ok(None),
+    }
 }
 
 /// The text of one state file for an AI: straight from the disk for Markdown and plain text, from
@@ -1546,30 +1701,80 @@ pub(crate) fn state_text(v: &View, rel: &str) -> Option<(String, bool)> {
     Some((if cut { full.chars().take(STATE_TEXT_CAP).collect() } else { full }, cut))
 }
 
-/// Every live link whose folder has moved ahead (a state file changed since the sync), as thread
-/// ids — what the weekly automatic follow-up checks before it runs (P9Y-b).
-pub(crate) fn ahead_threads(conn: &Connection) -> Result<Vec<String>, String> {
+/// Per link: has its folder moved ahead (a state file of the link changed since the sync)?
+fn ahead_by_link(conn: &Connection, links: &[WsLink]) -> Result<HashMap<String, (String, usize)>, String> {
+    let mut out = HashMap::new();
+    for l in links {
+        let Some(f) = folder_by_id(conn, &l.folder_id)? else { continue };
+        let (location, path) = locate(None, &f);
+        let changed = if matches!(location, "in_place" | "moved") {
+            let snap = Snapshot::parse(&f.snapshot);
+            l.state_files.iter().filter(|s| state_now(&path, s, &snap).changed).count()
+        } else {
+            0
+        };
+        out.insert(l.workspace_id.clone(), (short_path(&path.to_string_lossy()), changed));
+    }
+    Ok(out)
+}
+
+/// Every live project and its folder (shortened) with how many of the link's state files changed
+/// since the sync — list_threads' two fields, and the weekly automatic follow-up's check. The
+/// folders are looked at once each, however many projects share them.
+pub(crate) fn thread_folders(conn: &Connection) -> Result<HashMap<String, (String, usize)>, String> {
+    let links = all_links(conn)?;
+    if links.is_empty() {
+        return Ok(HashMap::new());
+    }
+    let per_link = ahead_by_link(conn, &links)?;
+    let by_ws = links_by_ws(links);
+    let t = tree(conn)?;
     let mut stmt = conn
-        .prepare(&format!(
-            "SELECT l.thread_id, l.state_files, {FOLDER_COLS}
-               FROM folder_links l JOIN folders f ON f.id = l.folder_id
-               JOIN threads t ON t.id = l.thread_id
-              WHERE t.deleted_at IS NULL"
-        ))
+        .prepare("SELECT id, workspace_id FROM threads WHERE deleted_at IS NULL")
         .map_err(|e| e.to_string())?;
-    let rows: Vec<(String, Vec<String>, FolderRow)> = stmt
-        .query_map([], |r| Ok((r.get(0)?, parse_specs(&r.get::<_, String>(1)?), folder_from(r, 2)?)))
+    let threads: Vec<(String, String)> = stmt
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
         .map_err(|e| e.to_string())?
         .collect::<Result<_, _>>()
         .map_err(|e| e.to_string())?;
-    Ok(rows
+    Ok(threads
         .into_iter()
-        .filter(|(_, specs, f)| {
-            let path = Path::new(&f.path);
-            let snap = Snapshot::parse(&f.snapshot);
-            path.is_dir() && specs.iter().any(|s| state_now(path, s, &snap).changed)
+        .filter_map(|(id, ws)| {
+            let l = t.nearest(&ws, &by_ws)?;
+            per_link.get(&l.workspace_id).map(|v| (id, v.clone()))
         })
-        .map(|(id, _, _)| id)
+        .collect())
+}
+
+/// Projects whose folder has moved ahead — the weekly automatic follow-up waits for them (P9Y-b).
+pub(crate) fn ahead_threads(conn: &Connection) -> Result<Vec<String>, String> {
+    let mut ids: Vec<String> = thread_folders(conn)?.into_iter().filter(|(_, (_, n))| *n > 0).map(|(id, _)| id).collect();
+    ids.sort();
+    Ok(ids)
+}
+
+/// Linked workspaces, for the sidebar's mark beside their names: (workspace id, folder shortened,
+/// moved ahead).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct LinkedWorkspace {
+    pub workspace_id: String,
+    pub short: String,
+    pub ahead: bool,
+}
+
+pub(crate) fn linked_workspaces(conn: &Connection) -> Result<Vec<LinkedWorkspace>, String> {
+    let links = all_links(conn)?;
+    let per_link = ahead_by_link(conn, &links)?;
+    Ok(links
+        .iter()
+        .filter_map(|l| {
+            per_link.get(&l.workspace_id).map(|(short, n)| LinkedWorkspace {
+                workspace_id: l.workspace_id.clone(),
+                short: short.clone(),
+                ahead: *n > 0,
+            })
+        })
         .collect())
 }
 
@@ -1588,7 +1793,7 @@ pub(crate) struct Inspect {
     pub has_claude_md: bool,
     pub has_agents_md: bool,
     pub has_protocol: bool,
-    /// Projects already linked to this very folder: it gets added to their SPOOL.md.
+    /// Workspaces already linked to this very folder: this one gets added to their SPOOL.md.
     pub linked_to: Vec<String>,
     /// A linked folder above this one / below it, shortened.
     pub parent: Option<String>,
@@ -1602,8 +1807,13 @@ pub(crate) struct Inspect {
 pub(crate) fn inspect(conn: &Connection, path: &str) -> Result<Inspect, String> {
     let root = real_folder(path)?;
     let listing = list_folder(&root);
+    let t = tree(conn)?;
     let linked_to = match existing_folder(conn, &root)? {
-        Some(f) => linked_projects(conn, &f.id)?.into_iter().map(|p| p.title).collect(),
+        Some(f) => all_links(conn)?
+            .into_iter()
+            .filter(|l| l.folder_id == f.id)
+            .filter_map(|l| t.title.get(&l.workspace_id).cloned())
+            .collect(),
         None => Vec::new(),
     };
     let mut stmt = conn.prepare("SELECT path FROM folders").map_err(|e| e.to_string())?;
@@ -1644,20 +1854,25 @@ pub(crate) fn inspect(conn: &Connection, path: &str) -> Result<Inspect, String> 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ConnectArgs {
-    pub thread_id: String,
+    pub workspace_id: String,
     pub path: String,
     pub state_files: Vec<String>,
-    /// Only for a folder no project is linked to yet: the later ones share the first's answers.
+    /// Only for a folder nothing is linked to yet: a later link shares the first one's answers.
     pub git_exclude: bool,
     pub pointer_claude: bool,
     pub pointer_agents: bool,
 }
 
-/// Link a project to a folder (task book §3.1 – §3.5, A1 / A2). One transaction: if writing the
+/// Link a workspace to a folder (task book §3.1 – §3.5 and §8). One transaction: if writing the
 /// folder's SPOOL.md fails, nothing is recorded.
 pub(crate) fn connect(conn: &mut Connection, a: &ConnectArgs, lang: Lang, backups: &Path, now: i64) -> Result<(), String> {
-    thread_check(conn, &a.thread_id)?;
-    if link_of(conn, &a.thread_id)?.is_some() {
+    let live: bool = conn
+        .query_row("SELECT COUNT(*) > 0 FROM workspaces WHERE id = ?1 AND deleted_at IS NULL", [&a.workspace_id], |r| r.get(0))
+        .map_err(|e| e.to_string())?;
+    if !live {
+        return Err("no_workspace".into());
+    }
+    if all_links(conn)?.iter().any(|l| l.workspace_id == a.workspace_id) {
         return Err("already_linked".into());
     }
     let root = real_folder(&a.path)?;
@@ -1683,13 +1898,10 @@ pub(crate) fn connect(conn: &mut Connection, a: &ConnectArgs, lang: Lang, backup
             (folder_by_id(&tx, &id)?.ok_or("no_folder")?, true)
         }
     };
-    let first: bool = tx
-        .query_row("SELECT COUNT(*) = 0 FROM folder_links WHERE folder_id = ?1", [&f.id], |r| r.get(0))
-        .map_err(|e| e.to_string())?;
     tx.execute(
-        "INSERT INTO main.folder_links (thread_id, folder_id, is_primary, state_files, created_at)
-         VALUES (?1, ?2, ?3, ?4, ?5)",
-        params![a.thread_id, f.id, first, serde_json::to_string(&specs).map_err(|e| e.to_string())?, now],
+        "INSERT INTO main.workspace_folders (workspace_id, folder_id, primary_thread_id, state_files, created_at)
+         VALUES (?1, ?2, NULL, ?3, ?4)",
+        params![a.workspace_id, f.id, serde_json::to_string(&specs).map_err(|e| e.to_string())?, now],
     )
     .map_err(|e| e.to_string())?;
     if !fresh {
@@ -1712,6 +1924,8 @@ pub(crate) fn connect(conn: &mut Connection, a: &ConnectArgs, lang: Lang, backup
         // Spool's own line in CLAUDE.md / AGENTS.md is not the folder moving on.
         restamp(&tx, &f.id, &root, &["CLAUDE.md", "AGENTS.md"])?;
     }
+    // A sub-workspace linked to a folder of its own takes its projects out of the parent's.
+    refresh_all(&tx, lang, backups)?;
     tx.commit().map_err(|e| e.to_string())
 }
 
@@ -1733,15 +1947,20 @@ fn restamp(conn: &Connection, folder_id: &str, root: &Path, rels: &[&str]) -> Re
     Ok(())
 }
 
-/// 「已经对过了」: the folder as it is now becomes the point it is measured from (task book §3.6 a).
-/// `by`: `user` from the card, `<client> · MCP` from mark_folder_synced.
-pub(crate) fn mark_synced(conn: &Connection, thread_id: &str, by: &str, note: Option<&str>, now: i64) -> Result<(), String> {
-    let (f, _) = link_of(conn, thread_id)?.ok_or("no_link")?;
+/// 「已经对过了」 for one folder: as it is now becomes the point it is measured from (§3.6 a).
+fn mark_folder(conn: &Connection, f: &FolderRow, by: &str, note: Option<&str>, now: i64) -> Result<(), String> {
     let path = PathBuf::from(&f.path);
     if !path.is_dir() {
         return Err("folder_missing".into());
     }
-    let specs = union_specs(&all_links(conn, &f.id)?);
+    let mut specs: Vec<String> = Vec::new();
+    for l in all_links(conn)?.iter().filter(|l| l.folder_id == f.id) {
+        for s in &l.state_files {
+            if !specs.contains(s) {
+                specs.push(s.clone());
+            }
+        }
+    }
     let snap = take_snapshot(&path, &specs, Some(by), note);
     conn.execute(
         "UPDATE main.folders SET snapshot = ?1, synced_at = ?2 WHERE id = ?3",
@@ -1751,33 +1970,24 @@ pub(crate) fn mark_synced(conn: &Connection, thread_id: &str, by: &str, note: Op
     Ok(())
 }
 
-/// Every link of a folder, deleted and private projects included — for the snapshot, which must
-/// cover whatever an undo may bring back.
-fn all_links(conn: &Connection, folder_id: &str) -> Result<Vec<Linked>, String> {
-    let mut stmt = conn
-        .prepare("SELECT thread_id, is_primary, state_files FROM folder_links WHERE folder_id = ?1 ORDER BY is_primary DESC, created_at ASC")
-        .map_err(|e| e.to_string())?;
-    let rows = stmt
-        .query_map([folder_id], |r| {
-            Ok(Linked {
-                thread_id: r.get(0)?,
-                title: String::new(),
-                workspace_id: String::new(),
-                workspace: String::new(),
-                primary: r.get::<_, i64>(1)? == 1,
-                state_files: parse_specs(&r.get::<_, String>(2)?),
-            })
-        })
-        .map_err(|e| e.to_string())?;
-    rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+/// From MCP: the folder of the project the AI is working on. `by`: `<client> · MCP`.
+pub(crate) fn mark_synced(conn: &Connection, thread_id: &str, by: &str, note: Option<&str>, now: i64) -> Result<(), String> {
+    let (f, _) = link_of_thread(conn, thread_id)?.ok_or("no_link")?;
+    mark_folder(conn, &f, by, note, now)
 }
 
-pub(crate) fn set_state_files(conn: &Connection, thread_id: &str, specs: &[String], lang: Lang, backups: &Path) -> Result<(), String> {
-    let (f, _) = link_of(conn, thread_id)?.ok_or("no_link")?;
+/// From the GUI (the card on a project or on a workspace page): the linked workspace's folder.
+pub(crate) fn mark_synced_workspace(conn: &Connection, workspace_id: &str, now: i64) -> Result<(), String> {
+    let (f, _) = own_link(conn, workspace_id)?;
+    mark_folder(conn, &f, "user", None, now)
+}
+
+pub(crate) fn set_state_files(conn: &Connection, workspace_id: &str, specs: &[String], lang: Lang, backups: &Path) -> Result<(), String> {
+    let (f, _) = own_link(conn, workspace_id)?;
     let specs = check_specs(specs)?;
     conn.execute(
-        "UPDATE main.folder_links SET state_files = ?1 WHERE thread_id = ?2",
-        params![serde_json::to_string(&specs).map_err(|e| e.to_string())?, thread_id],
+        "UPDATE main.workspace_folders SET state_files = ?1 WHERE workspace_id = ?2",
+        params![serde_json::to_string(&specs).map_err(|e| e.to_string())?, workspace_id],
     )
     .map_err(|e| e.to_string())?;
     let path = PathBuf::from(&f.path);
@@ -1789,10 +1999,14 @@ pub(crate) fn set_state_files(conn: &Connection, thread_id: &str, specs: &[Strin
     Ok(())
 }
 
-pub(crate) fn set_primary(conn: &Connection, thread_id: &str, lang: Lang, backups: &Path) -> Result<(), String> {
-    let (f, _) = link_of(conn, thread_id)?.ok_or("no_link")?;
+pub(crate) fn set_primary(conn: &Connection, workspace_id: &str, thread_id: &str, lang: Lang, backups: &Path) -> Result<(), String> {
+    let (f, _) = own_link(conn, workspace_id)?;
+    let (chosen, _) = link_of_thread(conn, thread_id)?.ok_or("no_project")?;
+    if chosen.id != f.id || !members(conn)?.iter().any(|m| m.id == thread_id) {
+        return Err("no_project".into());
+    }
     conn.execute(
-        "UPDATE main.folder_links SET is_primary = (thread_id = ?1) WHERE folder_id = ?2",
+        "UPDATE main.workspace_folders SET primary_thread_id = ?1 WHERE folder_id = ?2",
         params![thread_id, f.id],
     )
     .map_err(|e| e.to_string())?;
@@ -1803,26 +2017,20 @@ pub(crate) fn set_primary(conn: &Connection, thread_id: &str, lang: Lang, backup
     Ok(())
 }
 
-/// Unlink a project (task book §3.2 「断开时」, §3.7). The last project out takes the folder row with
-/// it; `remove` then also takes Spool's section out of SPOOL.md and — once that file is gone — the
-/// lines Spool wrote, each only while it is still exactly as written. `private`: the project is
-/// going private, so its name comes out of SPOOL.md whatever the file says now.
-pub(crate) fn disconnect(conn: &Connection, thread_id: &str, remove: bool, private: bool, lang: Lang, backups: &Path) -> Result<(), String> {
-    let Some((f, link)) = link_of(conn, thread_id)? else { return Ok(()) };
-    conn.execute("DELETE FROM main.folder_links WHERE thread_id = ?1", [thread_id]).map_err(|e| e.to_string())?;
+/// Unlink a workspace (task book §3.2 「断开时」). The last link out takes the folder row with it;
+/// `remove` then also takes Spool's section out of SPOOL.md and — once that file is gone — the
+/// lines Spool wrote, each only while it is still exactly as written.
+pub(crate) fn disconnect(conn: &Connection, workspace_id: &str, remove: bool, lang: Lang, backups: &Path) -> Result<(), String> {
+    let Ok((f, _)) = own_link(conn, workspace_id) else { return Ok(()) };
+    conn.execute("DELETE FROM main.workspace_folders WHERE workspace_id = ?1", [workspace_id]).map_err(|e| e.to_string())?;
     let path = PathBuf::from(&f.path);
-    let rest = all_links(conn, &f.id)?;
-    if let Some(next) = rest.first().filter(|_| link.is_primary) {
-        conn.execute("UPDATE main.folder_links SET is_primary = 1 WHERE thread_id = ?1", [&next.thread_id])
-            .map_err(|e| e.to_string())?;
+    if all_links(conn)?.iter().any(|l| l.folder_id == f.id) {
+        // Its projects may now fall under a parent's folder — every folder is rewritten.
+        return refresh_all(conn, lang, backups);
     }
-    if !rest.is_empty() {
-        if path.is_dir() {
-            regenerate(conn, &f, &path, if private { Mode::Force } else { Mode::Update }, lang, backups)?;
-        }
-        return Ok(());
-    }
-    if (remove || private) && path.is_dir() {
+    // Its projects may now fall under a parent's folder.
+    refresh_all(conn, lang, backups)?;
+    if remove && path.is_dir() {
         let kept = remove_protocol(&path, backups, &f.id)?;
         if !kept {
             if f.pointer_claude {
@@ -1840,8 +2048,27 @@ pub(crate) fn disconnect(conn: &Connection, thread_id: &str, remove: bool, priva
     Ok(())
 }
 
-/// Rewrite every folder's SPOOL.md for the projects as they are now — after a rename, a move to
-/// another workspace, a delete or its undo. Only where Spool's section is still as it left it.
+/// A project went private (task book §3.7): its folder's SPOOL.md is rewritten without it, over an
+/// edit of the user's too (backed up first) — a private project's name in a file every AI in that
+/// folder reads is the one outcome this must not leave. Back to public: an ordinary refresh.
+pub(crate) fn privacy_changed(conn: &Connection, thread_id: &str, lang: Lang, backups: &Path) -> Result<(), String> {
+    let private: Option<i64> = conn
+        .query_row("SELECT private FROM threads WHERE id = ?1", [thread_id], |r| r.get(0))
+        .optional()
+        .map_err(|e| e.to_string())?;
+    let Some((f, _)) = link_of_thread(conn, thread_id)? else { return Ok(()) };
+    let (location, path) = locate(Some(conn), &f);
+    if !matches!(location, "in_place" | "moved") {
+        return if private == Some(1) { Err("folder_missing".into()) } else { Ok(()) };
+    }
+    let mode = if private == Some(1) { Mode::Force } else { Mode::Update };
+    regenerate(conn, &f, &path, mode, lang, backups)?;
+    Ok(())
+}
+
+/// Rewrite every folder's SPOOL.md for the projects as they are now — after a project is added,
+/// renamed, moved, finished, deleted or brought back, a workspace renamed, or the language switched.
+/// Only where Spool's section is still as it left it.
 pub(crate) fn refresh_all(conn: &Connection, lang: Lang, backups: &Path) -> Result<(), String> {
     let mut stmt = conn.prepare("SELECT id FROM folders").map_err(|e| e.to_string())?;
     let ids: Vec<String> = stmt
@@ -1860,8 +2087,8 @@ pub(crate) fn refresh_all(conn: &Connection, lang: Lang, backups: &Path) -> Resu
 }
 
 /// 「换成新的」 over an edit / 「重新写一份」 after the section or the file was removed.
-pub(crate) fn rewrite_protocol(conn: &Connection, thread_id: &str, lang: Lang, backups: &Path) -> Result<(), String> {
-    let (f, _) = link_of(conn, thread_id)?.ok_or("no_link")?;
+pub(crate) fn rewrite_protocol(conn: &Connection, workspace_id: &str, lang: Lang, backups: &Path) -> Result<(), String> {
+    let (f, _) = own_link(conn, workspace_id)?;
     let path = PathBuf::from(&f.path);
     if !path.is_dir() {
         return Err("folder_missing".into());
@@ -1872,17 +2099,17 @@ pub(crate) fn rewrite_protocol(conn: &Connection, thread_id: &str, lang: Lang, b
 }
 
 /// What 「看差别」 shows: Spool's section as the file has it now, and as Spool would write it.
-pub(crate) fn protocol_diff(conn: &Connection, thread_id: &str, lang: Lang) -> Result<(String, String), String> {
-    let (f, _) = link_of(conn, thread_id)?.ok_or("no_link")?;
+pub(crate) fn protocol_diff(conn: &Connection, workspace_id: &str, lang: Lang) -> Result<(String, String), String> {
+    let (f, _) = own_link(conn, workspace_id)?;
     let path = PathBuf::from(&f.path);
-    let projects = linked_projects(conn, &f.id)?;
-    let next = protocol_block(lang, &projects, &union_specs(&projects), parent_protocol(conn, &f.id, &path)?.as_deref());
+    let l = listed(conn, &f.id)?;
+    let next = protocol_block(lang, &l.groups, &l.specs, parent_protocol(conn, &f.id, &path)?.as_deref());
     Ok((current_block(&path).unwrap_or_default(), next))
 }
 
 /// The user's 「重新选位置」 for a folder Spool lost.
-pub(crate) fn relocate(conn: &Connection, thread_id: &str, new_path: &str) -> Result<(), String> {
-    let (f, _) = link_of(conn, thread_id)?.ok_or("no_link")?;
+pub(crate) fn relocate(conn: &Connection, workspace_id: &str, new_path: &str) -> Result<(), String> {
+    let (f, _) = own_link(conn, workspace_id)?;
     let root = real_folder(new_path)?;
     conn.execute(
         "UPDATE main.folders SET path = ?1, identity = ?2 WHERE id = ?3",
@@ -1894,11 +2121,11 @@ pub(crate) fn relocate(conn: &Connection, thread_id: &str, new_path: &str) -> Re
 
 /// The GUI extracted a docx / pdf state file: keep its text for the MCP server, against the
 /// file's size and time now. Entries for files that are no longer state files are dropped.
-pub(crate) fn cache_text(conn: &Connection, thread_id: &str, rel: &str, text: &str) -> Result<(), String> {
-    let (f, _) = link_of(conn, thread_id)?.ok_or("no_link")?;
+pub(crate) fn cache_text(conn: &Connection, folder_id: &str, rel: &str, text: &str) -> Result<(), String> {
+    let f = folder_by_id(conn, folder_id)?.ok_or("no_link")?;
     let path = PathBuf::from(&f.path);
     let (size, mtime) = stamp(&on_disk(&path, rel)).ok_or("missing")?;
-    let live: Vec<String> = union_specs(&all_links(conn, &f.id)?).iter().filter_map(|s| resolve_spec(&path, s)).collect();
+    let live: Vec<String> = listed(conn, &f.id)?.specs.iter().filter_map(|s| resolve_spec(&path, s)).collect();
     let mut cache = parse_cache(&f.state_cache);
     cache.retain(|k, _| live.contains(k));
     if live.iter().any(|l| l == rel) {
@@ -1912,6 +2139,31 @@ pub(crate) fn cache_text(conn: &Connection, thread_id: &str, rel: &str, text: &s
     Ok(())
 }
 
+/// The two pointer lines, from 「让 AI 读到它」 on a linked workspace.
+pub(crate) fn set_pointers(conn: &Connection, workspace_id: &str, claude: bool, agents: bool, lang: Lang, backups: &Path) -> Result<(), String> {
+    let (f, _) = own_link(conn, workspace_id)?;
+    let root = PathBuf::from(&f.path);
+    // Unticking takes the line out whoever wrote it — the user just asked for exactly that.
+    let claude_now = if claude {
+        add_line(&root.join("CLAUDE.md"), CLAUDE_POINTER, false, backups, &f.id)? || f.pointer_claude
+    } else {
+        remove_line(&root.join("CLAUDE.md"), &[CLAUDE_POINTER], backups, &f.id)?;
+        false
+    };
+    let agents_now = if agents {
+        add_line(&root.join("AGENTS.md"), agents_pointer(lang), false, backups, &f.id)? || f.pointer_agents
+    } else {
+        remove_line(&root.join("AGENTS.md"), &[AGENTS_POINTER_ZH, AGENTS_POINTER_EN], backups, &f.id)?;
+        false
+    };
+    conn.execute(
+        "UPDATE main.folders SET pointer_claude = ?1, pointer_agents = ?2 WHERE id = ?3",
+        params![claude_now, agents_now, f.id],
+    )
+    .map_err(|e| e.to_string())?;
+    restamp(conn, &f.id, &root, &["CLAUDE.md", "AGENTS.md"])
+}
+
 /// The 「全局说明里加一句」 option (task book §3.4): the setting the one-click hookup reads.
 pub(crate) fn global_hint_on(dir: &Path) -> bool {
     std::fs::read_to_string(dir.join("settings.json"))
@@ -1923,7 +2175,8 @@ pub(crate) fn global_hint_on(dir: &Path) -> bool {
 
 // ---------------------------------------------------------------------------------------------
 // Tauri commands. ⚠️ All `(async)`: they walk folders and write files — ⛔ never on the main thread
-// (memory `tauri-sync-commands-freeze-ui`).
+// (memory `tauri-sync-commands-freeze-ui`). A workspace id passed to them is the LINKED workspace
+// (a view's `workspaceId`), except where it says otherwise.
 // ---------------------------------------------------------------------------------------------
 
 /// The language SPOOL.md is written in, and the folder backups go under.
@@ -1946,38 +2199,53 @@ pub fn folder_connect(app: tauri::AppHandle, args: ConnectArgs) -> Result<(), St
     connect(&mut conn, &args, lang, &dir, now_ms())
 }
 
-/// The right rail's card. None = the project is not linked.
+/// A project's right rail. None = its workspace (and every one above) is not linked.
 #[tauri::command(async)]
 pub fn folder_view(app: tauri::AppHandle, thread_id: String) -> Result<Option<View>, String> {
     let conn = crate::images::open_library(&app)?;
     view(&conn, &thread_id, true, true)
 }
 
+/// A workspace page: any workspace — the view says whether the link is its own or one above.
 #[tauri::command(async)]
-pub fn folder_mark_synced(app: tauri::AppHandle, thread_id: String) -> Result<(), String> {
+pub fn folder_view_workspace(app: tauri::AppHandle, workspace_id: String) -> Result<Option<View>, String> {
     let conn = crate::images::open_library(&app)?;
-    mark_synced(&conn, &thread_id, "user", None, now_ms())
+    view_workspace(&conn, &workspace_id, true, true)
 }
 
 #[tauri::command(async)]
-pub fn folder_set_state_files(app: tauri::AppHandle, thread_id: String, state_files: Vec<String>) -> Result<(), String> {
-    let (lang, dir) = context()?;
+pub fn folder_mark_synced(app: tauri::AppHandle, workspace_id: String) -> Result<(), String> {
     let conn = crate::images::open_library(&app)?;
-    set_state_files(&conn, &thread_id, &state_files, lang, &dir)
+    mark_synced_workspace(&conn, &workspace_id, now_ms())
 }
 
 #[tauri::command(async)]
-pub fn folder_set_primary(app: tauri::AppHandle, thread_id: String) -> Result<(), String> {
+pub fn folder_set_state_files(app: tauri::AppHandle, workspace_id: String, state_files: Vec<String>) -> Result<(), String> {
     let (lang, dir) = context()?;
     let conn = crate::images::open_library(&app)?;
-    set_primary(&conn, &thread_id, lang, &dir)
+    set_state_files(&conn, &workspace_id, &state_files, lang, &dir)
 }
 
 #[tauri::command(async)]
-pub fn folder_disconnect(app: tauri::AppHandle, thread_id: String, remove: bool, private: bool) -> Result<(), String> {
+pub fn folder_set_primary(app: tauri::AppHandle, workspace_id: String, thread_id: String) -> Result<(), String> {
     let (lang, dir) = context()?;
     let conn = crate::images::open_library(&app)?;
-    disconnect(&conn, &thread_id, remove, private, lang, &dir)
+    set_primary(&conn, &workspace_id, &thread_id, lang, &dir)
+}
+
+#[tauri::command(async)]
+pub fn folder_disconnect(app: tauri::AppHandle, workspace_id: String, remove: bool) -> Result<(), String> {
+    let (lang, dir) = context()?;
+    let conn = crate::images::open_library(&app)?;
+    disconnect(&conn, &workspace_id, remove, lang, &dir)
+}
+
+/// After a project's 「设为私密 / 取消私密」 — the project's own id.
+#[tauri::command(async)]
+pub fn folder_privacy_changed(app: tauri::AppHandle, thread_id: String) -> Result<(), String> {
+    let (lang, dir) = context()?;
+    let conn = crate::images::open_library(&app)?;
+    privacy_changed(&conn, &thread_id, lang, &dir)
 }
 
 #[tauri::command(async)]
@@ -1988,29 +2256,29 @@ pub fn folder_refresh_protocols(app: tauri::AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command(async)]
-pub fn folder_rewrite_protocol(app: tauri::AppHandle, thread_id: String) -> Result<(), String> {
+pub fn folder_rewrite_protocol(app: tauri::AppHandle, workspace_id: String) -> Result<(), String> {
     let (lang, dir) = context()?;
     let conn = crate::images::open_library(&app)?;
-    rewrite_protocol(&conn, &thread_id, lang, &dir)
+    rewrite_protocol(&conn, &workspace_id, lang, &dir)
 }
 
 #[tauri::command(async)]
-pub fn folder_protocol_diff(app: tauri::AppHandle, thread_id: String) -> Result<(String, String), String> {
+pub fn folder_protocol_diff(app: tauri::AppHandle, workspace_id: String) -> Result<(String, String), String> {
     let (lang, _) = context()?;
     let conn = crate::images::open_library(&app)?;
-    protocol_diff(&conn, &thread_id, lang)
+    protocol_diff(&conn, &workspace_id, lang)
 }
 
 #[tauri::command(async)]
-pub fn folder_relocate(app: tauri::AppHandle, thread_id: String, path: String) -> Result<(), String> {
+pub fn folder_relocate(app: tauri::AppHandle, workspace_id: String, path: String) -> Result<(), String> {
     let conn = crate::images::open_library(&app)?;
-    relocate(&conn, &thread_id, &path)
+    relocate(&conn, &workspace_id, &path)
 }
 
 #[tauri::command(async)]
-pub fn folder_cache_text(app: tauri::AppHandle, thread_id: String, rel: String, text: String) -> Result<(), String> {
+pub fn folder_cache_text(app: tauri::AppHandle, folder_id: String, rel: String, text: String) -> Result<(), String> {
     let conn = crate::images::open_library(&app)?;
-    cache_text(&conn, &thread_id, &rel, &text)
+    cache_text(&conn, &folder_id, &rel, &text)
 }
 
 /// P9Y-b: projects whose weekly automatic follow-up waits until someone says 「已经对过了」.
@@ -2020,32 +2288,18 @@ pub fn folder_ahead_threads(app: tauri::AppHandle) -> Result<Vec<String>, String
     ahead_threads(&conn)
 }
 
-/// The two pointer lines, added later from the card's 「让 AI 读到它」 (a folder already linked).
+/// The sidebar's mark beside a linked workspace.
 #[tauri::command(async)]
-pub fn folder_set_pointers(app: tauri::AppHandle, thread_id: String, claude: bool, agents: bool) -> Result<(), String> {
+pub fn folder_linked_workspaces(app: tauri::AppHandle) -> Result<Vec<LinkedWorkspace>, String> {
+    let conn = crate::images::open_library(&app)?;
+    linked_workspaces(&conn)
+}
+
+#[tauri::command(async)]
+pub fn folder_set_pointers(app: tauri::AppHandle, workspace_id: String, claude: bool, agents: bool) -> Result<(), String> {
     let (lang, dir) = context()?;
     let conn = crate::images::open_library(&app)?;
-    let (f, _) = link_of(&conn, &thread_id)?.ok_or("no_link")?;
-    let root = PathBuf::from(&f.path);
-    // Unticking takes the line out whoever wrote it — the user just asked for exactly that.
-    let claude_now = if claude {
-        add_line(&root.join("CLAUDE.md"), CLAUDE_POINTER, false, &dir, &f.id)? || f.pointer_claude
-    } else {
-        remove_line(&root.join("CLAUDE.md"), &[CLAUDE_POINTER], &dir, &f.id)?;
-        false
-    };
-    let agents_now = if agents {
-        add_line(&root.join("AGENTS.md"), agents_pointer(lang), false, &dir, &f.id)? || f.pointer_agents
-    } else {
-        remove_line(&root.join("AGENTS.md"), &[AGENTS_POINTER_ZH, AGENTS_POINTER_EN], &dir, &f.id)?;
-        false
-    };
-    conn.execute(
-        "UPDATE main.folders SET pointer_claude = ?1, pointer_agents = ?2 WHERE id = ?3",
-        params![claude_now, agents_now, f.id],
-    )
-    .map_err(|e| e.to_string())?;
-    restamp(&conn, &f.id, &root, &["CLAUDE.md", "AGENTS.md"])
+    set_pointers(&conn, &workspace_id, claude, agents, lang, &dir)
 }
 
 /// 「全局说明里加一句」 (task book §3.4): the setting itself is saved by the settings store; this
@@ -2056,14 +2310,14 @@ pub fn folder_global_hint(on: bool) -> Result<Vec<String>, String> {
     Ok(crate::mcp::refresh_client_guidance(on).into_iter().map(str::to_string).collect())
 }
 
-/// Which of these projects are linked, and to where (shortened) — for the 「设为私密」 confirmation,
-/// which says the link will go (task book §3.7). The library only: no folder is looked at.
+/// Which of these projects fall under a linked folder, and where (shortened) — for the 「设为私密」
+/// confirmation, which says the project will come out of that SPOOL.md. The library only.
 #[tauri::command(async)]
 pub fn folder_linked_paths(app: tauri::AppHandle, thread_ids: Vec<String>) -> Result<Vec<(String, String)>, String> {
     let conn = crate::images::open_library(&app)?;
     let mut out = Vec::new();
     for id in thread_ids {
-        if let Some((f, _)) = link_of(&conn, &id)? {
+        if let Some((f, _)) = link_of_thread(&conn, &id)? {
             out.push((id, short_path(&f.path)));
         }
     }
@@ -2268,45 +2522,35 @@ mod tests {
         assert!(!format!("{titles:?}").contains("example.com"));
     }
 
-    fn linked(title: &str, ws: &str, primary: bool, specs: &[&str]) -> Linked {
-        Linked {
-            thread_id: format!("id-{title}"),
-            title: title.into(),
-            workspace_id: format!("w-{ws}"),
-            workspace: ws.into(),
-            primary,
-            state_files: specs.iter().map(|s| s.to_string()).collect(),
-        }
+    /// A workspace group, its first project the main one.
+    fn group(ws: &str, titles: &[&str]) -> Group {
+        Group { workspace: ws.into(), projects: titles.iter().enumerate().map(|(i, t)| (t.to_string(), i == 0)).collect() }
     }
 
     #[test]
     fn spool_md_names_projects_by_title_grouped_by_workspace() {
-        let projects = vec![
-            linked("Flux", "Flux", true, &["README.md", "plans/dissertation/HANDOFF_*.md"]),
-            linked("FLUX 导师沟通与汇报", "Flux", false, &["README.md"]),
-            linked("申请进度", "升学", false, &[]),
-        ];
-        let zh = protocol_block(Lang::Zh, &projects, &union_specs(&projects), None);
+        let groups = vec![group("Flux", &["Flux", "FLUX 导师沟通与汇报"]), Group { workspace: "论文".into(), projects: vec![("文献综述".into(), false)] }];
+        let zh = protocol_block(Lang::Zh, &groups, &["README.md".into(), "plans/dissertation/HANDOFF_*.md".into()], None);
         assert!(zh.starts_with(BEGIN) && zh.ends_with(END));
         assert!(zh.contains("工作区「Flux」：\n- 〈Flux〉（主项目）\n- 〈FLUX 导师沟通与汇报〉\n"), "{zh}");
-        assert!(zh.contains("工作区「升学」：\n- 〈申请进度〉\n"));
+        assert!(zh.contains("工作区「论文」：\n- 〈文献综述〉\n"));
         assert!(zh.contains("`plans/dissertation/HANDOFF_*.md`（取日期最新的一份）"));
-        assert_eq!(zh.matches("`README.md`").count(), 1, "each state file once");
+        assert!(zh.contains("工作区里以后新建的项目也算"));
         assert!(zh.contains("Spool 里和现状文件冲突的内容是历史，不是现状。"));
         assert!(zh.contains("`mark_folder_synced`"));
-        assert!(!zh.contains("id-"), "⛔ no ids in the text");
-        let en = protocol_block(Lang::En, &projects[..1], &["README.md".to_string()], Some("../SPOOL.md"));
+        let en = protocol_block(Lang::En, &[group("Flux", &["Flux"])], &["README.md".to_string()], Some("../SPOOL.md"));
         assert!(en.contains("- \u{2039}Flux\u{203a}\n"), "one project: no main-project mark\n{en}");
         assert!(en.contains("The folder above has one too: `../SPOOL.md`."));
         assert!(en.contains("is history, not the current state"));
+        let empty = protocol_block(Lang::Zh, &[Group { workspace: "空".into(), projects: vec![] }], &[], None);
+        assert!(empty.contains("工作区「空」：\n- （这里还没有项目）\n"), "{empty}");
     }
 
     #[test]
     fn spool_md_never_overwrites_an_edit_or_brings_back_a_removal() {
         let dir = temp("protocol");
         let backups = temp("protocol-backups");
-        let p = vec![linked("Flux", "Flux", true, &[])];
-        let one = protocol_block(Lang::Zh, &p, &[], None);
+        let one = protocol_block(Lang::Zh, &[group("Flux", &["Flux"])], &[], None);
         let Written::Ok(h1) = write_protocol(&dir, &one, None, Mode::Create, Lang::Zh, &backups, "f1").unwrap() else {
             panic!()
         };
@@ -2316,7 +2560,7 @@ mod tests {
 
         // Renamed project, untouched file: rewritten in place, the user's part kept.
         std::fs::write(dir.join(PROTOCOL_FILE), format!("{text}我的规矩：写回用中文。\n")).unwrap();
-        let two = protocol_block(Lang::Zh, &[linked("Flux 2", "Flux", true, &[])], &[], None);
+        let two = protocol_block(Lang::Zh, &[group("Flux", &["Flux 2"])], &[], None);
         let Written::Ok(h2) = write_protocol(&dir, &two, Some(&h1), Mode::Update, Lang::Zh, &backups, "f1").unwrap() else {
             panic!()
         };
@@ -2326,7 +2570,7 @@ mod tests {
         // The user edits Spool's section: a refresh leaves it, and the card says so.
         std::fs::write(dir.join(PROTOCOL_FILE), text.replace("只是写代码、改 bug：不用读。", "每次都读。")).unwrap();
         assert_eq!(protocol_state(&dir, Some(&h2)), "edited");
-        let three = protocol_block(Lang::Zh, &[linked("Flux 3", "Flux", true, &[])], &[], None);
+        let three = protocol_block(Lang::Zh, &[group("Flux", &["Flux 3"])], &[], None);
         assert_eq!(write_protocol(&dir, &three, Some(&h2), Mode::Update, Lang::Zh, &backups, "f1").unwrap(), Written::Edited);
         assert!(std::fs::read_to_string(dir.join(PROTOCOL_FILE)).unwrap().contains("每次都读。"));
         // …until the user says 「换成新的」.
@@ -2372,21 +2616,24 @@ mod tests {
         let conn = Connection::open_in_memory().unwrap();
         conn.execute_batch(include_str!("../../src/lib/db/schema.sql")).unwrap();
         conn.execute_batch(
-            "INSERT INTO workspaces (id, title, created_at, updated_at) VALUES ('w1', 'Flux', 1, 1), ('w2', '升学', 1, 1);
+            "INSERT INTO workspaces (id, title, parent_id, sort_order, created_at, updated_at) VALUES
+               ('w1', 'Flux', NULL, 0, 1, 1), ('w2', '升学', NULL, 1, 1, 1), ('w1a', '前端', 'w1', 0, 1, 1);
              INSERT INTO threads (id, workspace_id, title, status, created_at, updated_at) VALUES
                ('t1', 'w1', 'Flux', 'active', 1, 1),
-               ('t2', 'w1', 'FLUX 导师沟通与汇报', 'active', 1, 1),
-               ('t3', 'w2', '申请进度', 'active', 1, 1);
+               ('t2', 'w1', 'FLUX 导师沟通与汇报', 'active', 2, 2),
+               ('t3', 'w2', '申请进度', 'active', 3, 3),
+               ('t4', 'w1a', '界面', 'active', 4, 4),
+               ('td', 'w1', '旧方向', 'done', 5, 5);
              INSERT INTO threads (id, workspace_id, title, status, created_at, updated_at, private)
-               VALUES ('tp', 'w2', '秘密项目', 'active', 1, 1, 1);",
+               VALUES ('tp', 'w1', '秘密项目', 'active', 6, 6, 1);",
         )
         .unwrap();
         conn
     }
 
-    fn args(thread: &str, root: &Path, specs: &[&str]) -> ConnectArgs {
+    fn args(ws: &str, root: &Path, specs: &[&str]) -> ConnectArgs {
         ConnectArgs {
-            thread_id: thread.into(),
+            workspace_id: ws.into(),
             path: root.to_string_lossy().into_owned(),
             state_files: specs.iter().map(|s| s.to_string()).collect(),
             git_exclude: true,
@@ -2395,91 +2642,189 @@ mod tests {
         }
     }
 
+    fn md(root: &Path) -> String {
+        std::fs::read_to_string(root.join(PROTOCOL_FILE)).unwrap_or_default()
+    }
+
     #[test]
-    fn two_projects_one_folder_one_spool_md() {
+    fn a_workspace_brings_all_its_projects_and_its_sub_workspaces() {
         let _home = crate::home_lock();
         let root = flux_like("connect");
         let backups = temp("connect-backups");
         let mut conn = library();
-        connect(&mut conn, &args("t1", &root, &["README.md", "plans/dissertation/HANDOFF_*.md"]), Lang::Zh, &backups, 10).unwrap();
+        connect(&mut conn, &args("w1", &root, &["README.md", "plans/dissertation/HANDOFF_*.md"]), Lang::Zh, &backups, 10).unwrap();
+        let text = md(&root);
+        assert!(text.contains("工作区「Flux」：\n- 〈Flux〉（主项目）\n- 〈FLUX 导师沟通与汇报〉\n\n工作区「前端」：\n- 〈界面〉\n"), "{text}");
+        assert!(!text.contains("旧方向"), "⛔ a finished project is not listed");
+        assert!(!text.contains("秘密项目"), "⛔ a private project is not listed");
+        assert!(!text.contains("申请进度"), "another workspace is not");
         let exclude = std::fs::read_to_string(root.join(".git/info/exclude")).unwrap();
         assert!(exclude.lines().any(|l| l == "/SPOOL.md"), "{exclude}");
         assert!(std::fs::read_to_string(root.join("CLAUDE.md")).unwrap().ends_with("@SPOOL.md\n"));
         assert!(!root.join("AGENTS.md").exists(), "⛔ not created when it was not there");
+        assert_eq!(connect(&mut conn, &args("w1", &root, &[]), Lang::Zh, &backups, 30), Err("already_linked".into()));
 
-        // The second project skips the git / pointer answers: its own are ignored.
-        let mut second = args("t2", &root, &["README.md"]);
-        second.git_exclude = false;
-        connect(&mut conn, &second, Lang::Zh, &backups, 20).unwrap();
-        assert_eq!(conn.query_row("SELECT COUNT(*) FROM folders", [], |r| r.get::<_, i64>(0)).unwrap(), 1);
-        let md = std::fs::read_to_string(root.join(PROTOCOL_FILE)).unwrap();
-        assert!(md.contains("- 〈Flux〉（主项目）\n- 〈FLUX 导师沟通与汇报〉\n"), "{md}");
-        assert_eq!(connect(&mut conn, &args("t1", &root, &[]), Lang::Zh, &backups, 30), Err("already_linked".into()));
-
-        let v = view(&conn, "t2", true, true).unwrap().unwrap();
-        assert_eq!((v.location, v.primary, v.ahead, v.protocol), ("in_place", false, false, "ok"));
-        assert_eq!(v.others, vec!["Flux".to_string()]);
+        // A project and a sub-workspace's project both fall under it; the workspace page sees it too.
+        let v = view(&conn, "t4", true, true).unwrap().unwrap();
+        assert_eq!((v.location, v.workspace.as_str(), v.inherited, v.protocol), ("in_place", "Flux", true, "ok"));
+        assert_eq!((v.primary_title.as_deref(), v.project_count), (Some("Flux"), 3));
         assert!(v.git && v.claude_points && !v.agents_points);
         assert!(v.changes.is_empty(), "{:?}", v.changes);
+        assert!(!view(&conn, "t1", true, false).unwrap().unwrap().inherited);
+        assert!(view(&conn, "t3", true, false).unwrap().is_none());
+        assert!(view_workspace(&conn, "w1a", true, false).unwrap().unwrap().inherited);
+        assert!(view_workspace(&conn, "w2", true, false).unwrap().is_none());
 
-        // The plan moves on: both see it, the sync puts it back.
+        // The plan moves on: every project of the workspace sees it; the sync puts it back.
         write(&root, "plans/dissertation/HANDOFF_2026-10-31.md", "new direction");
-        assert!(view(&conn, "t1", true, false).unwrap().unwrap().ahead);
-        assert_eq!(ahead_threads(&conn).unwrap(), vec!["t1".to_string()], "t2 only watches README");
-        mark_synced(&conn, "t2", "Claude Code · MCP", Some("把 10-31 的方向写回了 Flux"), 40).unwrap();
+        assert!(view(&conn, "t2", true, false).unwrap().unwrap().ahead);
+        assert_eq!(ahead_threads(&conn).unwrap(), vec!["t1", "t2", "t4", "td", "tp"]);
+        assert_eq!(linked_workspaces(&conn).unwrap().iter().map(|l| (l.workspace_id.as_str(), l.ahead)).collect::<Vec<_>>(), vec![("w1", true)]);
+        mark_synced(&conn, "t4", "Claude Code · MCP", Some("把 10-31 的方向写回了 Flux"), 40).unwrap();
         let v = view(&conn, "t1", true, false).unwrap().unwrap();
         assert!(!v.ahead);
         assert_eq!((v.synced_at, v.sync_note.as_deref(), v.sync_by.as_deref()), (40, Some("把 10-31 的方向写回了 Flux"), Some("Claude Code · MCP")));
         assert!(ahead_threads(&conn).unwrap().is_empty());
-    }
 
-    #[test]
-    fn a_private_project_never_reaches_spool_md() {
-        let _home = crate::home_lock();
-        let root = flux_like("private");
-        let backups = temp("private-backups");
-        let mut conn = library();
-        assert_eq!(connect(&mut conn, &args("tp", &root, &[]), Lang::Zh, &backups, 1), Err("private".into()));
-        assert!(!root.join(PROTOCOL_FILE).exists());
-
-        connect(&mut conn, &args("t1", &root, &[]), Lang::Zh, &backups, 1).unwrap();
-        connect(&mut conn, &args("t3", &root, &[]), Lang::Zh, &backups, 2).unwrap();
-        // The user even edited Spool's section — a project going private comes out regardless.
-        let md = std::fs::read_to_string(root.join(PROTOCOL_FILE)).unwrap();
-        std::fs::write(root.join(PROTOCOL_FILE), md.replace("只是写代码", "写代码")).unwrap();
-        conn.execute("UPDATE threads SET private = 1 WHERE id = 't3'", []).unwrap();
-        disconnect(&conn, "t3", false, true, Lang::Zh, &backups).unwrap();
-        let md = std::fs::read_to_string(root.join(PROTOCOL_FILE)).unwrap();
-        assert!(!md.contains("申请进度") && !md.contains("升学"), "{md}");
-        assert!(md.contains("〈Flux〉"));
-
-        // A stale link left by something else: still never written, never in a view.
-        conn.execute("INSERT INTO folder_links (thread_id, folder_id, state_files, created_at) SELECT 'tp', id, '[]', 3 FROM folders", [])
-            .unwrap();
+        // The main project is the user's pick; a new project, a rename, a finish all reach SPOOL.md.
+        set_primary(&conn, "w1", "t2", Lang::Zh, &backups).unwrap();
+        assert!(md(&root).contains("- 〈Flux〉\n- 〈FLUX 导师沟通与汇报〉（主项目）\n"));
+        conn.execute_batch("INSERT INTO threads (id, workspace_id, title, status, created_at, updated_at) VALUES ('t5', 'w1', '伦理申请', 'active', 7, 7);
+                            UPDATE threads SET status = 'done' WHERE id = 't1';").unwrap();
         refresh_all(&conn, Lang::Zh, &backups).unwrap();
-        assert!(!std::fs::read_to_string(root.join(PROTOCOL_FILE)).unwrap().contains("秘密项目"));
-        assert!(!view(&conn, "t1", true, false).unwrap().unwrap().others.iter().any(|t| t == "秘密项目"));
+        let text = md(&root);
+        assert!(text.contains("〈伦理申请〉") && !text.contains("- 〈Flux〉"), "{text}");
+        // The language follows the app's at every write.
+        refresh_all(&conn, Lang::En, &backups).unwrap();
+        assert!(md(&root).contains("Workspace \u{201c}Flux\u{201d}:"));
     }
 
     #[test]
-    fn the_last_one_out_takes_spools_lines_with_it() {
+    fn a_sub_workspace_with_its_own_folder_leaves_the_parents() {
         let _home = crate::home_lock();
-        let root = flux_like("disconnect");
-        let backups = temp("disconnect-backups");
+        let root = flux_like("subws");
+        let backups = temp("subws-backups");
         let mut conn = library();
-        connect(&mut conn, &args("t1", &root, &["README.md"]), Lang::Zh, &backups, 1).unwrap();
-        connect(&mut conn, &args("t2", &root, &[]), Lang::Zh, &backups, 2).unwrap();
-        disconnect(&conn, "t1", true, false, Lang::Zh, &backups).unwrap();
-        // Still one project: the file stays, the other one becomes the main project.
-        let md = std::fs::read_to_string(root.join(PROTOCOL_FILE)).unwrap();
-        assert!(!md.contains("〈Flux〉") && md.contains("〈FLUX 导师沟通与汇报〉"), "{md}");
-        assert!(view(&conn, "t2", true, false).unwrap().unwrap().primary);
+        connect(&mut conn, &args("w1", &root, &[]), Lang::Zh, &backups, 1).unwrap();
+        let mut inner = args("w1a", &root.join("frontend"), &[]);
+        inner.pointer_claude = false;
+        connect(&mut conn, &inner, Lang::Zh, &backups, 2).unwrap();
+        assert!(!md(&root).contains("界面"), "{}", md(&root));
+        let inner_md = md(&root.join("frontend"));
+        assert!(inner_md.contains("上层文件夹还有一份：`../SPOOL.md`") && inner_md.contains("〈界面〉"), "{inner_md}");
+        assert!(
+            std::fs::read_to_string(root.join(".git/info/exclude")).unwrap().lines().any(|l| l == "/frontend/SPOOL.md"),
+            "the inner one is kept out of the same repository"
+        );
+        assert!(!view(&conn, "t4", true, false).unwrap().unwrap().inherited);
+        let i = inspect(&conn, &root.join("frontend").to_string_lossy()).unwrap();
+        assert_eq!(i.linked_to, vec!["前端".to_string()]);
+        assert!(i.parent.is_some());
+    }
 
-        disconnect(&conn, "t2", true, false, Lang::Zh, &backups).unwrap();
+    #[test]
+    fn two_workspaces_one_folder_one_spool_md() {
+        let _home = crate::home_lock();
+        let root = flux_like("two");
+        let backups = temp("two-backups");
+        let mut conn = library();
+        connect(&mut conn, &args("w1", &root, &["README.md"]), Lang::Zh, &backups, 1).unwrap();
+        let mut second = args("w2", &root, &["docs/WORK_PLAN_*.md"]);
+        second.git_exclude = false;
+        connect(&mut conn, &second, Lang::Zh, &backups, 2).unwrap();
+        assert_eq!(conn.query_row("SELECT COUNT(*) FROM folders", [], |r| r.get::<_, i64>(0)).unwrap(), 1);
+        let text = md(&root);
+        assert!(text.contains("工作区「Flux」") && text.contains("工作区「升学」：\n- 〈申请进度〉"), "{text}");
+        assert!(text.contains("`README.md`") && text.contains("`docs/WORK_PLAN_*.md`"));
+        // One protocol means one default write destination, even when it is picked from the
+        // second workspace. Both workspace pages and MCP must report the same choice.
+        set_primary(&conn, "w2", "t3", Lang::Zh, &backups).unwrap();
+        assert_eq!(view_workspace(&conn, "w1", false, false).unwrap().unwrap().primary_id.as_deref(), Some("t3"));
+        assert_eq!(view_workspace(&conn, "w2", false, false).unwrap().unwrap().primary_id.as_deref(), Some("t3"));
+        assert!(md(&root).contains("〈申请进度〉（主项目）"));
+        // If the picked project is finished, fall back across all workspaces of this folder.
+        conn.execute("UPDATE threads SET status = 'done' WHERE id IN ('t1', 't2', 't4')", []).unwrap();
+        set_primary(&conn, "w2", "t3", Lang::Zh, &backups).unwrap();
+        assert_eq!(view_workspace(&conn, "w1", false, false).unwrap().unwrap().primary_id.as_deref(), Some("t3"));
+        disconnect(&conn, "w1", true, Lang::Zh, &backups).unwrap();
+        let text = md(&root);
+        assert!(!text.contains("工作区「Flux」") && text.contains("〈申请进度〉"), "{text}");
+        disconnect(&conn, "w2", true, Lang::Zh, &backups).unwrap();
         assert!(!root.join(PROTOCOL_FILE).exists(), "only the stub was left, so the file goes");
         assert!(!std::fs::read_to_string(root.join(".git/info/exclude")).unwrap().contains("SPOOL.md"));
         assert_eq!(std::fs::read_to_string(root.join("CLAUDE.md")).unwrap(), "# local notes\n");
         assert_eq!(conn.query_row("SELECT COUNT(*) FROM folders", [], |r| r.get::<_, i64>(0)).unwrap(), 0);
+    }
+
+    #[test]
+    fn a_project_going_private_leaves_spool_md_even_over_an_edit() {
+        let _home = crate::home_lock();
+        let root = flux_like("private");
+        let backups = temp("private-backups");
+        let mut conn = library();
+        connect(&mut conn, &args("w1", &root, &[]), Lang::Zh, &backups, 1).unwrap();
+        std::fs::write(root.join(PROTOCOL_FILE), md(&root).replace("只是写代码", "写代码")).unwrap();
+        conn.execute("UPDATE threads SET private = 1 WHERE id = 't2'", []).unwrap();
+        // An ordinary refresh would not touch an edited section…
+        refresh_all(&conn, Lang::Zh, &backups).unwrap();
+        assert!(md(&root).contains("FLUX 导师沟通与汇报"));
+        // …going private does.
+        privacy_changed(&conn, "t2", Lang::Zh, &backups).unwrap();
+        let text = md(&root);
+        assert!(!text.contains("FLUX 导师沟通与汇报") && text.contains("〈Flux〉"), "{text}");
+        assert!(view(&conn, "t2", true, false).unwrap().is_some(), "the GUI still shows the private project its folder");
+        // Back to public: back in.
+        conn.execute("UPDATE threads SET private = 0 WHERE id = 't2'", []).unwrap();
+        privacy_changed(&conn, "t2", Lang::Zh, &backups).unwrap();
+        assert!(md(&root).contains("FLUX 导师沟通与汇报"));
+    }
+
+    #[test]
+    fn a_missing_folder_cannot_silently_keep_a_newly_private_projects_name() {
+        let _home = crate::home_lock();
+        let root = flux_like("private-missing");
+        let backups = temp("private-missing-backups");
+        let mut conn = library();
+        connect(&mut conn, &args("w1", &root, &[]), Lang::Zh, &backups, 1).unwrap();
+        let missing = root.join("not-there").to_string_lossy().into_owned();
+        conn.execute("UPDATE folders SET path = ?1, identity = NULL", [missing]).unwrap();
+        conn.execute("UPDATE threads SET private = 1 WHERE id = 't2'", []).unwrap();
+        assert_eq!(privacy_changed(&conn, "t2", Lang::Zh, &backups), Err("folder_missing".into()));
+    }
+
+    #[test]
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    fn moved_folder_counts_follow_its_identity_before_a_gui_view_updates_the_path() {
+        let _home = crate::home_lock();
+        let root = flux_like("counts-moved");
+        let backups = temp("counts-moved-backups");
+        let moved = temp("counts-moved-to");
+        std::fs::remove_dir_all(&moved).unwrap();
+        let mut conn = library();
+        connect(&mut conn, &args("w1", &root, &["README.md"]), Lang::Zh, &backups, 1).unwrap();
+        std::fs::rename(&root, &moved).unwrap();
+        write(&moved, "README.md", "the plan changed after moving");
+        let folders = thread_folders(&conn).unwrap();
+        assert_eq!(folders.get("t1"), Some(&(short_path(&moved.to_string_lossy()), 1)));
+        assert!(ahead_threads(&conn).unwrap().contains(&"t1".to_string()));
+        assert!(linked_workspaces(&conn).unwrap()[0].ahead);
+        let stored: String = conn.query_row("SELECT path FROM folders", [], |r| r.get(0)).unwrap();
+        assert_eq!(stored, root.to_string_lossy(), "a read-only MCP lookup never writes the moved path");
+        conn.execute("UPDATE threads SET private = 1 WHERE id = 't2'", []).unwrap();
+        privacy_changed(&conn, "t2", Lang::Zh, &backups).unwrap();
+        assert!(!md(&moved).contains("FLUX 导师沟通与汇报"), "the privacy rewrite also follows the move");
+    }
+
+    #[test]
+    fn an_empty_first_workspace_uses_the_other_workspaces_main_project() {
+        let _home = crate::home_lock();
+        let root = flux_like("primary-fallback");
+        let backups = temp("primary-fallback-backups");
+        let mut conn = library();
+        connect(&mut conn, &args("w1", &root, &[]), Lang::Zh, &backups, 1).unwrap();
+        connect(&mut conn, &args("w2", &root, &[]), Lang::Zh, &backups, 2).unwrap();
+        conn.execute("UPDATE threads SET status = 'done' WHERE id IN ('t1', 't2', 't4')", []).unwrap();
+        assert_eq!(view_workspace(&conn, "w1", false, false).unwrap().unwrap().primary_id.as_deref(), Some("t3"));
     }
 
     #[test]
@@ -2488,11 +2833,12 @@ mod tests {
         let root = flux_like("keep");
         let backups = temp("keep-backups");
         let mut conn = library();
-        connect(&mut conn, &args("t1", &root, &[]), Lang::Zh, &backups, 1).unwrap();
-        disconnect(&conn, "t1", false, false, Lang::Zh, &backups).unwrap();
+        connect(&mut conn, &args("w1", &root, &[]), Lang::Zh, &backups, 1).unwrap();
+        disconnect(&conn, "w1", false, Lang::Zh, &backups).unwrap();
         assert!(root.join(PROTOCOL_FILE).exists());
         assert!(std::fs::read_to_string(root.join("CLAUDE.md")).unwrap().contains("@SPOOL.md"));
         assert!(std::fs::read_to_string(root.join(".git/info/exclude")).unwrap().contains("/SPOOL.md"));
+        assert!(view(&conn, "t1", true, false).unwrap().is_none());
     }
 
     #[test]
@@ -2501,38 +2847,18 @@ mod tests {
         let root = flux_like("pick");
         let backups = temp("pick-backups");
         let mut conn = library();
-        connect(&mut conn, &args("t1", &root, &["README.md"]), Lang::Zh, &backups, 1).unwrap();
-        // The work plan changed after the connect, then the user picks it: that IS ahead.
+        connect(&mut conn, &args("w1", &root, &["README.md"]), Lang::Zh, &backups, 1).unwrap();
+        // A file picked later, untouched since the connect: not ahead.
+        set_state_files(&conn, "w1", &["README.md".into(), "plans/dissertation/HANDOFF_*.md".into()], Lang::Zh, &backups).unwrap();
+        assert!(!view(&conn, "t1", true, false).unwrap().unwrap().ahead);
+        // One that changed after the connect: ahead.
         write(&root, "docs/WORK_PLAN_2026-10-02.md", "plan v2");
         touch_later(&root, "docs/WORK_PLAN_2026-10-02.md", 5);
-        set_state_files(&conn, "t1", &["README.md".into(), "docs/WORK_PLAN_*.md".into()], Lang::Zh, &backups).unwrap();
-        // …but a second project picking a file nobody changed is not.
-        connect(&mut conn, &args("t2", &root, &["plans/dissertation/HANDOFF_*.md"]), Lang::Zh, &backups, 2).unwrap();
-        assert!(!view(&conn, "t2", true, false).unwrap().unwrap().ahead);
-        assert!(std::fs::read_to_string(root.join(PROTOCOL_FILE)).unwrap().contains("`docs/WORK_PLAN_*.md`"));
-        assert_eq!(set_state_files(&conn, "t1", &["a.md".into(), "b.md".into(), "c.md".into(), "d.md".into()], Lang::Zh, &backups), Err("too_many".into()));
-        assert_eq!(set_state_files(&conn, "t1", &["../outside.md".into()], Lang::Zh, &backups), Err("bad_spec".into()));
-    }
-
-    #[test]
-    fn a_nested_folder_points_at_the_one_above() {
-        let _home = crate::home_lock();
-        let root = flux_like("nested");
-        let backups = temp("nested-backups");
-        let mut conn = library();
-        connect(&mut conn, &args("t1", &root, &[]), Lang::Zh, &backups, 1).unwrap();
-        let mut inner = args("t3", &root.join("frontend"), &[]);
-        inner.pointer_claude = false;
-        connect(&mut conn, &inner, Lang::Zh, &backups, 2).unwrap();
-        let md = std::fs::read_to_string(root.join("frontend").join(PROTOCOL_FILE)).unwrap();
-        assert!(md.contains("上层文件夹还有一份：`../SPOOL.md`"), "{md}");
-        assert!(
-            std::fs::read_to_string(root.join(".git/info/exclude")).unwrap().lines().any(|l| l == "/frontend/SPOOL.md"),
-            "the inner one is kept out of the same repository"
-        );
-        let i = inspect(&conn, &root.join("frontend").to_string_lossy()).unwrap();
-        assert_eq!(i.linked_to, vec!["申请进度".to_string()]);
-        assert!(i.parent.is_some());
+        set_state_files(&conn, "w1", &["README.md".into(), "docs/WORK_PLAN_*.md".into()], Lang::Zh, &backups).unwrap();
+        assert!(md(&root).contains("`docs/WORK_PLAN_*.md`"));
+        assert_eq!(set_state_files(&conn, "w1", &["a.md".into(), "b.md".into(), "c.md".into(), "d.md".into()], Lang::Zh, &backups), Err("too_many".into()));
+        assert_eq!(set_state_files(&conn, "w1", &["../outside.md".into()], Lang::Zh, &backups), Err("bad_spec".into()));
+        assert_eq!(set_state_files(&conn, "w2", &[], Lang::Zh, &backups), Err("no_link".into()));
     }
 
     #[test]
@@ -2543,29 +2869,28 @@ mod tests {
         write(&root, "thesis/PLAN.docx", "zip bytes");
         write(&root, "thesis/notes.md", "# notes\n");
         let mut conn = library();
-        connect(&mut conn, &args("t1", &root, &["thesis/PLAN.docx", "thesis/notes.md"]), Lang::Zh, &backups, 1).unwrap();
+        connect(&mut conn, &args("w1", &root, &["thesis/PLAN.docx", "thesis/notes.md"]), Lang::Zh, &backups, 1).unwrap();
         let v = view(&conn, "t1", true, false).unwrap().unwrap();
         assert_eq!(v.needs_text.iter().map(|n| n.rel.as_str()).collect::<Vec<_>>(), vec!["thesis/PLAN.docx"]);
         assert_eq!(state_text(&v, "thesis/notes.md"), Some(("# notes\n".to_string(), false)));
         assert_eq!(state_text(&v, "thesis/PLAN.docx"), None);
-        cache_text(&conn, "t1", "thesis/PLAN.docx", "第三章改成访谈").unwrap();
+        cache_text(&conn, &v.folder_id, "thesis/PLAN.docx", "第三章改成访谈").unwrap();
         let v = view(&conn, "t1", true, false).unwrap().unwrap();
         assert!(v.needs_text.is_empty());
         assert_eq!(state_text(&v, "thesis/PLAN.docx"), Some(("第三章改成访谈".to_string(), false)));
-        // The file changes: the cached text is no longer its text.
         write(&root, "thesis/PLAN.docx", "zip bytes, longer now");
         assert_eq!(state_text(&view(&conn, "t1", true, false).unwrap().unwrap(), "thesis/PLAN.docx"), None);
     }
 
-    /// Manual acceptance (task book §5 A1 / A2) — on COPIES only: a `VACUUM INTO` copy of the library
-    /// and a copy of the folder. ⛔ It refuses the real library.
-    ///   SPOOL_P9Y_DB=<copy>/spool.db SPOOL_P9Y_FOLDER=<folder copy> SPOOL_P9Y_PROJECT=<title> \
+    /// Manual acceptance (task book §5 A1 / A2, §8) — on COPIES only: a `VACUUM INTO` copy of the
+    /// library and a copy of the folder. ⛔ It refuses the real library.
+    ///   SPOOL_P9Y_DB=<copy>/spool.db SPOOL_P9Y_FOLDER=<folder copy> SPOOL_P9Y_WORKSPACE=<title> \
     ///   SPOOL_P9Y_STEP=connect|view|refresh|sync cargo test --lib folder_copy_acceptance -- --ignored --nocapture
     #[test]
     #[ignore = "manual: needs a copy of a library and of a folder"]
     fn folder_copy_acceptance() {
         let var = |k: &str| std::env::var(k).unwrap_or_default();
-        let (db, folder, title, step) = (var("SPOOL_P9Y_DB"), var("SPOOL_P9Y_FOLDER"), var("SPOOL_P9Y_PROJECT"), var("SPOOL_P9Y_STEP"));
+        let (db, folder, title, step) = (var("SPOOL_P9Y_DB"), var("SPOOL_P9Y_FOLDER"), var("SPOOL_P9Y_WORKSPACE"), var("SPOOL_P9Y_STEP"));
         if db.is_empty() {
             return;
         }
@@ -2573,47 +2898,30 @@ mod tests {
         assert!(!Path::new(&db).starts_with(&real), "⛔ not the real library");
         let backups = Path::new(&db).parent().unwrap().to_path_buf();
         let mut conn = Connection::open(&db).unwrap();
-        let thread_id: String = conn
-            .query_row("SELECT id FROM threads WHERE title = ?1 AND deleted_at IS NULL", [&title], |r| r.get(0))
+        let ws: String = conn
+            .query_row("SELECT id FROM workspaces WHERE title = ?1 AND deleted_at IS NULL", [&title], |r| r.get(0))
             .unwrap();
         match step.as_str() {
             "connect" => {
                 let i = inspect(&conn, &folder).unwrap();
                 println!("files={} truncated={} not_listed={:?} linked_to={:?}", i.files, i.truncated, i.not_listed, i.linked_to);
-                for c in &i.candidates {
-                    println!("candidate {} -> {} recommended={}", c.spec, c.path, c.recommended);
-                }
                 let picks: Vec<String> = i.candidates.iter().filter(|c| c.recommended).take(MAX_STATE_FILES).map(|c| c.spec.clone()).collect();
                 println!("picked {picks:?}");
-                let a = ConnectArgs {
-                    thread_id: thread_id.clone(),
-                    path: folder.clone(),
-                    state_files: picks,
-                    git_exclude: true,
-                    pointer_claude: true,
-                    pointer_agents: false,
-                };
+                let a = ConnectArgs { workspace_id: ws.clone(), path: folder.clone(), state_files: picks, git_exclude: true, pointer_claude: true, pointer_agents: false };
                 connect(&mut conn, &a, Lang::Zh, &backups, now_ms()).unwrap();
             }
             "refresh" => refresh_all(&conn, Lang::Zh, &backups).unwrap(),
-            "sync" => mark_synced(&conn, &thread_id, "user", None, now_ms()).unwrap(),
+            "sync" => mark_synced_workspace(&conn, &ws, now_ms()).unwrap(),
             _ => {}
         }
-        let v = view(&conn, &thread_id, true, true).unwrap().unwrap();
-        let listing = list_folder(Path::new(&v.path));
+        let v = view_workspace(&conn, &ws, true, true).unwrap().unwrap();
         println!(
-            "view location={} path={} ahead={} protocol={} others={:?} primary={} git={} exclude={} claude_points={}",
-            v.location, v.path, v.ahead, v.protocol, v.others, v.primary, v.git, v.exclude, v.claude_points
+            "view location={} path={} ahead={} protocol={} workspace={} primary={:?} projects={} git={} exclude={} claude_points={}",
+            v.location, v.path, v.ahead, v.protocol, v.workspace, v.primary_title, v.project_count, v.git, v.exclude, v.claude_points
         );
         for s in &v.state {
             println!("state {} -> {:?} changed={}", s.spec, s.path, s.changed);
         }
-        println!("changes={} commits={} needs_text={:?}", v.changes.len(), v.commits.len(), v.needs_text);
-        for c in v.changes.iter().take(10) {
-            println!("change {} {}", c.kind, c.path);
-        }
-        let plans = listing.files.iter().filter(|f| f.rel.starts_with("plans/dissertation/")).count();
-        let bad = listing.files.iter().filter(|f| f.rel.starts_with("data/") || f.rel.contains("node_modules") || f.rel.starts_with(".venv")).count();
-        println!("listed={} plans/dissertation={plans} data|node_modules|.venv={bad} not_listed={:?}", listing.files.len(), listing.not_listed);
+        println!("changes={} commits={}", v.changes.len(), v.commits.len());
     }
 }

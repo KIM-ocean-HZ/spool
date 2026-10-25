@@ -432,6 +432,7 @@ const reverseAndBuildRedo = async (
         if ((await getCaptureTargetThread())?.id === from) await setCaptureTarget(to);
       };
       for (const th of threads) await setThreadCompletion(th.threadId, th);
+      scheduleProtocolRefresh();
       if (captureFrom && captureTo) await moveTarget(captureTo, captureFrom);
       return async () => {
         for (const { threadId } of threads) {

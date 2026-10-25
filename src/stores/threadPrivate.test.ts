@@ -2,7 +2,7 @@ import { createRequire } from 'node:module';
 import type Database from '@tauri-apps/plugin-sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-// P9Y-3: going private disconnects the project's folder first — a Rust command.
+// P9Y-3: a privacy switch also updates the workspace folder's protocol through Rust.
 const invoke = vi.fn(async (..._a: unknown[]): Promise<unknown> => undefined);
 vi.mock('@tauri-apps/api/core', () => ({ invoke: (...a: unknown[]) => invoke(...a) }));
 
@@ -39,6 +39,7 @@ describe('setPrivate (P9E-4)', () => {
   let handle: Sqlite;
 
   beforeEach(() => {
+    invoke.mockReset();
     handle = new DatabaseSync(':memory:');
     handle.exec(schemaSql.replace(/--.*$/gm, ''));
     __setTestDb(asPluginSql(handle));
@@ -61,10 +62,10 @@ describe('setPrivate (P9E-4)', () => {
 
     invoke.mockClear();
     await useThreadsStore.getState().setPrivate([a.id, c.id], true);
-    // P9Y-3 (task book §3.7): each one is disconnected as going private — its name leaves SPOOL.md.
-    expect(invoke.mock.calls).toEqual([
-      ['folder_disconnect', { threadId: a.id, remove: false, private: true }],
-      ['folder_disconnect', { threadId: c.id, remove: false, private: true }],
+    // P9Y-3 (task book §3.7, §8): after the switch, each one's folder SPOOL.md is told — it leaves it.
+    expect(invoke.mock.calls.filter(([cmd]) => cmd === 'folder_privacy_changed')).toEqual([
+      ['folder_privacy_changed', { threadId: a.id }],
+      ['folder_privacy_changed', { threadId: c.id }],
     ]);
 
     const flags = () =>
@@ -80,6 +81,52 @@ describe('setPrivate (P9E-4)', () => {
     invoke.mockClear();
     await useThreadsStore.getState().setPrivate([a.id, c.id], false);
     expect(flags()).toEqual({ a: false, b: false, c: false });
-    expect(invoke).not.toHaveBeenCalled();
+    // …and back in when it comes back.
+    expect(invoke.mock.calls.filter(([cmd]) => cmd === 'folder_privacy_changed').map(([, a]) => a)).toEqual([
+      { threadId: a.id },
+      { threadId: c.id },
+    ]);
+  });
+
+  it('移除 SPOOL.md 名字失败时回滚那一个并停下，已成功的项目和左栏保持一致', async () => {
+    const ws = await createWorkspace('ws');
+    const a = await createThread(ws.id, 'a');
+    const b = await createThread(ws.id, 'b');
+    const c = await createThread(ws.id, 'c');
+    await useThreadsStore.getState().loadAll();
+    invoke.mockImplementation(async (cmd, args) => {
+      if (cmd === 'folder_privacy_changed' && (args as { threadId: string }).threadId === b.id) {
+        throw new Error('cannot write SPOOL.md');
+      }
+      return undefined;
+    });
+
+    await expect(useThreadsStore.getState().setPrivate([a.id, b.id, c.id], true)).rejects.toThrow('cannot write SPOOL.md');
+
+    expect(handle.prepare('SELECT title, private FROM threads ORDER BY title').all()).toEqual([
+      { title: 'a', private: 1 },
+      { title: 'b', private: 0 },
+      { title: 'c', private: 0 },
+    ]);
+    expect(Object.fromEntries(useThreadsStore.getState().threadsByWorkspace[ws.id].map((t) => [t.title, t.isPrivate])))
+      .toEqual({ a: true, b: false, c: false });
+    expect(invoke.mock.calls.filter(([cmd]) => cmd === 'folder_privacy_changed').map(([, args]) => args))
+      .toEqual([{ threadId: a.id }, { threadId: b.id }]);
+  });
+
+  it('取消私密的协议更新失败也保留原来的私密位', async () => {
+    const ws = await createWorkspace('ws');
+    const a = await createThread(ws.id, 'a');
+    handle.prepare('UPDATE threads SET private = 1 WHERE id = ?').run(a.id);
+    await useThreadsStore.getState().loadAll();
+    invoke.mockImplementation(async (cmd) => {
+      if (cmd === 'folder_privacy_changed') throw new Error('cannot write SPOOL.md');
+      return undefined;
+    });
+
+    await expect(useThreadsStore.getState().setPrivate([a.id], false)).rejects.toThrow('cannot write SPOOL.md');
+
+    expect(handle.prepare('SELECT private FROM threads WHERE id = ?').get(a.id)).toEqual({ private: 1 });
+    expect(useThreadsStore.getState().threadsByWorkspace[ws.id][0].isPrivate).toBe(true);
   });
 });

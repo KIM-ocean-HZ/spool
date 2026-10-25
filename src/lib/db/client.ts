@@ -38,7 +38,7 @@ export const setSeedLanguage = (lang: SeedLanguage): void => {
 // carries a database from the previous version to the new one. On startup the
 // database's PRAGMA user_version is compared against this and every applicable step
 // runs in sequence, each stamping user_version as its own checkpoint (§19.3).
-const SCHEMA_VERSION = 36;
+const SCHEMA_VERSION = 37;
 
 // Things a migration did to the user's data that the user is entitled to hear about.
 // v15 is the first migration that removes anything (the retired `url` attachments), and
@@ -1186,6 +1186,35 @@ const MIGRATIONS: Migration[] = [
       )`);
       await db.execute(`CREATE INDEX IF NOT EXISTS idx_folder_links_folder
         ON folder_links(folder_id, created_at ASC)`);
+    },
+  },
+  {
+    // v37 (P9Y 第二轮, Ocean 2026-10-25 第 210 条「需要整个工作区直接连接到一个项目文件夹上」)：连到文件夹的
+    // 改成工作区。⚠️⚠️ **一张新表 `CREATE TABLE IF NOT EXISTS` + 它的索引，外加一句把 v36 的连接搬过来的
+    // `INSERT OR IGNORE … SELECT`**；⛔ 已有的表一列不动、⛔ 不删任何行（`folder_links` 留着不用，v36 没发过版，
+    // 真库里它是空的）、⛔ 没有 rebuild 分支。
+    //   * 搬法：v36 的每条「项目 → 文件夹」变成「这个项目所在的工作区 → 文件夹」；同一个工作区有好几条时留最早
+    //     的那条（`OR IGNORE` + 按建立时间排），那个项目当主项目，现状文件照搬。
+    //   * 往回：`DROP TABLE workspace_folders` 退回 v36，⛔ 不丢任何 v36 就有的数据（`folder_links` 一行没动）。
+    // 半跑一次和跑完一次分不出来：`IF NOT EXISTS` 和 `OR IGNORE` 再跑一遍什么都不多。
+    from: 36,
+    to: 37,
+    name: 'add-workspace-folders',
+    run: async (db) => {
+      await db.execute(`CREATE TABLE IF NOT EXISTS workspace_folders (
+        workspace_id      TEXT PRIMARY KEY REFERENCES workspaces(id) ON DELETE CASCADE,
+        folder_id         TEXT NOT NULL REFERENCES folders(id) ON DELETE CASCADE,
+        primary_thread_id TEXT,
+        state_files       TEXT NOT NULL DEFAULT '[]',
+        created_at        INTEGER NOT NULL
+      )`);
+      await db.execute(`CREATE INDEX IF NOT EXISTS idx_workspace_folders_folder
+        ON workspace_folders(folder_id, created_at ASC)`);
+      await db.execute(`INSERT OR IGNORE INTO workspace_folders
+          (workspace_id, folder_id, primary_thread_id, state_files, created_at)
+        SELECT t.workspace_id, l.folder_id, l.thread_id, l.state_files, l.created_at
+          FROM folder_links l JOIN threads t ON t.id = l.thread_id
+         ORDER BY l.is_primary DESC, l.created_at ASC`);
     },
   },
 ];

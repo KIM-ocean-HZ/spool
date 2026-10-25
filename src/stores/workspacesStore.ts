@@ -139,6 +139,8 @@ export const useWorkspacesStore = create<WorkspacesState>((set, get) => ({
       id,
     );
     if (plan.toComplete.length === 0) return;
+    // P9Y: finished projects leave their folder's SPOOL.md.
+    scheduleProtocolRefresh();
     const archivedAt = Date.now();
     for (const th of plan.toComplete) {
       await setThreadCompletion(th.id, {

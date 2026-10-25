@@ -14,6 +14,7 @@ import { DEFAULT_RAIL_WIDTH } from '@/lib/layout';
 import { DEFAULT_THEME, themeOrDefault, type Theme } from '@/lib/theme';
 import { DEFAULT_BLOCK_FONT, blockFontOrDefault, type BlockFontSize } from '@/lib/blockFont';
 import { DEFAULT_COLOR_SCHEME, colorSchemeOrDefault, type ColorScheme } from '@/lib/colorScheme';
+import { scheduleProtocolRefresh } from '@/lib/folders/refresh';
 
 // Keys persisted to settings.json via tauri-plugin-store. `captureShortcut` /
 // `searchShortcut` are accelerator strings (lib/capture/shortcut.ts).
@@ -527,7 +528,14 @@ export const useSettingsStore = create<SettingsState>((set) => ({
       for (const [k, v] of Object.entries(patch)) {
         await store.set(k, v as unknown as string | boolean);
       }
+      // P9Y 第二轮 (第 210 条第 2 点): a linked folder's SPOOL.md is written in the app's language. A
+      // switch mirrors the language other processes read (`resolvedLanguage`, which Rust takes first)
+      // right away, then rewrites those files — only where Spool's section is still as it left it.
+      if (patch.language === 'zh' || patch.language === 'en') {
+        await store.set(RESOLVED_LANGUAGE_KEY, patch.language);
+      }
       await store.save();
+      if (patch.language !== undefined) scheduleProtocolRefresh();
       // The overlay runs its own store instance off the same settings.json;
       // broadcast so a change (language, …) reaches it without a restart.
       void emit('settings:changed').catch(() => {});

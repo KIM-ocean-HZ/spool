@@ -20,7 +20,8 @@ export function PrivateConfirm({
   onCancel,
 }: {
   turnOn: boolean;
-  /** P9Y-3: folders these projects are linked to (shortened). Going private disconnects them. */
+  /** P9Y-3: folders these projects' workspaces are linked to (shortened). Going private takes them
+   *  out of those folders' SPOOL.md. */
   linkedFolders?: string[];
   onConfirm: () => void;
   onCancel: () => void;
@@ -37,7 +38,7 @@ export function PrivateConfirm({
           </p>
           {linkedFolders.length > 0 && (
             <p style={{ color: 'var(--status-parked)' }}>
-              {t('它连着 {path}。设成私密会断开，并把它从那里的 SPOOL.md 里拿掉。', {
+              {t('它所在的工作区连着 {path}。设成私密会把它从那里的 SPOOL.md 里拿掉。', {
                 path: linkedFolders.join(t('、')),
               })}
             </p>

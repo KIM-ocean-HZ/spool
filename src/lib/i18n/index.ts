@@ -2019,8 +2019,6 @@ const EN: Record<string, string> = {
     'Linked folder',
   '连接文件夹…':
     'Connect a folder…',
-  '私密项目不连文件夹：连了之后仓库里的 AI 会知道它存在。':
-    'A private project cannot be linked to a folder: the AI working in that folder would learn it exists.',
   '上次同步 {day} · 还没选现状文件':
     'Last synced {day} · no state files picked yet',
   '上次同步 {day} · 之后改了 {n} 份现状文件':
@@ -2059,10 +2057,6 @@ const EN: Record<string, string> = {
     'Spool’s section is no longer in SPOOL.md.',
   '重新写一份':
     'Write it again',
-  '同一个文件夹还连着{them}':
-    'The same folder is also linked to {them}',
-  '；这个项目是主项目':
-    '; this project is the main one',
   '记下了：从现在起再看改动':
     'Noted: changes are counted from now on',
   '仓库里的新情况已经记进 Spool 了：从现在起重新算改动':
@@ -2129,8 +2123,6 @@ const EN: Record<string, string> = {
     'Put a SPOOL.md at the top of this folder that tells an AI working here which Spool project it belongs to, which side is the authority when they disagree, and when to write back. You can open it and edit it.',
   '不读代码，不在后台盯着，不调用 git。':
     'It does not read code, does not watch in the background, and does not run git.',
-  '这个文件夹已经连着{them}，〈{title}〉会加进同一份 SPOOL.md。':
-    'This folder is already linked to {them}; ‹{title}› will be added to the same SPOOL.md.',
   '上层的 {path} 已经连着 Spool。这里会再有一份 SPOOL.md，在这个子文件夹里工作的 AI 读近的那份。':
     '{path} above is already linked to Spool. This folder gets a SPOOL.md of its own; an AI working in this subfolder reads the nearer one.',
   '下面的 {path} 已经连着 Spool，它那份 SPOOL.md 不受影响。':
@@ -2161,8 +2153,6 @@ const EN: Record<string, string> = {
     'Cost: {x}',
   '「只留在这台电脑」是往 .git/info/exclude 加一行 SPOOL.md。那是 git 自带的、只对这台电脑生效的忽略清单。':
     '“On this computer only” adds a SPOOL.md line to .git/info/exclude — git’s own ignore list that applies to this computer alone.',
-  '连接文件夹「{name}」':
-    'Connect the folder “{name}”',
   '哪几份文件写着现状':
     'Which files say where things stand',
   'SPOOL.md 跟不跟 git':
@@ -2175,8 +2165,6 @@ const EN: Record<string, string> = {
     'Next',
   '换一个文件夹':
     'Change the folder',
-  '断开〈{title}〉和 {path}':
-    'Disconnect ‹{title}› from {path}',
   '断开，选新的':
     'Disconnect and choose',
   '先断开现在这个（{path}），再选新的。':
@@ -2191,8 +2179,6 @@ const EN: Record<string, string> = {
     'Keep it',
   '文件夹里什么都不动。SPOOL.md 以后不再更新。':
     'Nothing in the folder changes. SPOOL.md is no longer updated.',
-  '这个文件夹还连着{them}。SPOOL.md 留着，只把〈{title}〉从里面拿掉。':
-    'This folder is still linked to {them}. SPOOL.md stays; only ‹{title}› is taken out of it.',
   'SPOOL.md 里 Spool 那一段':
     'Spool’s section of SPOOL.md',
   '留着我改的':
@@ -2205,14 +2191,8 @@ const EN: Record<string, string> = {
     'This file changed after it was attached; Spool has read its text again.',
   '每周自动查 · 连着的文件夹改了现状文件，先停着；点「已经对过了」就恢复':
     'Searches weekly · the linked folder changed a state file, so it is waiting; press “In sync now” to resume',
-  '它连着 {path}。设成私密会断开，并把它从那里的 SPOOL.md 里拿掉。':
-    'It is linked to {path}. Making it private disconnects it and takes it out of the SPOOL.md there.',
   '这个项目连着的文件夹在上次同步之后改了现状文件，自动查先停着，免得拿已经变了的计划去查。在右栏点「已经对过了」就恢复。':
     'This project’s linked folder changed a state file since the last sync, so the weekly search is waiting rather than searching on a plan that has changed. Press “In sync now” in the right rail to resume.',
-  '私密项目不连文件夹：连了之后仓库里的 AI 会知道它存在':
-    'A private project cannot be linked to a folder: the AI working in that folder would learn it exists',
-  '这个项目已经连着一个文件夹了':
-    'This project is already linked to a folder',
   '那个位置上已经没有这个文件夹了':
     'That folder is no longer there',
   '现状文件最多选 {n} 份':
@@ -2221,4 +2201,63 @@ const EN: Record<string, string> = {
     'Spool cannot find this folder right now',
   '没改成：{msg}':
     'Not changed: {msg}',
+  // P9Y 第二轮（第 210 条）：工作区连文件夹 + 工作区页面。
+  'SPOOL.md 没改成：{msg}':
+    'SPOOL.md was not updated: {msg}',
+  '上层工作区「{ws}」连着 {path}，这个工作区的项目都写在那里的 SPOOL.md 里。':
+    'The workspace above, “{ws}”, is linked to {path}; the projects here are listed in the SPOOL.md there.',
+  '主项目':
+    'Main project',
+  '主项目〈{title}〉':
+    'main project ‹{title}›',
+  '单击打开工作区页面，双击重命名':
+    'Click to open the workspace page, double-click to rename',
+  '在「{ws}」里 · ':
+    'In “{ws}” · ',
+  '在工作区里管理':
+    'Manage in the workspace',
+  '在这个文件夹里工作的 AI 默认写回这个项目':
+    'An AI working in this folder writes back into this project by default',
+  '它所在的工作区连着 {path}。设成私密会把它从那里的 SPOOL.md 里拿掉。':
+    'Its workspace is linked to {path}. Making it private takes it out of the SPOOL.md there.',
+  '工作区「{ws}」连着':
+    'Linked through the workspace “{ws}”',
+  '已完成 {n} 个':
+    '{n} finished',
+  '所在工作区还没连文件夹 · 去连接':
+    'Its workspace has no linked folder · link one',
+  '把「{ws}」连到文件夹「{name}」':
+    'Link “{ws}” to the folder “{name}”',
+  '把工作区「{title}」连到这个文件夹。工作区里没完成、不私密的项目都算它的，以后新建的也算；子工作区跟着它，除非另连一个。':
+    'Link the workspace “{title}” to this folder. Every unfinished, non-private project in it belongs to the folder, including ones added later; sub-workspaces follow it unless they link a folder of their own.',
+  '把这个工作区连到电脑上的一个文件夹（代码仓库、论文文件夹都行）。Spool 会看那里的计划改了没有，并放一份 SPOOL.md 告诉在那里工作的 AI 这些项目是怎么回事。':
+    'Link this workspace to a folder on your computer (a code repository, a thesis folder). Spool watches whether the plan there has changed, and puts a SPOOL.md there telling the AI working in it what these projects are.',
+  '断开工作区「{title}」和 {path}':
+    'Disconnect the workspace “{title}” from {path}',
+  '没有进行中的项目。':
+    'No projects in progress.',
+  '私密项目不写进 SPOOL.md，连这个文件夹的 AI 不知道它。':
+    'A private project is not written into SPOOL.md; the AI working in this folder does not know it exists.',
+  '给这个工作区另连一个文件夹…':
+    'Link this workspace to a folder of its own…',
+  '还有别的工作区连着这个文件夹的话，SPOOL.md 留着，只把这个工作区从里面拿掉。':
+    'If other workspaces are linked to this folder too, SPOOL.md stays and only this workspace is taken out of it.',
+  '这个工作区已经不在了。':
+    'This workspace no longer exists.',
+  '这个工作区已经连着一个文件夹了':
+    'This workspace is already linked to a folder',
+  '这个工作区没有连文件夹':
+    'This workspace is not linked to a folder',
+  '这个工作区里还没有项目。':
+    'No projects in this workspace yet.',
+  '这个文件夹已经连着工作区{them}，「{title}」会加进同一份 SPOOL.md。':
+    'This folder is already linked to the workspace {them}; “{title}” will be added to the same SPOOL.md.',
+  '连着 {path}':
+    'Linked to {path}',
+  '连着 {path}，那里的现状文件在上次同步之后改了':
+    'Linked to {path}; a state file there changed since the last sync',
+  '项目':
+    'Projects',
+  '项目文件（{n}）':
+    'Project files ({n})',
 };

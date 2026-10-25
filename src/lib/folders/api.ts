@@ -28,15 +28,24 @@ export interface FolderCommit {
 export type FolderLocation = 'in_place' | 'moved' | 'offline' | 'trash' | 'deleted' | 'unknown';
 export type ProtocolState = 'ok' | 'edited' | 'removed' | 'missing';
 
-/** `folder_link::View`, as the right rail's card is drawn from it. */
+/** `folder_link::View`, as the workspace page and a project's right rail draw it.
+ *  P9Y 第二轮 (Ocean 10-25 第 210 条): a folder is linked to a WORKSPACE; a project falls under the
+ *  nearest workspace above it that has one. */
 export interface FolderView {
   folderId: string;
+  /** The workspace that is linked — the one asked about, or the nearest one above it. Every call
+   *  that changes the link takes this id. */
+  workspaceId: string;
+  workspace: string;
+  /** The link was found above the workspace / project asked about. */
+  inherited: boolean;
   path: string;
   short: string;
   name: string;
   location: FolderLocation;
-  primary: boolean;
-  others: string[];
+  primaryId: string | null;
+  primaryTitle: string | null;
+  projectCount: number;
   syncedAt: number;
   syncNote: string | null;
   syncBy: string | null;
@@ -83,7 +92,7 @@ export interface FolderInspect {
 }
 
 export interface ConnectArgs {
-  threadId: string;
+  workspaceId: string;
   path: string;
   stateFiles: string[];
   gitExclude: boolean;
@@ -96,23 +105,38 @@ export const MAX_STATE_FILES = 3;
 
 export const inspectFolder = (path: string): Promise<FolderInspect> => invoke('folder_inspect', { path });
 export const connectFolder = (args: ConnectArgs): Promise<void> => invoke('folder_connect', { args });
+/** The folder a project falls under (its right rail). */
 export const folderView = (threadId: string): Promise<FolderView | null> => invoke('folder_view', { threadId });
-export const markFolderSynced = (threadId: string): Promise<void> => invoke('folder_mark_synced', { threadId });
-export const setFolderStateFiles = (threadId: string, stateFiles: string[]): Promise<void> =>
-  invoke('folder_set_state_files', { threadId, stateFiles });
-export const setFolderPrimary = (threadId: string): Promise<void> => invoke('folder_set_primary', { threadId });
-export const disconnectFolder = (threadId: string, remove: boolean, isPrivate = false): Promise<void> =>
-  invoke('folder_disconnect', { threadId, remove, private: isPrivate });
-export const rewriteProtocol = (threadId: string): Promise<void> => invoke('folder_rewrite_protocol', { threadId });
-export const protocolDiff = (threadId: string): Promise<[string, string]> =>
-  invoke('folder_protocol_diff', { threadId });
-export const relocateFolder = (threadId: string, path: string): Promise<void> =>
-  invoke('folder_relocate', { threadId, path });
-export const cacheStateText = (threadId: string, rel: string, text: string): Promise<void> =>
-  invoke('folder_cache_text', { threadId, rel, text });
+/** The folder a workspace falls under (the workspace page). */
+export const folderViewWorkspace = (workspaceId: string): Promise<FolderView | null> =>
+  invoke('folder_view_workspace', { workspaceId });
+// The rest take the LINKED workspace — a view's `workspaceId`.
+export const markFolderSynced = (workspaceId: string): Promise<void> => invoke('folder_mark_synced', { workspaceId });
+export const setFolderStateFiles = (workspaceId: string, stateFiles: string[]): Promise<void> =>
+  invoke('folder_set_state_files', { workspaceId, stateFiles });
+export const setFolderPrimary = (workspaceId: string, threadId: string): Promise<void> =>
+  invoke('folder_set_primary', { workspaceId, threadId });
+export const disconnectFolder = (workspaceId: string, remove: boolean): Promise<void> =>
+  invoke('folder_disconnect', { workspaceId, remove });
+export const rewriteProtocol = (workspaceId: string): Promise<void> =>
+  invoke('folder_rewrite_protocol', { workspaceId });
+export const protocolDiff = (workspaceId: string): Promise<[string, string]> =>
+  invoke('folder_protocol_diff', { workspaceId });
+export const relocateFolder = (workspaceId: string, path: string): Promise<void> =>
+  invoke('folder_relocate', { workspaceId, path });
+export const cacheStateText = (folderId: string, rel: string, text: string): Promise<void> =>
+  invoke('folder_cache_text', { folderId, rel, text });
 export const aheadThreads = (): Promise<string[]> => invoke('folder_ahead_threads');
-export const setFolderPointers = (threadId: string, claude: boolean, agents: boolean): Promise<void> =>
-  invoke('folder_set_pointers', { threadId, claude, agents });
+export const setFolderPointers = (workspaceId: string, claude: boolean, agents: boolean): Promise<void> =>
+  invoke('folder_set_pointers', { workspaceId, claude, agents });
+/** After a project's 「设为私密 / 取消私密」: its folder's SPOOL.md drops it (over an edit) / takes it back. */
+export const folderPrivacyChanged = (threadId: string): Promise<void> => invoke('folder_privacy_changed', { threadId });
+export interface LinkedWorkspace {
+  workspaceId: string;
+  short: string;
+  ahead: boolean;
+}
+export const linkedWorkspaces = (): Promise<LinkedWorkspace[]> => invoke('folder_linked_workspaces');
 export const setGlobalHint = (on: boolean): Promise<string[]> => invoke('folder_global_hint', { on });
 /** [threadId, shortened path] for each of these projects that is linked. */
 export const linkedPaths = (threadIds: string[]): Promise<[string, string][]> =>
@@ -122,10 +146,10 @@ export const linkedPaths = (threadIds: string[]): Promise<[string, string][]> =>
 export const folderError = (e: unknown): string => {
   const code = e instanceof Error ? e.message : String(e);
   switch (code) {
-    case 'private':
-      return t('私密项目不连文件夹：连了之后仓库里的 AI 会知道它存在');
     case 'already_linked':
-      return t('这个项目已经连着一个文件夹了');
+      return t('这个工作区已经连着一个文件夹了');
+    case 'no_link':
+      return t('这个工作区没有连文件夹');
     case 'missing':
       return t('那个位置上已经没有这个文件夹了');
     case 'not_a_folder':

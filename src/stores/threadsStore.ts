@@ -4,13 +4,15 @@ import * as db from '@/lib/db/threads';
 import type { Thread, ThreadPatch } from '@/lib/db/threads';
 import { noticeRenamed } from '@/lib/names/renameNotice';
 import { buildThreadDeleteManyUndo, buildThreadDeleteUndo, useUndoStore } from './undoStore';
-import { disconnectFolder } from '@/lib/folders/api';
+import { folderPrivacyChanged } from '@/lib/folders/api';
+import { t } from '@/lib/i18n';
+import { toast } from '@/stores/toastStore';
 import { scheduleProtocolRefresh } from '@/lib/folders/refresh';
 import { useFolderStore } from '@/stores/folderStore';
 
 /** The sidebar's pinned entries — the two "projects" whose contents are not blocks.
  *  'board' is 项目管理 (every project), 'review' is 周回顾 (every project, over time). */
-export type PinnedView = 'board' | 'review' | null;
+export type PinnedView = 'board' | 'review' | 'workspace' | null;
 
 interface ThreadsState {
   threadsByWorkspace: Record<string, Thread[]>;
@@ -57,6 +59,9 @@ interface ThreadsState {
   /** Where a ⇧-click measures from: the last row clicked without ⇧. */
   selectionAnchorId: string | null;
   pinnedView: PinnedView;
+  /** P9Y 第二轮 (Ocean 10-25 第 210 条:「直接把工作区做成可点击，类似左侧边栏顶部的项目管理」): which
+   *  workspace's page is open while `pinnedView` is 'workspace'. */
+  workspaceViewId: string | null;
   /** P9H-1（DISCOVERED-20261015-3）：a finished project to show as 「看全部」 this one time, not
    *  the digest it opens on — the startup draft prompt's 「去看」 lands on a block whose panel
    *  only opens in the full view. Picking any other project clears it. */
@@ -94,6 +99,8 @@ interface ThreadsState {
    *  projects too, and a card you could finish but never un-finish was a one-way door. */
   reopen: (id: string) => Promise<void>;
   openPinned: (view: PinnedView) => void;
+  /** Open a workspace's page in the centre column (its linked folder, its projects at a glance). */
+  openWorkspace: (workspaceId: string) => void;
 }
 
 const groupByWorkspace = (threads: Thread[]): Record<string, Thread[]> => {
@@ -117,6 +124,7 @@ export const useThreadsStore = create<ThreadsState>((set, get) => ({
   selectedIds: new Set<string>(),
   selectionAnchorId: null,
   pinnedView: null,
+  workspaceViewId: null,
   logViewFor: null,
   loading: true,
   error: null,
@@ -163,6 +171,8 @@ export const useThreadsStore = create<ThreadsState>((set, get) => ({
   create: async (workspaceId, title = '') => {
     const t = await db.createThread(workspaceId, title);
     noticeRenamed('project', title, t.title);
+    // P9Y 第二轮: a new project in a linked workspace belongs in its folder's SPOOL.md.
+    scheduleProtocolRefresh();
     set((s) => ({
       threadsByWorkspace: {
         ...s.threadsByWorkspace,
@@ -195,8 +205,10 @@ export const useThreadsStore = create<ThreadsState>((set, get) => ({
     if (patch.workspaceId !== undefined && patch.title === undefined && title !== undefined) {
       noticeRenamed('project', before ?? title, title);
     }
-    // P9Y: a linked folder's SPOOL.md names the project and its workspace.
-    if (patch.title !== undefined || patch.workspaceId !== undefined) scheduleProtocolRefresh();
+    // P9Y: a linked folder's SPOOL.md names the project and its workspace, and leaves finished ones out.
+    if (patch.title !== undefined || patch.workspaceId !== undefined || patch.status !== undefined) {
+      scheduleProtocolRefresh();
+    }
     return title;
   },
 
@@ -258,25 +270,33 @@ export const useThreadsStore = create<ThreadsState>((set, get) => ({
   // P9E-4 (Ocean 2026-10-15 第 119 条). Not through `patch`: that stamps updated_at, and the
   // rail sorts by it — keeping a project away from AIs is not activity, so it stays put.
   setPrivate: async (ids, on) => {
-    // P9Y-3 (task book §3.7, 第 3 题「私密项目不能连」): going private disconnects the folder first, and
-    // takes the project's name out of that folder's SPOOL.md even where the user edited Spool's section.
-    // A failure here stops the switch: a private project still named in a file every AI in that folder
-    // reads is the one outcome this must not leave behind.
-    if (on) {
-      for (const id of ids) {
-        await disconnectFolder(id, false, true);
-        useFolderStore.getState().forget(id);
+    // P9Y-3 (task book §3.7; 第二轮 §8: folders are linked to workspaces now): a project going private
+    // comes out of its folder's SPOOL.md — even where the user edited Spool's section — and one coming
+    // back goes back in. Finish each project before starting the next: a failed protocol write rolls
+    // that project back, and the already-finished projects stay in sync with the sidebar.
+    const before = new Map((await db.listAllThreads()).map((thread) => [thread.id, thread.isPrivate]));
+    for (const id of ids) {
+      const wasPrivate = before.get(id);
+      if (wasPrivate === undefined || wasPrivate === on) continue;
+      await db.setThreadPrivate(id, on);
+      try {
+        await folderPrivacyChanged(id);
+      } catch (e) {
+        await db.setThreadPrivate(id, wasPrivate);
+        void useFolderStore.getState().reloadAll();
+        console.error('[folders] SPOOL.md privacy rewrite failed', e);
+        toast.error(t('SPOOL.md 没改成：{msg}', { msg: e instanceof Error ? e.message : String(e) }));
+        throw e;
       }
+      set((st) => {
+        const next: Record<string, Thread[]> = {};
+        for (const [ws, list] of Object.entries(st.threadsByWorkspace)) {
+          next[ws] = list.map((thread) => (thread.id === id ? { ...thread, isPrivate: on } : thread));
+        }
+        return { threadsByWorkspace: next };
+      });
     }
-    for (const id of ids) await db.setThreadPrivate(id, on);
-    const chosen = new Set(ids);
-    set((st) => {
-      const next: Record<string, Thread[]> = {};
-      for (const [ws, list] of Object.entries(st.threadsByWorkspace)) {
-        next[ws] = list.map((t) => (chosen.has(t.id) ? { ...t, isPrivate: on } : t));
-      }
-      return { threadsByWorkspace: next };
-    });
+    void useFolderStore.getState().reloadAll();
   },
 
   // Picking a project always leaves whichever pinned view was open — that IS what clicking a
@@ -334,6 +354,8 @@ export const useThreadsStore = create<ThreadsState>((set, get) => ({
   },
 
   openPinned: (view) => set({ pinnedView: view }),
+
+  openWorkspace: (workspaceId) => set({ pinnedView: 'workspace', workspaceViewId: workspaceId }),
 }));
 
 // ⚠️ Imperative use only — `selectAllThreadsFlat(useThreadsStore.getState())`.

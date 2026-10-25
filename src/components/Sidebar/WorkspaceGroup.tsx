@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronRight, FolderPlus, Package, Plus } from 'lucide-react';
+import { ChevronDown, ChevronRight, FolderGit2, FolderPlus, Package, Plus } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { KeyboardEvent, MouseEvent } from 'react';
 import MenuDeleteItem from '@/components/ui/MenuDeleteItem';
@@ -12,6 +12,7 @@ import { useT } from '@/lib/i18n';
 import { subtreeWorkspaceIds } from '@/lib/workspaces/archive';
 import type { WorkspaceNode } from '@/lib/workspaces/tree';
 import { buildWorkspaceTree, compareWorkspaceTitles } from '@/lib/workspaces/tree';
+import { useFolderStore } from '@/stores/folderStore';
 import { useRailDragStore } from '@/stores/railDragStore';
 import { useThreadsStore } from '@/stores/threadsStore';
 import { useWorkspacesStore } from '@/stores/workspacesStore';
@@ -65,6 +66,10 @@ export default function WorkspaceGroup({
   // Only this group's own highlight — the store changes on every pointermove, this is a
   // boolean, so a group re-renders when the drag enters or leaves IT and not otherwise.
   const dragOver = useRailDragStore((s) => s.overWorkspaceId === workspace.id);
+  // P9Y 第二轮 (第 210 条): a single click on the name opens the workspace's page; this one is open.
+  const openWorkspace = useThreadsStore((s) => s.openWorkspace);
+  const pageOpen = useThreadsStore((s) => s.pinnedView === 'workspace' && s.workspaceViewId === workspace.id);
+  const linked = useFolderStore((s) => s.linked.find((l) => l.workspaceId === workspace.id));
 
   const allWorkspaces = useWorkspacesStore((s) => s.workspaces);
   const rename = useWorkspacesStore((s) => s.rename);
@@ -241,13 +246,32 @@ export default function WorkspaceGroup({
              10px-tall double-click target for 重命名 is not one. The negative margin gives
              the hit area back without giving the row height back, which would put workspace
              headings on a different rhythm from 最近/聚焦. */
+          /* P9Y 第二轮 (Ocean 10-25 第 210 条:「直接把工作区做成可点击，类似左侧边栏顶部的项目管理」): a click
+             opens the workspace's page, a double click still renames — the two never meant the same thing. */
           <button
+            onClick={() => openWorkspace(workspace.id)}
             onDoubleClick={() => setEditing(true)}
-            className="-my-1 min-w-0 truncate py-1 text-left"
-            title={t('双击重命名')}
+            className={`-my-1 min-w-0 truncate rounded py-1 text-left transition-colors hover:text-ink ${
+              pageOpen ? 'text-ink' : ''
+            }`}
+            title={t('单击打开工作区页面，双击重命名')}
           >
             {headerTitle}
           </button>
+        )}
+
+        {linked && (
+          <span
+            className="flex-none"
+            style={linked.ahead ? { color: 'var(--status-parked)' } : undefined}
+            title={
+              linked.ahead
+                ? t('连着 {path}，那里的现状文件在上次同步之后改了', { path: linked.short })
+                : t('连着 {path}', { path: linked.short })
+            }
+          >
+            <FolderGit2 size={10} />
+          </span>
         )}
 
         <button
