@@ -33,7 +33,7 @@
 <main class="wrap article measure" style="margin: 0 auto;" data-zh-body="privacy">
 
 <h1>Privacy Policy</h1>
-<p class="lede">Last updated: 2026-10-24 (Spool v0.7.2). This English translation is provided for convenience;
+<p class="lede">Last updated: 2026-10-25 (Spool v0.7.3). This English translation is provided for convenience;
 the <a href="zh/privacy.html" hreflang="zh-Hans" lang="zh">Chinese original</a> is authoritative.</p>
 
 <h2>The one-sentence version</h2>
@@ -42,8 +42,8 @@ connection.</strong> Capture, filing, packing, and search all happen on your mac
 no telemetry. The app's content-security policy (CSP) structurally forbids all external network
 connections from the webview, and the Spool binary contains no HTTP client at all.</p>
 <p><strong>One route does reach a model provider, and Spool is the one that starts it.</strong> If
-you switch the <strong>API engine</strong> on (Settings → Engine — it is off until you do), Spool
-runs a small bundled subprocess that makes the request, using a key you gave it and your own quota.
+you switch the <strong>API engine</strong> on (by pasting a key of your own under Settings → AI engine →
+API key — it is off until you do), Spool runs a small bundled subprocess that makes the request, using a key you gave it and your own quota.
 That route and the three hand-offs you perform yourself are all listed below; nothing else leaves
 this machine.</p>
 
@@ -96,6 +96,10 @@ GitHub remain available if you would rather not involve a third party at all.</p
       to decide whether that project's dot in the left rail lights up green — is kept in
       <code>ai-seen.json</code> in the same directory. It is not in the database either, is not
       exported with the library, and never leaves this computer.</li>
+  <li>The results of the out-of-date check — whether you ran it or it ran once a month by itself —
+      and the monthly switch are kept in <code>stale.json</code> in the same directory, so they are
+      still there after you quit and reopen Spool. It is not in the database either, is not exported
+      with the library, and never leaves this computer.</li>
   <li>Before any database schema upgrade, a snapshot backup is saved automatically in the same
       directory.</li>
 </ul>
@@ -128,7 +132,7 @@ request is made on your behalf, by a subprocess Spool starts:</p>
         <strong>Private projects</strong> (right-click a project in the sidebar to make it
         private) do not exist for an AI connected through Spool: it cannot read them or see them
         in any list, files and pictures included. It can still write into one (a project it created
-        as private, say), but cannot read back what it wrote. Spool's own AI features (weekly review, follow-up, compression) leave
+        as private, say), but cannot read back what it wrote. Spool's own AI features (weekly review, follow-up, compression, the out-of-date check) leave
         private projects alone too. <strong>Private covers the route through Spool
         only</strong>: an AI that can already read files on your computer directly (a
         command-line tool given file access, say) is not stopped from reading the database file.
@@ -136,41 +140,52 @@ request is made on your behalf, by a subprocess Spool starts:</p>
         provider.</td>
   </tr>
   <tr>
-    <td>Follow Up, Weekly Review, or drafting follow-up goals (Settings → Engine; requires a
-        supported CLI installed and logged in, plus the required MCP permissions)</td>
+    <td>Follow Up, Weekly Review, drafting follow-up goals, compression, or the out-of-date check
+        (Settings → AI engine → Local CLI; requires a supported CLI installed and logged in, plus the
+        required MCP permissions)</td>
     <td>The command-line AI you installed and logged into yourself (Claude Code, Codex CLI, or
         Gemini CLI — or, when you have no Codex of your own, the copy built into the ChatGPT desktop
         app; Gemini does not run Follow Up)</td>
     <td>Spool starts that CLI as a local subprocess and hands it the relevant project content.
         <strong>The network request happens inside that subprocess</strong>, on your own account's
         quota — on this route Spool stores no API key, and its own process makes no HTTP
-        request.</td>
+        request. When compression or the out-of-date check runs this way, the CLI gets no tools at
+        all and no connection to Spool: one piece of text goes in, one comes out.</td>
   </tr>
   <tr>
-    <td>Compress a project, or run the out-of-date check (Settings → Engine → <strong>API
-        engine</strong>, off by default; requires a key you supply)</td>
-    <td>The model provider whose endpoint you configured (DeepSeek by default; any
-        OpenAI-compatible HTTPS endpoint)</td>
-    <td><strong>This is the one route Spool runs itself.</strong> The project content being
-        compressed or checked is sent to that provider, and the run is billed to your own key —
-        including a run you cancel partway, because the provider still charges for what it already
-        produced. The request is made by a bundled subprocess (<code>spool-ai</code>) that Spool
-        starts and that exits when the run ends; Spool's own process still makes no HTTP request.
-        Plain <code>http://</code> endpoints are refused. Nothing is written into your library
-        until you approve it on screen.</td>
+    <td>Weekly Review, Follow Up, drafting follow-up goals, compression, or the out-of-date check
+        (Settings → AI engine → <strong>API key</strong>, none until you paste one)</td>
+    <td>The provider your key belongs to (one of OpenAI, Claude, Gemini, DeepSeek, Kimi, Qwen,
+        Zhipu GLM or OpenRouter), or an HTTPS endpoint you entered yourself</td>
+    <td><strong>This is the one route Spool runs itself.</strong> The project content involved
+        is sent to that provider, and the run is billed to your own key — including a run you
+        cancel partway, because the provider still charges for what it already produced. Following
+        up this way uses that provider's own web search (OpenAI, Claude, Gemini, Kimi and Qwen have
+        one; the others cannot be used for Follow Up). The request is made by a bundled subprocess
+        (<code>spool-ai</code>) that Spool starts and that exits when the run ends; Spool's own
+        process still makes no HTTP request. Plain <code>http://</code> endpoints are refused. It
+        changes nothing you already have: follow-up findings wait in the review queue, and
+        compression and out-of-date results take effect only when you approve them on screen.</td>
   </tr>
 </table>
 <p>⚠️ <strong>Follow up is the one action that deliberately searches the web.</strong> It takes
-the lines you wrote yourself describing what to watch for, and asks that CLI to go look for
-news — so those lines and the context it needs reach the CLI's provider. Weekly Review and
-drafting follow-up goals do not receive web-search tools, but the project content they need is
-still handed to the CLI and may reach its provider. Follow up runs only when you press it, unless
+the lines you wrote yourself describing what to watch for, and hands them to the route you chose —
+your CLI, or your API provider's own web search — to go look for news, so those lines and the
+context it needs reach that provider. Weekly Review, drafting follow-up goals, compression and the
+out-of-date check do not receive web-search tools, but the project content they need is still
+handed to the CLI or API provider and may reach it. Follow up runs only when you press it, unless
 you switch on <strong>Search once a week by itself</strong> for a project in its follow-up editor —
-then Spool runs it for that project once a week, through the same CLI and on your own quota, and
-only something new reaches your review. The switch is per project and off by default.</p>
+then Spool runs it for that project once a week, on the route Follow Up is set to and on your own
+quota, and only something new reaches your review. The switch is per project and off by default.
+Likewise, when the out-of-date check covers a whole workspace you can switch on <strong>Check all
+of “…” once a month</strong>: Spool then hands that workspace's unfinished, non-private projects
+(sub-workspaces included) to the route the out-of-date check is set to, about every 30 days, and
+the results only appear on the out-of-date tab for you to look at. That switch is per workspace
+and off by default. Both run only while Spool is open.</p>
 <p>In other words: content leaves this machine only along a route you switched on — a manual
-paste, an MCP client you enabled, a CLI action you ran (including a weekly follow-up you
-switched on for a project), or the API engine you gave a key to. With
+paste, an MCP client you enabled, a CLI action you ran, or the API engine you gave a key to
+(including a weekly follow-up you switched on for a project, or a monthly out-of-date check you
+switched on for a workspace). With
 the API engine off, Spool makes no network request at all; with it on, the request comes from a
 separate subprocess, on your own key and quota, to the provider you picked.</p>
 <p>The other direction — an AI writing into your library — only arises once you have turned the

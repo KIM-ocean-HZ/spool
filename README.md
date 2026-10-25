@@ -39,10 +39,10 @@ Spool compresses "re-explaining" into "a single paste."
 
 ## Status
 
-**v0.7.2** — released for **macOS only**. Windows stays on **v0.6.1**, the last release that
+**v0.7.3** — released for **macOS only**. Windows stays on **v0.6.1**, the last release that
 shipped a Windows installer; its next installer will be built from the current release once it has
-been checked on a Windows machine. What changed: [v0.7.2](docs/RELEASE_NOTES_v0.7.2.md) ·
-[v0.7.1](docs/RELEASE_NOTES_v0.7.1.md) · [v0.7.0](docs/RELEASE_NOTES_v0.7.0.md).
+been checked on a Windows machine. What changed: [v0.7.3](docs/RELEASE_NOTES_v0.7.3.md) ·
+[v0.7.2](docs/RELEASE_NOTES_v0.7.2.md) · [v0.7.1](docs/RELEASE_NOTES_v0.7.1.md).
 
 On Windows, capture is a double-tap of Ctrl instead of ⌥. What did not cross over is the
 macOS-specific work around focus handling and browser tab-title capture, so a Windows capture
@@ -111,7 +111,7 @@ The full product constitution, rejected ideas, and the feature filter are in `PL
 - **Zustand** for state
 - **SQLite** via `tauri-plugin-sql`, FTS5 with the trigram tokenizer
 - **MCP server** (`spool --mcp`, stdio, default OFF): the AI surface — 26 tools, 14 read (list/search/dedup/pack, a compressed block's original text, a block's pictures) plus 12 consented, attributed write tools. A Follow Up or Weekly Review run that Spool starts itself is served 25: everything except proposing a project split
-- **CLI engine slot**: `claude`, `codex`, or `gemini` runs as a local subprocess for Follow Up, Weekly Review, and follow-up-goal drafting — detected on disk, never bundled, never given a key
+- **CLI engine slot**: `claude`, `codex`, or `gemini` runs as a local subprocess for Follow Up, Weekly Review, follow-up-goal drafting, compression, and the out-of-date check — detected on disk, never bundled, never given a key
 
 ## Building from source
 
@@ -158,6 +158,8 @@ and offers these actions:
 | **Follow up** | Search for news against lines *you* wrote describing what to watch; findings queue for your review | **yes** |
 | **Weekly review** | One review across every project, kept in the dedicated Weekly Review screen | no |
 | **Draft follow-up goals** | Suggest the lines worth watching for one project; you decide what to keep | no |
+| **Compress** | Rewrite a project's pack shorter; you check what changed before anything is saved | no |
+| **Out-of-date check** | Find older blocks a newer one replaced — in one project, or across a whole workspace, where it can also point out projects that look finished — and decide what to do with each | no |
 
 Three things make this safe to leave switched on, and all three are deliberate:
 
@@ -169,30 +171,44 @@ Three things make this safe to leave switched on, and all three are deliberate:
   until you save or discard it; progress appears when the selected CLI exposes it. Anything that would
   change your existing notes arrives as a proposal to approve, not as an edit.
 - **Only Follow Up gets web tools**, and only against the lines you wrote. Weekly Review and goal
-  drafting run without web-search tools. They still hand the project content they need to the CLI,
-  so that content may reach its provider.
+  drafting run without web-search tools; compression and the out-of-date check get no tools and no
+  connection to Spool at all — one piece of text in, one out. They still hand the project content
+  they need to the CLI, so that content may reach its provider.
 
 The actions require the MCP service and AI-write permission, at least one supported CLI installed and
 logged in, and a per-run time limit you set. If several CLIs are available, you can choose between them.
 Codex has one honest limitation Spool states in the UI rather than hiding: its
 built-in shell tool cannot be removed the way Claude Code's can, so Spool runs it read-only
-sandboxed instead. Gemini can run Weekly Review and draft goals, but not Follow Up.
+sandboxed instead. Gemini can run everything here except Follow Up.
+
+**Nothing runs on a schedule unless you switch it on.** Two switches, both off by default: *Search
+once a week by itself* for a project, in its follow-up editor; and a monthly out-of-date check across
+a whole workspace, on the out-of-date tab. Each runs only while Spool is open, on whichever route
+that action is set to (this CLI or the API engine below), and lands where a manual run would —
+follow-up findings in the review queue, out-of-date results on their tab.
 
 ## The API engine (optional, off by default)
 
 The two routes above borrow someone else's connection — your MCP client's, or a CLI you logged
 into. The API engine is the one route where **Spool holds the key itself**. It is off until you
-switch it on in **Settings → Engine**, and with it off nothing here runs and nothing is stored.
+paste a key in **Settings → AI engine → API key**, and with no key nothing here runs and nothing is
+stored. It can do everything the CLI route does; when both are connected, each action has its own
+*Local CLI / API* switch next to its button.
 
 | Action | What it does |
 |---|---|
+| **Weekly review** | The same cross-project review as the CLI route, kept in the Weekly Review screen |
+| **Follow up** | Searches with the provider's own web search — OpenAI, Claude, Gemini, Kimi and Qwen have one; with DeepSeek, Zhipu GLM, OpenRouter or a custom endpoint, Follow Up stays on the CLI route |
+| **Draft follow-up goals** | Suggests the lines worth watching for one project, without the web |
 | **Compress** | Rewrites a project's pack shorter, and shows you a side-by-side check of what changed before anything is saved |
-| **Out-of-date check** | Looks for older blocks a newer block has replaced, and asks you what to do about each one — merge, let the new one stand, or nothing |
+| **Out-of-date check** | Looks for older blocks a newer block has replaced — in one project, or across its whole workspace, where it can also suggest projects that look finished — and asks you what to do about each one |
 
 What is worth knowing before you turn it on:
 
-- **Your own key, your own bill.** You paste a key for an OpenAI-compatible endpoint (DeepSeek by
-  default; any HTTPS endpoint works). Every run spends your money, including a run you cancel
+- **Your own key, your own bill.** You paste a key from OpenAI, Anthropic (Claude), Google (Gemini),
+  DeepSeek, Moonshot (Kimi), Alibaba (Qwen), Zhipu (GLM) or OpenRouter — Spool tells which from the
+  key where it can, and asks where it can't, since DeepSeek, Qwen and Kimi keys look alike — or give
+  it any HTTPS endpoint of your own. Every run spends your money, including a run you cancel
   partway — the provider still charges for what it already produced.
 - **The request comes from a subprocess, not from Spool.** Spool's own process still has no HTTP
   client in it, and you can check that rather than take our word for it:
@@ -207,8 +223,9 @@ What is worth knowing before you turn it on:
 - **Where the key lives.** macOS: the system Keychain. Windows: a `0600` file in Spool's own data
   directory. It is never written to `settings.json`, and never printed to a log or an error message.
 - **Nothing is written to your library without you.** Compression shows the check screen first;
-  the out-of-date check hands you one decision per pair. A block's pre-compression wording stays in
-  the library and can be read back at any time.
+  the out-of-date check hands you one decision per pair, or per project it thinks is finished;
+  follow-up findings wait in the review queue. A block's pre-compression wording stays in the
+  library and can be read back at any time.
 
 ## Keyboard shortcuts
 
