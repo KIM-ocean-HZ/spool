@@ -1,6 +1,6 @@
 # 产品任务书 P9V —— 过期检测查整个工作区；可以每月自动查一次
 
-> **状态：ACTIVE — 六步做完、真跑过（本机 Codex + DeepSeek，都在库的副本上）、已换装（10-25 00:22），等 Ocean 验收**（2026-10-24 下发，同一窗执行；验收单 §6、回执 §7）。
+> **状态：COMPLETE — Ocean 10-25 验收通过；v0.7.3（Mac）10-25 已发布（发版回执在 §7 末尾）**（2026-10-24 下发，同一窗执行；验收单 §6、回执 §7）。
 >
 > **唯一交付：** §3 的六步按顺序做完、每步一笔提交，§7 写回执；换装 → Ocean 验收 → 和 P9U 一起发 **v0.7.3（Mac）**（第 193 条，推送前问）。
 >
@@ -130,13 +130,13 @@
 **同一窗先做的两件小的（第 194 – 195 条）**：`65a9aeb` 版权行 → `© 2026 Hanze Jin`（`tauri.conf.json`，换装后的 app 里已经是这一行）；`65402bb` README / SPOOL_OVERVIEW / PLAN_EN 三处作者行。bundle id `com.oceanjin.spool` 没动。
 
 **六步的提交**（都在本地，没推）：
-- P9V-0 `0bb61ea` 任务书 + HANDOFF 第 194 – 202 条（只提交了我写的那几段；HANDOFF 里另一窗没提交的宣传素材那几段照旧没提交）。
-- P9V-1 `2dc14ff` 工作区那份提示词 `STALE_WS_SYSTEM` + 闸 `gate_ws` + 两个命令（Rust）。
-- P9V-2 `37e0481` 页签里的「整个〈工作区〉｜只查这个项目」、工作区那一页（两段卡片）、`lib/stale/`。
-- P9V-3 `2654cee` `stale.json` 存盘。
-- P9V-4 `cecfdef` 每月自动查一次（`useAutoStale`）。
-- P9V-5 `6d7b7f8` 右栏「每周自动查 · 下次大约 …」。
-- P9V-6：`7d8f87d` + `70ff0ac` 真跑用的两条 `--ignored` 测试；`fa627d2` 截图时看到的日期写法（「11-23」→「11月23日」，和右栏一样）。
+- P9V-0 `bb181fd` 任务书 + HANDOFF 第 194 – 202 条（只提交了我写的那几段；HANDOFF 里另一窗没提交的宣传素材那几段照旧没提交）。
+- P9V-1 `379f474` 工作区那份提示词 `STALE_WS_SYSTEM` + 闸 `gate_ws` + 两个命令（Rust）。
+- P9V-2 `b582722` 页签里的「整个〈工作区〉｜只查这个项目」、工作区那一页（两段卡片）、`lib/stale/`。
+- P9V-3 `f2ca378` `stale.json` 存盘。
+- P9V-4 `f5f5fc7` 每月自动查一次（`useAutoStale`）。
+- P9V-5 `3eec3ae` 右栏「每周自动查 · 下次大约 …」。
+- P9V-6：`5ce0d58` + `8501c35` 真跑用的两条 `--ignored` 测试；`a7fef75` 截图时看到的日期写法（「11-23」→「11月23日」，和右栏一样）。
 
 **验过的：**
 - 测试：vitest 124 文件 / **1225** 条全过（开工时 1200）；cargo `--lib` **245** 过（开工时 234）· 10 条 ignored（原 8 + 新 2 条真跑）；`spool-ai` 31 条全过；i18n `(none missing)`；`tsc` 干净；clippy 在新代码上没有警告。
@@ -158,3 +158,12 @@
 **没做 / 要你点头的：**
 1. **项目级一条都没找到。** 你 10-24 说「flux 工作区有很多小项目，有一些早就过期了」—— 你说的是哪几个？告诉我名字，我去看是提示词太保守，还是那个项目自己的字里根本没写它结束了（后一种 AI 也判断不出来）。
 2. 验收过了照 `docs/RELEASE.md` 发 v0.7.3（Mac，P9U + P9V）：推送前问你，公证凭据到时候问你要。
+
+**发 v0.7.3（Ocean 10-25「验收通过」+「照推，四步都做」，HANDOFF §9.2 第 205、207 条）**
+
+- **推送前改写**：还没推的两笔 P9V 文档提交（任务书下发、回执）里有一位推荐人的名字（作为子工作区名出现了三次），仓库是公开的，推送前把那三行改成泛指，并改写了本地还没推的 P9V 十笔提交（只动本任务书这三行）：`0bb61ea`→`bb181fd`、`2dc14ff`→`379f474`、`37e0481`→`b582722`、`2654cee`→`f2ca378`、`cecfdef`→`f5f5fc7`、`6d7b7f8`→`3eec3ae`、`7d8f87d`→`5ce0d58`、`fa627d2`→`a7fef75`、`70ff0ac`→`8501c35`、`bc71170`→`48b26df`（上面回执里的提交号已换成新的）。P9U 的提交号不变；旧历史留在本地 `refs/backup/pre-scrub-20261025`。
+- `d40cec6`：版本号 0.7.3（`Cargo.lock` 跟着）；隐私说明三份（日期 2026-10-25 对应 v0.7.3；本机 CLI 那一行加压缩、过期检测；API 那一行改成五件事、九家、跟进用那家自带的联网搜索；加每月自动过期检测和 `stale.json`；私密那句加过期检测），`build-site-zh` 重跑、12 条过；README（状态段、本机 CLI 那张表、「不打开就没有定时跑的东西」、API 那一节）；`docs/RELEASE_NOTES_v0.7.3.md`（英文）。tsc 干净、vitest 1225、cargo check 过。
+- 构建 + 公证（在 `d40cec6` 上）：只读 `notarytool history` 先过；**`.app` Accepted `67f4908f-c4e6-4e0d-814d-10175eb821bf`**；**`.dmg` Accepted `8def0f4d-28a5-42a2-a9e2-8f00c9fab4fd`**，staple 过。两个产物 `Notarized Developer ID`、Authority 第一行 Developer ID（`spool-ai` 也是）、`--verify --deep --strict` 过、两个 `stapler validate` 过、版本 0.7.3、版权 `© 2026 Hanze Jin`、`minos 11.0`。dmg **11,645,376 字节**，sha256 `014a6925…3a9927`，填进发版说明（`613d2b8`）。前两次我的命令里有 zsh 不认的写法，构建根本没起来，没有提交过公证。
+- 推送 `d009193..613d2b8`（23 笔，作者都是 KIM-ocean-HZ、没有署名行）；tag `v0.7.3` → `d40cec6`。Release 两个资产、不是草稿 / 预发布、`latest` = v0.7.3；固定名 200、Windows v0.6.1 链接 200；两个名字下载回来 sha256 一样、staple 在、accepted。官网 Pages 部署成功，中英隐私页都是「2026-10-25（对应 Spool v0.7.3）」。MCP Registry 登录又过期一次，`login github --token` 重登后 **0.7.3 isLatest**（`41b1c86` 记 `server.json`）。MCP 工具面从装好的正式版二进制、在库的副本上重数：26 个（14 只读 / 12 写），引擎 25 个（没有 `propose_split`），和 v0.7.2 一样。
+- 本机换成正式版（10-25 15:33）：`drafts.json` 空；备份 `~/Desktop/Spool/db/*.before-v073-install-20261025-153202.*`（库 + 七个 json）；旧 app 挪到 `~/Desktop/Spool/spool-pre-install/Spool-before-v073-20261025-153202.app`；装的是下载回来的 dmg 里的 `.app`（`spool` sha256 `a15fb23d…` = 构建产物）；装后 `Notarized Developer ID`、0.7.3、日志两行（overlay、双击 ⌥ HID/active），日志在 `~/Desktop/Spool/logs/spool-v073-20261025-153202.log`；真库 v35 · ok · 项目 90 / 块 1304 · 正文 540519，装前装后一样；五个 json 逐字节一样。⚠️ 用 `open -g` 起的，Spool 还是跳到了最前面（当时 Ocean 在用别的 app）。
+- 台账 §1.2 加 v0.7.3；`RELEASE.md` §0.0 指到 v0.7.3。

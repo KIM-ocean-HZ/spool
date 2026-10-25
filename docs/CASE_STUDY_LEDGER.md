@@ -317,6 +317,38 @@ shell unavailable, empty home with only the ChatGPT desktop app's bundled Codex 
 defect was caught after the first internal install and before release: a login PATH can name a folder
 on the Desktop, and probing it would have made macOS ask for Desktop access in Spool's name.
 
+---
+
+| Field | v0.7.3 |
+|---|---|
+| Published | **2026-10-25** |
+| Tagged commit | tag `v0.7.3` → `d40cec6`, the commit the binary was built from (the commits after it on `main` change documentation and `server.json` only) |
+| Signing identity — macOS | Developer ID Application (Apple Developer Program, Team `Q5Y5JRXZ58`) |
+| **Notarisation — `.app`** | submission `67f4908f-c4e6-4e0d-814d-10175eb821bf` · **Accepted** |
+| **Notarisation — `.dmg`** | submission `8def0f4d-28a5-42a2-a9e2-8f00c9fab4fd` · **Accepted** |
+| Artefact — macOS | `Spool_0.7.3_aarch64.dmg`, 11,645,376 bytes |
+| sha256 — macOS | `014a692597a8c748cbf7f5e4d6f2f1616902de8ce3a03a6e81d4e9a28e3a9927` |
+| Gatekeeper verdict — macOS | `accepted` · `source=Notarized Developer ID` on **both** artefacts, and re-verified on copies downloaded back from the published Release under both names (byte-identical sha256, staple intact); `codesign -dvv` Authority resolved to the Developer ID certificate, the bundled `spool-ai` sidecar too; `--verify --deep --strict` passes; minimum macOS 11.0 |
+| Windows | **not built for this release**; the Windows button keeps pointing at v0.6.1 (HTTP 200) |
+| Fixed-name assets | `Spool-macOS-arm64.dmg` — **HTTP 200** through `releases/latest/download/`, byte-identical to the versioned asset |
+| Database schema | **unchanged — v35** |
+| MCP surface (release binary) | 26 tools — 14 read-only, 12 write; 25 for Spool's own engine (`--engine-run`, no `propose_split`). Re-counted from the installed release binary against a copy of the library; same counts as v0.7.0 – v0.7.2 |
+| MCP Registry | `io.github.KIM-ocean-HZ/spool` **0.7.3** published (metadata only) and listed as latest; 0.7.2, 0.7.1, 0.7.0 and 0.6.2 remain listed |
+
+**What this row adds: the two AI routes made equal, and a check whose test case turned out to be the
+wrong one.** v0.7.3 lets compression and the out-of-date check run through a local CLI (until now they
+needed an API key), lets a key from any of nine providers drive all four AI actions — Follow Up through
+the provider's own web search where it has one — and lets the out-of-date check cover a whole workspace,
+including a project-level "this looks finished" suggestion and a monthly run the user can switch on.
+Before release both routes were run for real on a copy of the owner's library: on a four-project
+workspace a local Codex found 5 replaced blocks and the DeepSeek API found 3 (2 in common), all within
+single projects, and neither suggested a finished project. The owner then traced why projects they had
+called long out of date were not flagged: the evidence that those plans were over lived in a code
+repository Spool cannot see, and the four repository files attached in Spool still held the text they had
+when attached. That is recorded as a defect for a later release instead of being papered over with a
+looser prompt. The privacy policy changed in substance: it now names `stale.json`, the monthly check,
+the nine API providers, and Follow Up through a provider's own search.
+
 ## 2. Measured findings
 
 These are the rows that matter most: results obtained by measuring a running system, not
