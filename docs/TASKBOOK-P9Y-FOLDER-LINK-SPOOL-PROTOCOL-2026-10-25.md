@@ -1,6 +1,6 @@
 # TASKBOOK P9Y · 连接文件夹 + SPOOL.md 协议文档（2026-10-25）
 
-> **状态：施工完成（10-25），待 Ocean 验收。** Ocean 10-25「其中要我回答的四件事全部按推荐走」（HANDOFF §9.2 第 209 条）⇒ §4 四件：a + b + c 做、d 等试用；SPOOL.md 默认只留本机；私密项目不能连；要现状文件。代码提交 `27168af`，回执在 §7。⛔ 没换装、没推送、没往真的 `~/flux` 写任何东西。
+> **状态：施工完成（10-25），待 Ocean 验收。** Ocean 10-25「其中要我回答的四件事全部按推荐走」（HANDOFF §9.2 第 209 条）⇒ §4 四件：a + b + c 做、d 等试用；SPOOL.md 默认只留本机；私密项目不能连；要现状文件。代码提交 `27168af`，回执在 §7。**10-25 20:06 已换装**（Ocean「换装」，§7.6），真库 v36。⛔ 没推送、没发版、没往真的 `~/flux` 写任何东西。
 >
 > 来源：HANDOFF §9.2 第 206 条（owner interruption）、第 208 条（本窗 Ocean 对六问的回答和三个大问题）。
 >
@@ -427,7 +427,7 @@ npm run i18n-check
 - **Claude 桌面版的 Cowork 读不读文件夹里的 CLAUDE.md**：§3.4 要求实测，这一窗测不了桌面应用 → DISCOVERED-20261025-8。
 - **Windows**：文件夹身份（挪了跟过去）在 Windows 上没测，这台 Mac 编不了 Windows → DISCOVERED-20261025-9。
 - **真的 `~/flux` 一个字没写**（§5「往真仓库写 SPOOL.md 之前先问」）。Ocean 验收时在界面上自己连，那一下就是同意。
-- **没换装、没推送**：换装前要先问有没有没点「完成」的编辑；仓库是公开的，推送前问。
+- **没推送、没发版**：仓库是公开的，推送前问。换装见 7.6。
 - 新发现：HANDOFF DISCOVERED-20261025-8 – 12。
 
 ### 7.5 验收单（换装之后，Ocean 照着点）
@@ -440,3 +440,13 @@ npm run i18n-check
 6. 在任意 AI 客户端里问「Flux 仓库里最新进度是什么」：它会去调 `get_folder_status`。
 7. 右键一个连着的项目 → 设为私密：说明里多一句「它连着 ~/flux……」；确认后卡片变回「连接文件夹…」（灰着、说明为什么），SPOOL.md 里没有它了。
 8. ⋯ → 断开 →「删掉 Spool 那一段」：只剩 Spool 放的标题时 SPOOL.md 整个删掉，CLAUDE.md 那一行、exclude 那一行也拿掉。
+
+### 7.6 换装回执（10-25 20:06，Ocean「换装」）
+
+- **构建**：`APPLE_SIGNING_IDENTITY="Developer ID Application: …" npm run tauri build -- --bundles app`，和现装的 0.7.3 正式版同一个签名身份（授权不掉）；没公证、没出 dmg。bundle id `com.oceanjin.spool`，版本号还是 0.7.3（没抬，发版时再抬），`spctl` 显示 `Unnotarized Developer ID`（发布版是 `Notarized`，见记忆 `isolated-verify-workflow` §33）。`/Applications` 里的二进制和构建出来的 sha256 一样（`16bf34f8e606…`）。
+- **备份**：库（`VACUUM INTO`，v35、90 个项目、1304 块）和 7 个 json 在 `~/Desktop/Spool/db/*.before-p9y-install-20261025-200555.*`；旧 app（0.7.3 公证正式版，回到发布版的路）挪到 `~/Desktop/Spool/spool-pre-install/Spool-v0.7.3-release-before-p9y-20261025-200555.app`。
+- **停旧版**：换装前 `drafts.json` 是空的、Spool 不在最前面，按 pid 停了主进程和浮窗进程，核过两个都退了。
+- **起新版**：`open -a … --stdout/--stderr`，日志在 `~/Desktop/Spool/spool-pre-install/p9y-run-20261025-200555.{out,err}.log`；stderr 有 `[double-tap] installed at HID/active`（两个授权都在）。进程起于 20:06:30，晚于换装。
+- **迁移**：真库 v35 → v36，一秒内完成；项目 90、块 1304、文件 68、工作区 30、跟进行 34、图片 20、块正文总长 540519，和装前逐项一样；两张新表 0 行；自动快照 `spool.pre-migration-v35-2026-10-25T20-06-31-457Z.db` 在数据目录里。
+- **MCP**：装好的二进制对真库副本起探针：28 个工具，`list_threads` 正常。⚠️ 换装前就开着的 `--mcp` 进程（Claude 桌面版、十几个 Claude Code 会话、两个 Codex）跑的还是 0.7.3，在各自重启之前每次调用都会报「库比服务新」 —— 要用 Spool 的 AI 客户端各重启一次。
+
