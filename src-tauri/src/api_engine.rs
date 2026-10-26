@@ -2679,3 +2679,185 @@ mod p9v_real_runs {
         assert!(o.ok);
     }
 }
+
+// ---------------------------------------------------------------------------------------
+// P10-5 —— 周回顾两条路真跑（任务书 §6.3，判定标准跑之前写死）。
+//
+// ⛔ 只对真库 `VACUUM INTO` 出来的副本跑：`SPOOL_DATA_DIR` 指着副本目录（里面有 spool.db 和一份
+// settings.json），每一次的原始数据写进 `SPOOL_P10_OUT`。key 只走环境变量，⛔ 不写进任何文件。
+// 发出去的东西和 app 一样：API 那条是 `weekly_messages_for_api` + DeepSeek 那一套参数；CLI 那条是
+// `weekly_review_headless` + `engine::codex_args`，过的都是 `weekly_structured`。
+//
+// ⚠️ CLI 那条唯一和 app 不一样的地方：MCP 服务是 `SPOOL_P10_EXE`（这次构建的 `spool`），并且
+// `SPOOL_DATA_DIR` 写进 MCP 服务自己的 env —— 引擎只给 CLI 三个环境变量（`engine::run_env`），
+// 不写进去的话 `spool --mcp` 读的是真库。
+//
+//     SPOOL_DATA_DIR=<副本> SPOOL_P10_OUT=<dir> SPOOL_P10_KEY=<key> SPOOL_P10_BASE=<url> \
+//       SPOOL_P10_MODEL=<model> SPOOL_P10_REASONING=<low|''> SPOOL_P10_TEMP=<0.2|''> [SPOOL_P10_BALANCE=1] \
+//       cargo test --lib real_api_weekly_on_a_copy -- --ignored --nocapture
+//     （参数照 vendors.ts 里那一家填：DeepSeek = https://api.deepseek.com、low、0.2、有余额；
+//       OpenAI = https://api.openai.com/v1、不发思考、不发温度、没有余额接口。）
+//     SPOOL_DATA_DIR=<副本> SPOOL_P10_OUT=<dir> SPOOL_P10_EXE=<target/debug/spool> \
+//       cargo test --lib real_cli_weekly_on_a_copy -- --ignored --nocapture
+// ---------------------------------------------------------------------------------------
+#[cfg(test)]
+mod p10_real_runs {
+    use super::*;
+
+    fn env(k: &str) -> String {
+        std::env::var(k).unwrap_or_else(|_| panic!("set {k}"))
+    }
+
+    fn copy_dir() -> String {
+        let dir = env("SPOOL_DATA_DIR");
+        assert!(!dir.contains("Application Support"), "real runs go against a copy, never the live library");
+        dir
+    }
+
+    fn out_dir() -> std::path::PathBuf {
+        let out = std::path::PathBuf::from(env("SPOOL_P10_OUT"));
+        std::fs::create_dir_all(&out).unwrap();
+        out
+    }
+
+    fn save(out: &std::path::Path, name: &str, text: &str) {
+        std::fs::write(out.join(name), text).unwrap();
+    }
+
+    /// The gate's verdict, saved beside the raw reply — or the sentence the user would have seen.
+    fn gate(out: &std::path::Path, raw: &str, material: &str, read_more: bool) {
+        match crate::mcp::weekly_structured(raw, material, read_more) {
+            Ok(json) => {
+                let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+                save(out, "gated.json", &serde_json::to_string_pretty(&v).unwrap());
+                println!(
+                    "gate: {} projects, {} dropped",
+                    v["projects"].as_array().map_or(0, Vec::len),
+                    v["dropped"].as_array().map_or(0, Vec::len)
+                );
+            }
+            Err(e) => {
+                save(out, "gate-error.txt", &e);
+                println!("gate: whole run fails — {e}");
+            }
+        }
+    }
+
+    /// Which models this key can use — the app picks from this list (vendors.ts `pickModel`).
+    #[test]
+    #[ignore = "lists a vendor's models with a real key; see the header"]
+    fn real_api_models() {
+        let out = out_dir();
+        let request = serde_json::json!({
+            "kind": "models", "protocol": "openai", "key_check_path": "",
+            "base_url": env("SPOOL_P10_BASE"), "api_key": env("SPOOL_P10_KEY"),
+            "model": "", "system": "", "user": "", "timeout_secs": 25u64,
+        });
+        let raw = run_balance_child(&sidecar_path().unwrap(), serde_json::to_vec(&request).unwrap()).unwrap();
+        assert!(!raw.contains(&env("SPOOL_P10_KEY")));
+        save(&out, "models.json", &raw);
+        println!("models: {} chars", raw.len());
+    }
+
+    #[test]
+    #[ignore = "real API weekly review against a library copy; see the header"]
+    fn real_api_weekly_on_a_copy() {
+        copy_dir();
+        let out = out_dir();
+        let key = env("SPOOL_P10_KEY");
+        let bin = sidecar_path().unwrap();
+        let base = env("SPOOL_P10_BASE");
+        let base = base.as_str();
+        let with_balance = std::env::var("SPOOL_P10_BALANCE").is_ok_and(|v| v == "1");
+        let balance = |tag: &str| {
+            if !with_balance {
+                return;
+            }
+            let request = serde_json::json!({
+                "kind": "balance", "base_url": base, "api_key": key,
+                "model": "", "system": "", "user": "", "timeout_secs": 25u64,
+            });
+            let raw = run_balance_child(&bin, serde_json::to_vec(&request).unwrap()).unwrap();
+            assert!(!raw.contains(&key));
+            save(&out, &format!("balance-{tag}.json"), &raw);
+            println!("balance {tag}: {raw}");
+        };
+        balance("before");
+        let (digest, fresh) = crate::mcp::weekly_material_for_api(None).unwrap();
+        let (system, user) = crate::mcp::weekly_messages_for_api(&digest, &fresh);
+        save(&out, "system.txt", &system);
+        save(&out, "user.txt", &user);
+        // The app's wire for that vendor (vendors.ts `wireFor`): openai protocol, no output cap, the
+        // temperature only where the vendor takes one.
+        let temperature = std::env::var("SPOOL_P10_TEMP").ok().and_then(|t| t.parse::<f64>().ok());
+        let wire = ApiWire { protocol: "openai".into(), temperature, max_output_tokens: None };
+        let model = env("SPOOL_P10_MODEL");
+        let reasoning = std::env::var("SPOOL_P10_REASONING").unwrap_or_default();
+        let request = sidecar_request(base, &key, &model, &system, &user, &reasoning, &wire, 600);
+        let o = spawn_sidecar(&bin, serde_json::to_vec(&request).unwrap(), 600);
+        let envelope = serde_json::to_string_pretty(&o).unwrap();
+        assert!(!envelope.contains(&key));
+        save(&out, "envelope.json", &envelope);
+        save(&out, "raw.txt", &o.text);
+        println!(
+            "api: ok={} kind={:?} msg={:?} model={:?} ms={} in={} out={} cached={:?} reasoning={:?}",
+            o.ok, o.kind, o.message, o.model, o.ms, o.input_tokens, o.output_tokens, o.cached_input_tokens, o.reasoning_tokens
+        );
+        balance("after");
+        if o.ok {
+            gate(&out, &o.text, &user, false);
+        }
+    }
+
+    #[test]
+    #[ignore = "real local Codex weekly review against a library copy; see the header"]
+    fn real_cli_weekly_on_a_copy() {
+        use std::io::Read;
+        let dir = copy_dir();
+        let out = out_dir();
+        let exe = env("SPOOL_P10_EXE");
+        let (prompt, digest) = crate::mcp::weekly_review_headless().unwrap();
+        save(&out, "prompt.txt", &prompt);
+        save(&out, "digest.txt", &digest);
+        let status = crate::engine::detect(Some(crate::engine::EngineKind::Codex), None);
+        let bin = status.path.expect("codex on this machine");
+        let msg = out.join("final.txt");
+        let _ = std::fs::remove_file(&msg);
+        let mut args = crate::engine::codex_args(&prompt, &exe, &msg.to_string_lossy(), false);
+        let positional = args.pop().unwrap();
+        args.push("-c".into());
+        args.push(format!("mcp_servers.spool.env={{SPOOL_DATA_DIR=\"{dir}\"}}"));
+        args.push(positional);
+        let mut cmd = std::process::Command::new(&bin);
+        cmd.args(&args).env_clear();
+        for (k, v) in crate::engine::run_env(crate::engine::EngineKind::Codex, std::path::Path::new(&bin)) {
+            cmd.env(k, v);
+        }
+        let started = std::time::Instant::now();
+        let mut child = cmd
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        let mut events = String::new();
+        child.stdout.take().unwrap().read_to_string(&mut events).unwrap();
+        let mut stderr = String::new();
+        child.stderr.take().unwrap().read_to_string(&mut stderr).unwrap();
+        let code = child.wait().unwrap();
+        save(&out, "events.jsonl", &events);
+        save(&out, "stderr.txt", &stderr);
+        let usage = crate::engine::parse_codex_usage(&events);
+        let answer = std::fs::read_to_string(&msg).unwrap_or_default();
+        println!(
+            "cli: exit={code} ms={} usage={usage:?} answer {} chars, error={:?}",
+            started.elapsed().as_millis(),
+            answer.chars().count(),
+            crate::engine::parse_codex_error(&events)
+        );
+        save(&out, "usage.json", &serde_json::to_string_pretty(&usage).unwrap());
+        if !answer.is_empty() {
+            gate(&out, &answer, &digest, true);
+        }
+    }
+}
