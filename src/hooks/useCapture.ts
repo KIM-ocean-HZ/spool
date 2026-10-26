@@ -96,7 +96,7 @@ const applyOverlayAction = (action: OverlayAction): void => {
   // not its own initiative: it is one click behind a card that says 「点一下回到 Spool」.
   // ⛔ Do not reuse `raise_main_window` anywhere else without re-reading capture-note-first —
   // 「主窗永不跳前」 is a standing rule and this is an exception the user performs, not one the
-  // product takes.
+  // product takes. (P10-4's 「周回顾更新了」 card, just below, is the one other click that may.)
   if (action.kind === 'break-open') {
     void invoke(RAISE_MAIN_WINDOW_COMMAND).catch((e) => {
       // The lock still goes up: a break the user asked for should happen even if the window
@@ -105,6 +105,16 @@ const applyOverlayAction = (action: OverlayAction): void => {
       console.warn('[break] raise_main_window failed', e);
     });
     useBreakStore.getState().lock(Date.now() + BREAK_MS);
+    return;
+  }
+  // P10-4 (Ocean 2026-10-26 第 220 条): the user clicked 「周回顾更新了」. The window first, the page
+  // second — the second exception of the same kind as the break card's, one click behind a card that
+  // says 「点一下打开」. ⛔ Never from anywhere else.
+  if (action.kind === 'review-open') {
+    void invoke(RAISE_MAIN_WINDOW_COMMAND).catch((e) => {
+      console.warn('[review] raise_main_window failed', e);
+    });
+    useThreadsStore.getState().openPinned('review');
     return;
   }
   // Declined. The streak is already zero (the reducer reset it when it fired), so there is

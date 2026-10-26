@@ -1821,7 +1821,30 @@ pub fn show_break_reminder<R: Runtime>(app: AppHandle<R>, work_minutes: u32) -> 
     Ok(())
 }
 
-/// Bring the main window up, because the user asked for it by clicking the break card.
+// ── 周回顾更新了 (P10-4, Ocean 2026-10-26 第 220 条) ──────────────────────────────────────────
+//
+// 「每次周回顾更新弹一个消息，点它跳到周回顾」, answered as 「用捕捉那张浮窗卡的位置弹一张小卡」:
+// the break card's way exactly (任务书 §6.2). A `notice`-class show — over whatever the user is in,
+// taking no keyboard and moving no window — and a click comes back as `review-open`, which the main
+// window answers with `raise_main_window` and the weekly review page. ⛔ Nothing here raises
+// anything: the click is the only thing that may, and the card says what it will do.
+//
+// The payload is the two numbers the card prints, worked out by the main window. The language,
+// theme and scheme ride in from settings.json on the show itself (overlay.rs) — the overlay
+// process reads no settings of its own.
+#[tauri::command]
+pub fn show_review_notice<R: Runtime>(app: AppHandle<R>, mut payload: serde_json::Value) -> Result<(), String> {
+    // Same reason as the break card's: on Windows the overlay spends the foreground grant at the
+    // click, and only this process knows whom to let in.
+    if let Some(p) = payload.as_object_mut() {
+        p.insert("mainPid".into(), serde_json::json!(std::process::id()));
+    }
+    send_overlay_show(&app, "review", payload, false)?;
+    Ok(())
+}
+
+/// Bring the main window up, because the user asked for it by clicking the break card (or, since
+/// P10-4, the weekly review card — the same kind of click on the same kind of card).
 ///
 /// ⚠️⚠️ **Read `capture-note-first` before touching this.** 「主窗永不跳前」 is a standing rule
 /// and this does not bend it: the rule is about Spool raising itself, and every call here is

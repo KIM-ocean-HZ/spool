@@ -406,6 +406,7 @@ pub fn run() {
             capture::probe_browser_automation,
             capture::system_idle_ms,
             capture::show_break_reminder,
+            capture::show_review_notice,
             capture::raise_main_window,
             overlay::overlay_db_reply,
             pack::write_pack_folder,

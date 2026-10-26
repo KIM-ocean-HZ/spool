@@ -2313,4 +2313,6 @@ const EN: Record<string, string> = {
   '那两块已经不在了。': 'Those two blocks are gone.',
   '这一步没做成': 'That step did not go through',
   '{key} 可以撤销。': '{key} undoes it.',
+  '周回顾更新了': 'Weekly review updated',
+  '{p} 个项目 · {a} 条建议动作 · 点一下打开': '{p} projects · {a} suggested actions · click to open',
 };

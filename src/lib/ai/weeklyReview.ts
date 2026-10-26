@@ -1,5 +1,8 @@
+import { invoke } from '@tauri-apps/api/core';
 import { loadApiKey, weeklyReviewViaApi } from '@/lib/ai/compress';
 import { apiCallFrom } from '@/lib/ai/vendors';
+import { readWeeklyReview } from '@/lib/ai/weeklyStructured';
+import { SHOW_REVIEW_OVERLAY_COMMAND, type OverlayReview } from '@/lib/capture/overlayProtocol';
 import { recordRun } from '@/lib/db/engineRuns';
 
 /**
@@ -53,5 +56,24 @@ export const runWeeklyReviewViaApi = async (s: ApiWeeklySettings): Promise<boole
     startedAt,
     finishedAt: Date.now(),
   });
+  if (out.ok) announceWeeklyReview(out.text);
   return out.ok;
+};
+
+/** P10-4: what the 「周回顾更新了」 card says, read off the stored review. null = nothing to announce
+ *  (prose, or a run that did not read). */
+export const reviewNotice = (text: string): OverlayReview | null => {
+  const r = readWeeklyReview(text);
+  return r ? { projects: r.projects.length, actions: r.projects.reduce((n, p) => n + p.actions.length, 0) } : null;
+};
+
+/** P10-4 (Ocean 2026-10-26 第 220 条): a new review is stored — say so at the capture card's place.
+ *  Both roads call this once the row is written, manual and weekly runs alike (任务书 §6.2). A card
+ *  that fails to show is not a failed review: the review is on its page either way. */
+export const announceWeeklyReview = (text: string): void => {
+  const payload = reviewNotice(text);
+  if (!payload) return;
+  void invoke(SHOW_REVIEW_OVERLAY_COMMAND, { payload }).catch((e) =>
+    console.warn('[review] the 「周回顾更新了」 card did not show', e),
+  );
 };

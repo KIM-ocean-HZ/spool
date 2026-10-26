@@ -1,7 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { emit, listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import { Coffee, Forward, Lock, Pin, RotateCcw, RotateCw, Trash2, X } from 'lucide-react';
+import { CalendarRange, Coffee, Forward, Lock, Pin, RotateCcw, RotateCw, Trash2, X } from 'lucide-react';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
 import type { Block } from '@/lib/db/blocks';
 // 🚨 Not @/lib/db — this process never opens SQLite (DESIGN_CAPTURE_HELPER_PROCESS §3.3).
@@ -23,6 +23,7 @@ import {
   HIDE_OVERLAY_COMMAND,
   OVERLAY_ACTION_EVENT,
   OVERLAY_BREAK_EVENT,
+  OVERLAY_REVIEW_EVENT,
   OVERLAY_DISMISS_EVENT,
   OVERLAY_LANGUAGE_EVENT,
   OVERLAY_SCHEME_EVENT,
@@ -35,6 +36,7 @@ import {
   type CaptureOverlayPayload,
   type OverlayAction,
   type OverlayBreak,
+  type OverlayReview,
   type OverlayNotice,
   type OverlaySourceUpdate,
   type OverlayUndoPayload,
@@ -69,6 +71,9 @@ const UNDO_AUTO_DISMISS_MS = 2500;
 // it once is the 「quiet」 rule; a health card that keeps coming back is one people learn to
 // close without reading, which is worth less than not sending it.
 const BREAK_AUTO_DISMISS_MS = 60_000;
+// P10-4 「周回顾更新了」: as long as a capture card stays — a few seconds, as the 任务书 asks — and,
+// like every card here, held while the pointer is on it.
+const REVIEW_AUTO_DISMISS_MS = TOAST_AUTO_DISMISS_MS;
 
 const UNDO_OP_LABEL: Record<OverlayUndoPayload['op'], string> = {
   capture: '捕获',
@@ -143,6 +148,7 @@ type OverlayContent =
   | { kind: 'notice'; data: OverlayNotice }
   | { kind: 'undo'; data: OverlayUndoPayload }
   | { kind: 'break'; data: OverlayBreak }
+  | { kind: 'review'; data: OverlayReview }
   | null;
 
 const noticeText = (n: OverlayNotice): string => {
@@ -289,10 +295,15 @@ export default function CaptureOverlay() {
   const leaveCard = useCallback((): void => {
     setExpanded(false);
     setFixed(false);
-    const due = pendingBreakRef.current;
-    pendingBreakRef.current = null;
+    const due: OverlayContent = pendingBreakRef.current
+      ? { kind: 'break', data: pendingBreakRef.current }
+      : pendingReviewRef.current
+        ? { kind: 'review', data: pendingReviewRef.current }
+        : null;
+    if (due?.kind === 'break') pendingBreakRef.current = null;
+    else if (due?.kind === 'review') pendingReviewRef.current = null;
     if (due) {
-      setContent({ kind: 'break', data: due });
+      setContent(due);
       setHover(false);
       setPickerOpen(false);
       return;
@@ -309,6 +320,10 @@ export default function CaptureOverlay() {
   // vanish」）：先攒在这儿,等这张卡自己走完（写完 / Esc / 点外面 / 自己超时），下面那个
   // `leaveCard` 就把它接上去 —— 窗口都不用重新弹，人也已经从那句话里出来了。
   const pendingBreakRef = useRef<OverlayBreak | null>(null);
+  /** P10-4: a 「周回顾更新了」 waits the same way — behind a capture card being written, and behind a
+   *  break card too (that one is about the person; the review will still be there). */
+  const pendingReviewRef = useRef<OverlayReview | null>(null);
+  const breakUpRef = useRef(false);
   /** 现在这张卡是不是「人正在往里打字」的捕捉卡。⚠️ 用 ref：事件监听只挂一次,闭包里的
    *  `content` 会永远停在挂上去那一刻。 */
   const capturingRef = useRef(false);
@@ -468,6 +483,33 @@ export default function CaptureOverlay() {
     };
   }, []);
 
+  // P10-4 (Ocean 2026-10-26 第 220 条) — 「周回顾更新了」. Shown like the break card: nothing to type
+  // into, so it takes no keyboard (Rust shows it notice-class), and a click is what brings Spool up.
+  useEffect(() => {
+    let unlisten: (() => void) | null = null;
+    let cancelled = false;
+    void (async () => {
+      const dispose = await listen<OverlayReview>(OVERLAY_REVIEW_EVENT, (e) => {
+        if (capturingRef.current || breakUpRef.current) {
+          pendingReviewRef.current = e.payload;
+          // Rust has already sized the window for this card (see the break listener above).
+          const el = cardRef.current;
+          if (el) resizeOverlay(Math.ceil(el.getBoundingClientRect().height) + SHADOW_ALLOWANCE);
+          return;
+        }
+        setContent({ kind: 'review', data: e.payload });
+        setHover(false);
+        setPickerOpen(false);
+      });
+      if (cancelled) dispose();
+      else unlisten = dispose;
+    })();
+    return () => {
+      cancelled = true;
+      if (unlisten) unlisten();
+    };
+  }, []);
+
   // v2.9 §9.13: undo/redo confirmation pushed from the main window after a reversal.
   // Shown here so it floats over the user's current app, replacing any capture toast.
   useEffect(() => {
@@ -540,7 +582,9 @@ export default function CaptureOverlay() {
           ? UNDO_AUTO_DISMISS_MS
           : content.kind === 'break'
             ? BREAK_AUTO_DISMISS_MS
-            : TOAST_AUTO_DISMISS_MS;
+            : content.kind === 'review'
+              ? REVIEW_AUTO_DISMISS_MS
+              : TOAST_AUTO_DISMISS_MS;
     const t = setTimeout(() => {
       leaveCard();
     }, ms);
@@ -627,6 +671,7 @@ export default function CaptureOverlay() {
   // 「人正在往里打字」= 屏幕上是捕捉卡。⚠️ note-first 之下批注框一出来就是开着的,所以
   // 「卡在不在」就是「人在不在写」;没打字的那种也顶多让休息卡等它自己超时那几秒。
   capturingRef.current = content?.kind === 'toast';
+  breakUpRef.current = content?.kind === 'break';
 
   // Note-first: focus the annotation textarea the moment the toast (re)renders with
   // the editor open. DOM focus is recorded whether or not the window is key yet, so it
@@ -687,6 +732,45 @@ export default function CaptureOverlay() {
           }}
           aria-label={t('这次不休息')}
           title={t('这次不休息')}
+          className="shrink-0 rounded p-1 text-muted hover:text-ink"
+        >
+          <X size={13} />
+        </button>
+      </div>
+    );
+  }
+
+  if (content.kind === 'review') {
+    const r = content.data;
+    return (
+      <div
+        onMouseEnter={() => setHover(true)}
+        onMouseLeave={() => setHover(false)}
+        className="overlay-in flex w-full items-center gap-2.5 rounded-lg border border-line-strong bg-paper px-3.5 py-2.5"
+        style={{ boxShadow: 'var(--shadow-toast)' }}
+        role="status"
+      >
+        {/* The whole card is the button, and ⛔ no hideOverlay() on the click — the break card's
+            reason (above, and capture.rs raise_main_window): the main process puts it away after
+            the window is up, or the ordinary hide path would hand the foreground back. */}
+        <button
+          type="button"
+          onClick={() => emitAction({ kind: 'review-open' })}
+          className="flex min-w-0 flex-1 items-center gap-2.5 text-left"
+        >
+          <CalendarRange size={14} className="shrink-0 text-muted" />
+          <div className="flex min-w-0 flex-col">
+            <span className="font-ui text-[13px] text-ink">{t('周回顾更新了')}</span>
+            <span className="font-ui text-[11px] text-muted">
+              {t('{p} 个项目 · {a} 条建议动作 · 点一下打开', { p: r.projects, a: r.actions })}
+            </span>
+          </div>
+        </button>
+        <button
+          type="button"
+          onClick={() => leaveCard()}
+          aria-label={t('关闭')}
+          title={t('关闭')}
           className="shrink-0 rounded p-1 text-muted hover:text-ink"
         >
           <X size={13} />

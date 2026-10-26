@@ -21,6 +21,7 @@ import {
 } from '@/lib/engine/followUp';
 import { toolCaption } from '@/lib/engine/progress';
 import { FAILURE_SENTENCE, followUpBriefViaApi, followUpViaApi, loadApiKey } from '@/lib/ai/compress';
+import { announceWeeklyReview } from '@/lib/ai/weeklyReview';
 import { apiCallFrom, vendorName } from '@/lib/ai/vendors';
 import { t } from '@/lib/i18n';
 import { useBalanceStore } from './balanceStore';
@@ -502,6 +503,8 @@ export const useEngineStore = create<EngineState>((set, get) => {
           startedAt,
           finishedAt: Date.now(),
         });
+        // P10-4: a weekly review is on its page now — the card says so over whatever app is up.
+        if (outcome === 'ok' && next.action === 'weekly_review') announceWeeklyReview(resultText);
       } catch (e) {
         // A run that finished but could not be filed is still a run that happened; the
         // toast above already said so. Losing the card is bad, losing the queue is worse.

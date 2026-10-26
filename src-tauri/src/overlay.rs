@@ -281,8 +281,12 @@ pub fn run_helper(mut ctx: tauri::Context<tauri::Wry>) {
                 // honours the grant from whoever currently holds it, and after a click on
                 // this card that is us. Spent here, before the action is relayed, so the
                 // main process's `raise_main_window` lands on an already-granted request.
+                // P10-4: the weekly review card's click asks for the main window the same way.
                 #[cfg(target_os = "windows")]
-                if payload.get("kind").and_then(serde_json::Value::as_str) == Some("break-open") {
+                if matches!(
+                    payload.get("kind").and_then(serde_json::Value::as_str),
+                    Some("break-open" | "review-open")
+                ) {
                     let pid = MAIN_PID.load(std::sync::atomic::Ordering::SeqCst);
                     if pid != 0 {
                         crate::win32::allow_foreground(pid);
@@ -330,7 +334,7 @@ fn on_main_message(app: &AppHandle, msg: &serde_json::Value) {
     match kind {
         // Sizing/positioning is decided by the main process (it also arms the
         // click-outside watch against that exact frame), so this just applies it.
-        "show" | "notice" | "undo" | "break" => {
+        "show" | "notice" | "undo" | "break" | "review" => {
             let Some(win) = app.get_webview_window(WINDOW_LABEL) else {
                 return;
             };
@@ -365,7 +369,7 @@ fn on_main_message(app: &AppHandle, msg: &serde_json::Value) {
             // clicked. ⚠️ Stored on the SHOW rather than read at click time, because by then
             // the only process that can make the grant is this one and the only process that
             // knows the pid is the other one. See capture.rs OverlayBreakPayload.
-            if kind == "break" {
+            if kind == "break" || kind == "review" {
                 if let Some(pid) = msg
                     .get("payload")
                     .and_then(|p| p.get("mainPid"))
@@ -378,6 +382,8 @@ fn on_main_message(app: &AppHandle, msg: &serde_json::Value) {
                 "show" => "overlay:show",
                 "notice" => "overlay:notice",
                 "break" => "overlay:break",
+                // P10-4: 周回顾更新了 — a notice-class card, like the break card.
+                "review" => "overlay:review",
                 _ => "overlay:undo",
             };
             let payload = msg.get("payload").cloned().unwrap_or(serde_json::Value::Null);

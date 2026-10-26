@@ -43,6 +43,10 @@ export const OVERLAY_SCHEME_EVENT = 'overlay:scheme';
 // user is actually in, because since the 2026-08-21 criterion rewrite a sitting no longer has
 // to be spent inside Spool to count. Carries OverlayBreakPayload.
 export const OVERLAY_BREAK_EVENT = 'overlay:break';
+// P10-4 (Ocean 2026-10-26 第 220 条) — 「周回顾更新了」, at the capture card's place, the break
+// card's way: over the user's app, no keyboard taken, a click opens the weekly review. Carries
+// OverlayReview.
+export const OVERLAY_REVIEW_EVENT = 'overlay:review';
 
 export const SHOW_OVERLAY_COMMAND = 'show_capture_overlay';
 export const HIDE_OVERLAY_COMMAND = 'hide_capture_overlay';
@@ -51,6 +55,7 @@ export const UPDATE_OVERLAY_SOURCE_COMMAND = 'update_overlay_source';
 export const SHOW_OVERLAY_NOTICE_COMMAND = 'show_capture_notice';
 export const SHOW_UNDO_OVERLAY_COMMAND = 'show_undo_overlay';
 export const SHOW_BREAK_OVERLAY_COMMAND = 'show_break_reminder';
+export const SHOW_REVIEW_OVERLAY_COMMAND = 'show_review_notice';
 // The main window comes up because the user clicked the break card — never on its own.
 // ⛔ See capture.rs raise_main_window for the two routes to this that are measured dead.
 export const RAISE_MAIN_WINDOW_COMMAND = 'raise_main_window';
@@ -164,6 +169,13 @@ export interface OverlayBreak {
   workMinutes: number;
 }
 
+/** P10-4: what the 「周回顾更新了」 card prints — worked out by the main window, which can read the
+ *  review; the overlay process reads nothing of its own. */
+export interface OverlayReview {
+  projects: number;
+  actions: number;
+}
+
 // P7-7: 'shot-waiting' = a ⌘⇧4 screenshot is not written yet (the floating thumbnail holds
 // it back); the capture card replaces this notice when it arrives. 'shot-missing' = it never
 // came; 'shot-denied' = the Desktop permission was refused.
@@ -221,4 +233,7 @@ export type OverlayAction =
   // …or dismissed it. ⚠️ The streak resets either way and nothing is re-shown: the product's
   // 「quiet」 rule says a thing once. A reminder that keeps coming back is a reminder people
   // learn to close without reading, and then it is worth less than not sending it.
-  | { kind: 'break-skip' };
+  | { kind: 'break-skip' }
+  // P10-4: the user clicked the 「周回顾更新了」 card — main brings its window up and opens the
+  // weekly review. (✕ and the timeout just put the card away; there is nothing to tell main.)
+  | { kind: 'review-open' };
