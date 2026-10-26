@@ -11268,9 +11268,39 @@ pub fn weekly_review_headless() -> Result<(String, String), String> {
     Ok((prompt, digest))
 }
 
-/// 模型回来的那一段 → 存进 `engine_runs.result_text` 的那一份 JSON（`weekly_review::Review`）。
-/// `Err` = 整次失败，话是给用户看的。
-pub fn weekly_structured(raw: &str) -> Result<String, String> {
+/// P10-2：闸看库的那一扇窗。⚠️ `open_db` —— AI 的视图，私密项目不在里面（P9E），
+/// 所以写了私密项目标题的那一项对不上、整项丢。
+struct WeeklyGateLibrary(Connection);
+
+impl crate::weekly_review::Library for WeeklyGateLibrary {
+    fn threads(&self) -> Vec<(String, String, String)> {
+        let Ok(mut stmt) = self.0.prepare(
+            "SELECT t.id, t.title, w.title FROM threads t JOIN workspaces w ON w.id = t.workspace_id
+              WHERE t.deleted_at IS NULL AND w.deleted_at IS NULL",
+        ) else {
+            return Vec::new();
+        };
+        stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+            .map(|rows| rows.flatten().collect())
+            .unwrap_or_default()
+    }
+
+    fn blocks(&self, thread_id: &str) -> Vec<(String, String, Option<String>)> {
+        let Ok(mut stmt) = self.0.prepare(
+            "SELECT id, content, annotation FROM blocks WHERE thread_id = ?1 ORDER BY created_at ASC, rowid ASC",
+        ) else {
+            return Vec::new();
+        };
+        stmt.query_map([thread_id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+            .map(|rows| rows.flatten().collect())
+            .unwrap_or_default()
+    }
+}
+
+/// 模型回来的那一段 → 读成数据、过闸 → 存进 `engine_runs.result_text` 的那一份 JSON
+/// （`weekly_review::Review`）。`material` = 这一次发出去的材料原文；`read_more` = 本机 CLI 那条
+/// （它还能补读，见 `weekly_review::gate`）。`Err` = 整次失败，话是给用户看的。
+pub fn weekly_structured(raw: &str, material: &str, read_more: bool) -> Result<String, String> {
     let review = crate::weekly_review::parse(raw).map_err(|e| match e {
         crate::weekly_review::ParseError::NotJson => t!(
             "周回顾回来的不是一份完整的 JSON（可能被截断了，或者没按格式回），这一次不算数。回来的有 {} 个字。",
@@ -11282,6 +11312,9 @@ pub fn weekly_structured(raw: &str) -> Result<String, String> {
             "The weekly review's JSON had no projects list, so this run does not count."
         ),
     })?;
+    let dir = app_data_dir().ok_or_else(|| t!("无法定位 Spool 数据目录。", "Could not locate Spool's data directory."))?;
+    let lib = WeeklyGateLibrary(open_db(&dir)?);
+    let review = crate::weekly_review::gate(review, material, &lib, read_more);
     serde_json::to_string(&review).map_err(|e| e.to_string())
 }
 
@@ -18902,6 +18935,39 @@ mod tests {
             for needle in std::iter::once(CANARY).chain(PRIVATE_IDS.iter().copied()) {
                 assert!(!text.contains(needle), "{needle} in:\n{text}");
             }
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // P10-2: the gate looks at the library through the same view. A review that names a private
+    // project (the model cannot have read one, but a title can still be typed) drops that entry
+    // whole — no thread id, no block, nothing of it goes into what is stored. And the CLI road's
+    // read-more material is the public project's own blocks, found by its title.
+    #[test]
+    fn the_weekly_gate_never_matches_a_private_project() {
+        let dir = std::env::temp_dir().join(format!("spool-p10-gate-{}", std::process::id()));
+        canary_library(&dir, true);
+        let raw = r#"{"projects":[
+            {"title":"Zq7canary health","did":"x","stuck":"y",
+             "signals":[{"quote":"Zq7canary blood test","why":"a"}],
+             "actions":[{"kind":"propose_supersede","old_quote":"Zq7canary blood test","new_quote":"Zq7canary x-ray","why":"b"}]},
+            {"title":"Studio / Garden notes","did":"x","stuck":"y",
+             "signals":[{"quote":"six hours a day","why":"read with get_pack"}],
+             "actions":[{"kind":"propose_supersede","old_quote":"six hours a day","new_quote":"the lighthouse trellis works","why":"c"}]}],
+            "next":"z"}"#;
+        TEST_DATA_DIR.with(|d| *d.borrow_mut() = Some(dir.clone()));
+        let out = weekly_structured(raw, "digest: Zq7canary blood test, Zq7canary x-ray", true);
+        TEST_DATA_DIR.with(|d| *d.borrow_mut() = None);
+        let out = out.unwrap();
+        let v: Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(v["projects"].as_array().unwrap().len(), 1, "{out}");
+        assert_eq!(v["projects"][0]["threadId"], "pubGarden");
+        assert_eq!(v["projects"][0]["signals"].as_array().unwrap().len(), 1, "{out}");
+        assert_eq!(v["projects"][0]["actions"][0]["staleBlockId"], "pubB1");
+        assert_eq!(v["projects"][0]["actions"][0]["byBlockId"], "pubB2");
+        assert_eq!(v["dropped"][0]["reason"], "no_project");
+        for needle in PRIVATE_IDS {
+            assert!(!out.contains(needle), "{needle} in:\n{out}");
         }
         let _ = std::fs::remove_dir_all(&dir);
     }

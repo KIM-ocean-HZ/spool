@@ -245,6 +245,133 @@ pub fn parse(raw: &str) -> Result<Review, ParseError> {
     Ok(Review { format: FORMAT, projects, next: prose(&Value::Object(root), "next"), dropped })
 }
 
+// ---------------------------------------------------------------------------------------
+// P10-2 —— 逐字闸、对项目、取代 / 更正找块
+// ---------------------------------------------------------------------------------------
+//
+// ⛔⛔ 比对用的是 `api_engine::quote_passes` —— 过期检测 `gate_proposals` 用的同一个 `locate`
+// （任务书 §3 P10-2「复用，不另写一份」）。界面上放行的和过期检测放行的必须是同一批。
+// ⚠️ 引文一个字符都不动，首尾空白也算。
+
+/// 闸要知道的库里的东西 —— ⚠️ 走 AI 的视图：私密项目不在里面，所以写它的标题等于对不上。
+pub trait Library {
+    /// 还在的项目：（id, 标题, 所在工作区的标题）。
+    fn threads(&self) -> Vec<(String, String, String)>;
+    /// 一个项目里的块：（id, 正文, 批注），按写进去的先后排。
+    fn blocks(&self, thread_id: &str) -> Vec<(String, String, Option<String>)>;
+}
+
+/// 模型写的标题 → 哪个项目。整串对得上就是它；对不上，再看「工作区 / 项目」（digest「近期活跃」
+/// 那一节就这么写）。不同工作区可以有同名项目（P9-1 只管一个工作区里不重名）—— 同名两个以上、
+/// 又没写工作区，算对不上：⛔ 猜一个，就可能把动作安到别人的项目上。
+fn thread_for(title: &str, threads: &[(String, String, String)]) -> Option<String> {
+    let only = |hits: Vec<&(String, String, String)>| (hits.len() == 1).then(|| hits[0].0.clone());
+    let exact: Vec<_> = threads.iter().filter(|t| t.1.trim() == title).collect();
+    if !exact.is_empty() {
+        return only(exact);
+    }
+    let (ws, name) = title.rsplit_once(" / ")?;
+    let (ws, name) = (ws.trim(), name.trim());
+    let in_ws: Vec<_> = threads.iter().filter(|t| t.1.trim() == name && t.2.trim() == ws).collect();
+    if !in_ws.is_empty() {
+        return only(in_ws);
+    }
+    only(threads.iter().filter(|t| t.1.trim() == name).collect())
+}
+
+/// 引文在不在这一段里。`Some(retyped)` = 在（`retyped` = 只差标点）；`None` = 整条丢。
+fn passes(quote: &str, haystack: &str) -> Option<bool> {
+    crate::api_engine::quote_passes(quote, haystack)
+}
+
+/// 取代 / 更正：两句引文各自落在这个项目的哪一块。旧的取最早那块、新的取最晚那块，两块不能是同一块。
+/// ⚠️ 只比正文 —— 和 MCP 那条 `propose_supersede` 一样，待审卡上摆出来的也是正文。
+fn find_pair(old: &str, new: &str, blocks: &[(String, String, Option<String>)]) -> Result<(String, String), &'static str> {
+    let first = blocks.iter().find(|b| passes(old, &b.1).is_some());
+    let last = blocks.iter().rev().find(|b| passes(new, &b.1).is_some());
+    let (Some(o), Some(n)) = (first, last) else {
+        return Err("no_block");
+    };
+    if o.0 == n.0 {
+        return Err("same_block");
+    }
+    Ok((o.0.clone(), n.0.clone()))
+}
+
+/// 过闸。`material` = 这一次发给模型的材料原文。`read_more` = 本机 CLI 那条：它还能用
+/// get_pack / get_blocks 补读，那些读取走它自己起的 `spool --mcp`，这边看不见 ——
+/// ⇒ 那一项的闸再加上这个项目每一块的正文和批注（就是那两个工具能交出去的东西）。
+/// ⛔ 发给模型的东西一个字不改，这里只决定拿什么去比。
+pub fn gate(review: Review, material: &str, lib: &dyn Library, read_more: bool) -> Review {
+    let threads = lib.threads();
+    let mut dropped = review.dropped;
+    let mut projects = Vec::new();
+    for mut p in review.projects {
+        let Some(thread_id) = thread_for(&p.title, &threads) else {
+            dropped.push(Dropped { project: p.title.clone(), what: "project", reason: "no_project", item: item(&p) });
+            continue;
+        };
+        let blocks = lib.blocks(&thread_id);
+        let haystack = if read_more {
+            let mut h = material.to_string();
+            for (_, content, annotation) in &blocks {
+                h.push_str("\n\n");
+                h.push_str(content);
+                if let Some(a) = annotation {
+                    h.push('\n');
+                    h.push_str(a);
+                }
+            }
+            h
+        } else {
+            material.to_string()
+        };
+        let mut signals = Vec::new();
+        for mut s in p.signals {
+            match passes(&s.quote, &haystack) {
+                Some(retyped) => {
+                    s.retyped = retyped;
+                    signals.push(s);
+                }
+                None => dropped.push(Dropped { project: p.title.clone(), what: "signal", reason: "quote", item: item(&s) }),
+            }
+        }
+        let mut actions = Vec::new();
+        for mut a in p.actions {
+            let quotes: Vec<&String> = [&a.quote, &a.old_quote, &a.new_quote].into_iter().flatten().collect();
+            let verdicts: Vec<Option<bool>> = quotes.iter().map(|q| passes(q, &haystack)).collect();
+            if verdicts.iter().any(Option::is_none) {
+                dropped.push(Dropped { project: p.title.clone(), what: "action", reason: "quote", item: item(&a) });
+                continue;
+            }
+            a.retyped = verdicts.contains(&Some(true));
+            if let (Some(old), Some(new)) = (&a.old_quote, &a.new_quote) {
+                match find_pair(old, new, &blocks) {
+                    Ok((stale, by)) => {
+                        a.stale_block_id = Some(stale);
+                        a.by_block_id = Some(by);
+                    }
+                    Err(reason) => {
+                        dropped.push(Dropped { project: p.title.clone(), what: "action", reason, item: item(&a) });
+                        continue;
+                    }
+                }
+            }
+            actions.push(a);
+        }
+        p.thread_id = Some(thread_id);
+        p.signals = signals;
+        p.actions = actions;
+        projects.push(p);
+    }
+    Review { projects, dropped, ..review }
+}
+
+/// 丢掉的那一条照样带出去：读成数据之后才丢的，就把读好的那一份变回 JSON。
+fn item<T: Serialize>(v: &T) -> Value {
+    serde_json::to_value(v).unwrap_or_default()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -350,5 +477,116 @@ mod tests {
         for bad in ["2026-02-29", "1900-02-29", "2026-13-01", "2026-00-10", "2026-1-01", "2026/11/30", "", "２０２６-11-30"] {
             assert!(!valid_date(bad), "{bad}");
         }
+    }
+
+    // ----- P10-2 -----
+
+    struct Lib {
+        threads: Vec<(&'static str, &'static str, &'static str)>,
+        blocks: Vec<(&'static str, &'static str, &'static str, Option<&'static str>)>,
+    }
+    impl Library for Lib {
+        fn threads(&self) -> Vec<(String, String, String)> {
+            self.threads.iter().map(|(a, b, c)| (a.to_string(), b.to_string(), c.to_string())).collect()
+        }
+        fn blocks(&self, thread_id: &str) -> Vec<(String, String, Option<String>)> {
+            self.blocks
+                .iter()
+                .filter(|b| b.0 == thread_id)
+                .map(|b| (b.1.to_string(), b.2.to_string(), b.3.map(str::to_string)))
+                .collect()
+        }
+    }
+
+    fn lib() -> Lib {
+        Lib {
+            threads: vec![("t1", "申请规划", "升学"), ("t2", "笔记", "升学"), ("t3", "笔记", "课程")],
+            blocks: vec![
+                ("t1", "b1", "旧结论：一共申请十四所。", None),
+                ("t1", "b2", "新结论：一共申请十六所，加了两所保底。", Some("这是我自己定的")),
+                ("t1", "b3", "再说一遍：一共申请十四所。", None),
+            ],
+        }
+    }
+
+    fn one(raw_project: &str, material: &str, read_more: bool) -> Review {
+        let raw = format!(r#"{{"projects":[{raw_project}],"next":"x"}}"#);
+        gate(parse(&raw).unwrap(), material, &lib(), read_more)
+    }
+
+    // ⛔ 引文要逐字出自发出去的材料：对得上的留下（只差标点的标出来），改了一个数字的整条丢。
+    #[test]
+    fn quotes_must_come_from_the_material_word_for_word() {
+        let material = "# 历史\n文书初稿写完了，下周交。\n# 这一周新加的\n推荐信还要 3 封。";
+        let r = one(
+            r#"{"title":"申请规划","signals":[
+                {"quote":"文书初稿写完了","why":"a"},
+                {"quote":"文书初稿写完了,下周交","why":"标点重打"},
+                {"quote":"推荐信还要 4 封","why":"改了数字"},
+                {"quote":"推荐信全齐了","why":"编的"}],
+              "actions":[{"kind":"add_follow_up","text":"推荐人回没回","quote":"推荐信还要 3 封","why":"b"},
+                         {"kind":"mark_done","quote":"项目做完了","why":"编的"}]}"#,
+            material,
+            false,
+        );
+        let p = &r.projects[0];
+        assert_eq!(p.thread_id.as_deref(), Some("t1"));
+        let kept: Vec<(&str, bool)> = p.signals.iter().map(|s| (s.quote.as_str(), s.retyped)).collect();
+        assert_eq!(kept, vec![("文书初稿写完了", false), ("文书初稿写完了,下周交", true)]);
+        assert_eq!(p.actions.len(), 1);
+        assert_eq!(p.actions[0].kind, "add_follow_up");
+        let gone: Vec<(&str, &str)> = r.dropped.iter().map(|d| (d.what, d.reason)).collect();
+        assert_eq!(gone, vec![("signal", "quote"), ("signal", "quote"), ("action", "quote")]);
+        // 丢掉的连它说了什么一起带出去。
+        assert_eq!(r.dropped[1].item["quote"], "推荐信全齐了");
+        assert_eq!(r.dropped[2].item["why"], "编的");
+    }
+
+    // 标题对不上真项目的整项丢：没有这个项目、同名两个又没写工作区的，都不猜。
+    #[test]
+    fn a_title_that_names_no_single_project_drops_the_whole_entry() {
+        let m = "原句";
+        let title = |t: &str| one(&format!(r#"{{"title":"{t}","signals":[{{"quote":"原句","why":"a"}}]}}"#), m, false);
+        assert_eq!(title("申请规划").projects[0].thread_id.as_deref(), Some("t1"));
+        assert_eq!(title("升学 / 申请规划").projects[0].thread_id.as_deref(), Some("t1"));
+        assert_eq!(title("课程 / 笔记").projects[0].thread_id.as_deref(), Some("t3"));
+        for bad in ["笔记", "没有这个项目", "别的工作区 / 笔记"] {
+            let r = title(bad);
+            assert!(r.projects.is_empty(), "{bad}");
+            assert_eq!((r.dropped[0].what, r.dropped[0].reason), ("project", "no_project"), "{bad}");
+            assert_eq!(r.dropped[0].item["title"], bad);
+        }
+    }
+
+    // 取代 / 更正：两句引文在这个项目里各找一块，旧的取最早、新的取最晚，不能是同一块。
+    #[test]
+    fn supersede_finds_its_two_blocks_in_the_project() {
+        let material = "旧结论：一共申请十四所。\n新结论：一共申请十六所，加了两所保底。";
+        let act = |old: &str, new: &str| {
+            one(
+                &format!(r#"{{"title":"申请规划","actions":[{{"kind":"propose_supersede","old_quote":"{old}","new_quote":"{new}","why":"改了"}}]}}"#),
+                &format!("{material}\n{old}\n{new}"),
+                false,
+            )
+        };
+        let r = act("一共申请十四所", "一共申请十六所");
+        let a = &r.projects[0].actions[0];
+        assert_eq!((a.stale_block_id.as_deref(), a.by_block_id.as_deref()), (Some("b1"), Some("b2")));
+        // 新引文落在两块里时取最晚那一块：这里「一共申请十四所」又在 b3 出现。
+        let r = act("加了两所保底", "一共申请十四所");
+        let a = &r.projects[0].actions[0];
+        assert_eq!((a.stale_block_id.as_deref(), a.by_block_id.as_deref()), (Some("b2"), Some("b3")));
+        assert_eq!(act("加了两所保底", "加了两所保底").dropped[0].reason, "same_block");
+        assert_eq!(act("材料里有块里没有的一句", "一共申请十六所").dropped[0].reason, "no_block");
+    }
+
+    // 本机 CLI 能补读：只在块里（不在 digest 里）的引文，CLI 那条算数、API 那条不算。
+    #[test]
+    fn the_cli_road_may_quote_what_it_read_more_of() {
+        let raw = r#"{"title":"申请规划","signals":[{"quote":"加了两所保底","why":"a"},{"quote":"这是我自己定的","why":"批注"}]}"#;
+        assert_eq!(one(raw, "只有 digest", true).projects[0].signals.len(), 2);
+        let api = one(raw, "只有 digest", false);
+        assert!(api.projects[0].signals.is_empty());
+        assert_eq!(api.dropped.len(), 2);
     }
 }

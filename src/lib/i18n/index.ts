@@ -2292,4 +2292,14 @@ const EN: Record<string, string> = {
   '依据：': 'Based on: ',
   '旧的：': 'Old: ',
   '新的：': 'New: ',
+  '它引的原话在发过去的材料里找不到。': 'The words it quoted are not in the material that was sent.',
+  '它写的项目名对不上 Spool 里的项目（或者对上了不止一个）。':
+    'The project name it wrote matches no project in Spool (or more than one).',
+  '两句原话在那个项目里找不到对应的块。': 'The two quotes do not match blocks in that project.',
+  '两句原话落在同一块里。': 'Both quotes are in the same block.',
+  '这不是 Spool 有的那几种动作。': 'That is not one of the actions Spool has.',
+  '日期写得不对。': 'The date is not a real date.',
+  '少了要填的内容。': 'Something it had to fill in is missing.',
+  'AI 还说了 {n} 条，没放上来。这是 AI 没说对，不是你的项目有问题。下面是它的原话：':
+    'The AI said {n} more, which are not shown above. That is the AI getting it wrong, not a problem with your projects. Here is what it said:',
 };

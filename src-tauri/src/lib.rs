@@ -213,7 +213,7 @@ async fn ai_engine_run(
                 // P10-1: the review is read here, in Rust, before anything is stored. ⛔ A reply
                 // that does not read is a failed run, not a review shown half.
                 let (result, error) = match &digest {
-                    Some(_) => match mcp::weekly_structured(&env.result) {
+                    Some(digest) => match mcp::weekly_structured(&env.result, digest, true) {
                         Ok(json) => (json, None),
                         Err(e) => (String::new(), Some(e)),
                     },

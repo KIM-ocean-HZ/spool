@@ -1,5 +1,6 @@
+import { AlertTriangle } from 'lucide-react';
 import { useMemo, type ReactNode } from 'react';
-import type { WeeklyAction, WeeklyReview } from '@/lib/ai/weeklyStructured';
+import type { WeeklyAction, WeeklyDropped, WeeklyReview } from '@/lib/ai/weeklyStructured';
 import { useT } from '@/lib/i18n';
 import type { Thread } from '@/lib/db/threads';
 import { useThreadsStore } from '@/stores/threadsStore';
@@ -64,6 +65,7 @@ export default function StructuredReview({ review }: { review: WeeklyReview }) {
                       <li key={j}>
                         <Quote text={s.quote} />
                         {s.why && <span className="text-ink-2"> —— {s.why}</span>}
+                        {s.retyped && <Retyped />}
                       </li>
                     ))}
                   </ul>
@@ -89,8 +91,62 @@ export default function StructuredReview({ review }: { review: WeeklyReview }) {
           {review.next}
         </div>
       )}
+      <DroppedNote dropped={review.dropped} />
     </div>
   );
+}
+
+/** P10-2 (任务书 §3: 「丢了几条在页面底下说一句」). ⚠️ With what each one said — 2026-08-23 Ocean on a
+ *  bare count: 「不允许这样的情况发生」. And said plainly as the AI's slip, not the user's project
+ *  (the same sentence the stale check's note uses). ⚠️ The reason comes from Rust; nothing is
+ *  re-judged here. */
+function DroppedNote({ dropped }: { dropped: WeeklyDropped[] }) {
+  const t = useT();
+  if (dropped.length === 0) return null;
+  const why: Record<string, string> = {
+    quote: t('它引的原话在发过去的材料里找不到。'),
+    no_project: t('它写的项目名对不上 Spool 里的项目（或者对上了不止一个）。'),
+    no_block: t('两句原话在那个项目里找不到对应的块。'),
+    same_block: t('两句原话落在同一块里。'),
+    unknown_kind: t('这不是 Spool 有的那几种动作。'),
+    bad_date: t('日期写得不对。'),
+  };
+  const str = (v: unknown): string | null => (typeof v === 'string' && v.trim() ? v : null);
+  return (
+    <div className="rounded-md border border-line bg-paper-2/40 px-3 py-2 text-[11px]">
+      <div className="flex items-start gap-1.5 text-ink-2">
+        <AlertTriangle size={12} className="mt-0.5 flex-none" />
+        <div>
+          {t('AI 还说了 {n} 条，没放上来。这是 AI 没说对，不是你的项目有问题。下面是它的原话：', { n: dropped.length })}
+        </div>
+      </div>
+      <ul className="mt-1.5 space-y-1.5 pl-5 text-muted">
+        {dropped.map((d, i) => {
+          const it = d.item;
+          const said = [it.quote, it.old_quote ?? it.oldQuote, it.new_quote ?? it.newQuote, it.text, it.did]
+            .map(str)
+            .filter((s): s is string => s !== null);
+          return (
+            <li key={i} className="whitespace-pre-wrap">
+              <div>
+                {d.project && <span className="text-ink-2">〈{d.project}〉</span>}
+                {why[d.reason] ?? t('少了要填的内容。')}
+              </div>
+              {said.map((s, j) => (
+                <div key={j}>「{s}」</div>
+              ))}
+              {str(it.why) && <div className="text-muted/70">{t('它给的理由：{s}', { s: str(it.why)! })}</div>}
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
+function Retyped() {
+  const t = useT();
+  return <span className="text-[11px] text-muted/70"> {t('（引文的标点被重打过）')}</span>;
 }
 
 function Row({ label, children }: { label: string; children: ReactNode }) {
@@ -123,6 +179,7 @@ function ActionText({ action: a }: { action: WeeklyAction }) {
     <div className="min-w-0">
       <div className="text-ink">{what}</div>
       {a.why && <div className="text-[12px] text-ink-2">{a.why}</div>}
+      {a.retyped && <Retyped />}
       {a.quote !== null && (
         <div className="text-[12px] text-muted">
           {t('依据：')}

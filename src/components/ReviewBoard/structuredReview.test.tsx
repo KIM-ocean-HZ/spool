@@ -63,4 +63,24 @@ describe('StructuredReview', () => {
     expect(html).not.toContain('…');
     expect(html).not.toMatch(/truncate|line-clamp/);
   });
+
+  // P10-2: what the gate dropped is said at the bottom — how many, why, and what the AI wrote.
+  it('says what was dropped, with what the AI said', () => {
+    Object.assign(useSettingsStore.getInitialState(), { language: 'zh' });
+    const html = renderToStaticMarkup(
+      <StructuredReview
+        review={review({
+          dropped: [
+            { project: '申请规划', what: 'signal', reason: 'quote', item: { quote: '推荐信全齐了', why: '编的' } },
+            { project: '没有的项目', what: 'project', reason: 'no_project', item: { title: '没有的项目', did: '做了点事' } },
+          ],
+        })}
+      />,
+    );
+    expect(html).toContain('AI 还说了 2 条');
+    expect(html).toContain('「推荐信全齐了」');
+    expect(html).toContain('编的');
+    expect(html).toContain('它引的原话在发过去的材料里找不到');
+    expect(html).toContain('〈没有的项目〉');
+  });
 });
