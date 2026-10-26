@@ -119,6 +119,9 @@ type ResultHandler = (result: string) => void;
  *  the AI had fully written came back to the user as "跑完了，没有新增块" (§1.1). */
 interface EngineRunResult {
   result: string;
+  /** P10: the run finished (and spent what it spent) but its answer cannot be used — a weekly
+   *  review that did not come back as one complete JSON object. `result` is empty then. */
+  error: string | null;
   /** Which engine actually ran — resolved in Rust, since a preference naming an
    *  uninstalled engine falls back (§7.4). */
   engine: string;
@@ -374,6 +377,9 @@ export const useEngineStore = create<EngineState>((set, get) => {
         resultText = answer.result;
         ranOn = answer.engine;
         usage = answer.usage;
+        // P10-1: a failure that still cost money — thrown after the usage is in hand, so the
+        // row below keeps what this run spent.
+        if (answer.error) throw new Error(answer.error);
       }
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);

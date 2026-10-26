@@ -2279,4 +2279,17 @@ const EN: Record<string, string> = {
   '只能选择连接文件夹内的文件': 'Choose a file inside the linked folder',
   '这个文件已经不在了': 'This file is no longer there',
   '请选择一个文件': 'Please choose a file',
+  // P10 · 周回顾二（结构化）
+  '截止 {date}': 'Due {date}',
+  '做了什么': 'What moved',
+  '卡在哪': 'Stuck on',
+  '看到的信号': 'Signals',
+  '建议动作': 'Suggested',
+  '截止日期设成 {date}': 'Set the deadline to {date}',
+  '加一条跟进：{text}': 'Add a follow-up: {text}',
+  '提一次整条取代': 'Propose replacing the old block',
+  '提一次更正': 'Propose a correction',
+  '依据：': 'Based on: ',
+  '旧的：': 'Old: ',
+  '新的：': 'New: ',
 };

@@ -4,6 +4,7 @@ import ApiBalance from '@/components/ApiBalance';
 import LockedAiEntry, { AiSetupButton } from '@/components/AiSetup/LockedAiEntry';
 import ActivityPanel from './ActivityPanel';
 import ReviewCards from './ReviewCards';
+import StructuredReview from './StructuredReview';
 import Toggle from '@/components/ui/Toggle';
 import { MarkdownContent } from '@/lib/blocks/MarkdownContent';
 import {
@@ -13,6 +14,7 @@ import {
   type EngineRun,
 } from '@/lib/db/engineRuns';
 import { splitReview } from '@/lib/ai/reviewCards';
+import { readWeeklyReview } from '@/lib/ai/weeklyStructured';
 import { runWeeklyReviewViaApi } from '@/lib/ai/weeklyReview';
 import { toast } from '@/stores/toastStore';
 import {
@@ -572,7 +574,9 @@ function Review({ run, onDelete }: { run: EngineRun; onDelete?: (id: string) => 
   const engineName = ENGINE_LABEL[run.engine as EngineKind] ?? run.engine;
   const cost = money(run.usage.costUsd);
   const text = (run.resultText ?? '').trim();
-  const cards = useMemo(() => (text ? splitReview(text) : null), [text]);
+  // P10: a review stored as data; anything else is prose from before, split the P9S-5 way.
+  const structured = useMemo(() => readWeeklyReview(text), [text]);
+  const cards = useMemo(() => (text && !structured ? splitReview(text) : null), [text, structured]);
 
   return (
     <li className="border-b border-line pb-4 last:border-b-0">
@@ -593,7 +597,9 @@ function Review({ run, onDelete }: { run: EngineRun; onDelete?: (id: string) => 
           </button>
         )}
       </div>
-      {cards ? (
+      {structured ? (
+        <StructuredReview review={structured} />
+      ) : cards ? (
         // P9S-5 (Ocean 2026-10-23): one card per project.
         <ReviewCards review={cards} />
       ) : text ? (

@@ -2047,7 +2047,21 @@ pub async fn weekly_review_via_api(
             Ok(v) => v,
             Err(e) => return CompressOutcome::failed("internal", e.to_string(), None),
         };
-        spawn_sidecar_with(&bin, payload, timeout_secs, Some(app.clone()))
+        let mut outcome = spawn_sidecar_with(&bin, payload, timeout_secs, Some(app.clone()));
+        // P10-1：回来的那一段在这里读成数据，存的是读好的那一份。⛔ 读不成 = 整次失败、不交半份；
+        // 用量照留（钱已经花了，那一行要记得住）。
+        if outcome.ok {
+            match crate::mcp::weekly_structured(&outcome.text) {
+                Ok(json) => outcome.text = json,
+                Err(e) => {
+                    outcome.ok = false;
+                    outcome.kind = Some("bad_json".into());
+                    outcome.message = Some(e);
+                    outcome.text.clear();
+                }
+            }
+        }
+        outcome
     })
     .await;
     RUNNING.store(false, Ordering::SeqCst);

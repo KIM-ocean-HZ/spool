@@ -27,6 +27,8 @@ pub mod pack;
 // see the module header for why mcp.rs no longer calls libc directly.
 mod systime;
 pub mod transfer;
+// P10: the weekly review's JSON — read, gated, matched to projects.
+mod weekly_review;
 // The Windows syscalls that have no portable expression. Whole module is cfg'd out
 // elsewhere, like double_tap is off Windows.
 #[cfg(target_os = "windows")]
@@ -101,6 +103,11 @@ fn ai_engine_status(
 struct EngineRunResult {
     /// The AI's final message — a conclusion, a review, a checkup report.
     result: String,
+    /// P10: the run finished and spent what it spent, but its answer cannot be used — a weekly
+    /// review that did not come back as one complete JSON object. Travels beside the usage
+    /// rather than as an `Err`, because an `Err` arrives with no usage and the money would
+    /// vanish from the record. `result` is empty then: ⛔ never half an answer.
+    error: Option<String>,
     /// Which engine actually ran. Resolved in Rust, because a preference naming an
     /// uninstalled engine falls back (DESIGN_AI_ENGINE §7.4).
     engine: String,
@@ -160,7 +167,14 @@ async fn ai_engine_run(
         };
         // §11.2-C: the headless wording. Nobody is at the screen for an engine-slot run, so
         // the prompt must not end by asking for a yes — the run card is where the user says it.
-        let prompt = mcp::guidance_text_headless(&action, &args)?;
+        // P10: a weekly review keeps the digest its prompt carried — the answer is checked
+        // against exactly that (`weekly_structured`).
+        let (prompt, digest) = if action == "weekly_review" {
+            let (prompt, digest) = mcp::weekly_review_headless()?;
+            (prompt, Some(digest))
+        } else {
+            (mcp::guidance_text_headless(&action, &args)?, None)
+        };
         // max_turns: the agentic loop needs a few turns (read the material, then write one
         // block); 12 is generous for that and still a hard stop. A follow-up spends turns
         // searching before it has anything to propose, so it gets more — still a ceiling,
@@ -195,10 +209,17 @@ async fn ai_engine_run(
             emit,
             None,
         )
-            .map(|(kind, env)| EngineRunResult {
-                result: env.result,
-                engine: kind.as_str().to_string(),
-                usage: env.usage,
+            .map(|(kind, env)| {
+                // P10-1: the review is read here, in Rust, before anything is stored. ⛔ A reply
+                // that does not read is a failed run, not a review shown half.
+                let (result, error) = match &digest {
+                    Some(_) => match mcp::weekly_structured(&env.result) {
+                        Ok(json) => (json, None),
+                        Err(e) => (String::new(), Some(e)),
+                    },
+                    None => (env.result, None),
+                };
+                EngineRunResult { result, error, engine: kind.as_str().to_string(), usage: env.usage }
             })
     })
     .await
