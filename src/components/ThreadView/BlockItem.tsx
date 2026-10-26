@@ -474,9 +474,15 @@ function TextBlockItem({
       setNeedsTruncation(el.scrollHeight > viewportPx + 1);
     };
     measure();
+    // The Pack boundary can move without a window resize (language / header status).
+    const resized = new ResizeObserver(measure);
+    if (measureRef.current) resized.observe(measureRef.current);
     // The cap moves with the window, so the answer has to be recomputed when it does.
     window.addEventListener('resize', measure);
-    return () => window.removeEventListener('resize', measure);
+    return () => {
+      resized.disconnect();
+      window.removeEventListener('resize', measure);
+    };
     // ⚠️ `staleFolded` 在这里，是因为被量的那个节点**就在折起来的那一段里** ——
     // 折着的时候 `measureRef.current` 是 null，`measure()` 直接返回，`needsTruncation`
     // 停在旧值上。展开的那一下必须重量一次，否则一块很长的退役块展开后没有「收起」。
@@ -1057,6 +1063,7 @@ function TextBlockItem({
       }
       title={readOnly ? undefined : t('双击编辑批注')}
       ref={noteViewRef}
+      data-thread-text
       onMouseUp={readOnly ? undefined : onSurfaceMouseUp}
       className="mb-1.5 w-full min-w-0 break-words font-ui text-[length:var(--block-text)] font-medium leading-[1.55] text-ink"
     >
@@ -1273,6 +1280,7 @@ function TextBlockItem({
       <div className="relative">
           <div
             ref={measureRef}
+            data-thread-text
             // ⭐ Double-click opens the editing panel with BOTH fields in it and puts the
             // cursor in the content —「全部做到一个面板进行编辑」.
             onDoubleClick={readOnly ? undefined : () => openEditor('content')}
@@ -1466,7 +1474,7 @@ function TextBlockItem({
           now says what is right. Shown under the block for the same reason the note is —
           this is a statement about the text above it. */}
       {correcting !== null && !readOnly && (
-        <div className="mt-1.5 border-l border-dashed border-accent/45 pl-2.5">
+        <div data-thread-text className="mt-1.5 break-words border-l border-dashed border-accent/45 pl-2.5">
           <div className="mb-1 font-ui text-[11px] text-muted">
             {t('更正这一句：')}
             <span className="rounded-sm bg-[var(--notice-warm)] px-1 text-ink-2">{correcting}</span>
@@ -1558,7 +1566,7 @@ function TextBlockItem({
               </button>
             )}
           </div>
-          <div className="whitespace-pre-wrap break-words font-ui text-[length:var(--block-text-2)] leading-[1.65] text-ink-2">
+          <div data-thread-text className="whitespace-pre-wrap break-words font-ui text-[length:var(--block-text-2)] leading-[1.65] text-ink-2">
             <MarkdownContent content={block.originalContent!} />
           </div>
         </div>
@@ -1660,6 +1668,7 @@ function TextBlockItem({
               ) : (
                 <textarea
                   ref={contentRef}
+                  data-thread-text
                   value={contentDraft}
                   onChange={(e) => setContentDraft(e.target.value)}
                   onKeyDown={(e) => {
@@ -1690,6 +1699,7 @@ function TextBlockItem({
                 </div>
                 <textarea
                   ref={annotationRef}
+                  data-thread-text
                   value={annotationDraft}
                   onChange={(e) => setAnnotationDraft(e.target.value)}
                   onKeyDown={(e) => {

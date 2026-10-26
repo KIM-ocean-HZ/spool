@@ -88,8 +88,28 @@ function GrowingText({
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
-    el.style.height = 'auto';
-    el.style.height = `${el.scrollHeight + 2}px`;
+    const fit = (): void => {
+      el.style.height = 'auto';
+      el.style.height = `${el.scrollHeight + 2}px`;
+    };
+    fit();
+    let width = el.clientWidth;
+    const resized = new ResizeObserver(() => {
+      if (el.clientWidth === width) return;
+      width = el.clientWidth;
+      fit();
+    });
+    resized.observe(el);
+    // A font change can add wrapped lines without changing the textarea's width.
+    const fontChanged = new MutationObserver(fit);
+    fontChanged.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['data-block-font'],
+    });
+    return () => {
+      resized.disconnect();
+      fontChanged.disconnect();
+    };
   }, [value]);
   return (
     <textarea
@@ -219,7 +239,7 @@ export function PictureEditor({
   };
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto rounded-md border border-line-strong bg-paper px-1.5 py-2">
+    <div data-thread-text className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto rounded-md border border-line-strong bg-paper px-1.5 py-2">
       {segs.map((s, i) =>
         s.kind === 'text' ? (
           <GrowingText

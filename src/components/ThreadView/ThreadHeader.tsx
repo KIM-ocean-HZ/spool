@@ -266,6 +266,7 @@ export default function ThreadHeader({
         />
 
         <button
+          data-thread-pack
           onClick={onPack}
           className="flex flex-none items-center gap-1 rounded-full border border-accent/60 px-3 py-1 text-xs font-medium text-accent transition-colors hover:border-accent hover:bg-accent/15"
           title={t('打包上下文（⌘⇧P）')}

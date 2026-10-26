@@ -20,6 +20,7 @@ import { useSearchStore } from '@/stores/searchStore';
 import DigestView from './DigestView';
 import LogView from './LogView';
 import ThreadHeader, { type ThreadViewMode } from './ThreadHeader';
+import ThreadPane from './ThreadPane';
 
 const EMPTY: readonly Block[] = [];
 const EMPTY_ATTACHMENTS: readonly Attachment[] = [];
@@ -168,7 +169,7 @@ export default function ThreadView() {
   };
 
   return (
-    <div className="relative flex h-full flex-col">
+    <ThreadPane>
       <ThreadHeader
         thread={thread}
         blocks={blocks}
@@ -265,7 +266,7 @@ export default function ThreadView() {
       ) : (
         <LogView key={thread.id} threadId={thread.id} />
       )}
-    </div>
+    </ThreadPane>
   );
 }
 
