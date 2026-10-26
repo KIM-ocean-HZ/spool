@@ -1,6 +1,6 @@
 # TASKBOOK P9Y · 连接文件夹 + SPOOL.md 协议文档（2026-10-25）
 
-> **状态：第五轮工作区摘要栏宽修正完成，10-26 11:30 已换装，待 Ocean 验收；当前依据 §11。** 摘要保留全文、自然换行，文字起点与右边界均跟打开该项目后的正文一致；第四轮 Pack 边界继续保留。**当前验收单以 §11.3 为准**，其余三项续按 §9.4 第 2–7 条。完整报告：`docs/ACCEPTANCE-P9Y-2026-10-26.md`。仍是本机 v0.7.3 / schema v37，未推送、未发版。
+> **状态：COMPLETE —— Ocean 10-26 验收通过（HANDOFF §9.2 第 214 条）；第六轮去掉 `request_folder_file`、工作区「连接的文件夹」重新排版（第 215 条），10-26 15:09 已换装。** 回执 §12.4；完整报告同目录 `ACCEPTANCE-P9Y-2026-10-26.md`。§7 – §11 是历史，其中 §9 的 `request_folder_file` 已撤回。本机 v0.7.3 / schema v37，未推送、未发版。
 >
 > 来源：HANDOFF §9.2 第 206 条（owner interruption）、第 208 条（本窗 Ocean 对六问的回答和三个大问题）。
 >
@@ -648,6 +648,26 @@ Ocean 原话：「去掉这个工具，其他都验收通过，在下一窗口�
 
 ⛔ 不改库、不加迁移；⛔ 不碰连接文件夹 / SPOOL.md / 工作区页的任何行为；⛔ 不碰 `EXECUTION_POLICY.md`；⛔ 不推送、不发版（问过再说）；⛔ 提交里不带任何署名尾巴或工具名（`CLAUDE.md` §5）。
 
-### 12.4 回执
+### 12.4 回执（10-26 执行窗）
 
-（执行窗填写。）
+**提交**（三笔，均已过 `CLAUDE.md` §5 自查 = clean）：
+
+- `1c125cc` 去掉 `request_folder_file`：`mcp.rs` 里工具描述、`tools/call` 分派、`request_folder_file_json`、`ENGINE_EXCLUDED_TOOLS`（回到 2 项）、引擎拒绝提示那一支、`OPENERS` 那一行、`INSTRUCTION_BODY` LINKED FOLDERS 段那几句、`get_folder_status` 描述那一句；`get_folder_status` 返回的 `other_file_access` 改成一句字符串：「To read a file other than the state files, read this folder with your own local file tools; if you have none, ask the user to provide the file in this conversation.」，LINKED FOLDERS 段同一句。现状文件「没有可读文字」那条 note 里「在当前桌面对话申请访问」也改成同样的意思（它指的就是被撤回的流程）。`folder_link.rs` 的 `linked_root_for_thread` 只有它用，删掉；`checked_user_file`、`FILE_REQUEST_WHY_CAP` 留着。`engine.rs` 注释跟着改。测试：删掉只测这个工具的两条、私密金丝雀里两条调用；工具数断言原来只在被删的测试里，另加一条 `the_withdrawn_folder_file_handoff_is_gone`（普通 28 / 引擎 26、路由文本不再提、调用报 `Unknown tool`）。
+- `f3dfbab` 删「项目文件（{n}）」（DISCOVERED-20261026-2，completed）。织布那条（-1）没碰。
+- `6773214` 工作区「连接的文件夹」重新排版（Ocean 同一窗追加，HANDOFF 第 215 条）：`FolderPanel` 已连接状态改成抬头一行（图标、文件夹名、路径、更多）+ 一张两栏的标签表（同步：状态一句 + 「已经对过了」+ 同步说明；现状文件：每份标没变 / 改过 / 没了；其他改动：原来那个展开列表，没有时写「没有别的改动」；SPOOL.md：打开 · 让 AI 读到它 + 改过 / 没了的提示；主项目），找不到文件夹时只剩「位置」一行；整块限宽 `max-w-xl`，标记不再飘到最右边。按钮、对话框、菜单和它们做的事一个没变；没连接 / 继承上层两种状态没动；项目右栏的 `FolderCard` 没动。词典加 7 条、删 1 条（「主项目〈{title}〉」被标签行取代）。
+
+**检查**：tsc 干净；vitest **125 文件 / 1237 条**；cargo **272 过 / 11 ignored**（273 − 2 + 1）；`i18n-check` 不缺、`--dead` **99**；clippy 原有警告都不在改动行上。
+
+**`--mcp` 探针**（`VACUUM INTO` 出来的真库副本 + `{"mcpEnabled":true}`，不连真库目录）：debug、release、装后的 `/Applications` 二进制三次，`tools/list` 都是 **28**，`--engine-run` **26**；`request_folder_file` 两种模式都回 `Unknown tool: request_folder_file`；`get_folder_status`（〈Flux〉）的 `other_file_access` 是上面那一句；副本前后 SHA256 一样（`3b015947…`），仍 v37。
+
+**界面截图**（真组件 + 生产 CSS + 假数据，没起 GUI、没碰真库）：`~/Desktop/Spool/P9Y-round6-screenshots-20261026/png/` 12 张 —— 中英、深色、已对齐带说明、展开改动、更多菜单、改过 SPOOL.md、挪了位置 + SPOOL.md 没了、在废纸篓、没连接、继承上层。harness 在同目录 `harness/`。旧样子对照：`~/Desktop/Spool/P9Y-workspace-screenshots-20261025/png/ws.png`。
+
+**换装（10-26 15:09:23，Europe/London）**：停 GUI 前 Ocean 答「没有，直接换装」，`drafts.json` 两类都空；`lsappinfo` 看到 GUI 在跑。和现装同一个 Developer ID（`Developer ID Application: Hanze JIN (Q5Y5JRXZ58)`）签名、只出 `.app`、未公证、版本号仍 0.7.3（第一次构建没设 `APPLE_SIGNING_IDENTITY`，签成了本机 Spool Dev，换装脚本的签名比对会拒，重编后才装）。只停旧 GUI 96771 / 96780；新 GUI 7362 / 7396；11 个原 MCP 进程都在。
+
+- 备份：`~/Desktop/Spool/db/spool.before-p9y-round6-install-20261026-150923.db`（另有停进程前一份 `spool.prestop-…`）+ 11 份 JSON；旧 app `~/Desktop/Spool/spool-pre-install/Spool-v0.7.3-p9y-round5-before-round6-20261026-150923.app`。
+- 核对：装后二进制 SHA256 `d04f18065cedfac2e5d6752888117ee733dd56f2f1ca42302901eb162194925f` 与构建产物一致；`codesign --verify --deep --strict` 过；库 **v37**、`integrity_check=ok`、没有新的迁移快照，18 张非 FTS 表逐行逐字段一致（90 个项目、1304 块、68 个文件、30 个工作区、34 条跟进、5 个文件夹连接）；stderr 有 `[double-tap] installed at HID/active`。
+- 记录：`~/Desktop/Spool/P9Y-round6-verification-20261026/`（`install.py`、`install-report.json`、`install.log`、`build.log`、`source-commit.txt`）。
+
+**要 Ocean 做的**：用 Spool 的 AI 客户端（Claude 桌面版、各个 Claude Code 会话、Codex / ChatGPT）各重启一次 —— 旧连接里还是 29 个工具、带着 `request_folder_file`。打开 Flux 工作区看一眼新排版。
+
+**没做的**：没推送、没发版（v0.7.4 问 Ocean）；没碰 `EXECUTION_POLICY.md`、没改库、没碰连接文件夹 / SPOOL.md 的行为。
