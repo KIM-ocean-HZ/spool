@@ -349,6 +349,36 @@ when attached. That is recorded as a defect for a later release instead of being
 looser prompt. The privacy policy changed in substance: it now names `stale.json`, the monthly check,
 the nine API providers, and Follow Up through a provider's own search.
 
+---
+
+| Field | v0.7.4 |
+|---|---|
+| Published | **2026-10-26** |
+| Tagged commit | tag `v0.7.4` → `ba7d2a7`, the commit the binary was built from (the commits after it on `main` change documentation and `server.json` only) |
+| Signing identity — macOS | Developer ID Application (Apple Developer Program, Team `Q5Y5JRXZ58`) |
+| **Notarisation — `.app`** | submission `fe33298f-0cdc-44c0-b7a7-ef3c1d241ce5` · **Accepted** |
+| **Notarisation — `.dmg`** | submission `5ddcb4b2-9493-41a1-8d25-8cdfc99c4c29` · **Accepted** |
+| Artefact — macOS | `Spool_0.7.4_aarch64.dmg`, 11,962,561 bytes |
+| sha256 — macOS | `e70c78f74c582728ea2821ea0ef14ce7ac19aeeecd5566b044ce19e1d9a5c9ad` |
+| Gatekeeper verdict — macOS | `accepted` · `source=Notarized Developer ID` on **both** artefacts, and re-verified on copies downloaded back from the published Release under both names (byte-identical sha256, staple intact); `codesign -dvv` Authority resolved to the Developer ID certificate, the bundled `spool-ai` sidecar too; `--verify --deep --strict` passes; minimum macOS 11.0 |
+| Windows | **not built for this release**; the Windows button keeps pointing at v0.6.1 (HTTP 200) |
+| Fixed-name assets | `Spool-macOS-arm64.dmg` — **HTTP 200** through `releases/latest/download/`, byte-identical to the versioned asset |
+| Database schema | **v35 → v37** (two new tables for linked folders, `attachments` gains two nullable columns; existing rows untouched — checked on a copy of the owner's library and on the owner's own install) |
+| MCP surface (release binary) | 28 tools — 15 read-only, 13 write; 26 for Spool's own engine (`--engine-run`, no `propose_split`, no `mark_folder_synced`). Counted from a build of the release commit against a copy of the library |
+| MCP Registry | not yet published for 0.7.4 when this row was written (the publish step needs the owner to run it); 0.7.3 remains listed as latest until then |
+
+**What this row adds: Spool reaches into a folder for the first time, and one tool was withdrawn
+before release because a real client showed it did nothing.** A workspace can now be linked to a
+folder on the user's computer; Spool watches the "state files" the user picks, notices when the plan
+in the folder has moved on since the last sync, pauses automatic follow-up for that project, and keeps
+a `SPOOL.md` in the folder telling the AI working there which Spool projects it belongs to. It writes
+to the folder in four places only. A fifth surface built during the milestone — a tool through which
+an AI was to request access to one more file in the folder — was removed after the owner watched a
+desktop AI client ignore it and read the repository with its own file tools: an MCP server cannot
+gate what a client reads by other means, so the tool only suggested a control Spool did not have.
+The privacy policy changed in substance: it now lists what Spool reads in a linked folder, the four
+places it writes, and that a client's own file tools are outside Spool's reach.
+
 ## 2. Measured findings
 
 These are the rows that matter most: results obtained by measuring a running system, not
