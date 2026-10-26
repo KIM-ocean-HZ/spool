@@ -621,3 +621,33 @@ Ocean 在工作区截图上指出每个项目的摘要太长，要求「把长�
 - **原生界面检查限制**：最终换装后Computer Use按路径和名称绑定均报 `cgWindowNotFound`，重置后仍未取得安装后截图；库存识别app在运行，主窗 / 浮窗进程及启动日志正常。不能把真组件 / 假数据截图当成最终安装界面截图，留给Ocean真手指核对。
 - 安装与构建二进制 SHA256 都是 `c1b28bfcf905d4c8cd8c81943a311032c4af3a65cd29373d04a13a37a751939b`。检查、签名构建、MCP与安装报告在 `~/Desktop/Spool/P9Y-round5-verification-20261026/`；完整面向验收的报告在 `docs/ACCEPTANCE-P9Y-2026-10-26.md`。
 - **唯一下一步**：Ocean 按 §11.3 验收；通过后回到 P9T → P9R §6 → P10。没有推送或发布。
+
+
+---
+
+## 12. 第六轮：去掉 `request_folder_file`，P9Y 收尾（10-26，Ocean 定，下一窗做）
+
+### 12.1 Ocean 的决定（HANDOFF §9.2 第 214 条）
+
+Ocean 在 Codex 桌面版里实测：问「你能看到我的 repository 吗」，Codex 先用 Spool 拿到 Flux 对应 `/Users/hzjin/flux` 和现状文件，再用**它自己的本机文件工具**直接读了 `backend/main.py`、`frontend/package.json` 等，**没有调用 `request_folder_file`，也没有向用户申请**。验收窗复核的结论：Spool 只是 MCP 服务，管不到客户端自己的文件工具；有文件工具的客户端（各版 Codex、Claude Code、Cowork）直接读，没有的（Claude 桌面版 / ChatGPT 普通聊天）Spool 也给不了读的能力 —— 这个工具在两类客户端上都不起作用，还让人误以为 Spool 在把关文件访问。
+
+Ocean 原话：「去掉这个工具，其他都验收通过，在下一窗口一起做完」。⇒ **§9 第三轮里 `request_folder_file` 那一条撤回**；P9Y 其余部分（第一到第五轮）**验收通过**。
+
+### 12.2 要做的
+
+1. **去掉 `request_folder_file`**（`src-tauri/src/mcp.rs`）：工具描述、`tools/call` 分派、`request_folder_file_json`、`ENGINE_EXCLUDED_TOOLS` 里那一项（数组长度跟着改）、引擎拒绝提示里那一支、`OPENERS` 里那一行、`INSTRUCTION_BODY` 里那几句、`get_folder_status` 工具描述里那一句。`FILE_REQUEST_WHY_CAP` 别的工具还在用，**留着**；`folder_link.rs` 的 `linked_root_for_thread` 只有它用，去掉后成了孤儿就删（先 grep 确认）。`checked_user_file` 现状文件还在用，**留着**。
+2. **`get_folder_status` 里那段 `other_file_access`** 改成一句不承诺任何授权的话：要读现状文件以外的文件，用你自己（客户端）的本机文件工具去读这个文件夹；没有的话请用户在对话里提供。不提 Spool 申请、不提哪家客户端的内部工具名。`INSTRUCTION_BODY` 的 LINKED FOLDERS 段同样意思、一句话。
+3. **测试**：删掉只测这个工具的测试；私密金丝雀里那两条调用删掉；路由测试、工具数断言跟着改。工具数回到**普通 28 / 引擎 26**。
+4. **P9Y 自己的遗留**：`src/lib/i18n/index.ts` 里「项目文件（{n}）」第三轮之后没人用了（DISCOVERED-20261026-2），删掉，`--dead` 回到 99。⛔ 织布测试那条（DISCOVERED-20261026-1）不在这一窗范围，Ocean 没定。
+5. **验证**：tsc / vitest / cargo test / i18n（含 `--dead`）/ clippy 改动行无新警告；`--mcp` 探针只连 `VACUUM INTO` 的库副本（记忆 `isolated-verify-workflow` §44），`tools/list` 28 / 26，调用 `request_folder_file` 报「未知工具」。库**不改**，仍 v37，不需要迁移。
+6. **换装**：和现装同一个 Developer ID 签名、只出 `.app`（§7.6 / §11.4 的做法）。⛔ 停 GUI 之前先问 Ocean 有没有没点「完成」的编辑（记忆 `isolated-verify-workflow` §47），看 GUI 在不在用 `lsappinfo`（§52）。备份库和 json，旧 app 挪到 `~/Desktop/Spool/spool-pre-install/`。装后核哈希、签名、v37、各表行数、`[double-tap] installed at HID/active`。提醒 Ocean：用 Spool 的 AI 客户端各重启一次，旧连接里还是 29 个工具。
+7. **收尾**：这一节写回执；任务书状态改 COMPLETE 并 `git mv` 进 `docs/archive/product-taskbooks/`；`docs/ACCEPTANCE-P9Y-2026-10-26.md` 里写明 `request_folder_file` 已撤回、P9Y 验收通过（同样归档或在任务书回执里指过去）；HANDOFF §9.3 那一行、§9.8 唯一下一步回到返回点 **P9T → P9R §6 → P10**；台账、`docs/README.md` 里 P9Y 那一行同步（⚠️ `docs/README.md` 和 HANDOFF 里有别的窗口没提交的段落，只提交自己的改动）。
+8. **问 Ocean**：发不发版（v0.7.4，Mac）、推不推送（仓库公开，推送前必问）。没答之前都不做。
+
+### 12.3 不做的
+
+⛔ 不改库、不加迁移；⛔ 不碰连接文件夹 / SPOOL.md / 工作区页的任何行为；⛔ 不碰 `EXECUTION_POLICY.md`；⛔ 不推送、不发版（问过再说）；⛔ 提交里不带任何署名尾巴或工具名（`CLAUDE.md` §5）。
+
+### 12.4 回执
+
+（执行窗填写。）
