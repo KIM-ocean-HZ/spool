@@ -1,8 +1,10 @@
 import { ArrowRight, ChevronDown, ChevronRight, File, Folder } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { FolderPanel } from '@/components/RightRail/FolderCard';
 import PrivateMark from '@/components/ui/PrivateMark';
 import StatusDot from '@/components/ui/StatusDot';
+import ThreadActions from '@/components/ThreadView/ThreadActions';
+import ThreadPane from '@/components/ThreadView/ThreadPane';
 import { listAttachmentsByThread, type Attachment } from '@/lib/db/attachments';
 import { blockStatsByThread, type ThreadBlockStats } from '@/lib/db/blocks';
 import { listFollowUpItems, type FollowUpItem } from '@/lib/db/followUpItems';
@@ -36,8 +38,10 @@ interface Detail {
   lines: FollowUpItem[];
 }
 
-export default function WorkspaceBoard() {
+export default function WorkspaceBoard({ projectRightInset = 0 }: { projectRightInset?: number }) {
   const t = useT();
+  const rootRef = useRef<HTMLDivElement>(null);
+  const [paneWidth, setPaneWidth] = useState(0);
   const workspaceId = useThreadsStore((s) => s.workspaceViewId);
   const byWorkspace = useThreadsStore((s) => s.threadsByWorkspace);
   const select = useThreadsStore((s) => s.select);
@@ -53,6 +57,16 @@ export default function WorkspaceBoard() {
 
   const ws = workspaces.find((w) => w.id === workspaceId);
   const title = ws?.title.trim() || t('未命名');
+
+  useLayoutEffect(() => {
+    const root = rootRef.current;
+    if (!root) return;
+    const measure = (): void => setPaneWidth(root.getBoundingClientRect().width);
+    measure();
+    const resized = new ResizeObserver(measure);
+    resized.observe(root);
+    return () => resized.disconnect();
+  }, [workspaceId, !!ws]);
 
   // This workspace, then each workspace under it, depth-first in the sidebar's order.
   const groups = useMemo(() => {
@@ -175,7 +189,23 @@ export default function WorkspaceBoard() {
             </span>
           )}
         </div>
-        {th.summary && <p className="mt-1 break-words pl-5 text-[12px] leading-relaxed text-ink-2">{th.summary}</p>}
+        {th.summary && (
+          <ThreadPane className="relative">
+            {/* Reserve the actual project chrome and measure the same actions without
+                mounting an editable header. Hidden controls cannot receive focus/clicks. */}
+            <div
+              data-thread-measure-row
+              aria-hidden="true"
+              className="pointer-events-none invisible absolute -left-6 top-0 flex h-0 items-center gap-3 overflow-hidden px-6"
+              style={{ width: Math.max(0, paneWidth - projectRightInset) }}
+            >
+              {th.isPrivate && <PrivateMark size={16} />}
+              <span className="min-w-0 flex-1" />
+              <ThreadActions thread={th} />
+            </div>
+            <p data-thread-text className="mt-1 break-words pl-3.5 text-[12px] leading-relaxed text-ink-2">{th.summary}</p>
+          </ThreadPane>
+        )}
         {d && (d.lines.length > 0 || d.files.length > 0) && (
           <div className="mt-2 pl-5 text-[12px]">
             <div className="flex flex-wrap items-center gap-2">
@@ -249,7 +279,7 @@ export default function WorkspaceBoard() {
   const parent = ws.parentId ? workspaces.find((w) => w.id === ws.parentId) : null;
 
   return (
-    <div className="flex h-full flex-col overflow-hidden">
+    <div ref={rootRef} className="flex h-full flex-col overflow-hidden">
       <header
         className="flex flex-none items-baseline justify-between gap-3 border-b border-line px-6 py-6"
         style={{ minHeight: CENTRE_HEADER_HEIGHT }}

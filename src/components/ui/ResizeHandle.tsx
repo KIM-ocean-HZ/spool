@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef } from 'react';
+import { RAIL_DIVIDER_WIDTH } from '@/lib/layout';
 
 // DESIGN_WORKBENCH §3 — the draggable divider between a rail and the reading column.
 //
@@ -107,7 +108,8 @@ export default function ResizeHandle({ side, width, min, max, onResize, onCommit
       onKeyDown={onKeyDown}
       // 5px of grab area over a 1px line: the visible divider stays hairline-thin, but the
       // target is wide enough to hit without aiming.
-      className="group relative z-10 -mx-[2px] w-[5px] flex-none cursor-col-resize outline-none"
+      style={{ width: RAIL_DIVIDER_WIDTH + 4 }}
+      className="group relative z-10 -mx-[2px] flex-none cursor-col-resize outline-none"
     >
       <div className="pointer-events-none absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-line transition-colors group-hover:bg-accent group-focus-visible:bg-accent" />
     </div>

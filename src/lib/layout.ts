@@ -100,6 +100,10 @@ export const CENTRE_HEADER_HEIGHT = PANEL_TOP_Y + 1;
  *  ceiling (300) plus that lead, so a fresh install opens already obeying the floor. */
 export const DEFAULT_RAIL_WIDTH = 340;
 
+// Net space beside a project pane, also reserved by workspace summary measurements.
+export const RAIL_DIVIDER_WIDTH = 1;
+export const COLLAPSED_RAIL_BUTTON_WIDTH = 26;
+
 /** Not a drag floor any more — the sidebar has no handle. It is the width the emergency
  *  squeeze below is allowed to take it down to on a window too small to hold everything. */
 export const MIN_SIDEBAR_WIDTH = 200;

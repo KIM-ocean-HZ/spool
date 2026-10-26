@@ -3,7 +3,10 @@ import { useLayoutEffect, useRef, type ReactNode } from 'react';
 /** P9Y: prose ends at the Pack button's left edge, including after a pane resize or
  *  a header status/language change. Measure each surface's own start so pinned blocks,
  *  nested previews and the editor do not depend on hardcoded padding offsets. */
-export default function ThreadPane({ children }: { children: ReactNode }) {
+export default function ThreadPane({ children, className = 'relative flex h-full flex-col' }: {
+  children: ReactNode;
+  className?: string;
+}) {
   const ref = useRef<HTMLDivElement>(null);
 
   useLayoutEffect(() => {
@@ -30,13 +33,23 @@ export default function ThreadPane({ children }: { children: ReactNode }) {
       // The action row's overall width stays fixed when a status appears; observe
       // its children too so the Pack position is refreshed when their widths change.
       const row = pane.querySelector('[data-thread-pack]')?.parentElement;
-      if (row) for (const child of row.children) resized.observe(child);
+      if (row) {
+        resized.observe(row);
+        for (const child of row.children) resized.observe(child);
+      }
       measure();
     };
-    const changed = new MutationObserver(watch);
+    const changed = new MutationObserver((records) => {
+      if (records.some((record) => record.type !== 'attributes' ||
+        (record.target as Element).hasAttribute('data-thread-measure-row'))) watch();
+    });
     // Newly loaded blocks and portalled editor fields need the same boundary.
-    // Do not observe styles: setting maxWidth must not trigger another measurement.
-    changed.observe(pane, { childList: true, characterData: true, subtree: true });
+    // Only the measurement row's explicit width matters among style mutations;
+    // ignore our own maxWidth writes and the picture editor's height adjustments.
+    changed.observe(pane, {
+      childList: true, characterData: true, subtree: true,
+      attributes: true, attributeFilter: ['style'],
+    });
     watch();
     return () => {
       resized.disconnect();
@@ -44,5 +57,5 @@ export default function ThreadPane({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  return <div ref={ref} className="relative flex h-full flex-col">{children}</div>;
+  return <div ref={ref} className={className}>{children}</div>;
 }

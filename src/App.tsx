@@ -25,7 +25,7 @@ import CompleteThreadPanel from '@/components/ThreadView/CompleteThreadPanel';
 import FollowUpPanel from '@/components/ThreadView/FollowUpPanel';
 import ResizeHandle from '@/components/ui/ResizeHandle';
 import ToastRack from '@/components/ui/Toast';
-import { MAX_RAIL_WIDTH, resolveLayout } from '@/lib/layout';
+import { COLLAPSED_RAIL_BUTTON_WIDTH, MAX_RAIL_WIDTH, RAIL_DIVIDER_WIDTH, resolveLayout } from '@/lib/layout';
 import {
   drainMigrationNotices,
   getFirstRunThreadId,
@@ -433,7 +433,7 @@ export default function App() {
             ) : pinnedView === 'review' ? (
               <ReviewBoard />
             ) : pinnedView === 'workspace' ? (
-              <WorkspaceBoard />
+              <WorkspaceBoard projectRightInset={railCollapsed ? COLLAPSED_RAIL_BUTTON_WIDTH : layout.rail + RAIL_DIVIDER_WIDTH} />
             ) : (
               <ThreadView />
             )}
@@ -453,6 +453,7 @@ export default function App() {
               onClick={() => void updateSettings({ railCollapsed: false })}
               title={t('展开 AI 面板')}
               aria-label={t('展开 AI 面板')}
+              style={{ width: COLLAPSED_RAIL_BUTTON_WIDTH }}
               className="flex-none self-start rounded p-1.5 text-muted transition-colors hover:bg-paper-2 hover:text-ink"
             >
               <PanelRightOpen size={14} />
