@@ -120,23 +120,25 @@ const nextSortOrder = async (threadId: string): Promise<number> => {
 };
 
 /** The user adds a line themselves — live immediately, no review step. The gate in §8.4 is
- *  about what an AI files, not about what the user types into their own list. */
+ *  about what an AI files, not about what the user types into their own list. Returns the new
+ *  line's id (null when there was nothing to add) — P10-3's undo deletes exactly that row. */
 export const addFollowUpItem = async (
   threadId: string,
   text: string,
   standing: boolean,
-): Promise<void> => {
+): Promise<string | null> => {
   const trimmed = text.trim();
-  if (!trimmed) return;
+  if (!trimmed) return null;
   const db = await getDb();
   const now = Date.now();
+  const id = nanoid();
   await db.execute(
     `INSERT INTO follow_up_items
        (id, thread_id, text, why, standing, fingerprint, status, proposed_by,
         sort_order, created_at, approved_at)
      VALUES ($1, $2, $3, NULL, $4, $5, 'open', NULL, $6, $7, $7)`,
     [
-      nanoid(),
+      id,
       threadId,
       trimmed,
       standing ? 1 : 0,
@@ -145,6 +147,7 @@ export const addFollowUpItem = async (
       now,
     ],
   );
+  return id;
 };
 
 export const updateFollowUpItemText = async (id: string, text: string): Promise<void> => {

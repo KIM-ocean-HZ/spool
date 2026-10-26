@@ -598,7 +598,7 @@ function Review({ run, onDelete }: { run: EngineRun; onDelete?: (id: string) => 
         )}
       </div>
       {structured ? (
-        <StructuredReview review={structured} />
+        <StructuredReview review={structured} client={`${t('周回顾')} · ${engineName}`} />
       ) : cards ? (
         // P9S-5 (Ocean 2026-10-23): one card per project.
         <ReviewCards review={cards} />

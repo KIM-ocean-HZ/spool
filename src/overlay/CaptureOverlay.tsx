@@ -80,6 +80,7 @@ const UNDO_OP_LABEL: Record<OverlayUndoPayload['op'], string> = {
   thread_delete_many: '删除多个项目',
   workspace_delete: '删除工作区',
   workspace_archive: '归档工作区',
+  review_action: '周回顾里点的一步',
   forward: '复制',
   ref_remove: '移除引用',
   move: '移动',

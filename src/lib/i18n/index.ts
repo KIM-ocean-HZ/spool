@@ -761,6 +761,8 @@ const EN: Record<string, string> = {
   '写下的一条': 'the line you wrote',
   // 2026-10-01 新增 'workspace_archive'（右键工作区 →「归档」）。⚠️ i18n-check 看不见常量表，这一条是手加的。
   '归档工作区': 'Archive workspace',
+  // P10-3 新增 'review_action'（周回顾卡片上点了一个建议动作）。同样是手加的。
+  '周回顾里点的一步': 'a step from the weekly review',
   '界面语言。切换立即生效。': 'UI language. Takes effect immediately.',
   // 情人节限定版 (2026-08-19) — the appearance switch, and the break card the theme brings with
   // it. Ocean: 「中英文都支持」.
@@ -2287,8 +2289,6 @@ const EN: Record<string, string> = {
   '建议动作': 'Suggested',
   '截止日期设成 {date}': 'Set the deadline to {date}',
   '加一条跟进：{text}': 'Add a follow-up: {text}',
-  '提一次整条取代': 'Propose replacing the old block',
-  '提一次更正': 'Propose a correction',
   '依据：': 'Based on: ',
   '旧的：': 'Old: ',
   '新的：': 'New: ',
@@ -2302,4 +2302,15 @@ const EN: Record<string, string> = {
   '少了要填的内容。': 'Something it had to fill in is missing.',
   'AI 还说了 {n} 条，没放上来。这是 AI 没说对，不是你的项目有问题。下面是它的原话：':
     'The AI said {n} more, which are not shown above. That is the AI getting it wrong, not a problem with your projects. Here is what it said:',
+  '这个项目已标完成，不再出建议动作。': 'This project is marked done, so it gets no suggested actions.',
+  '截止日期从 {a} 改成 {b}': 'Move the deadline from {a} to {b}',
+  '提一次整条取代（进待审）': 'Propose replacing the old block (goes to Review)',
+  '提一次更正（进待审）': 'Propose a correction (goes to Review)',
+  '截止日期已经是这一天。': 'The deadline is already that day.',
+  '跟进里已经有这一条。': 'Already in the follow-up list.',
+  '在待审里等你。': 'Waiting for you in Review.',
+  '这两块已经处理过了。': 'Those two blocks were already dealt with.',
+  '那两块已经不在了。': 'Those two blocks are gone.',
+  '这一步没做成': 'That step did not go through',
+  '{key} 可以撤销。': '{key} undoes it.',
 };

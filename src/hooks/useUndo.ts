@@ -6,6 +6,7 @@ import {
 } from '@/lib/capture/overlayProtocol';
 import { IS_MAC } from '@/lib/platform';
 import { useBlocksStore } from '@/stores/blocksStore';
+import { useFollowUpStore } from '@/stores/followUpStore';
 import { previewForEntry, threadIdForEntry, useUndoStore } from '@/stores/undoStore';
 import { useThreadsStore } from '@/stores/threadsStore';
 import { useWorkspacesStore } from '@/stores/workspacesStore';
@@ -44,6 +45,16 @@ const refreshAfterUndoRedo = async (entry: UndoEntry): Promise<void> => {
       await useThreadsStore.getState().loadAll();
       await useBlocksStore.getState().load(entry.payload.originThreadId);
       break;
+    // P10-3: a project's state (done / deadline) or its follow-up list — the sidebar and the
+    // weekly review card read the first, the follow-up panel the second.
+    case 'review_action': {
+      await useThreadsStore.getState().loadAll();
+      const followUps = useFollowUpStore.getState();
+      if (entry.payload.op === 'add_follow_up' && followUps.threadId === entry.payload.threadId) {
+        await followUps.load(entry.payload.threadId);
+      }
+      break;
+    }
     // P2 · B4: both ends of the move.
     case 'move':
       await useBlocksStore.getState().load(entry.payload.fromThreadId);

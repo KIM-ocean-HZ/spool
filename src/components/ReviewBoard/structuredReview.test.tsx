@@ -2,6 +2,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { readWeeklyReview, WEEKLY_FORMAT, type WeeklyReview } from '@/lib/ai/weeklyStructured';
 import { useSettingsStore } from '@/stores/settingsStore';
+import type { Thread } from '@/lib/db/threads';
 import { useThreadsStore } from '@/stores/threadsStore';
 import StructuredReview from './StructuredReview';
 
@@ -50,18 +51,40 @@ describe('readWeeklyReview', () => {
 });
 
 describe('StructuredReview', () => {
-  it('puts every word on the card — no cut, no ellipsis', () => {
+  it('puts every word on the card — no cut, no ellipsis — even for a project gone since', () => {
     Object.assign(useSettingsStore.getInitialState(), { language: 'zh' });
     Object.assign(useThreadsStore.getInitialState(), { threadsByWorkspace: {} });
     const long = '很长的一句话'.repeat(200);
     const html = renderToStaticMarkup(
-      <StructuredReview review={review({ next: long })} />,
+      <StructuredReview review={review({ next: long })} client="周回顾 · m" />,
     );
     for (const s of ['申请规划', '写完了文书初稿', '推荐信还没人答应', '「文书初稿写完了」', '主线推进了', '2026-11-30', '「截止改到 11 月 30 日」', long]) {
       expect(html).toContain(s);
     }
     expect(html).not.toContain('…');
     expect(html).not.toMatch(/truncate|line-clamp/);
+    // Gone: the words stay, the button does not.
+    expect(html).toContain('这个项目已经不在了');
+    expect(html).not.toContain('<button');
+  });
+
+  // 任务书 §3 P10-3: a finished or private project gets no buttons.
+  it('gives a finished project one line instead of buttons, and a private one nothing', () => {
+    Object.assign(useSettingsStore.getInitialState(), { language: 'zh' });
+    const th = (over: Partial<Thread>): Thread => ({
+      id: 't1', workspaceId: 'w', title: '申请规划', summary: null, digest: null, deadline: null,
+      status: 'active', isCaptureTarget: false, createdAt: 1, updatedAt: 1, completedAt: null,
+      autoMaintain: null, isPrivate: false, ...over,
+    });
+    const render = (thread: Thread) => {
+      Object.assign(useThreadsStore.getInitialState(), { threadsByWorkspace: { w: [thread] } });
+      return renderToStaticMarkup(<StructuredReview client="周回顾 · m" review={review()} />);
+    };
+    expect(render(th({ status: 'done' }))).toContain('这个项目已标完成，不再出建议动作');
+    expect(render(th({ status: 'done' }))).not.toContain('截止日期设成');
+    expect(render(th({ isPrivate: true }))).not.toContain('建议动作');
+    // An open project: the suggestion is there (the button itself appears once the library is read).
+    expect(render(th({}))).toContain('截止日期设成 2026-11-30');
   });
 
   // P10-2: what the gate dropped is said at the bottom — how many, why, and what the AI wrote.
@@ -69,6 +92,7 @@ describe('StructuredReview', () => {
     Object.assign(useSettingsStore.getInitialState(), { language: 'zh' });
     const html = renderToStaticMarkup(
       <StructuredReview
+        client="周回顾 · m"
         review={review({
           dropped: [
             { project: '申请规划', what: 'signal', reason: 'quote', item: { quote: '推荐信全齐了', why: '编的' } },

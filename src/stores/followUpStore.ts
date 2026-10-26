@@ -46,7 +46,7 @@ export const useFollowUpStore = create<FollowUpState>((set, get) => {
     if (!id) return;
     set({ items: await db.listFollowUpItems(id) });
   };
-  const after = async (run: Promise<void>): Promise<void> => {
+  const after = async (run: Promise<unknown>): Promise<void> => {
     await run;
     await reload();
   };

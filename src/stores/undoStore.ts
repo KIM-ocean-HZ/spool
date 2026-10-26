@@ -7,6 +7,7 @@ import {
   setAttachmentSuperseded,
 } from '@/lib/db/attachments';
 import { restoreImagePlaces } from '@/lib/db/blockImages';
+import { deleteFollowUpItem, listFollowUpItems, restoreFollowUpItem } from '@/lib/db/followUpItems';
 import { restoreFileIdentities } from '@/lib/files/locate';
 import { imageLinesAsText } from '@/lib/blocks/imageLines';
 import { t } from '@/lib/i18n';
@@ -28,6 +29,7 @@ import {
   setCaptureTarget,
   setThreadCompletion,
   softDeleteThread,
+  updateThread,
 } from '@/lib/db/threads';
 import { restoreWorkspace, softDeleteWorkspace } from '@/lib/db/workspaces';
 import { redoSplit, reverseSplit } from '@/lib/split/projectSplit';
@@ -41,6 +43,7 @@ import type {
   MergePayload,
   MovePayload,
   RefRemovePayload,
+  ReviewActionPayload,
   SplitPayload,
   ThreadDeleteManyPayload,
   ThreadDeletePayload,
@@ -210,6 +213,16 @@ export const buildSplitUndo = (payload: SplitPayload): UndoEntry => ({
   invalidated: false,
 });
 
+// P10-3 周回顾卡片上的一个建议动作。No block is touched, so no edit invalidates it.
+export const buildReviewActionUndo = (payload: ReviewActionPayload): UndoEntry => ({
+  id: nanoid(),
+  kind: 'review_action',
+  timestamp: Date.now(),
+  payload,
+  affectedBlockIds: [],
+  invalidated: false,
+});
+
 // --- Pure helpers over an entry (exported for runUndo / the toast). ---
 
 export const threadIdForEntry = (entry: UndoEntry): string => {
@@ -224,6 +237,8 @@ export const threadIdForEntry = (entry: UndoEntry): string => {
       return entry.payload.fromThreadId;
     case 'split':
       return entry.payload.originThreadId;
+    case 'review_action':
+      return entry.payload.threadId;
     case 'create':
       return entry.payload.threadId;
     case 'delete':
@@ -294,6 +309,8 @@ export const previewForEntry = (entry: UndoEntry): string => {
     }
     case 'split':
       return previewText(entry.payload.originTitle);
+    case 'review_action':
+      return previewText(entry.payload.title);
   }
 };
 
@@ -489,6 +506,33 @@ const reverseAndBuildRedo = async (
       return async () => {
         await redoSplit(entry.payload);
       };
+    }
+    // P10-3: the one change a weekly-review button made, back as it was; redo makes it again.
+    case 'review_action': {
+      const p = entry.payload;
+      switch (p.op) {
+        case 'mark_done':
+          await setThreadCompletion(p.threadId, p.before);
+          scheduleProtocolRefresh();
+          return async () => {
+            await setThreadCompletion(p.threadId, { status: 'done', completedAt: p.doneAt, updatedAt: p.doneAt });
+            scheduleProtocolRefresh();
+          };
+        case 'set_deadline':
+          await updateThread(p.threadId, { deadline: p.before });
+          return async () => {
+            await updateThread(p.threadId, { deadline: p.after });
+          };
+        case 'add_follow_up': {
+          // The line as it is now (it may have been answered or reworded since), so redo puts
+          // back what the user last saw rather than what the button first wrote.
+          const live = (await listFollowUpItems(p.threadId)).find((i) => i.id === p.item.id) ?? p.item;
+          await deleteFollowUpItem(p.item.id);
+          return async () => {
+            await restoreFollowUpItem(live);
+          };
+        }
+      }
     }
   }
 };

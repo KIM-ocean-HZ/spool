@@ -13,6 +13,7 @@
 // ⛔ 08-24 S2「AI 提的并进过期检测那张卡」**作废**（Ocean 2026-10-07：「过期检测只适用于用户自主
 // 检测」）。AI 提的在**待审**里，和别的 AI 提议一起；过期检测页签只放用户自己点「查过期」跑出来的。
 
+import { nanoid } from 'nanoid';
 import { getDb } from './client';
 
 /** AI 建议的是哪一种。⚠️ 只是建议 —— 卡片上三个按钮都能点。 */
@@ -99,6 +100,51 @@ export const deleteSupersedeProposal = async (id: string): Promise<void> => {
   const db = await getDb();
   await db.execute('DELETE FROM supersede_proposals WHERE id = $1', [id]);
 };
+
+/** P10-3（Ocean 2026-10-26 第 219 条）：周回顾卡片上点了「取代 / 更正」—— 排进待审，和 MCP 那条
+ *  `propose_supersede` 同一张表、同一个 7 天、同一对块只排一条（`mcp.rs` `propose_supersede_json`）。
+ *  ⛔ 一个块都不改：用户在待审里选「更正 / 取代 / 不动」才有事发生。
+ *  ⚠️ 两句引文和两块是 Rust 那道闸给的（`weekly_review.rs`），这里原样存，⛔ 不再判一遍。 */
+export const queueSupersedeProposal = async (p: {
+  threadId: string;
+  staleBlockId: string;
+  byBlockId: string;
+  client: string;
+  why: string;
+  quoteStale: string;
+  quoteNew: string;
+  retyped: boolean;
+  suggestedKind: SuggestedKind;
+  now: number;
+}): Promise<void> => {
+  const db = await getDb();
+  await db.execute('DELETE FROM supersede_proposals WHERE stale_block_id = $1 AND by_block_id = $2', [
+    p.staleBlockId,
+    p.byBlockId,
+  ]);
+  await db.execute(
+    `INSERT INTO supersede_proposals (id, thread_id, stale_block_id, by_block_id, client, why,
+       quote_stale, quote_new, retyped, created_at, expires_at, suggested_kind)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+    [
+      nanoid(),
+      p.threadId,
+      p.staleBlockId,
+      p.byBlockId,
+      p.client,
+      p.why,
+      p.quoteStale,
+      p.quoteNew,
+      p.retyped ? 1 : 0,
+      p.now,
+      p.now + PROPOSAL_TTL_MS,
+      p.suggestedKind,
+    ],
+  );
+};
+
+/** 和 MCP 那一侧 `PROPOSAL_TTL_MS` 同一个数：提议排着等 7 天。 */
+const PROPOSAL_TTL_MS = 7 * 86_400_000;
 
 /** 过期的清掉。⚠️ 和提案批次同一个 7 天，同一个「时间到了等于拒绝」。 */
 export const purgeExpiredSupersedeProposals = async (now: number): Promise<void> => {

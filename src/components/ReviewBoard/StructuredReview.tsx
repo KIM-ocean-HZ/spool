@@ -1,9 +1,19 @@
 import { AlertTriangle } from 'lucide-react';
-import { useMemo, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import {
+  actionState,
+  applyWeeklyAction,
+  dayOf,
+  loadActionContext,
+  type ActionContext,
+} from '@/lib/ai/weeklyActions';
 import type { WeeklyAction, WeeklyDropped, WeeklyReview } from '@/lib/ai/weeklyStructured';
 import { useT } from '@/lib/i18n';
+import { IS_MAC } from '@/lib/platform';
 import type { Thread } from '@/lib/db/threads';
+import { useProposalsStore } from '@/stores/proposalsStore';
 import { useThreadsStore } from '@/stores/threadsStore';
+import { toast } from '@/stores/toastStore';
 
 /** P10 (Ocean 2026-10-26) — a weekly review that came back as data: one card per project, in the
  *  P9S-5 layout (labels in a column of their own so the rows line up down the page).
@@ -11,10 +21,26 @@ import { useThreadsStore } from '@/stores/threadsStore';
  *  ⛔ Nothing is shortened and nothing gets an ellipsis: every field is on screen whole, however
  *  long the model made it (任务书 §1). Quotes are plain text, never Markdown — they are the user's
  *  words exactly as the gate matched them, and rendering would change how they read. */
-export default function StructuredReview({ review }: { review: WeeklyReview }) {
+export default function StructuredReview({ review, client }: { review: WeeklyReview; client: string }) {
   const t = useT();
   const byWs = useThreadsStore((s) => s.threadsByWorkspace);
   const select = useThreadsStore((s) => s.select);
+  // P10-3: what each button shows is read off the library — re-read when a project changes (a
+  // click, an undo, a hand edit elsewhere) or 待审 moves (the user decided a pair there).
+  const pendingSupersede = useProposalsStore((s) => s.supersedeProposals);
+  const [ctx, setCtx] = useState<ActionContext | null>(null);
+  const [version, setVersion] = useState(0);
+  useEffect(() => {
+    let live = true;
+    void loadActionContext(review, Date.now())
+      .then((c) => live && setCtx(c))
+      .catch((e) => console.warn('[review] reading what the buttons stand on failed', e));
+    return () => {
+      live = false;
+    };
+  }, [review, byWs, pendingSupersede, version]);
+  // Clicked on this page in this session — those get the 「⌘Z 可以撤销」 line.
+  const [clicked, setClicked] = useState<ReadonlySet<string>>(new Set());
   const threads = useMemo(() => {
     const byId = new Map<string, Thread>();
     const byTitle = new Map<string, Thread>();
@@ -71,15 +97,35 @@ export default function StructuredReview({ review }: { review: WeeklyReview }) {
                   </ul>
                 </Row>
               )}
-              {p.actions.length > 0 && (
+              {/* 任务书 §3 P10-3: a finished or private project gets no buttons. */}
+              {p.actions.length > 0 && !thread?.isPrivate && (
                 <Row label={t('建议动作')}>
-                  <ul className="space-y-1.5">
-                    {p.actions.map((a, j) => (
-                      <li key={j}>
-                        <ActionText action={a} />
-                      </li>
-                    ))}
-                  </ul>
+                  {thread?.status === 'done' ? (
+                    <span className="text-[12px] text-muted">
+                      {t('这个项目已标完成，不再出建议动作。')}
+                      {p.actions.some((a, j) => a.kind === 'mark_done' && clicked.has(`${i}:${j}`)) && <UndoHint />}
+                    </span>
+                  ) : (
+                    <ul className="space-y-2">
+                      {/* Gone since the review: what it suggested stays readable, with no button. */}
+                      {!thread && <li className="text-[12px] text-muted">{t('这个项目已经不在了。')}</li>}
+                      {p.actions.map((a, j) => (
+                        <li key={j}>
+                          <ActionItem
+                            action={a}
+                            thread={thread}
+                            ctx={ctx}
+                            client={client}
+                            mine={clicked.has(`${i}:${j}`)}
+                            onDone={() => {
+                              setClicked((prev) => new Set(prev).add(`${i}:${j}`));
+                              setVersion((v) => v + 1);
+                            }}
+                          />
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                 </Row>
               )}
             </dl>
@@ -162,22 +208,84 @@ function Quote({ text }: { text: string }) {
   return <span className="text-ink">「{text}」</span>;
 }
 
-/** What an action proposes, in words, with the sentence it rests on. */
-function ActionText({ action: a }: { action: WeeklyAction }) {
+/** One suggested action: the button (or, once the library has it, what became of it), then why
+ *  and the sentence it rests on. Same quiet look as the stale check's choices — the AI suggested it,
+ *  the user decides, so it is not dressed up as the thing to press. */
+function ActionItem({
+  action: a,
+  thread,
+  ctx,
+  client,
+  mine,
+  onDone,
+}: {
+  action: WeeklyAction;
+  thread: Thread | undefined;
+  ctx: ActionContext | null;
+  client: string;
+  mine: boolean;
+  onDone: () => void;
+}) {
   const t = useT();
+  const [busy, setBusy] = useState(false);
+  const state = ctx && thread ? actionState(a, thread, ctx) : null;
   const what =
     a.kind === 'mark_done'
       ? t('标完成')
       : a.kind === 'set_deadline'
-        ? t('截止日期设成 {date}', { date: a.date ?? '' })
+        ? thread && thread.deadline !== null && dayOf(thread.deadline) !== a.date
+          ? t('截止日期从 {a} 改成 {b}', { a: dayOf(thread.deadline), b: a.date ?? '' })
+          : t('截止日期设成 {date}', { date: a.date ?? '' })
         : a.kind === 'add_follow_up'
           ? t('加一条跟进：{text}', { text: a.text ?? '' })
           : a.kind === 'propose_supersede'
-            ? t('提一次整条取代')
-            : t('提一次更正');
+            ? t('提一次整条取代（进待审）')
+            : t('提一次更正（进待审）');
+  const after: Record<string, string> = {
+    applied:
+      a.kind === 'set_deadline'
+        ? t('截止日期已经是这一天。')
+        : a.kind === 'add_follow_up'
+          ? t('跟进里已经有这一条。')
+          : t('已标完成。'),
+    queued: t('在待审里等你。'),
+    settled: t('这两块已经处理过了。'),
+    gone: t('那两块已经不在了。'),
+  };
+  const click = async (): Promise<void> => {
+    if (!thread) return;
+    setBusy(true);
+    try {
+      await applyWeeklyAction(a, thread.id, client);
+      onDone();
+    } catch (e) {
+      toast.error(t('这一步没做成'), e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
   return (
     <div className="min-w-0">
-      <div className="text-ink">{what}</div>
+      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+        {state === 'ready' ? (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => void click()}
+            className="rounded border border-line bg-paper px-2 py-0.5 text-left text-[12px] text-ink-2 transition-colors enabled:hover:border-accent enabled:hover:text-accent disabled:opacity-50"
+          >
+            {what}
+          </button>
+        ) : (
+          <span className="text-ink-2">{what}</span>
+        )}
+        {state !== null && state !== 'ready' && (
+          <span className="text-[11px] text-muted">
+            {after[state]}
+            {mine && state === 'applied' && <UndoHint />}
+          </span>
+        )}
+      </div>
       {a.why && <div className="text-[12px] text-ink-2">{a.why}</div>}
       {a.retyped && <Retyped />}
       {a.quote !== null && (
@@ -202,9 +310,7 @@ function ActionText({ action: a }: { action: WeeklyAction }) {
   );
 }
 
-/** A deadline is stored as the last moment of the picked day (ThreadHeader); show that day. */
-const dayOf = (ms: number): string => {
-  const d = new Date(ms);
-  const p = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
-};
+function UndoHint() {
+  const t = useT();
+  return <span> {t('{key} 可以撤销。', { key: IS_MAC ? '⌘Z' : 'Ctrl+Z' })}</span>;
+}

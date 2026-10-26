@@ -6,6 +6,7 @@
 import type { Attachment, RevivedVersion } from '@/lib/db/attachments';
 import type { ImagePlace } from '@/lib/db/blockImages';
 import type { Block } from '@/lib/db/blocks';
+import type { FollowUpItem } from '@/lib/db/followUpItems';
 import type { ThreadStatus } from '@/lib/db/threads';
 import type { KeptIdentity } from '@/lib/files/locate';
 
@@ -22,7 +23,8 @@ export type UndoOpKind =
   | 'forward'
   | 'ref_remove'
   | 'move'
-  | 'split';
+  | 'split'
+  | 'review_action';
 
 // Per-kind payloads. §8.2 types the schema-level payload as `unknown` for storage
 // flexibility; at every usage site we narrow it via the discriminated UndoEntry union
@@ -181,6 +183,20 @@ export interface SplitPayload {
   created: Block[];
 }
 
+// P10-3（Ocean 2026-10-26）：周回顾卡片上点了一个建议动作 —— 一个项目、一处改动，点一下就生效，
+// ⌘Z 一次回去。取代 / 更正不在这里：那两种点下去是进待审，库没有动。
+export type ReviewActionPayload =
+  | {
+      op: 'mark_done';
+      threadId: string;
+      title: string;
+      /** The project as it was, put back exactly (same columns workspace_archive restores). */
+      before: { status: ThreadStatus; completedAt: number | null; updatedAt: number };
+      doneAt: number;
+    }
+  | { op: 'set_deadline'; threadId: string; title: string; before: number | null; after: number }
+  | { op: 'add_follow_up'; threadId: string; title: string; item: FollowUpItem };
+
 interface BaseEntry {
   id: string;
   timestamp: number;
@@ -241,6 +257,11 @@ export interface SplitUndoEntry extends BaseEntry {
   payload: SplitPayload;
 }
 
+export interface ReviewActionUndoEntry extends BaseEntry {
+  kind: 'review_action';
+  payload: ReviewActionPayload;
+}
+
 export type UndoEntry =
   | CaptureUndoEntry
   | CreateUndoEntry
@@ -254,7 +275,8 @@ export type UndoEntry =
   | ForwardUndoEntry
   | RefRemoveUndoEntry
   | MoveUndoEntry
-  | SplitUndoEntry;
+  | SplitUndoEntry
+  | ReviewActionUndoEntry;
 
 const CAPACITY = 10;
 
