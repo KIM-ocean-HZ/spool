@@ -2258,8 +2258,6 @@ const EN: Record<string, string> = {
     'Linked to {path}; a state file there changed since the last sync',
   '项目':
     'Projects',
-  '项目文件（{n}）':
-    'Project files ({n})',
   '选择其他文件…': 'Choose another file…',
   '选择现状文件': 'Choose a state file',
   '正在选择…': 'Choosing…',
