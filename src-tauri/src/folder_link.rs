@@ -1714,19 +1714,6 @@ fn view_of(conn: &Connection, f: FolderRow, link: WsLink, asked_ws: &str, write:
     Ok(v)
 }
 
-/// Metadata-only handoff to a desktop client's own file permissions. Unlike `view`, this
-/// does not inspect state-file bodies or protocol text and never updates a moved path.
-pub(crate) fn linked_root_for_thread(conn: &Connection, thread_id: &str) -> Result<Option<PathBuf>, String> {
-    let ws: Option<String> = conn.query_row(
-        "SELECT workspace_id FROM threads WHERE id = ?1 AND private = 0 AND deleted_at IS NULL",
-        [thread_id], |r| r.get(0),
-    ).optional().map_err(|e| e.to_string())?;
-    let Some(ws) = ws else { return Ok(None) };
-    let Some((f, _)) = link_of_workspace(conn, &ws)? else { return Ok(None) };
-    let (location, path) = locate(None, &f);
-    Ok(matches!(location, "in_place" | "moved").then_some(path))
-}
-
 /// The folder a project falls under. `full`: list the whole folder (the card, get_folder_status);
 /// without it only the state files are looked at — cheap enough for list_threads.
 pub(crate) fn view(conn: &Connection, thread_id: &str, write: bool, full: bool) -> Result<Option<View>, String> {
