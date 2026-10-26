@@ -39,10 +39,10 @@ Spool compresses "re-explaining" into "a single paste."
 
 ## Status
 
-**v0.7.3** — released for **macOS only**. Windows stays on **v0.6.1**, the last release that
+**v0.7.4** — released for **macOS only**. Windows stays on **v0.6.1**, the last release that
 shipped a Windows installer; its next installer will be built from the current release once it has
-been checked on a Windows machine. What changed: [v0.7.3](docs/RELEASE_NOTES_v0.7.3.md) ·
-[v0.7.2](docs/RELEASE_NOTES_v0.7.2.md) · [v0.7.1](docs/RELEASE_NOTES_v0.7.1.md).
+been checked on a Windows machine. What changed: [v0.7.4](docs/RELEASE_NOTES_v0.7.4.md) ·
+[v0.7.3](docs/RELEASE_NOTES_v0.7.3.md) · [v0.7.2](docs/RELEASE_NOTES_v0.7.2.md).
 
 On Windows, capture is a double-tap of Ctrl instead of ⌥. What did not cross over is the
 macOS-specific work around focus handling and browser tab-title capture, so a Windows capture
@@ -110,7 +110,7 @@ The full product constitution, rejected ideas, and the feature filter are in `PL
 - **Tailwind CSS** for layout; design tokens in CSS variables
 - **Zustand** for state
 - **SQLite** via `tauri-plugin-sql`, FTS5 with the trigram tokenizer
-- **MCP server** (`spool --mcp`, stdio, default OFF): the AI surface — 26 tools, 14 read (list/search/dedup/pack, a compressed block's original text, a block's pictures) plus 12 consented, attributed write tools. A Follow Up or Weekly Review run that Spool starts itself is served 25: everything except proposing a project split
+- **MCP server** (`spool --mcp`, stdio, default OFF): the AI surface — 28 tools, 15 read (list/search/dedup/pack, a compressed block's original text, a block's pictures, a linked folder's status) plus 13 consented, attributed write tools. A Follow Up or Weekly Review run that Spool starts itself is served 26: everything except proposing a project split and marking a linked folder as synced
 - **CLI engine slot**: `claude`, `codex`, or `gemini` runs as a local subprocess for Follow Up, Weekly Review, follow-up-goal drafting, compression, and the out-of-date check — detected on disk, never bundled, never given a key
 
 ## Building from source

@@ -4112,7 +4112,7 @@ dependencies = [
 
 [[package]]
 name = "spool"
-version = "0.7.3"
+version = "0.7.4"
 dependencies = [
  "arboard",
  "base64 0.22.1",

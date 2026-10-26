@@ -33,7 +33,7 @@
 <main class="wrap article measure" style="margin: 0 auto;" data-zh-body="privacy">
 
 <h1>Privacy Policy</h1>
-<p class="lede">Last updated: 2026-10-25 (Spool v0.7.3). This English translation is provided for convenience;
+<p class="lede">Last updated: 2026-10-26 (Spool v0.7.4). This English translation is provided for convenience;
 the <a href="zh/privacy.html" hreflang="zh-Hans" lang="zh">Chinese original</a> is authoritative.</p>
 
 <h2>The one-sentence version</h2>
@@ -100,6 +100,17 @@ GitHub remain available if you would rather not involve a third party at all.</p
       and the monthly switch are kept in <code>stale.json</code> in the same directory, so they are
       still there after you quit and reopen Spool. It is not in the database either, is not exported
       with the library, and never leaves this computer.</li>
+  <li>You can link a workspace to a folder on your computer (a code repository, a thesis folder;
+      none by default, and a private project cannot be linked). Once linked, Spool looks locally at
+      which files are in that folder, which changed since the last sync (names, sizes and modification
+      times only) and the titles of git commits, and reads the text of the up to three
+      “state files” you chose; it does not read the contents of any other file. Spool writes to
+      that folder in four places only, each shown to you when you link it: <code>SPOOL.md</code> at
+      its root (only Spool's own section, never one you edited; private projects are never written
+      into it), one line in <code>.git/info/exclude</code> if you chose “keep it on this computer”,
+      and one line each in <code>CLAUDE.md</code> and <code>AGENTS.md</code> if you ticked them. The
+      originals are backed up in <code>folder-backups</code> in the same directory, and unlinking
+      can take these lines out again.</li>
   <li>Before any database schema upgrade, a snapshot backup is saved automatically in the same
       directory.</li>
 </ul>
@@ -136,6 +147,10 @@ request is made on your behalf, by a subprocess Spool starts:</p>
         private projects alone too. <strong>Private covers the route through Spool
         only</strong>: an AI that can already read files on your computer directly (a
         command-line tool given file access, say) is not stopped from reading the database file.
+        If a workspace is linked to a folder, an AI can also read where that folder is, the text of
+        the state files you chose, and the names of files changed and the commit titles since the
+        last sync; Spool hands over no other file's contents. A client that has its own file tools
+        can still read that folder directly — Spool cannot control that.
         Where those clients send content is governed by that client and your agreement with its
         provider.</td>
   </tr>
@@ -150,7 +165,8 @@ request is made on your behalf, by a subprocess Spool starts:</p>
         <strong>The network request happens inside that subprocess</strong>, on your own account's
         quota — on this route Spool stores no API key, and its own process makes no HTTP
         request. When compression or the out-of-date check runs this way, the CLI gets no tools at
-        all and no connection to Spool: one piece of text goes in, one comes out.</td>
+        all and no connection to Spool: one piece of text goes in, one comes out. If a workspace is linked
+        to a folder, it can also read the folder information described in the row above.</td>
   </tr>
   <tr>
     <td>Weekly Review, Follow Up, drafting follow-up goals, compression, or the out-of-date check
