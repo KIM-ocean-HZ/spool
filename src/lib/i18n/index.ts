@@ -2035,6 +2035,20 @@ const EN: Record<string, string> = {
     'gone',
   '现状':
     'state',
+  '同步':
+    'Sync',
+  '位置':
+    'Location',
+  '现状文件':
+    'State files',
+  '还没选':
+    'None chosen yet',
+  '没变':
+    'unchanged',
+  '其他改动':
+    'Other changes',
+  '没有别的改动':
+    'None',
   '另外 {n} 个文件有改动':
     '{n} other file(s) changed',
   '{n} 次提交':
@@ -2208,8 +2222,6 @@ const EN: Record<string, string> = {
     'The workspace above, “{ws}”, is linked to {path}; the projects here are listed in the SPOOL.md there.',
   '主项目':
     'Main project',
-  '主项目〈{title}〉':
-    'main project ‹{title}›',
   '单击打开工作区页面，双击重命名':
     'Click to open the workspace page, double-click to rename',
   '在「{ws}」里 · ':

@@ -1,6 +1,6 @@
 import { open } from '@tauri-apps/plugin-dialog';
 import { ArrowRight, Check, ChevronDown, ChevronRight, FolderGit2, MoreHorizontal } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import RailSection from './RailSection';
 import { ConnectDialog, DiffDialog, DisconnectDialog, PointersDialog, StateFilesDialog } from './FolderDialogs';
 import {
@@ -221,9 +221,20 @@ export function FolderPanel({ workspaceId, title, view }: { workspaceId: string;
   const extra = v.changes.length;
   const link = 'text-muted transition-colors hover:text-accent hover:underline';
 
+  // Ocean 10-26:「很乱，没有结构」— one header line for the folder itself, then one labelled row per
+  // kind of information (sync, state files, other changes, SPOOL.md, main project). Same actions and
+  // dialogs as before; only where they sit changed. Capped width so a tag never drifts to the far edge.
+  const row = (label: string, body: ReactNode) => (
+    <>
+      <dt className="pt-px text-[11px] text-muted">{label}</dt>
+      <dd className="min-w-0 space-y-1">{body}</dd>
+    </>
+  );
+
   return (
-    <div className="space-y-1.5 text-[12px] leading-relaxed">
-      <div className="flex items-baseline gap-2">
+    <div className="max-w-xl text-[12px] leading-relaxed">
+      <div className="flex items-baseline gap-2 border-b border-line/70 pb-2">
+        <FolderGit2 size={13} className="flex-none translate-y-[2px] text-muted" />
         <button
           type="button"
           onClick={() => void openTarget(v.path).catch((e) => toast.error(String(e)))}
@@ -243,131 +254,180 @@ export function FolderPanel({ workspaceId, title, view }: { workspaceId: string;
           <MoreHorizontal size={13} />
         </button>
       </div>
+      {!lost && v.location === 'moved' && <p className="pt-1.5 text-[11px] text-muted">{t('文件夹挪了位置，Spool 跟过去了。')}</p>}
 
-      {lost ? (
-        <>
-          <p className="text-[11px]" style={ATTENTION}>
-            {t(lost)}
-          </p>
-          <div className="flex flex-wrap gap-x-3 text-[11px]">
-            <button
-              type="button"
-              className="text-accent hover:underline"
-              onClick={() =>
-                void pickFolder().then((p) => {
-                  if (p)
-                    void relocateFolder(v.workspaceId, p)
-                      .then(() => reloadAll())
-                      .catch((e) => toast.error(folderError(e)));
-                })
-              }
-            >
-              {t('重新选位置')}
-            </button>
-            <button type="button" className={link} onClick={() => setDialog({ kind: 'disconnect', replacing: false })}>
-              {t('断开')}
-            </button>
-          </div>
-        </>
-      ) : (
-        <>
-          {v.location === 'moved' && <p className="text-[11px] text-muted">{t('文件夹挪了位置，Spool 跟过去了。')}</p>}
-          <p className="text-[11px]" style={v.ahead ? ATTENTION : undefined}>
-            <span className={v.ahead ? '' : 'text-muted'}>{syncLine(v)}</span>
-          </p>
-          <StateList v={v} />
-          {(extra > 0 || v.commits.length > 0) && (
-            <button
-              type="button"
-              onClick={() => setExpanded((x) => !x)}
-              className="flex items-center gap-1 text-left text-[11px] text-muted transition-colors hover:text-ink"
-            >
-              <span>
-                {[
-                  extra > 0 ? t('另外 {n} 个文件有改动', { n: extra }) : null,
-                  v.commits.length > 0 ? t('{n} 次提交', { n: v.commits.length }) : null,
-                ]
-                  .filter(Boolean)
-                  .join(' · ')}
-              </span>
-              {expanded ? <ChevronDown size={11} className="flex-none" /> : <ChevronRight size={11} className="flex-none" />}
-            </button>
-          )}
-          {expanded && (
-            <div className="max-h-56 space-y-1 overflow-y-auto text-[11px]">
-              {v.commits.length > 0 && (
-                <ul>
-                  {v.commits.map((c) => (
-                    <li key={`${c.at}-${c.title}`} className="flex gap-2">
-                      <span className="flex-none tabular-nums text-muted">{day(c.at)}</span>
-                      <span className="min-w-0 break-words text-ink-2">{c.title}</span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-              {extra > 0 && (
-                <ul>
-                  {v.changes.slice(0, 50).map((c) => (
-                    <li key={c.path} className="flex gap-2">
-                      <span className="w-8 flex-none text-muted">
-                        {c.kind === 'added' ? t('新增') : c.kind === 'deleted' ? t('删了') : t('改过')}
-                      </span>
-                      <span className="min-w-0 break-all font-mono text-ink-2">{c.path}</span>
-                    </li>
-                  ))}
-                  {extra > 50 && <li className="text-muted">{t('还有 {n} 个', { n: extra - 50 })}</li>}
-                </ul>
-              )}
-            </div>
-          )}
-
-          <div className="flex flex-wrap items-baseline gap-x-2 text-[11px]">
-            <span className="font-mono text-ink-2">SPOOL.md</span>
-            <button
-              type="button"
-              className={link}
-              onClick={() => void openTarget(`${v.path}/SPOOL.md`).catch((e) => toast.error(String(e)))}
-            >
-              {t('打开')}
-            </button>
-            <span className="text-muted">·</span>
-            <button type="button" className={link} onClick={() => setDialog({ kind: 'pointers' })}>
-              {t('让 AI 读到它')}
-            </button>
-            {v.primaryTitle && (
-              <span className="text-muted">· {t('主项目〈{title}〉', { title: v.primaryTitle })}</span>
+      <dl className="grid grid-cols-[max-content_minmax(0,1fr)] gap-x-5 gap-y-2.5 pt-2.5">
+        {lost ? (
+          row(
+            t('位置'),
+            <>
+              <p className="text-[11px]" style={ATTENTION}>
+                {t(lost)}
+              </p>
+              <div className="flex flex-wrap gap-x-3 text-[11px]">
+                <button
+                  type="button"
+                  className="text-accent hover:underline"
+                  onClick={() =>
+                    void pickFolder().then((p) => {
+                      if (p)
+                        void relocateFolder(v.workspaceId, p)
+                          .then(() => reloadAll())
+                          .catch((e) => toast.error(folderError(e)));
+                    })
+                  }
+                >
+                  {t('重新选位置')}
+                </button>
+                <button type="button" className={link} onClick={() => setDialog({ kind: 'disconnect', replacing: false })}>
+                  {t('断开')}
+                </button>
+              </div>
+            </>,
+          )
+        ) : (
+          <>
+            {row(
+              t('同步'),
+              <>
+                <p className="text-[11px]" style={v.ahead ? ATTENTION : undefined}>
+                  <span className={v.ahead ? '' : 'text-ink-2'}>{syncLine(v)}</span>
+                </p>
+                <SyncButton v={v} />
+              </>,
             )}
-          </div>
-          {v.protocol === 'edited' && (
-            <p className="text-[11px]" style={ATTENTION}>
-              {t('SPOOL.md 里 Spool 那一段你改过，项目有变化时 Spool 先不覆盖。')}{' '}
-              <button type="button" className="text-accent hover:underline" onClick={() => setDialog({ kind: 'diff' })}>
-                {t('看差别')}
-              </button>
-            </p>
-          )}
-          {(v.protocol === 'removed' || v.protocol === 'missing') && (
-            <p className="text-[11px] text-muted">
-              {v.protocol === 'missing' ? t('文件夹里没有 SPOOL.md 了。') : t('SPOOL.md 里没有 Spool 那一段了。')}{' '}
-              <button
-                type="button"
-                className="text-accent hover:underline"
-                onClick={() =>
-                  void rewriteProtocol(v.workspaceId)
-                    .then(() => reloadAll())
-                    .catch((e) => toast.error(folderError(e)))
-                }
-              >
-                {t('重新写一份')}
-              </button>
-            </p>
-          )}
-          <SyncButton v={v} />
-        </>
-      )}
+
+            {row(
+              t('现状文件'),
+              v.state.length === 0 ? (
+                <p className="text-[11px] text-muted">{t('还没选')}</p>
+              ) : (
+                <ul className="space-y-0.5">
+                  {v.state.map((s) => {
+                    const tag = stateTag(s);
+                    return (
+                      <li key={s.spec} className="flex items-baseline gap-3 text-[11px]">
+                        <span className="min-w-0 truncate font-mono text-ink-2" title={s.path ?? s.spec}>
+                          {shortRel(s.path ?? s.spec)}
+                        </span>
+                        <span className="ml-auto flex-none" style={tag ? ATTENTION : undefined}>
+                          {tag === 'changed' ? t('改过') : tag === 'gone' ? t('没了') : <span className="text-muted">{t('没变')}</span>}
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              ),
+            )}
+
+            {row(
+              t('其他改动'),
+              extra > 0 || v.commits.length > 0 ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setExpanded((x) => !x)}
+                    className="flex items-center gap-1 text-left text-[11px] text-ink-2 transition-colors hover:text-accent"
+                  >
+                    <span>
+                      {[
+                        extra > 0 ? t('另外 {n} 个文件有改动', { n: extra }) : null,
+                        v.commits.length > 0 ? t('{n} 次提交', { n: v.commits.length }) : null,
+                      ]
+                        .filter(Boolean)
+                        .join(' · ')}
+                    </span>
+                    {expanded ? <ChevronDown size={11} className="flex-none" /> : <ChevronRight size={11} className="flex-none" />}
+                  </button>
+                  {expanded && (
+                    <div className="max-h-56 space-y-1.5 overflow-y-auto border-l border-line pl-3 text-[11px]">
+                      {v.commits.length > 0 && (
+                        <ul>
+                          {v.commits.map((c) => (
+                            <li key={`${c.at}-${c.title}`} className="flex gap-2">
+                              <span className="flex-none tabular-nums text-muted">{day(c.at)}</span>
+                              <span className="min-w-0 break-words text-ink-2">{c.title}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                      {extra > 0 && (
+                        <ul>
+                          {v.changes.slice(0, 50).map((c) => (
+                            <li key={c.path} className="flex gap-2">
+                              <span className="w-8 flex-none text-muted">
+                                {c.kind === 'added' ? t('新增') : c.kind === 'deleted' ? t('删了') : t('改过')}
+                              </span>
+                              <span className="min-w-0 break-all font-mono text-ink-2">{c.path}</span>
+                            </li>
+                          ))}
+                          {extra > 50 && <li className="text-muted">{t('还有 {n} 个', { n: extra - 50 })}</li>}
+                        </ul>
+                      )}
+                    </div>
+                  )}
+                </>
+              ) : (
+                <p className="text-[11px] text-muted">{t('没有别的改动')}</p>
+              ),
+            )}
+
+            {row(
+              'SPOOL.md',
+              <>
+                <div className="flex flex-wrap items-baseline gap-x-2 text-[11px]">
+                  <button
+                    type="button"
+                    className={link}
+                    onClick={() => void openTarget(`${v.path}/SPOOL.md`).catch((e) => toast.error(String(e)))}
+                  >
+                    {t('打开')}
+                  </button>
+                  <span className="text-muted">·</span>
+                  <button type="button" className={link} onClick={() => setDialog({ kind: 'pointers' })}>
+                    {t('让 AI 读到它')}
+                  </button>
+                </div>
+                {v.protocol === 'edited' && (
+                  <p className="text-[11px]" style={ATTENTION}>
+                    {t('SPOOL.md 里 Spool 那一段你改过，项目有变化时 Spool 先不覆盖。')}{' '}
+                    <button type="button" className="text-accent hover:underline" onClick={() => setDialog({ kind: 'diff' })}>
+                      {t('看差别')}
+                    </button>
+                  </p>
+                )}
+                {(v.protocol === 'removed' || v.protocol === 'missing') && (
+                  <p className="text-[11px] text-muted">
+                    {v.protocol === 'missing' ? t('文件夹里没有 SPOOL.md 了。') : t('SPOOL.md 里没有 Spool 那一段了。')}{' '}
+                    <button
+                      type="button"
+                      className="text-accent hover:underline"
+                      onClick={() =>
+                        void rewriteProtocol(v.workspaceId)
+                          .then(() => reloadAll())
+                          .catch((e) => toast.error(folderError(e)))
+                      }
+                    >
+                      {t('重新写一份')}
+                    </button>
+                  </p>
+                )}
+              </>,
+            )}
+
+            {v.primaryTitle &&
+              row(
+                t('主项目'),
+                <p className="truncate text-ink-2" title={t('在这个文件夹里工作的 AI 默认写回这个项目')}>
+                  {v.primaryTitle}
+                </p>,
+              )}
+          </>
+        )}
+      </dl>
 
       {menu && (
-        <div className="flex flex-wrap gap-x-3 gap-y-0.5 border-t border-line pt-1 text-[11px]">
+        <div className="mt-2.5 flex flex-wrap gap-x-3 gap-y-0.5 border-t border-line pt-1.5 text-[11px]">
           {!lost && (
             <button
               type="button"
