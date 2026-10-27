@@ -10785,10 +10785,9 @@ const WEEKLY_API_SYSTEM: &str = r#"你在帮用户做一次跨项目回顾。用
    也读不到没发给你的块 —— 材料里看不出来的就明说看不出来，⛔ 绝不编，
    ⛔ 也不要说「我去查一下」或者建议自己再读点什么。
 5. 全程用项目标题称呼项目，⛔ 绝不把 id 写进去。
-6. {rule}
-7. {lang}
+6. {rule}{lang_item}
 
-{json}"#;
+{json}{lang_tail}"#;
 
 /// P10 —— 周回顾回什么。⚠️ 两条路（API 一发、本机 CLI）共用这一段，字段名就是
 /// `weekly_review.rs` 读的那几个；改一边忘了另一边，就是一条路的回顾整次读不成。
@@ -10857,12 +10856,21 @@ fn weekly_lang_rule() -> &'static str {
 /// P10 验收第一轮（Ocean 2026-10-27）：第三段「还开着的跟进」—— 每个项目还开着的跟进行，周回顾凭它提
 /// 「关掉这条跟进」，也凭它不再提重复的新跟进。⚠️ 返回的第三样是**引文能出自的那一段**（历史 + 这一周
 /// 新加的），⛔ 不含跟进那一段：「回答了这条跟进」的依据必须是材料里的一句话，不能是这条跟进自己。
+///
+/// P12-5 第二轮（Ocean 2026-10-27 第 235 条）：英文界面下一句英文夹在一份中文 system 里，DeepSeek 3 次里 2 次
+/// 照样整份写中文 ⇒ 英文界面下「回什么」那一段发英文那一份（CLI 那条英文界面本来就发它），语言那一句放到
+/// 最后、离回答最近。⛔ 中文界面发出去的和这之前一字不差。
 pub fn weekly_messages_for_api(digest: &str, fresh: &str, follow_ups: &str) -> (String, String, String) {
+    let (json, lang_item, lang_tail) = match lang() {
+        Lang::Zh => (WEEKLY_JSON_ZH, format!("\n7. {}", weekly_lang_rule()), String::new()),
+        Lang::En => (WEEKLY_JSON_EN, String::new(), format!("\n\n{}", weekly_lang_rule())),
+    };
     let system = WEEKLY_API_SYSTEM
         .replace("{rule}", material_rule())
-        .replace("{lang}", weekly_lang_rule())
+        .replace("{lang_item}", &lang_item)
         .replace("{idle}", ts!("这一周没动", "nothing this week"))
-        .replace("{json}", WEEKLY_JSON_ZH);
+        .replace("{json}", json)
+        .replace("{lang_tail}", &lang_tail);
     let quotable = format!(
         "# 历史\n{}\n\n# 这一周新加的\n{}",
         fenced_material(digest),
@@ -15017,6 +15025,18 @@ mod tests {
         store_lang(Lang::En);
         let en = weekly_messages_for_api("D", "F", "U").0;
         assert!(en.contains("就写「nothing this week」") && !en.contains("{idle}"), "{en}");
+        // 第二轮（第 235 条）：英文界面下「回什么」是英文那一份，语言那一句在最后；中文界面和第一轮一字不差。
+        assert!(en.contains(WEEKLY_JSON_EN) && !en.contains(WEEKLY_JSON_ZH), "{en}");
+        assert!(en.ends_with(weekly_lang_rule()) && !en.contains("\n7. "), "{en}");
+        store_lang(Lang::Zh);
+        let first_round = WEEKLY_API_SYSTEM
+            .replace("{rule}", material_rule())
+            .replace("{lang_item}", "\n7. {lang}")
+            .replace("{lang}", weekly_lang_rule())
+            .replace("{idle}", "这一周没动")
+            .replace("{json}", WEEKLY_JSON_ZH)
+            .replace("{lang_tail}", "");
+        assert_eq!(weekly_messages_for_api("D", "F", "U").0, first_round);
     }
 
     // The lines between one "## " heading and the next.
