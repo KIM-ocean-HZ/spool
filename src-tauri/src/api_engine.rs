@@ -2690,9 +2690,9 @@ mod p9v_real_runs {
 // 发出去的东西和 app 一样：API 那条是 `weekly_messages_for_api` + DeepSeek 那一套参数；CLI 那条是
 // `weekly_review_headless` + `engine::codex_args`，过的都是 `weekly_structured`。
 //
-// ⚠️ CLI 那条唯一和 app 不一样的地方：MCP 服务是 `SPOOL_P10_EXE`（这次构建的 `spool`），并且
-// `SPOOL_DATA_DIR` 写进 MCP 服务自己的 env —— 引擎只给 CLI 三个环境变量（`engine::run_env`），
-// 不写进去的话 `spool --mcp` 读的是真库。
+// ⚠️ CLI 那条唯一和 app 不一样的地方：MCP 服务是 `SPOOL_P10_EXE`（这次构建的 `spool`）。
+// `SPOOL_DATA_DIR` 怎么到 MCP 服务那里，走的是 app 自己那条路（P12-4，`engine::data_dir`）——
+// P12-4 之前引擎只给 CLI 三个环境变量（`engine::run_env`），这里得自己插一行 `-c` 绕过去。
 //
 //     SPOOL_DATA_DIR=<副本> SPOOL_P10_OUT=<dir> SPOOL_P10_KEY=<key> SPOOL_P10_BASE=<url> \
 //       SPOOL_P10_MODEL=<model> SPOOL_P10_REASONING=<low|''> SPOOL_P10_TEMP=<0.2|''> [SPOOL_P10_BALANCE=1] \
@@ -2825,11 +2825,8 @@ mod p10_real_runs {
         let bin = status.path.expect("codex on this machine");
         let msg = out.join("final.txt");
         let _ = std::fs::remove_file(&msg);
-        let mut args = crate::engine::codex_args(&prompt, &exe, &msg.to_string_lossy(), false, true);
-        let positional = args.pop().unwrap();
-        args.push("-c".into());
-        args.push(format!("mcp_servers.spool.env={{SPOOL_DATA_DIR=\"{dir}\"}}"));
-        args.push(positional);
+        let args = crate::engine::codex_args(&prompt, &exe, &msg.to_string_lossy(), false, true, crate::engine::data_dir().as_deref());
+        assert!(args.iter().any(|a| a.contains(&dir)), "the copy reaches Spool's server the app's way");
         let mut cmd = std::process::Command::new(&bin);
         cmd.args(&args).env_clear();
         for (k, v) in crate::engine::run_env(crate::engine::EngineKind::Codex, std::path::Path::new(&bin)) {

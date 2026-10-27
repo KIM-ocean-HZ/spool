@@ -724,15 +724,27 @@ fn server_args(web: bool, weekly: bool) -> Vec<&'static str> {
     args
 }
 
+/// The variable that points a Spool at a library other than the default (mcp.rs `app_data_dir`).
+const DATA_DIR_VAR: &str = "SPOOL_DATA_DIR";
+
+/// P12-4 (DISCOVERED-20261027-2): the library this Spool reads, when it is not the default one. The CLI
+/// gets only the few variables `run_env` passes, and the `spool --mcp` it starts gets that CLI's — so a
+/// Spool started on `SPOOL_DATA_DIR` had an engine reading the DEFAULT library. The three configs
+/// below hand it to Spool's own server instead; unset (the app as shipped), they are what they were.
+pub(crate) fn data_dir() -> Option<String> {
+    std::env::var(DATA_DIR_VAR).ok()
+}
+
 // §2.2: the temporary --mcp-config. It registers Spool's own executable with `--mcp`,
 // i.e. exactly the server Claude Desktop is pointed at by the one-click hookup — so
 // "several processes on one library" is the model already in production, not a new risk
 // surface opened here.
-pub fn mcp_config_json(exe: &str, web: bool, weekly: bool) -> String {
-    serde_json::json!({
-        "mcpServers": { MCP_SERVER_NAME: { "command": exe, "args": server_args(web, weekly) } }
-    })
-    .to_string()
+pub fn mcp_config_json(exe: &str, web: bool, weekly: bool, data_dir: Option<&str>) -> String {
+    let mut server = serde_json::json!({ "command": exe, "args": server_args(web, weekly) });
+    if let Some(dir) = data_dir {
+        server["env"] = serde_json::json!({ DATA_DIR_VAR: dir });
+    }
+    serde_json::json!({ "mcpServers": { MCP_SERVER_NAME: server } }).to_string()
 }
 
 /// The models the user may pick, per engine (DESIGN_WORKBENCH §9.3 #3 — W3-c, promoted from
@@ -955,7 +967,7 @@ pub fn claude_args(
 //     closed — the settings page says it.
 //   * **No `--max-turns` equivalent.** The run's only ceiling is the timeout, which is
 //     enforced here anyway (clamp_timeout_secs + the kill).
-fn codex_config_overrides(exe: &str, web: bool, weekly: bool) -> Vec<String> {
+fn codex_config_overrides(exe: &str, web: bool, weekly: bool, data_dir: Option<&str>) -> Vec<String> {
     // TOML values, since `-c` parses the right-hand side as TOML. The tool list is the same
     // constant as claude's whitelist, spelled with bare names because that is what codex's
     // per-server `enabled_tools` takes (confirmed with `codex mcp get spool`, which echoed
@@ -965,7 +977,7 @@ fn codex_config_overrides(exe: &str, web: bool, weekly: bool) -> Vec<String> {
         .map(|t| format!("\"{t}\""))
         .collect::<Vec<_>>()
         .join(",");
-    vec![
+    let mut overrides = vec![
         // Headless means nobody is there to answer a prompt; without this the run can sit
         // waiting for an approval that will never come, inside a budget that is billing.
         "approval_policy=\"never\"".into(),
@@ -991,7 +1003,11 @@ fn codex_config_overrides(exe: &str, web: bool, weekly: bool) -> Vec<String> {
         // three were cancelled. ⛔ Not a reason to mark tools read-only, and ⛔ never trade
         // `--sandbox read-only` for a bypass flag to get the same effect.
         format!("mcp_servers.{MCP_SERVER_NAME}.default_tools_approval_mode=\"approve\""),
-    ]
+    ];
+    if let Some(dir) = data_dir {
+        overrides.push(format!("mcp_servers.{MCP_SERVER_NAME}.env={{{DATA_DIR_VAR}={}}}", toml_string(dir)));
+    }
+    overrides
 }
 
 /// A TOML basic string. Paths come from `current_exe()` so quotes and backslashes are not
@@ -1040,22 +1056,24 @@ const GEMINI_EXCLUDED_TOOLS: [&str; 13] = [
 /// Migrate to Policy Engine". When that lands this function must be rewritten, and until it
 /// is, a gemini upgrade can silently restore the shell tool. Stated in §7.8.6 rather than
 /// papered over.
-pub fn gemini_settings_json(exe: &str, web: bool, weekly: bool) -> String {
+pub fn gemini_settings_json(exe: &str, web: bool, weekly: bool, data_dir: Option<&str>) -> String {
     let mut excluded: Vec<&str> = GEMINI_EXCLUDED_TOOLS.to_vec();
     if !web {
         excluded.push("google_web_search");
         excluded.push("web_fetch");
     }
+    let mut server = serde_json::json!({
+        "command": exe,
+        "args": server_args(web, weekly),
+        "trust": true,
+        "includeTools": ALLOWED_TOOL_NAMES,
+    });
+    if let Some(dir) = data_dir {
+        server["env"] = serde_json::json!({ DATA_DIR_VAR: dir });
+    }
     serde_json::json!({
         "tools": { "exclude": excluded },
-        "mcpServers": {
-            MCP_SERVER_NAME: {
-                "command": exe,
-                "args": server_args(web, weekly),
-                "trust": true,
-                "includeTools": ALLOWED_TOOL_NAMES,
-            }
-        }
+        "mcpServers": { MCP_SERVER_NAME: server }
     })
     .to_string()
 }
@@ -1097,7 +1115,14 @@ pub fn gemini_args(prompt: &str, model: Option<&str>) -> Vec<String> {
 
 /// The argv for one headless `codex` run. `exe` is Spool's own binary — codex takes its MCP
 /// servers as config overrides, so there is no temp file on this path.
-pub fn codex_args(prompt: &str, exe: &str, last_message_path: &str, web: bool, weekly: bool) -> Vec<String> {
+pub fn codex_args(
+    prompt: &str,
+    exe: &str,
+    last_message_path: &str,
+    web: bool,
+    weekly: bool,
+    data_dir: Option<&str>,
+) -> Vec<String> {
     let mut args: Vec<String> = vec![
         "exec".into(),
         // Do not load ~/.codex/config.toml: the user's own MCP servers, plugins and model
@@ -1121,7 +1146,7 @@ pub fn codex_args(prompt: &str, exe: &str, last_message_path: &str, web: bool, w
         "-o".into(),
         last_message_path.into(),
     ];
-    for c in codex_config_overrides(exe, web, weekly) {
+    for c in codex_config_overrides(exe, web, weekly, data_dir) {
         args.push("-c".into());
         args.push(c);
     }
@@ -1635,7 +1660,7 @@ pub fn run_action(
     } else {
     match kind {
         EngineKind::Claude => {
-            std::fs::write(&cfg_path, mcp_config_json(&exe.to_string_lossy(), web, weekly))
+            std::fs::write(&cfg_path, mcp_config_json(&exe.to_string_lossy(), web, weekly, data_dir().as_deref()))
                 .map_err(|e| format!("could not write the MCP config: {e}"))?;
             cmd.args(claude_args(prompt, &cfg_path.to_string_lossy(), max_turns, web, model));
         }
@@ -1643,7 +1668,14 @@ pub fn run_action(
             // A leftover from a killed run would otherwise be read back as this run's
             // answer — the file is only written when the CLI has something to say.
             let _ = std::fs::remove_file(&msg_path);
-            cmd.args(codex_args(prompt, &exe.to_string_lossy(), &msg_path.to_string_lossy(), web, weekly));
+            cmd.args(codex_args(
+                prompt,
+                &exe.to_string_lossy(),
+                &msg_path.to_string_lossy(),
+                web,
+                weekly,
+                data_dir().as_deref(),
+            ));
         }
         EngineKind::Gemini => {
             // Rebuilt from scratch: a settings file left by a killed run would otherwise
@@ -1653,7 +1685,7 @@ pub fn run_action(
                 .map_err(|e| format!("could not prepare the engine's working directory: {e}"))?;
             std::fs::write(
                 work_dir.join(".gemini/settings.json"),
-                gemini_settings_json(&exe.to_string_lossy(), web, weekly),
+                gemini_settings_json(&exe.to_string_lossy(), web, weekly, data_dir().as_deref()),
             )
             .map_err(|e| format!("could not write the MCP config: {e}"))?;
             // ⚠️ The cwd IS the configuration on this path. Without it gemini reads whatever
@@ -2034,7 +2066,7 @@ mod tests {
     // config keys, so the overrides below are known-good rather than plausible.
     #[test]
     fn codex_args_isolate_the_run_from_the_users_own_config() {
-        let args = codex_args("提炼一下", "/Applications/Spool.app/Contents/MacOS/spool", "/tmp/m.txt", false, false);
+        let args = codex_args("提炼一下", "/Applications/Spool.app/Contents/MacOS/spool", "/tmp/m.txt", false, false, None);
         assert_eq!(args[0], "exec");
         // The prompt is positional and must stay last — anything after it would be read as
         // a subcommand, not a flag.
@@ -2162,7 +2194,7 @@ mod tests {
     #[test]
     fn gemini_settings_carry_both_whitelists() {
         let v: serde_json::Value =
-            serde_json::from_str(&gemini_settings_json("/Applications/Spool.app/x", false, false)).unwrap();
+            serde_json::from_str(&gemini_settings_json("/Applications/Spool.app/x", false, false, None)).unwrap();
         let server = &v["mcpServers"][MCP_SERVER_NAME];
         assert_eq!(server["command"], "/Applications/Spool.app/x");
         assert_eq!(server["args"], serde_json::json!(["--mcp", "--engine-run"]));
@@ -2184,7 +2216,7 @@ mod tests {
         // Web tools are granted per action, exactly as claude's are.
         assert!(excluded.contains(&"google_web_search"), "no web unless the action gets it");
         let web: serde_json::Value =
-            serde_json::from_str(&gemini_settings_json("/x", true, false)).unwrap();
+            serde_json::from_str(&gemini_settings_json("/x", true, false, None)).unwrap();
         let web_excluded: Vec<&str> =
             web["tools"]["exclude"].as_array().unwrap().iter().map(|x| x.as_str().unwrap()).collect();
         assert!(!web_excluded.contains(&"google_web_search"));
@@ -2403,35 +2435,73 @@ mod tests {
     // the CLI would be talking to something other than the user's library.
     #[test]
     fn mcp_config_registers_spool_itself() {
-        let json = mcp_config_json("/Applications/Spool.app/Contents/MacOS/spool", false, false);
+        let json = mcp_config_json("/Applications/Spool.app/Contents/MacOS/spool", false, false, None);
         let v: serde_json::Value = serde_json::from_str(&json).unwrap();
         let server = &v["mcpServers"]["spool"];
         assert_eq!(server["command"], "/Applications/Spool.app/Contents/MacOS/spool");
         assert_eq!(server["args"], serde_json::json!(["--mcp", "--engine-run"]));
         // P9S-6: the follow-up run (the one that searches the web) also says it is the follow-up.
         let web: serde_json::Value =
-            serde_json::from_str(&mcp_config_json("/x/spool", true, false)).unwrap();
+            serde_json::from_str(&mcp_config_json("/x/spool", true, false, None)).unwrap();
         assert_eq!(
             web["mcpServers"]["spool"]["args"],
             serde_json::json!(["--mcp", "--engine-run", "--engine-follow-up"])
         );
-        let gemini: serde_json::Value = serde_json::from_str(&gemini_settings_json("/x/spool", true, false)).unwrap();
+        let gemini: serde_json::Value = serde_json::from_str(&gemini_settings_json("/x/spool", true, false, None)).unwrap();
         assert_eq!(gemini["mcpServers"]["spool"]["args"][2], "--engine-follow-up");
-        assert!(codex_args("p", "/x/spool", "/tmp/m", true, false)
+        assert!(codex_args("p", "/x/spool", "/tmp/m", true, false, None)
             .iter()
             .any(|a| a == "mcp_servers.spool.args=[\"--mcp\",\"--engine-run\",\"--engine-follow-up\"]"));
         // P10 验收第一轮: the weekly review's server hides finished projects — all three engines say so.
         let weekly: serde_json::Value =
-            serde_json::from_str(&mcp_config_json("/x/spool", false, true)).unwrap();
+            serde_json::from_str(&mcp_config_json("/x/spool", false, true, None)).unwrap();
         assert_eq!(
             weekly["mcpServers"]["spool"]["args"],
             serde_json::json!(["--mcp", "--engine-run", "--engine-weekly"])
         );
-        let gemini: serde_json::Value = serde_json::from_str(&gemini_settings_json("/x/spool", false, true)).unwrap();
+        let gemini: serde_json::Value = serde_json::from_str(&gemini_settings_json("/x/spool", false, true, None)).unwrap();
         assert_eq!(gemini["mcpServers"]["spool"]["args"][2], "--engine-weekly");
-        assert!(codex_args("p", "/x/spool", "/tmp/m", false, true)
+        assert!(codex_args("p", "/x/spool", "/tmp/m", false, true, None)
             .iter()
             .any(|a| a == "mcp_servers.spool.args=[\"--mcp\",\"--engine-run\",\"--engine-weekly\"]"));
+    }
+
+    // P12-4（DISCOVERED-20261027-2）：Spool 开在 `SPOOL_DATA_DIR` 上时，三种引擎给 Spool 服务的那份配置都带上它；
+    // 没设（app 发出去就是这样）时和以前一字不差 —— 下面拿 P12-4 之前的写法原样拼一份比。
+    #[test]
+    fn the_library_a_spool_runs_on_reaches_the_engines_spool_server() {
+        let dir = "/Users/x/lab/com.oceanjin.spool.lab/data";
+        let claude: serde_json::Value = serde_json::from_str(&mcp_config_json("/x/spool", false, true, Some(dir))).unwrap();
+        assert_eq!(claude["mcpServers"]["spool"]["env"], serde_json::json!({ "SPOOL_DATA_DIR": dir }));
+        let gemini: serde_json::Value = serde_json::from_str(&gemini_settings_json("/x/spool", false, true, Some(dir))).unwrap();
+        assert_eq!(gemini["mcpServers"]["spool"]["env"], serde_json::json!({ "SPOOL_DATA_DIR": dir }));
+        let codex = codex_args("p", "/x/spool", "/tmp/m", false, true, Some(dir));
+        let env_at = codex.iter().position(|a| a == &format!("mcp_servers.spool.env={{SPOOL_DATA_DIR=\"{dir}\"}}")).unwrap();
+        assert_eq!(codex[env_at - 1], "-c");
+        assert_eq!(codex.last().unwrap(), "p", "the prompt stays the last, positional argument");
+
+        for (web, weekly) in [(false, false), (true, false), (false, true)] {
+            let before = serde_json::json!({
+                "mcpServers": { MCP_SERVER_NAME: { "command": "/x/spool", "args": server_args(web, weekly) } }
+            })
+            .to_string();
+            assert_eq!(mcp_config_json("/x/spool", web, weekly, None), before);
+            let mut excluded: Vec<&str> = GEMINI_EXCLUDED_TOOLS.to_vec();
+            if !web {
+                excluded.extend(["google_web_search", "web_fetch"]);
+            }
+            let before = serde_json::json!({
+                "tools": { "exclude": excluded },
+                "mcpServers": { MCP_SERVER_NAME: {
+                    "command": "/x/spool", "args": server_args(web, weekly), "trust": true, "includeTools": ALLOWED_TOOL_NAMES,
+                } }
+            })
+            .to_string();
+            assert_eq!(gemini_settings_json("/x/spool", web, weekly, None), before);
+            let overrides = codex_config_overrides("/x/spool", web, weekly, None);
+            assert_eq!(overrides.len(), 6);
+            assert!(!overrides.iter().any(|o| o.contains("SPOOL_DATA_DIR")));
+        }
     }
 
     #[test]
