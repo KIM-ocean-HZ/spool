@@ -1,7 +1,7 @@
 // P10-3 (Ocean 2026-10-26) — the buttons under a weekly review card.
 //
-// 标完成 / 改截止日期 / 加跟进行: one click and it is done, and ⌘Z takes it back (one undo entry,
-// `review_action`). 取代 / 更正: the click puts it in 待审 (第 219 条), where the user picks
+// 标完成 / 改截止日期 / 加跟进行 / 关跟进行 (验收第一轮, Ocean 2026-10-27): one click and it is done,
+// and ⌘Z takes it back (one undo entry, `review_action`). 取代 / 更正: the click puts it in 待审 (第 219 条), where the user picks
 // 更正 / 取代 / 不动 as they do for every AI suggestion of that kind — the library does not change.
 // ⛔ The AI never writes anything here: every change is a click by the user.
 //
@@ -11,7 +11,7 @@
 
 import { supersedeProposalSettled } from '@/lib/blocks/staleGuards';
 import { listBlocksByIds, type Block } from '@/lib/db/blocks';
-import { addFollowUpItem, listFollowUpItems, type FollowUpItem } from '@/lib/db/followUpItems';
+import { addFollowUpItem, closeFollowUpItem, listFollowUpItems, type FollowUpItem } from '@/lib/db/followUpItems';
 import { listPendingSupersedeProposals, queueSupersedeProposal } from '@/lib/db/supersedeProposals';
 import { setThreadCompletion, type Thread } from '@/lib/db/threads';
 import { followUpFingerprint } from '@/lib/engine/followUp';
@@ -51,7 +51,8 @@ export interface ActionContext {
 export const loadActionContext = async (review: WeeklyReview, now: number): Promise<ActionContext> => {
   const actions = review.projects.flatMap((p) => p.actions.map((a) => ({ threadId: p.threadId, a })));
   const followUps = new Map<string, FollowUpItem[]>();
-  for (const id of new Set(actions.filter((x) => x.a.kind === 'add_follow_up').map((x) => x.threadId))) {
+  const lines = actions.filter((x) => x.a.kind === 'add_follow_up' || x.a.kind === 'close_follow_up');
+  for (const id of new Set(lines.map((x) => x.threadId))) {
     if (id) followUps.set(id, await listFollowUpItems(id));
   }
   const pairs = actions.filter((x) => x.a.staleBlockId && x.a.byBlockId).map((x) => x.a);
@@ -76,6 +77,11 @@ export const actionState = (a: WeeklyAction, thread: Thread, ctx: ActionContext)
       const fp = followUpFingerprint(a.text ?? '');
       const lines = ctx.followUps.get(thread.id) ?? [];
       return lines.some((i) => followUpFingerprint(i.text) === fp) ? 'applied' : 'ready';
+    }
+    case 'close_follow_up': {
+      const line = (ctx.followUps.get(thread.id) ?? []).find((i) => i.id === a.followUpId);
+      if (!line) return 'gone';
+      return line.status === 'answered' ? 'applied' : 'ready';
     }
     case 'propose_supersede':
     case 'correct': {
@@ -124,6 +130,26 @@ export const applyWeeklyAction = async (a: WeeklyAction, threadId: string, clien
       const item = id ? (await listFollowUpItems(threadId)).find((i) => i.id === id) : undefined;
       if (!item) return;
       undo.pushUndo(buildReviewActionUndo({ op: 'add_follow_up', threadId, title: thread.title, item }));
+      const followUps = useFollowUpStore.getState();
+      if (followUps.threadId === threadId) await followUps.load(threadId);
+      return;
+    }
+    case 'close_follow_up': {
+      // Closed, not deleted (§8.6): it moves under 「已经答了」 with the answer as its outcome, and
+      // the block that answered it linked when the gate found one.
+      const outcome = a.why || null;
+      const answerBlockId = a.answerBlockId ?? null;
+      await closeFollowUpItem(a.followUpId!, outcome, answerBlockId);
+      undo.pushUndo(
+        buildReviewActionUndo({
+          op: 'close_follow_up',
+          threadId,
+          title: thread.title,
+          itemId: a.followUpId!,
+          outcome,
+          answerBlockId,
+        }),
+      );
       const followUps = useFollowUpStore.getState();
       if (followUps.threadId === threadId) await followUps.load(threadId);
       return;

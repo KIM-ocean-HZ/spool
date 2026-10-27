@@ -195,7 +195,16 @@ export type ReviewActionPayload =
       doneAt: number;
     }
   | { op: 'set_deadline'; threadId: string; title: string; before: number | null; after: number }
-  | { op: 'add_follow_up'; threadId: string; title: string; item: FollowUpItem };
+  | { op: 'add_follow_up'; threadId: string; title: string; item: FollowUpItem }
+  // 验收第一轮（Ocean 2026-10-27）: a line the review closed — ⌘Z reopens it.
+  | {
+      op: 'close_follow_up';
+      threadId: string;
+      title: string;
+      itemId: string;
+      outcome: string | null;
+      answerBlockId: string | null;
+    };
 
 interface BaseEntry {
   id: string;

@@ -3,7 +3,7 @@ import type Database from '@tauri-apps/plugin-sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createBlock, type Block } from '@/lib/db/blocks';
 import { __setTestDb } from '@/lib/db/client';
-import { listFollowUpItems } from '@/lib/db/followUpItems';
+import { addFollowUpItem, listFollowUpItems } from '@/lib/db/followUpItems';
 import schemaSql from '@/lib/db/schema.sql?raw';
 import { createThread, type Thread } from '@/lib/db/threads';
 import { createWorkspace } from '@/lib/db/workspaces';
@@ -118,6 +118,31 @@ describe('周回顾的建议动作 (P10-3)', () => {
     expect(await listFollowUpItems(th.id)).toEqual([]);
     await useUndoStore.getState().redo();
     expect((await listFollowUpItems(th.id)).map((l) => l.id)).toEqual([lines[0]!.id]);
+  });
+
+  // 验收第一轮（Ocean 2026-10-27）: the review closes a line the week answered — closed, not deleted,
+  // with the answer as its outcome and the answering block linked; ⌘Z opens it again.
+  it('关跟进行: one click closes it with the answer; ⌘Z reopens it; redo closes it again', async () => {
+    const lineId = (await addFollowUpItem(th.id, '推荐人回没回', false))!;
+    const answer: Block = await createBlock({ threadId: th.id, content: '推荐人已经回信答应了。' });
+    const a = action({
+      kind: 'close_follow_up',
+      line: '推荐人回没回',
+      quote: '推荐人已经回信答应了',
+      why: '答应了',
+      followUpId: lineId,
+      answerBlockId: answer.id,
+    });
+    expect(await stateOf(a)).toBe('ready');
+    await applyWeeklyAction(a, th.id, '周回顾 · m');
+    const closed = (await listFollowUpItems(th.id))[0]!;
+    expect([closed.status, closed.outcome, closed.answerBlockId]).toEqual(['answered', '答应了', answer.id]);
+    expect(await stateOf(a)).toBe('applied');
+    await useUndoStore.getState().undo();
+    expect((await listFollowUpItems(th.id))[0]!.status).toBe('open');
+    expect(await stateOf(a)).toBe('ready');
+    await useUndoStore.getState().redo();
+    expect((await listFollowUpItems(th.id))[0]!.status).toBe('answered');
   });
 
   it('取代 / 更正: the click queues it in 待审 and changes no block', async () => {

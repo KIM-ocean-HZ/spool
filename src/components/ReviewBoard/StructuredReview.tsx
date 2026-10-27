@@ -153,6 +153,8 @@ function DroppedNote({ dropped }: { dropped: WeeklyDropped[] }) {
     quote: t('它引的原话在发过去的材料里找不到。'),
     no_project: t('它写的项目名对不上 Spool 里的项目（或者对上了不止一个）。'),
     finished: t('这个项目已经标完成了，周回顾不碰它。'),
+    no_line: t('它说的那条跟进在这个项目里找不到（或者已经关了）。'),
+    standing: t('那是一条永久跟进，周回顾不关它。'),
     no_block: t('两句原话在那个项目里找不到对应的块。'),
     same_block: t('两句原话落在同一块里。'),
     unknown_kind: t('这不是 Spool 有的那几种动作。'),
@@ -170,7 +172,7 @@ function DroppedNote({ dropped }: { dropped: WeeklyDropped[] }) {
       <ul className="mt-1.5 space-y-1.5 pl-5 text-muted">
         {dropped.map((d, i) => {
           const it = d.item;
-          const said = [it.quote, it.old_quote ?? it.oldQuote, it.new_quote ?? it.newQuote, it.text, it.did]
+          const said = [it.line, it.quote, it.old_quote ?? it.oldQuote, it.new_quote ?? it.newQuote, it.text, it.did]
             .map(str)
             .filter((s): s is string => s !== null);
           return (
@@ -239,9 +241,11 @@ function ActionItem({
           : t('截止日期设成 {date}', { date: a.date ?? '' })
         : a.kind === 'add_follow_up'
           ? t('加一条跟进：{text}', { text: a.text ?? '' })
-          : a.kind === 'propose_supersede'
-            ? t('提一次整条取代（进待审）')
-            : t('提一次更正（进待审）');
+          : a.kind === 'close_follow_up'
+            ? t('关掉这条跟进：{line}', { line: a.line ?? '' })
+            : a.kind === 'propose_supersede'
+              ? t('提一次整条取代（进待审）')
+              : t('提一次更正（进待审）');
   // Clicked here just now reads as done; found that way in the library reads as already so.
   const after: Record<string, string> = {
     applied:
@@ -253,10 +257,14 @@ function ActionItem({
           ? mine
             ? t('已加进跟进。')
             : t('跟进里已经有这一条。')
-          : t('已标完成。'),
+          : a.kind === 'close_follow_up'
+            ? mine
+              ? t('已关掉。')
+              : t('这条跟进已经关掉了。')
+            : t('已标完成。'),
     queued: t('在待审里等你。'),
     settled: t('这两块已经处理过了。'),
-    gone: t('那两块已经不在了。'),
+    gone: a.kind === 'close_follow_up' ? t('这条跟进已经不在了。') : t('那两块已经不在了。'),
   };
   const click = async (): Promise<void> => {
     if (!thread) return;

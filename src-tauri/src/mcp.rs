@@ -10801,13 +10801,14 @@ const WEEKLY_JSON_ZH: &str = r#"# 回什么
 - stuck：卡在哪、还剩什么、下一步要碰的，不超过 80 字。
 - signals：看到的信号，最多 3 条。quote 是材料里的一句原话，**逐字复制**（标点也算，数字改一个就不算）；
   why 说这句说明了什么，不超过 40 字。💭 无来源的块和 note: 行是用户自己的话，信号最高；==高亮== 是他自己划的重点。
-- actions：建议动作，最多 3 条；没有把握就写 []。kind 只许下面五种，⛔ 别发明别的：
+- actions：建议动作，最多 3 条；没有把握就写 []。kind 只许下面六种，⛔ 别发明别的：
   {"kind":"mark_done","quote":"…","why":"…"} —— 这个项目看起来已经做完了；
   {"kind":"set_deadline","date":"YYYY-MM-DD","quote":"…","why":"…"} —— 设或改这个项目的截止日期，quote 是说这个日期的那句原话；
-  {"kind":"add_follow_up","text":"…","quote":"…","why":"…"} —— 给这个项目加一条跟进问题，text 是一句要盯着的事；
+  {"kind":"add_follow_up","text":"…","quote":"…","why":"…"} —— 给这个项目加一条跟进问题，text 是一句要盯着的事；「还开着的跟进」里已经有的意思，⛔ 别再提；
+  {"kind":"close_follow_up","line":"…","quote":"…","why":"…"} —— 「还开着的跟进」里这个项目的一行，这一周的新材料已经回答了它：line 照抄那一行（不带「（永久）」），quote 是回答它的那句原话，why 用一句话写出答案；⛔ 标着「（永久）」的行永远不提关；
   {"kind":"propose_supersede","old_quote":"…","new_quote":"…","why":"…"} —— 这个项目里一块旧结论被一块新的整条取代了；
   {"kind":"correct","old_quote":"…","new_quote":"…","why":"…"} —— 旧的那块只有一处不对了，新的那块更正了它。
-  动作里的每一句引文（quote / old_quote / new_quote）都要逐字出自材料；old_quote 和 new_quote 要分别出自
+  动作里的每一句引文（quote / old_quote / new_quote）都要逐字出自「历史」或「这一周新加的」（⛔ 不是「还开着的跟进」那一段）；old_quote 和 new_quote 要分别出自
   这个项目里两块不同的块。why 不超过 40 字。这些动作只是建议，用户在 Spool 里自己点了才生效。
 - next：接下来最该先做的那一件事，一句话，建议的语气，不要命令。
 - ⛔ 引文对不上材料的，Spool 会把那一条整条丢掉 —— 宁可少提，别凑。
@@ -10825,13 +10826,14 @@ const WEEKLY_JSON_EN: &str = r#"# What to send back
 - signals: what you noticed, at most 3. quote is one sentence from the material, **copied word for word**
   (punctuation counts; one changed digit does not pass); why says what it shows, at most 25 words.
   💭 sourceless blocks and note: lines are the user's own words and the highest signal; ==highlights== are what they marked themselves.
-- actions: suggested actions, at most 3; write [] when you are not sure. kind is one of these five — ⛔ invent no other:
+- actions: suggested actions, at most 3; write [] when you are not sure. kind is one of these six — ⛔ invent no other:
   {"kind":"mark_done","quote":"…","why":"…"} — this project looks finished;
   {"kind":"set_deadline","date":"YYYY-MM-DD","quote":"…","why":"…"} — set or change this project's deadline; quote is the sentence that names the date;
-  {"kind":"add_follow_up","text":"…","quote":"…","why":"…"} — add a follow-up question to this project; text is one thing to keep watching;
+  {"kind":"add_follow_up","text":"…","quote":"…","why":"…"} — add a follow-up question to this project; text is one thing to keep watching; ⛔ never one already under "Open follow-up lines";
+  {"kind":"close_follow_up","line":"…","quote":"…","why":"…"} — this week's material answered one of this project's lines under "Open follow-up lines": line copies that line exactly (without "(standing)"), quote is the sentence that answers it, why gives the answer in one sentence; ⛔ never propose closing a line marked "(standing)";
   {"kind":"propose_supersede","old_quote":"…","new_quote":"…","why":"…"} — an older conclusion in this project was replaced wholesale by a newer block;
   {"kind":"correct","old_quote":"…","new_quote":"…","why":"…"} — only one point in the older block no longer holds, and the newer block corrects it.
-  Every quote in an action (quote / old_quote / new_quote) is copied word for word from the material; old_quote and new_quote come
+  Every quote in an action (quote / old_quote / new_quote) is copied word for word from the digest or the blocks you read (⛔ not from "Open follow-up lines"); old_quote and new_quote come
   from two different blocks of this project. why is at most 25 words. These are only suggestions — nothing happens until the user clicks one in Spool.
 - next: the one thing worth doing next, in one sentence — a suggestion, never an order.
 - ⛔ An item whose quote does not match the material is dropped whole by Spool — propose less rather than pad.
@@ -10839,14 +10841,53 @@ const WEEKLY_JSON_EN: &str = r#"# What to send back
 
 /// 周回顾（形态 C）的两段消息。⚠️ 规则整个在 `system` 里、材料在 `user` 里 ——
 /// 反过来放前缀缓存一次都命中不了（和 `compress_messages_for_api` 同一条纪律）。
-pub fn weekly_messages_for_api(digest: &str, fresh: &str) -> (String, String) {
+///
+/// P10 验收第一轮（Ocean 2026-10-27）：第三段「还开着的跟进」—— 每个项目还开着的跟进行，周回顾凭它提
+/// 「关掉这条跟进」，也凭它不再提重复的新跟进。⚠️ 返回的第三样是**引文能出自的那一段**（历史 + 这一周
+/// 新加的），⛔ 不含跟进那一段：「回答了这条跟进」的依据必须是材料里的一句话，不能是这条跟进自己。
+pub fn weekly_messages_for_api(digest: &str, fresh: &str, follow_ups: &str) -> (String, String, String) {
     let system = WEEKLY_API_SYSTEM.replace("{rule}", material_rule()).replace("{json}", WEEKLY_JSON_ZH);
-    let user = format!(
+    let quotable = format!(
         "# 历史\n{}\n\n# 这一周新加的\n{}",
         fenced_material(digest),
         fenced_material(fresh)
     );
-    (system, user)
+    let user = format!("{quotable}\n\n# 还开着的跟进\n{}", fenced_material(follow_ups));
+    (system, user, quotable)
+}
+
+/// 「还开着的跟进」那一段：每个项目还开着的跟进行，按项目分组；永久跟进行带一个记号（周回顾不关它们）。
+/// ⚠️ 走调用方给的连接 —— 周回顾的那一个，私密和已完成的项目都不在里面。
+pub fn weekly_follow_ups_text(conn: &Connection) -> Result<String, String> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT t.title, f.text, f.standing
+               FROM follow_up_items f
+               JOIN threads t ON t.id = f.thread_id
+               JOIN workspaces w ON w.id = t.workspace_id
+              WHERE t.deleted_at IS NULL AND w.deleted_at IS NULL AND f.status = 'open'
+              ORDER BY t.title ASC, f.sort_order ASC, f.created_at ASC",
+        )
+        .map_err(|e| e.to_string())?;
+    let rows: Vec<(String, String, bool)> = stmt
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get::<_, i64>(2)? == 1)))
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+    if rows.is_empty() {
+        return Ok(t!("（没有还开着的跟进。）", "(No open follow-up lines.)"));
+    }
+    let mut out: Vec<String> = Vec::new();
+    let mut current: Option<&str> = None;
+    for (title, text, standing) in &rows {
+        if current != Some(title.as_str()) {
+            current = Some(title.as_str());
+            out.push(format!("\n## {}", if title.is_empty() { untitled() } else { title }));
+        }
+        let mark = if *standing { ts!("（永久）", "(standing) ") } else { "" };
+        out.push(format!("- {mark}{text}"));
+    }
+    Ok(out.join("\n").trim_start().to_string())
 }
 
 /// 「这一周新加的」那一段：窗口内新写进去的块，按项目分组，⛔ 不含历史。
@@ -10941,7 +10982,7 @@ pub fn weekly_fresh_blocks_text(
 /// ⚠️ 自己开库，⛔ 不从前端接材料 —— 和 `stale_scan_via_api` 那条路不一样。
 /// 那一条接的是**一个项目**的 pack（前端本来就为了显示而握着它），
 /// 而这一条要的是**跨全库**的东西，前端手上没有，也不该为了发一次请求去拼一份。
-pub(crate) fn weekly_material_for_api(since_days: Option<i64>) -> Result<(String, String), String> {
+pub(crate) fn weekly_material_for_api(since_days: Option<i64>) -> Result<(String, String, String), String> {
     let dir = app_data_dir().ok_or_else(|| t!("无法定位 Spool 数据目录。", "Could not locate Spool's data directory."))?;
     refresh_lang(&dir);
     // P10 验收第一轮（Ocean 2026-10-27）：「已完成的项目不允许进周回顾」—— 历史和这一周的新块里都没有它们。
@@ -10950,7 +10991,8 @@ pub(crate) fn weekly_material_for_api(since_days: Option<i64>) -> Result<(String
     let days = since_days.unwrap_or(DIGEST_DEFAULT_DAYS);
     let digest = get_digest_json(&conn, None, Some(days), None, now)?;
     let fresh = weekly_fresh_blocks_text(&conn, days, now)?;
-    Ok((digest, fresh))
+    let follow_ups = weekly_follow_ups_text(&conn)?;
+    Ok((digest, fresh, follow_ups))
 }
 
 #[cfg(test)]
@@ -11286,16 +11328,17 @@ fn weekly_review_prompt_text(digest: &str, filing: &str, gate: &str) -> String {
 /// MCP 提示词，那边屏幕前有人，回顾照旧写成文字给他看 —— 在聊天窗口里甩一坨 JSON 只会更难读。
 /// ⚠️ 规则和 `WEEKLY_API_SYSTEM` 同源（哪些项目、截止日期、不许编、不写 id），差别只在这条路有
 /// get_pack / get_blocks 可以补读，以及屏幕前没有人：⛔ 不许调写入工具，动作只写进 JSON。
-fn weekly_review_json_prompt_text(digest: &str) -> String {
+fn weekly_review_json_prompt_text(digest: &str, follow_ups: &str) -> String {
     let material = fenced_material(digest);
+    let open_lines = fenced_material(follow_ups);
     let rule = material_rule();
     let json = match lang() {
         Lang::Zh => WEEKLY_JSON_ZH,
         Lang::En => WEEKLY_JSON_EN,
     };
     t!(
-        "你在帮用户做一次回顾。下面是 Spool 生成的跨项目摘要(digest),它是这次回顾的事实来源。\n\n# Digest\n{material}\n\n# 你要做的\n1. 先读 digest 顶部的选取规则:它只包含窗口内每个项目最新几块加全部置顶,不是全部记录。要展开某个项目,先用 get_pack / get_blocks 补读,再下判断。\n2. 哪些项目各占一项:digest「近期活跃」里的每一个;另外,只在「截止日期」一节或末尾置顶锚点里出现、而「近期活跃」里没有的,也各占一项,did 写「这一周没动」。其余项目不要列。⛔ 已经标完成的项目不进周回顾:digest 里没有它们,你也读不到,别去找、别写进 JSON。\n3. ⚠️ 截止日期以 digest 顶部「截止日期」一节为准。别自己算日期,更别把块正文里随手写的日期当成项目的截止日期——只有材料里有一句话明确说这个项目的截止日期定了或改了,才提 set_deadline。\n4. digest 和你补读到的东西里看不出来的就说看不出来,绝不编。\n5. 这一次是 Spool 在后台替用户跑的,屏幕前没有人。⚠️ 不要在结尾问「你同意吗」这类话——没有人会回答;也不要调用 add_block 或任何别的写入工具。建议动作只写进 JSON,用户在 Spool 里自己点。\n6. 全程用项目标题称呼项目,绝不把 id 写进去。\n7. {rule}\n\n{json}",
-        "You are helping the user look back over a stretch of time. Below is the cross-project digest Spool generated; it is the source of fact for this review.\n\n# Digest\n{material}\n\n# What to do\n1. Read the selection rules at the top of the digest first: it holds only the newest few blocks per project in the window plus every pinned block — not the full record. To open a project up, read more with get_pack / get_blocks before judging it.\n2. Which projects get an entry: every one under \u{201c}Recently active\u{201d}; plus any that appears only in the Deadlines section or the pinned anchors at the end and NOT under Recently active — those get an entry too, with \u{201c}nothing this week\u{201d} as did. List no other project. \u{26d4} Projects marked finished are not part of the weekly review: they are not in the digest and you cannot read them — do not look for them or put them in the JSON.\n3. \u{26a0}\u{fe0f} Deadlines come from the \u{201c}Deadlines\u{201d} section at the top of the digest. Do not work a date out yourself, and never read a date mentioned inside a block as the project's deadline — propose set_deadline only when a sentence in the material plainly says this project's deadline was set or moved.\n4. If neither the digest nor what you read shows something, say so. Never invent.\n5. Spool ran this for the user in the background; nobody is at the screen. \u{26a0}\u{fe0f} Do not close by asking whether they agree — no one is there to answer — and do not call add_block or any other write tool. Suggested actions go into the JSON only; the user clicks them in Spool.\n6. Refer to projects by title throughout. Never write an id.\n7. {rule}\n\n{json}"
+        "你在帮用户做一次回顾。下面是 Spool 生成的跨项目摘要(digest),它是这次回顾的事实来源。\n\n# Digest\n{material}\n\n# 还开着的跟进\n{open_lines}\n\n# 你要做的\n1. 先读 digest 顶部的选取规则:它只包含窗口内每个项目最新几块加全部置顶,不是全部记录。要展开某个项目,先用 get_pack / get_blocks 补读,再下判断。\n2. 哪些项目各占一项:digest「近期活跃」里的每一个;另外,只在「截止日期」一节或末尾置顶锚点里出现、而「近期活跃」里没有的,也各占一项,did 写「这一周没动」。其余项目不要列。⛔ 已经标完成的项目不进周回顾:digest 里没有它们,你也读不到,别去找、别写进 JSON。\n3. ⚠️ 截止日期以 digest 顶部「截止日期」一节为准。别自己算日期,更别把块正文里随手写的日期当成项目的截止日期——只有材料里有一句话明确说这个项目的截止日期定了或改了,才提 set_deadline。\n4. digest 和你补读到的东西里看不出来的就说看不出来,绝不编。\n5. 这一次是 Spool 在后台替用户跑的,屏幕前没有人。⚠️ 不要在结尾问「你同意吗」这类话——没有人会回答;也不要调用 add_block 或任何别的写入工具。建议动作只写进 JSON,用户在 Spool 里自己点。\n6. 全程用项目标题称呼项目,绝不把 id 写进去。\n7. {rule}\n\n{json}",
+        "You are helping the user look back over a stretch of time. Below is the cross-project digest Spool generated; it is the source of fact for this review.\n\n# Digest\n{material}\n\n# Open follow-up lines\n{open_lines}\n\n# What to do\n1. Read the selection rules at the top of the digest first: it holds only the newest few blocks per project in the window plus every pinned block — not the full record. To open a project up, read more with get_pack / get_blocks before judging it.\n2. Which projects get an entry: every one under \u{201c}Recently active\u{201d}; plus any that appears only in the Deadlines section or the pinned anchors at the end and NOT under Recently active — those get an entry too, with \u{201c}nothing this week\u{201d} as did. List no other project. \u{26d4} Projects marked finished are not part of the weekly review: they are not in the digest and you cannot read them — do not look for them or put them in the JSON.\n3. \u{26a0}\u{fe0f} Deadlines come from the \u{201c}Deadlines\u{201d} section at the top of the digest. Do not work a date out yourself, and never read a date mentioned inside a block as the project's deadline — propose set_deadline only when a sentence in the material plainly says this project's deadline was set or moved.\n4. If neither the digest nor what you read shows something, say so. Never invent.\n5. Spool ran this for the user in the background; nobody is at the screen. \u{26a0}\u{fe0f} Do not close by asking whether they agree — no one is there to answer — and do not call add_block or any other write tool. Suggested actions go into the JSON only; the user clicks them in Spool.\n6. Refer to projects by title throughout. Never write an id.\n7. {rule}\n\n{json}"
     )
 }
 
@@ -11306,7 +11349,7 @@ pub fn weekly_review_headless() -> Result<(String, String), String> {
     // P10 验收第一轮：已完成的项目不进周回顾 —— digest 里就没有它们。
     let prompt = prompt_body_on(open_db_weekly, |_, conn| {
         digest = get_digest_json(conn, None, None, None, now_ms())?;
-        Ok(weekly_review_json_prompt_text(&digest))
+        Ok(weekly_review_json_prompt_text(&digest, &weekly_follow_ups_text(conn)?))
     })?;
     Ok((prompt, digest))
 }
@@ -11335,6 +11378,18 @@ impl crate::weekly_review::Library for WeeklyGateLibrary {
             return Vec::new();
         };
         stmt.query_map([thread_id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+            .map(|rows| rows.flatten().collect())
+            .unwrap_or_default()
+    }
+
+    fn follow_ups(&self, thread_id: &str) -> Vec<(String, String, bool)> {
+        let Ok(mut stmt) = self.0.prepare(
+            "SELECT id, text, standing FROM follow_up_items WHERE thread_id = ?1 AND status = 'open'
+              ORDER BY sort_order ASC, created_at ASC",
+        ) else {
+            return Vec::new();
+        };
+        stmt.query_map([thread_id], |r| Ok((r.get(0)?, r.get(1)?, r.get::<_, i64>(2)? == 1)))
             .map(|rows| rows.flatten().collect())
             .unwrap_or_default()
     }
@@ -13782,10 +13837,13 @@ mod tests {
         assert!(quiet.contains("没有任何项目新加过块"), "{quiet}");
 
         // ③ 摆放位置就是钱：规则整个在 system 里，材料在 user 里。
-        let (system, user) = weekly_messages_for_api("DIGEST-BODY", "FRESH-BODY");
+        let (system, user, quotable) = weekly_messages_for_api("DIGEST-BODY", "FRESH-BODY", "FU-BODY");
         assert!(!system.contains("DIGEST-BODY"), "digest 漏进了缓存前缀");
         assert!(!system.contains("FRESH-BODY"), "本周材料漏进了缓存前缀");
-        assert!(user.contains("DIGEST-BODY") && user.contains("FRESH-BODY"));
+        assert!(user.contains("DIGEST-BODY") && user.contains("FRESH-BODY") && user.contains("FU-BODY"));
+        // 验收第一轮：跟进那一段发出去，但引文不能出自它 —— 闸拿的那一份里没有它。
+        assert!(quotable.contains("DIGEST-BODY") && quotable.contains("FRESH-BODY") && !quotable.contains("FU-BODY"));
+        assert!(user.starts_with(&quotable));
         assert!(system.contains(MATERIAL_OPEN), "围栏规则要和规则住在一起");
         // ⛔ 这条路没有 MCP。提示词必须说清「你没有工具」——
         // 一个被要求去调不存在的工具的模型，会开始编它本该去读的东西。
@@ -14853,7 +14911,7 @@ mod tests {
     #[test]
     fn headless_review_asks_nobody_for_a_yes() {
         store_lang(Lang::Zh);
-        let headless = weekly_review_json_prompt_text("D");
+        let headless = weekly_review_json_prompt_text("D", "U");
         assert!(headless.contains("没有人会回答"), "{headless}");
         assert!(headless.contains("不要调用 add_block 或任何别的写入工具"), "{headless}");
         assert!(!headless.contains("他点头之后"), "{headless}");
@@ -14884,15 +14942,15 @@ mod tests {
     #[test]
     fn weekly_prompts_ask_for_the_same_json_on_both_roads() {
         store_lang(Lang::Zh);
-        let (api, _) = weekly_messages_for_api("D", "F");
+        let (api, _, _) = weekly_messages_for_api("D", "F", "U");
         assert!(!api.contains("`## `"), "{api}");
         let mut prompts = vec![("api", api)];
         for lang in [Lang::Zh, Lang::En] {
             store_lang(lang);
-            prompts.push(("cli", weekly_review_json_prompt_text("D")));
+            prompts.push(("cli", weekly_review_json_prompt_text("D", "U")));
         }
         for (road, p) in &prompts {
-            for field in ["\"projects\"", "\"title\"", "\"did\"", "\"stuck\"", "\"signals\"", "\"quote\"", "\"why\"", "\"actions\"", "\"next\"", "\"date\"", "\"text\"", "\"old_quote\"", "\"new_quote\""] {
+            for field in ["\"projects\"", "\"title\"", "\"did\"", "\"stuck\"", "\"signals\"", "\"quote\"", "\"why\"", "\"actions\"", "\"next\"", "\"date\"", "\"text\"", "\"old_quote\"", "\"new_quote\"", "\"line\""] {
                 assert!(p.contains(field), "{road} 少了 {field}: {p}");
             }
             for kind in crate::weekly_review::ACTION_KINDS {
@@ -18971,8 +19029,10 @@ mod tests {
         TEST_DATA_DIR.with(|d| *d.borrow_mut() = Some(dir.clone()));
         let material = weekly_material_for_api(Some(90));
         TEST_DATA_DIR.with(|d| *d.borrow_mut() = None);
-        let (digest, fresh) = material.unwrap();
-        let (system, user) = weekly_messages_for_api(&digest, &fresh);
+        let (digest, fresh, follow_ups) = material.unwrap();
+        let (system, user, _) = weekly_messages_for_api(&digest, &fresh, &follow_ups);
+        // 验收第一轮：跟进那一段也是材料 —— 公开项目的跟进行在，私密项目的不在（下面的金丝雀）。
+        assert!(user.contains("Frost date this year"), "{user}");
         // The public project is in it — so an empty answer cannot pass for a filtered one.
         assert!(user.contains("Garden notes") && user.contains("lighthouse"), "{user}");
         for text in [&digest, &fresh, &system, &user] {
@@ -19004,8 +19064,8 @@ mod tests {
         .unwrap();
         drop(conn);
         TEST_DATA_DIR.with(|d| *d.borrow_mut() = Some(dir.clone()));
-        let (digest, fresh) = weekly_material_for_api(Some(90)).unwrap();
-        let (_, user) = weekly_messages_for_api(&digest, &fresh);
+        let (digest, fresh, follow_ups) = weekly_material_for_api(Some(90)).unwrap();
+        let (_, user, _) = weekly_messages_for_api(&digest, &fresh, &follow_ups);
         let (headless, _) = weekly_review_headless().unwrap();
         let chat = guidance_text("weekly_review", &json!({ "since_days": 90 })).unwrap();
         let call = |name: &str, args: Value| match handle_request("tools/call", &json!({ "name": name, "arguments": args })) {

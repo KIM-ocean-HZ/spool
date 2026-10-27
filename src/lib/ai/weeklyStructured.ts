@@ -10,7 +10,14 @@
 
 export const WEEKLY_FORMAT = 'spool-weekly-1';
 
-export type ActionKind = 'mark_done' | 'set_deadline' | 'add_follow_up' | 'propose_supersede' | 'correct';
+export type ActionKind =
+  | 'mark_done'
+  | 'set_deadline'
+  | 'add_follow_up'
+  | 'propose_supersede'
+  | 'correct'
+  // 验收第一轮（Ocean 2026-10-27）：周回顾也能关掉一条跟进行。
+  | 'close_follow_up';
 
 export interface WeeklySignal {
   /** ⛔ Shown exactly as stored — it passed the gate byte for byte. */
@@ -35,6 +42,11 @@ export interface WeeklyAction {
   /** The two blocks the quotes were found in (propose_supersede / correct). */
   staleBlockId: string | null;
   byBlockId: string | null;
+  /** close_follow_up: the line as the model copied it, the open line it matched, and the block that
+   *  answers it (null when none of the project's blocks holds the quote). */
+  line?: string | null;
+  followUpId?: string | null;
+  answerBlockId?: string | null;
   retyped: boolean;
 }
 

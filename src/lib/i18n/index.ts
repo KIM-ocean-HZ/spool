@@ -2318,4 +2318,10 @@ const EN: Record<string, string> = {
   '已改好。': 'Done.',
   '已加进跟进。': 'Added to follow-ups.',
   '这个项目已经标完成了，周回顾不碰它。': 'This project is marked done; the weekly review leaves it alone.',
+  '关掉这条跟进：{line}': 'Close this follow-up: {line}',
+  '已关掉。': 'Closed.',
+  '这条跟进已经关掉了。': 'This follow-up is already closed.',
+  '这条跟进已经不在了。': 'This follow-up is no longer there.',
+  '它说的那条跟进在这个项目里找不到（或者已经关了）。': 'The follow-up it named is not open in this project (or was already closed).',
+  '那是一条永久跟进，周回顾不关它。': 'That is a standing follow-up; the weekly review does not close it.',
 };

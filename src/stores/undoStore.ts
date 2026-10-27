@@ -7,7 +7,13 @@ import {
   setAttachmentSuperseded,
 } from '@/lib/db/attachments';
 import { restoreImagePlaces } from '@/lib/db/blockImages';
-import { deleteFollowUpItem, listFollowUpItems, restoreFollowUpItem } from '@/lib/db/followUpItems';
+import {
+  closeFollowUpItem,
+  deleteFollowUpItem,
+  listFollowUpItems,
+  reopenFollowUpItem,
+  restoreFollowUpItem,
+} from '@/lib/db/followUpItems';
 import { restoreFileIdentities } from '@/lib/files/locate';
 import { imageLinesAsText } from '@/lib/blocks/imageLines';
 import { t } from '@/lib/i18n';
@@ -532,6 +538,11 @@ const reverseAndBuildRedo = async (
             await restoreFollowUpItem(live);
           };
         }
+        case 'close_follow_up':
+          await reopenFollowUpItem(p.itemId);
+          return async () => {
+            await closeFollowUpItem(p.itemId, p.outcome, p.answerBlockId);
+          };
       }
     }
   }

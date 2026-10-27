@@ -22,9 +22,10 @@ use serde_json::Value;
 /// 存进 `engine_runs.result_text` 时的记号 —— 前端靠它分辨「结构化的」和「以前那种一段文字」。
 pub const FORMAT: &str = "spool-weekly-1";
 
-/// 建议动作只有这几种（任务书 §1：Spool 已有的那四件，取代 / 更正是第四件的两种说法）。
-/// ⛔ 不加新的种类。
-pub const ACTION_KINDS: [&str; 5] = ["mark_done", "set_deadline", "add_follow_up", "propose_supersede", "correct"];
+/// 建议动作只有这几种（任务书 §1：Spool 已有的那四件，取代 / 更正是第四件的两种说法；
+/// 验收第一轮 Ocean 10-27 加了第五件「关掉这条跟进」）。⛔ 没有 Ocean 点头不加新的种类。
+pub const ACTION_KINDS: [&str; 6] =
+    ["mark_done", "set_deadline", "add_follow_up", "propose_supersede", "correct", "close_follow_up"];
 
 #[derive(Serialize, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -66,7 +67,7 @@ pub struct Action {
     /// `ACTION_KINDS` 里的一个。
     pub kind: String,
     pub why: String,
-    /// 标完成 / 改截止日期 / 加跟进行的依据。取代 / 更正没有这一项（两句引文就是依据）。
+    /// 标完成 / 改截止日期 / 加跟进行 / 关跟进行的依据。取代 / 更正没有这一项（两句引文就是依据）。
     pub quote: Option<String>,
     /// `set_deadline`：YYYY-MM-DD。
     pub date: Option<String>,
@@ -78,6 +79,10 @@ pub struct Action {
     /// 取代 / 更正对上的两块（P10-2 填）。
     pub stale_block_id: Option<String>,
     pub by_block_id: Option<String>,
+    /// `close_follow_up`：模型抄的那一行跟进；对上的那一行（闸填）；回答它的那一块（找得到才有）。
+    pub line: Option<String>,
+    pub follow_up_id: Option<String>,
+    pub answer_block_id: Option<String>,
     pub retyped: bool,
 }
 
@@ -168,6 +173,9 @@ fn action_of(v: &Value) -> Result<Action, &'static str> {
         new_quote: None,
         stale_block_id: None,
         by_block_id: None,
+        line: None,
+        follow_up_id: None,
+        answer_block_id: None,
         retyped: false,
     };
     match kind {
@@ -200,6 +208,13 @@ fn action_of(v: &Value) -> Result<Action, &'static str> {
                     return Err("missing_field");
                 }
                 a.text = Some(text);
+            }
+            if kind == "close_follow_up" {
+                let line = prose(v, "line");
+                if line.is_empty() {
+                    return Err("missing_field");
+                }
+                a.line = Some(line);
             }
         }
     }
@@ -259,6 +274,8 @@ pub trait Library {
     fn threads(&self) -> Vec<(String, String, String, bool)>;
     /// 一个项目里的块：（id, 正文, 批注），按写进去的先后排。
     fn blocks(&self, thread_id: &str) -> Vec<(String, String, Option<String>)>;
+    /// 一个项目里还开着的跟进行：（id, 正文, 永久）。
+    fn follow_ups(&self, thread_id: &str) -> Vec<(String, String, bool)>;
 }
 
 /// 模型写的标题 → 哪个项目。整串对得上就是它；对不上，再看「工作区 / 项目」（digest「近期活跃」
@@ -352,6 +369,25 @@ pub fn gate(review: Review, material: &str, lib: &dyn Library, read_more: bool) 
                 continue;
             }
             a.retyped = verdicts.contains(&Some(true));
+            // 验收第一轮：关跟进行 —— 抄的那一行要对得上这个项目里一行还开着的（去掉首尾空白逐字比），
+            // ⛔ 永久跟进行不关；回答它的那一块找得到就记下（跟进面板上「已经答了」那一行连过去）。
+            if let Some(line) = &a.line {
+                let lines = lib.follow_ups(&thread_id);
+                let Some((id, _, standing)) = lines.iter().find(|(_, text, _)| text.trim() == line.trim()) else {
+                    dropped.push(Dropped { project: p.title.clone(), what: "action", reason: "no_line", item: item(&a) });
+                    continue;
+                };
+                if *standing {
+                    dropped.push(Dropped { project: p.title.clone(), what: "action", reason: "standing", item: item(&a) });
+                    continue;
+                }
+                a.follow_up_id = Some(id.clone());
+                a.answer_block_id = a
+                    .quote
+                    .as_deref()
+                    .and_then(|q| blocks.iter().rev().find(|b| passes(q, &b.1).is_some()))
+                    .map(|b| b.0.clone());
+            }
             if let (Some(old), Some(new)) = (&a.old_quote, &a.new_quote) {
                 match find_pair(old, new, &blocks) {
                     Ok((stale, by)) => {
@@ -503,6 +539,12 @@ mod tests {
                 .map(|b| (b.1.to_string(), b.2.to_string(), b.3.map(str::to_string)))
                 .collect()
         }
+        fn follow_ups(&self, thread_id: &str) -> Vec<(String, String, bool)> {
+            if thread_id != "t1" {
+                return Vec::new();
+            }
+            vec![("f1".into(), "  推荐人回没回  ".into(), false), ("f2".into(), "各校截止日期有没有变".into(), true)]
+        }
     }
 
     fn lib() -> Lib {
@@ -598,6 +640,30 @@ mod tests {
         assert_eq!((a.stale_block_id.as_deref(), a.by_block_id.as_deref()), (Some("b2"), Some("b3")));
         assert_eq!(act("加了两所保底", "加了两所保底").dropped[0].reason, "same_block");
         assert_eq!(act("材料里有块里没有的一句", "一共申请十六所").dropped[0].reason, "no_block");
+    }
+
+    // 验收第一轮（Ocean 10-27）：关跟进行 —— 对上一行还开着的才留；永久跟进行不关；回答它的那一块记下来；
+    // 依据照样过逐字闸。
+    #[test]
+    fn closing_a_follow_up_needs_a_real_open_line_and_a_real_answer() {
+        let material = "新结论：一共申请十六所，加了两所保底。推荐人已经回信答应了。";
+        let act = |line: &str, quote: &str| {
+            one(
+                &format!(r#"{{"title":"申请规划","actions":[{{"kind":"close_follow_up","line":"{line}","quote":"{quote}","why":"答应了"}}]}}"#),
+                material,
+                false,
+            )
+        };
+        let r = act("推荐人回没回", "加了两所保底");
+        let a = &r.projects[0].actions[0];
+        assert_eq!(a.follow_up_id.as_deref(), Some("f1"));
+        assert_eq!(a.answer_block_id.as_deref(), Some("b2"));
+        assert_eq!(act("推荐人回了没有", "加了两所保底").dropped[0].reason, "no_line");
+        assert_eq!(act("各校截止日期有没有变", "加了两所保底").dropped[0].reason, "standing");
+        assert_eq!(act("推荐人回没回", "推荐人回没回").dropped[0].reason, "quote");
+        // No answering block among this project's blocks: still closes, just without the link.
+        assert_eq!(act("推荐人回没回", "推荐人已经回信答应了").projects[0].actions[0].answer_block_id, None);
+        assert_eq!(parse(r#"{"projects":[{"title":"A","actions":[{"kind":"close_follow_up","quote":"x","why":"y"}]}]}"#).unwrap().dropped[0].reason, "missing_field");
     }
 
     // 本机 CLI 能补读：只在块里（不在 digest 里）的引文，CLI 那条算数、API 那条不算。

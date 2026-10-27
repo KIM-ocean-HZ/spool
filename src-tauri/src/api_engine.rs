@@ -2032,11 +2032,11 @@ pub async fn weekly_review_via_api(
         }
         // ⚠️ 拼材料失败要当成一次失败的运行回出去，⛔ 不是 panic，也不是空材料硬发 ——
         // 空材料发出去只会换回一段编的回顾，而钱已经花了。
-        let (digest, fresh) = match crate::mcp::weekly_material_for_api(since_days) {
+        let (digest, fresh, follow_ups) = match crate::mcp::weekly_material_for_api(since_days) {
             Ok(m) => m,
             Err(e) => return CompressOutcome::failed("internal", e, None),
         };
-        let (system, user) = crate::mcp::weekly_messages_for_api(&digest, &fresh);
+        let (system, user, quotable) = crate::mcp::weekly_messages_for_api(&digest, &fresh, &follow_ups);
         let bin = match sidecar_path() {
             Ok(p) => p,
             Err(e) => return CompressOutcome::failed("no_sidecar", e, None),
@@ -2050,9 +2050,10 @@ pub async fn weekly_review_via_api(
         };
         let mut outcome = spawn_sidecar_with(&bin, payload, timeout_secs, Some(app.clone()));
         // P10-1：回来的那一段在这里读成数据，存的是读好的那一份。⛔ 读不成 = 整次失败、不交半份；
-        // 用量照留（钱已经花了，那一行要记得住）。P10-2：引文拿 `user` 比 —— 这一次发出去的材料原文。
+        // 用量照留（钱已经花了，那一行要记得住）。P10-2：引文拿这一次发出去的材料原文比（历史 + 这一周
+        // 新加的；⛔ 不含「还开着的跟进」那一段，见 `weekly_messages_for_api`）。
         if outcome.ok {
-            match crate::mcp::weekly_structured(&outcome.text, &user, false) {
+            match crate::mcp::weekly_structured(&outcome.text, &quotable, false) {
                 Ok(json) => outcome.text = json,
                 Err(e) => {
                     outcome.ok = false;
@@ -2784,8 +2785,8 @@ mod p10_real_runs {
             println!("balance {tag}: {raw}");
         };
         balance("before");
-        let (digest, fresh) = crate::mcp::weekly_material_for_api(None).unwrap();
-        let (system, user) = crate::mcp::weekly_messages_for_api(&digest, &fresh);
+        let (digest, fresh, follow_ups) = crate::mcp::weekly_material_for_api(None).unwrap();
+        let (system, user, quotable) = crate::mcp::weekly_messages_for_api(&digest, &fresh, &follow_ups);
         save(&out, "system.txt", &system);
         save(&out, "user.txt", &user);
         // The app's wire for that vendor (vendors.ts `wireFor`): openai protocol, no output cap, the
@@ -2806,7 +2807,7 @@ mod p10_real_runs {
         );
         balance("after");
         if o.ok {
-            gate(&out, &o.text, &user, false);
+            gate(&out, &o.text, &quotable, false);
         }
     }
 

@@ -50,7 +50,8 @@ const refreshAfterUndoRedo = async (entry: UndoEntry): Promise<void> => {
     case 'review_action': {
       await useThreadsStore.getState().loadAll();
       const followUps = useFollowUpStore.getState();
-      if (entry.payload.op === 'add_follow_up' && followUps.threadId === entry.payload.threadId) {
+      const op = entry.payload.op;
+      if ((op === 'add_follow_up' || op === 'close_follow_up') && followUps.threadId === entry.payload.threadId) {
         await followUps.load(entry.payload.threadId);
       }
       break;
