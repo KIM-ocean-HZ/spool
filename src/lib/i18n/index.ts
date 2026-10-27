@@ -2203,8 +2203,8 @@ const EN: Record<string, string> = {
     'Use the new one',
   '带 − 的是文件里现在的样子（你改过的），带 + 的是 Spool 现在要写的。换成新的之前，旧的会先备份。':
     'Lines with − are what the file says now (your edit); lines with + are what Spool would write. The old version is backed up before it is replaced.',
-  '这个文件挂上之后改过，Spool 已经重新读了它的文字。':
-    'This file changed after it was attached; Spool has read its text again.',
+  '这个文件挂上之后改过，Spool 已经重新读了它的文字。点开这个文件看过之后，这个标记就不再显示。':
+    'This file changed after it was attached; Spool has read its text again. Once you open the file, this mark goes away.',
   '每周自动查 · 连着的文件夹改了现状文件，先停着；点「已经对过了」就恢复':
     'Searches weekly · the linked folder changed a state file, so it is waiting; press “In sync now” to resume',
   '这个项目连着的文件夹在上次同步之后改了现状文件，自动查先停着，免得拿已经变了的计划去查。在右栏点「已经对过了」就恢复。':

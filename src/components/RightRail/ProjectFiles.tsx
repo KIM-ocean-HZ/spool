@@ -31,7 +31,7 @@ import {
   type LostAction,
   type LostWhy,
 } from '@/lib/files/fileStatus';
-import { DISMISSED_NOTICE, findSameName, type SameNameCandidate } from '@/lib/files/locate';
+import { CHANGED_NOTICE, DISMISSED_NOTICE, findSameName, type SameNameCandidate } from '@/lib/files/locate';
 import { fileLabel, openAttachment } from '@/lib/files/openFile';
 import { groupFileVersions } from '@/lib/files/versions';
 import { formatBytes, openNearestFolder } from '@/lib/pack/exportList';
@@ -367,10 +367,11 @@ export default function ProjectFiles({ threadId, isPrivate = false }: { threadId
                     </button>
                   )}
                   {/* P9Y-c: the file changed after its text was read, so Spool read it again — what the
-                      pack and every AI get is the current version. Said for as long as Spool is open. */}
-                  {reExtracted.has(a.id) && (
+                      pack and every AI get is the current version. P12-2: said until the file is opened,
+                      across restarts (the library keeps it as the file's notice). */}
+                  {(reExtracted.has(a.id) || fileStates[a.id]?.notice === CHANGED_NOTICE) && (
                     <span
-                      title={t('这个文件挂上之后改过，Spool 已经重新读了它的文字。')}
+                      title={t('这个文件挂上之后改过，Spool 已经重新读了它的文字。点开这个文件看过之后，这个标记就不再显示。')}
                       className="flex-none whitespace-nowrap text-[10.5px]"
                       style={ATTENTION}
                     >

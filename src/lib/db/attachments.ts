@@ -189,6 +189,23 @@ export const setAttachmentNotice = async (id: string, notice: string | null): Pr
   await db.execute('UPDATE attachments SET target_notice = $1 WHERE id = $2', [notice, id]);
 };
 
+// P12-2 (DISCOVERED-20261025-11): 「改过」 kept until the user opens the file. Both writes are guarded in
+// SQL — a 「已跟到新位置」 or 「知道了」 that is there is never replaced, and only this mark is cleared.
+/** True when the mark went in (nothing else was waiting to be said). */
+export const markAttachmentChanged = async (id: string, notice: string): Promise<boolean> => {
+  const db = await getDb();
+  const r = await db.execute('UPDATE attachments SET target_notice = $1 WHERE id = $2 AND target_notice IS NULL', [
+    notice,
+    id,
+  ]);
+  return r.rowsAffected > 0;
+};
+
+export const clearAttachmentChanged = async (id: string, notice: string): Promise<void> => {
+  const db = await getDb();
+  await db.execute('UPDATE attachments SET target_notice = NULL WHERE id = $1 AND target_notice = $2', [id, notice]);
+};
+
 // §20.1 forward (copy to thread): INSERT pre-built copy attachments (one multi-row, atomic
 // statement — additive only, same data-safety contract as blocks.insertBlocks). Every cached
 // field (extracted_text, extracted_at, extraction_kind, include_in_pack) is copied verbatim,

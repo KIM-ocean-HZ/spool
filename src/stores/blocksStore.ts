@@ -16,7 +16,14 @@ import {
   type ImagePlace,
 } from '@/lib/db/blockImages';
 import { addImageBytes, addImagesFromPaths, imageErrorMessage } from '@/lib/images/blockImageIo';
-import { keepFileIdentities, locateFiles, relocateFile, type FileState, type KeptIdentity } from '@/lib/files/locate';
+import {
+  CHANGED_NOTICE,
+  keepFileIdentities,
+  locateFiles,
+  relocateFile,
+  type FileState,
+  type KeptIdentity,
+} from '@/lib/files/locate';
 import { appendImageLines, remapImageIds } from '@/lib/blocks/imageLines';
 import type { Block, CreateBlockArgs, IncomingRef } from '@/lib/db/blocks';
 import { computeMergedFields } from '@/lib/db/blocks';
@@ -109,8 +116,11 @@ interface BlocksState {
    *  launch have an entry. */
   fileStates: Record<string, FileState>;
   /** P9Y-c: files whose text was extracted again in this session because the file had changed
-   *  since — the right rail marks them 「改过」. */
+   *  since — the right rail marks them 「改过」. P12-2: the mark is also kept in the library
+   *  (`target_notice`, CHANGED_NOTICE) so it outlives a restart; both go once the file is opened. */
   reExtracted: Set<string>;
+  /** P12-2: the user opened this file — its 「改过」 has been seen. */
+  fileOpened: (id: string) => Promise<void>;
   /** P9-3: look at these files of `threadId` (the right rail, a file about to open, the
    *  export list). A file that moved is followed — its `target` here is updated to match. */
   locateFiles: (threadId: string, ids: string[]) => Promise<FileState[]>;
@@ -690,6 +700,10 @@ export const useBlocksStore = create<BlocksState>((set, get) => {
           if (!a || a.kind !== 'file') continue;
           reExtracting.add(st.id);
           set((s) => ({ reExtracted: new Set(s.reExtracted).add(st.id) }));
+          // P12-2: awaited, so an open that follows this look (openAttachment) clears it after, not before.
+          if (await adb.markAttachmentChanged(st.id, CHANGED_NOTICE).catch(() => false)) {
+            byId.set(st.id, { ...st, notice: CHANGED_NOTICE });
+          }
           void extractAndStore({ ...a, target: st.path }, false).finally(() => reExtracting.delete(st.id));
         }
       }
@@ -725,6 +739,24 @@ export const useBlocksStore = create<BlocksState>((set, get) => {
         const st = s.fileStates[id];
         return st ? { fileStates: { ...s.fileStates, [id]: { ...st, notice } } } : s;
       });
+    },
+
+    fileOpened: async (id) => {
+      const { reExtracted, fileStates } = get();
+      if (reExtracted.has(id)) {
+        set((s) => {
+          const next = new Set(s.reExtracted);
+          next.delete(id);
+          return { reExtracted: next };
+        });
+      }
+      if (fileStates[id]?.notice === CHANGED_NOTICE) {
+        await adb.clearAttachmentChanged(id, CHANGED_NOTICE);
+        set((s) => {
+          const st = s.fileStates[id];
+          return st ? { fileStates: { ...s.fileStates, [id]: { ...st, notice: null } } } : s;
+        });
+      }
     },
 
     detach: async (attachmentId, threadId) => {

@@ -2086,20 +2086,55 @@ pub(crate) fn disconnect(conn: &Connection, workspace_id: &str, remove: bool, la
     // Its projects may now fall under a parent's folder.
     refresh_all(conn, lang, backups)?;
     if remove && path.is_dir() {
-        let kept = remove_protocol(&path, backups, &f.id)?;
-        if !kept {
-            if f.pointer_claude {
-                remove_line(&path.join("CLAUDE.md"), &[CLAUDE_POINTER], backups, &f.id)?;
-            }
-            if f.pointer_agents {
-                remove_line(&path.join("AGENTS.md"), &[AGENTS_POINTER_ZH, AGENTS_POINTER_EN], backups, &f.id)?;
-            }
-            if let (true, Some(repo)) = (f.git_exclude, Repo::find(&path)) {
-                remove_line(&repo.exclude_path(), &[repo.exclude_line(&path).as_str()], backups, &f.id)?;
-            }
-        }
+        take_out(&f, &path, backups)?;
     }
     conn.execute("DELETE FROM main.folders WHERE id = ?1", [&f.id]).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Spool's section out of the folder's SPOOL.md, and — when that leaves no SPOOL.md — the one-line
+/// writes that pointed at it (each only while it is still as Spool wrote it).
+fn take_out(f: &FolderRow, path: &Path, backups: &Path) -> Result<(), String> {
+    let kept = remove_protocol(path, backups, &f.id)?;
+    if !kept {
+        if f.pointer_claude {
+            remove_line(&path.join("CLAUDE.md"), &[CLAUDE_POINTER], backups, &f.id)?;
+        }
+        if f.pointer_agents {
+            remove_line(&path.join("AGENTS.md"), &[AGENTS_POINTER_ZH, AGENTS_POINTER_EN], backups, &f.id)?;
+        }
+        if let (true, Some(repo)) = (f.git_exclude, Repo::find(path)) {
+            remove_line(&repo.exclude_path(), &[repo.exclude_line(path).as_str()], backups, &f.id)?;
+        }
+    }
+    Ok(())
+}
+
+/// P12-2 (DISCOVERED-20261025-12): a folder whose linked workspaces were all deleted has nothing live to
+/// list, so a refresh leaves its SPOOL.md as it was — the names stay while ⌘Z can still bring them back.
+/// That ring lives in the window and starts empty, so a delete older than when the window started
+/// (`before`, ms) is final: Spool's section comes out then, as 「断开并移除」 would take it. Only where the
+/// section is still as Spool left it; the link rows stay in the library.
+pub(crate) fn forget_deleted(conn: &Connection, before: i64, backups: &Path) -> Result<(), String> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT wf.folder_id FROM workspace_folders wf LEFT JOIN workspaces w ON w.id = wf.workspace_id
+              GROUP BY wf.folder_id
+             HAVING SUM(w.id IS NOT NULL AND (w.deleted_at IS NULL OR w.deleted_at >= ?1)) = 0",
+        )
+        .map_err(|e| e.to_string())?;
+    let ids: Vec<String> = stmt
+        .query_map([before], |r| r.get(0))
+        .map_err(|e| e.to_string())?
+        .collect::<Result<_, _>>()
+        .map_err(|e| e.to_string())?;
+    for id in ids {
+        let Some(f) = folder_by_id(conn, &id)? else { continue };
+        let path = PathBuf::from(&f.path);
+        if path.is_dir() && protocol_state(&path, f.protocol_hash.as_deref()) == "ok" {
+            take_out(&f, &path, backups)?;
+        }
+    }
     Ok(())
 }
 
@@ -2312,11 +2347,14 @@ pub fn folder_privacy_changed(app: tauri::AppHandle, thread_id: String) -> Resul
     privacy_changed(&conn, &thread_id, lang, &dir)
 }
 
+/// `before` (P12-2): when the window started — what was deleted earlier can no longer be undone and
+/// leaves SPOOL.md (`forget_deleted`).
 #[tauri::command(async)]
-pub fn folder_refresh_protocols(app: tauri::AppHandle) -> Result<(), String> {
+pub fn folder_refresh_protocols(app: tauri::AppHandle, before: Option<i64>) -> Result<(), String> {
     let (lang, dir) = context()?;
     let conn = crate::images::open_library(&app)?;
-    refresh_all(&conn, lang, &dir)
+    refresh_all(&conn, lang, &dir)?;
+    before.map_or(Ok(()), |b| forget_deleted(&conn, b, &dir))
 }
 
 #[tauri::command(async)]
@@ -2843,6 +2881,68 @@ mod tests {
         assert!(md(&root).contains("FLUX 导师沟通与汇报"));
     }
 
+    // P12-2（DISCOVERED-20261025-12）：连着的工作区整个被删（工作区和它的项目同一个时间戳）。这一次打开
+    // 期间还能 ⌘Z，SPOOL.md 不动；删得比这一次打开早的撤销不了了，Spool 那一段拿掉，文件没了的话指着它的
+    // 几行也拿掉 —— 和「断开并移除」一样。用户改过的那一段、还有别的活工作区连着的文件夹，都不碰。
+    #[test]
+    fn a_workspace_deleted_before_this_launch_leaves_spool_md() {
+        let _home = crate::home_lock();
+        let backups = temp("forget-backups");
+        let delete_w2 = |conn: &Connection| {
+            conn.execute_batch(
+                "UPDATE workspaces SET deleted_at = 500 WHERE id = 'w2';
+                 UPDATE threads SET deleted_at = 500 WHERE workspace_id = 'w2';",
+            )
+            .unwrap()
+        };
+
+        let root = flux_like("forget");
+        let mut conn = library();
+        connect(&mut conn, &args("w2", &root, &[]), Lang::Zh, &backups, 1).unwrap();
+        delete_w2(&conn);
+        refresh_all(&conn, Lang::Zh, &backups).unwrap();
+        forget_deleted(&conn, 500, &backups).unwrap();
+        assert!(md(&root).contains("工作区「升学」：\n- 〈申请进度〉"), "deleted this launch: ⌘Z can still bring it back");
+        forget_deleted(&conn, 501, &backups).unwrap();
+        assert!(!root.join(PROTOCOL_FILE).exists(), "only Spool's stub was left, so the file goes");
+        assert_eq!(std::fs::read_to_string(root.join("CLAUDE.md")).unwrap(), "# local notes\n");
+        assert!(!std::fs::read_to_string(root.join(".git/info/exclude")).unwrap().contains("SPOOL.md"));
+        forget_deleted(&conn, 501, &backups).unwrap();
+        assert!(!root.join(PROTOCOL_FILE).exists(), "a second pass finds nothing to do");
+
+        // The user's own rules under the section: the file stays, and so does the line pointing at it.
+        let root = flux_like("forget-rules");
+        let mut conn = library();
+        connect(&mut conn, &args("w2", &root, &[]), Lang::Zh, &backups, 1).unwrap();
+        std::fs::write(root.join(PROTOCOL_FILE), format!("{}\n写回时用中文。\n", md(&root))).unwrap();
+        delete_w2(&conn);
+        forget_deleted(&conn, 501, &backups).unwrap();
+        let text = md(&root);
+        assert!(!text.contains("升学") && !text.contains("申请进度") && text.contains("写回时用中文。"), "{text}");
+        assert!(std::fs::read_to_string(root.join("CLAUDE.md")).unwrap().contains(CLAUDE_POINTER));
+
+        // Spool's section edited by hand: the user's, left byte for byte.
+        let root = flux_like("forget-edited");
+        let mut conn = library();
+        connect(&mut conn, &args("w2", &root, &[]), Lang::Zh, &backups, 1).unwrap();
+        std::fs::write(root.join(PROTOCOL_FILE), md(&root).replace("只是写代码", "写代码")).unwrap();
+        let edited = md(&root);
+        delete_w2(&conn);
+        forget_deleted(&conn, 501, &backups).unwrap();
+        assert_eq!(md(&root), edited);
+
+        // Another workspace still linked to the folder: the refresh already took the deleted one out.
+        let root = flux_like("forget-shared");
+        let mut conn = library();
+        connect(&mut conn, &args("w1", &root, &[]), Lang::Zh, &backups, 1).unwrap();
+        connect(&mut conn, &args("w2", &root, &[]), Lang::Zh, &backups, 2).unwrap();
+        delete_w2(&conn);
+        refresh_all(&conn, Lang::Zh, &backups).unwrap();
+        forget_deleted(&conn, 501, &backups).unwrap();
+        let text = md(&root);
+        assert!(text.contains("工作区「Flux」") && !text.contains("申请进度"), "{text}");
+    }
+
     #[test]
     fn a_missing_folder_cannot_silently_keep_a_newly_private_projects_name() {
         let _home = crate::home_lock();
@@ -3027,6 +3127,7 @@ mod tests {
     /// library and a copy of the folder. ⛔ It refuses the real library.
     ///   SPOOL_P9Y_DB=<copy>/spool.db SPOOL_P9Y_FOLDER=<folder copy> SPOOL_P9Y_WORKSPACE=<title> \
     ///   SPOOL_P9Y_STEP=connect|view|refresh|sync cargo test --lib folder_copy_acceptance -- --ignored --nocapture
+    /// P12-2: `SPOOL_P9Y_STEP=forget SPOOL_P9Y_BEFORE=<ms>` runs `forget_deleted` (the workspace is not looked up).
     #[test]
     #[ignore = "manual: needs a copy of a library and of a folder"]
     fn folder_copy_acceptance() {
@@ -3039,6 +3140,18 @@ mod tests {
         assert!(!Path::new(&db).starts_with(&real), "⛔ not the real library");
         let backups = Path::new(&db).parent().unwrap().to_path_buf();
         let mut conn = Connection::open(&db).unwrap();
+        // P12-2: a copy of a library that already links folders still points at the REAL ones, and a
+        // refresh or a forget here would write into them. Every folder must be a copy kept beside the
+        // library copy.
+        let paths: Vec<String> = conn.prepare("SELECT path FROM folders").unwrap().query_map([], |r| r.get(0)).unwrap().flatten().collect();
+        for p in paths.iter().chain([&folder]) {
+            assert!(Path::new(p).starts_with(&backups), "⛔ {p} is not a copy — repoint or remove it in the library copy first");
+        }
+        if step == "forget" {
+            forget_deleted(&conn, var("SPOOL_P9Y_BEFORE").parse().unwrap(), &backups).unwrap();
+            println!("forget done; SPOOL.md there: {}", Path::new(&folder).join(PROTOCOL_FILE).exists());
+            return;
+        }
         let ws: String = conn
             .query_row("SELECT id FROM workspaces WHERE title = ?1 AND deleted_at IS NULL", [&title], |r| r.get(0))
             .unwrap();

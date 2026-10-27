@@ -33,4 +33,6 @@ export const openAttachment = async (a: Attachment): Promise<void> => {
     return;
   }
   await openFile(st?.path ?? a.target);
+  // P12-2: opened is seen — its 「改过」 goes (DISCOVERED-20261025-11, 「标到用户打开那个文件为止」).
+  await useBlocksStore.getState().fileOpened(a.id);
 };

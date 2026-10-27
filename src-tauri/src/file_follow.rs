@@ -43,6 +43,10 @@ pub enum Notice {
     /// The user has seen that it is gone and asked not to be told again. Cleared on its own
     /// the moment the file is found again.
     Dismissed,
+    /// P12-2 (DISCOVERED-20261025-11): the file changed after its text was read, Spool read it again,
+    /// and the user has not opened it since — the right rail's 「改过」. Written and cleared by the
+    /// webview; only where nothing else is waiting to be said (a move written after it replaces it).
+    Changed,
 }
 
 fn read_notice(raw: Option<&str>) -> Option<Notice> {
@@ -847,8 +851,9 @@ mod tests {
     }
 
     #[test]
-    fn notices_are_the_two_json_shapes_the_ui_reads() {
+    fn notices_are_the_json_shapes_the_ui_reads() {
         assert_eq!(write_notice(&Notice::Dismissed), r#"{"kind":"dismissed"}"#);
+        assert_eq!(write_notice(&Notice::Changed), r#"{"kind":"changed"}"#);
         assert_eq!(
             write_notice(&Notice::Moved { from: "/Users/x/Desktop/a.pdf".into() }),
             r#"{"kind":"moved","from":"/Users/x/Desktop/a.pdf"}"#
@@ -985,5 +990,17 @@ mod tests {
         assert!(!state_of(&conn, "a1").changed);
         conn.execute("UPDATE attachments SET extracted_at = NULL, extraction_kind = NULL WHERE id = 'a1'", []).unwrap();
         assert!(!state_of(&conn, "a1").changed);
+
+        // P12-2: 「改过、还没打开看」 rides through a look at a file in place; a move written after it
+        // is what the user hears next.
+        let changed = write_notice(&Notice::Changed);
+        conn.execute("UPDATE attachments SET target_notice = ?1 WHERE id = 'a1'", [&changed]).unwrap();
+        assert_eq!(state_of(&conn, "a1").notice.as_deref(), Some(changed.as_str()));
+        assert_eq!(row(&conn, "a1").2.as_deref(), Some(changed.as_str()));
+        let moved = dir.join("plans").join("WORK_PLAN.md");
+        std::fs::create_dir_all(moved.parent().unwrap()).unwrap();
+        std::fs::rename(&f, &moved).unwrap();
+        assert_eq!(state_of(&conn, "a1").state, "moved");
+        assert_eq!(read_notice(row(&conn, "a1").2.as_deref()), Some(Notice::Moved { from: path_text(&f) }));
     }
 }

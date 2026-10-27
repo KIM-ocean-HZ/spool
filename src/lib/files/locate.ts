@@ -31,15 +31,18 @@ export interface FileState {
 }
 
 /** `target_notice`: what the user still has to hear. The shapes are file_follow.rs's `Notice`. */
-export type FileNotice = { kind: 'moved'; from: string } | { kind: 'dismissed' };
+export type FileNotice = { kind: 'moved'; from: string } | { kind: 'dismissed' } | { kind: 'changed' };
 
 export const DISMISSED_NOTICE = JSON.stringify({ kind: 'dismissed' });
+
+/** P12-2: the file changed, Spool read it again, the user has not opened it since (「改过」). */
+export const CHANGED_NOTICE = JSON.stringify({ kind: 'changed' });
 
 export const readNotice = (raw: string | null): FileNotice | null => {
   if (!raw) return null;
   try {
     const n = JSON.parse(raw) as FileNotice;
-    return n.kind === 'moved' || n.kind === 'dismissed' ? n : null;
+    return n.kind === 'moved' || n.kind === 'dismissed' || n.kind === 'changed' ? n : null;
   } catch {
     return null;
   }
