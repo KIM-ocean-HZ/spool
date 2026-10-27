@@ -204,6 +204,8 @@ async fn ai_engine_run(
             timeout_secs,
             max_turns,
             web,
+            // P10 验收第一轮: 「已完成的项目不允许进周回顾」 — its Spool server hides them.
+            digest.is_some(),
             model.as_deref(),
             effort.as_deref(),
             emit,

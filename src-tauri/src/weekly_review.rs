@@ -255,8 +255,8 @@ pub fn parse(raw: &str) -> Result<Review, ParseError> {
 
 /// 闸要知道的库里的东西 —— ⚠️ 走 AI 的视图：私密项目不在里面，所以写它的标题等于对不上。
 pub trait Library {
-    /// 还在的项目：（id, 标题, 所在工作区的标题）。
-    fn threads(&self) -> Vec<(String, String, String)>;
+    /// 还在的项目：（id, 标题, 所在工作区的标题, 已完成）。
+    fn threads(&self) -> Vec<(String, String, String, bool)>;
     /// 一个项目里的块：（id, 正文, 批注），按写进去的先后排。
     fn blocks(&self, thread_id: &str) -> Vec<(String, String, Option<String>)>;
 }
@@ -264,8 +264,8 @@ pub trait Library {
 /// 模型写的标题 → 哪个项目。整串对得上就是它；对不上，再看「工作区 / 项目」（digest「近期活跃」
 /// 那一节就这么写）。不同工作区可以有同名项目（P9-1 只管一个工作区里不重名）—— 同名两个以上、
 /// 又没写工作区，算对不上：⛔ 猜一个，就可能把动作安到别人的项目上。
-fn thread_for(title: &str, threads: &[(String, String, String)]) -> Option<String> {
-    let only = |hits: Vec<&(String, String, String)>| (hits.len() == 1).then(|| hits[0].0.clone());
+fn thread_for<'a>(title: &str, threads: &'a [(String, String, String, bool)]) -> Option<&'a (String, String, String, bool)> {
+    let only = |hits: Vec<&'a (String, String, String, bool)>| (hits.len() == 1).then(|| hits[0]);
     let exact: Vec<_> = threads.iter().filter(|t| t.1.trim() == title).collect();
     if !exact.is_empty() {
         return only(exact);
@@ -307,10 +307,17 @@ pub fn gate(review: Review, material: &str, lib: &dyn Library, read_more: bool) 
     let mut dropped = review.dropped;
     let mut projects = Vec::new();
     for mut p in review.projects {
-        let Some(thread_id) = thread_for(&p.title, &threads) else {
+        let Some((thread_id, _, _, finished)) = thread_for(&p.title, &threads) else {
             dropped.push(Dropped { project: p.title.clone(), what: "project", reason: "no_project", item: item(&p) });
             continue;
         };
+        // P10 验收第一轮（Ocean 2026-10-27）：「已完成的项目不允许进周回顾」。材料里本来就没有它们，
+        // CLI 那条的 MCP 也读不到；模型还是写了的，整项丢。
+        if *finished {
+            dropped.push(Dropped { project: p.title.clone(), what: "project", reason: "finished", item: item(&p) });
+            continue;
+        }
+        let thread_id = thread_id.clone();
         let blocks = lib.blocks(&thread_id);
         let haystack = if read_more {
             let mut h = material.to_string();
@@ -482,12 +489,12 @@ mod tests {
     // ----- P10-2 -----
 
     struct Lib {
-        threads: Vec<(&'static str, &'static str, &'static str)>,
+        threads: Vec<(&'static str, &'static str, &'static str, bool)>,
         blocks: Vec<(&'static str, &'static str, &'static str, Option<&'static str>)>,
     }
     impl Library for Lib {
-        fn threads(&self) -> Vec<(String, String, String)> {
-            self.threads.iter().map(|(a, b, c)| (a.to_string(), b.to_string(), c.to_string())).collect()
+        fn threads(&self) -> Vec<(String, String, String, bool)> {
+            self.threads.iter().map(|(a, b, c, d)| (a.to_string(), b.to_string(), c.to_string(), *d)).collect()
         }
         fn blocks(&self, thread_id: &str) -> Vec<(String, String, Option<String>)> {
             self.blocks
@@ -500,7 +507,12 @@ mod tests {
 
     fn lib() -> Lib {
         Lib {
-            threads: vec![("t1", "申请规划", "升学"), ("t2", "笔记", "升学"), ("t3", "笔记", "课程")],
+            threads: vec![
+                ("t1", "申请规划", "升学", false),
+                ("t2", "笔记", "升学", false),
+                ("t3", "笔记", "课程", false),
+                ("t4", "早就交完的申请", "升学", true),
+            ],
             blocks: vec![
                 ("t1", "b1", "旧结论：一共申请十四所。", None),
                 ("t1", "b2", "新结论：一共申请十六所，加了两所保底。", Some("这是我自己定的")),
@@ -556,6 +568,14 @@ mod tests {
             assert_eq!((r.dropped[0].what, r.dropped[0].reason), ("project", "no_project"), "{bad}");
             assert_eq!(r.dropped[0].item["title"], bad);
         }
+    }
+
+    // P10 验收第一轮：已完成的项目不进周回顾 —— 模型写了也整项丢，理由单独一种。
+    #[test]
+    fn a_finished_project_never_makes_it_into_the_review() {
+        let r = one(r#"{"title":"早就交完的申请","did":"x","signals":[{"quote":"原句","why":"a"}]}"#, "原句", true);
+        assert!(r.projects.is_empty());
+        assert_eq!((r.dropped[0].what, r.dropped[0].reason), ("project", "finished"));
     }
 
     // 取代 / 更正：两句引文在这个项目里各找一块，旧的取最早、新的取最晚，不能是同一块。

@@ -2317,4 +2317,5 @@ const EN: Record<string, string> = {
   '{p} 个项目 · {a} 条建议动作 · 点一下打开': '{p} projects · {a} suggested actions · click to open',
   '已改好。': 'Done.',
   '已加进跟进。': 'Added to follow-ups.',
+  '这个项目已经标完成了，周回顾不碰它。': 'This project is marked done; the weekly review leaves it alone.',
 };

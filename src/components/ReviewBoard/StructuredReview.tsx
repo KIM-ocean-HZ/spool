@@ -152,6 +152,7 @@ function DroppedNote({ dropped }: { dropped: WeeklyDropped[] }) {
   const why: Record<string, string> = {
     quote: t('它引的原话在发过去的材料里找不到。'),
     no_project: t('它写的项目名对不上 Spool 里的项目（或者对上了不止一个）。'),
+    finished: t('这个项目已经标完成了，周回顾不碰它。'),
     no_block: t('两句原话在那个项目里找不到对应的块。'),
     same_block: t('两句原话落在同一块里。'),
     unknown_kind: t('这不是 Spool 有的那几种动作。'),

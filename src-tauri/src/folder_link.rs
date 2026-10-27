@@ -1155,7 +1155,7 @@ fn remove_line(file: &Path, lines: &[&str], backups: &Path, folder_id: &str) -> 
 
 // ---------------------------------------------------------------------------------------------
 // The library side. ⚠️ Reads name the tables unqualified — an MCP connection shadows `threads`
-// with a view that leaves private projects out (`mcp::hide_private_projects`) — and writes name
+// with a view that leaves private projects out (`mcp::hide_projects`) — and writes name
 // `main.<table>` (an unqualified write to a shadowed table fails).
 //
 // P9Y 第二轮 (Ocean 10-25 第 210 条:「需要整个工作区直接连接到一个项目文件夹上」): what is linked to a

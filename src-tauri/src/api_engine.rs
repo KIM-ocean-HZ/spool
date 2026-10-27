@@ -166,6 +166,7 @@ fn ask_cli_inner(cli: &CliRoute, system: &str, user: &str, timeout_secs: u64) ->
         timeout_secs,
         2,
         false,
+        false,
         cli.model.as_deref(),
         cli.effort.as_deref(),
         quiet,
@@ -2823,7 +2824,7 @@ mod p10_real_runs {
         let bin = status.path.expect("codex on this machine");
         let msg = out.join("final.txt");
         let _ = std::fs::remove_file(&msg);
-        let mut args = crate::engine::codex_args(&prompt, &exe, &msg.to_string_lossy(), false);
+        let mut args = crate::engine::codex_args(&prompt, &exe, &msg.to_string_lossy(), false, true);
         let positional = args.pop().unwrap();
         args.push("-c".into());
         args.push(format!("mcp_servers.spool.env={{SPOOL_DATA_DIR=\"{dir}\"}}"));

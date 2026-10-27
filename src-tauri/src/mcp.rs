@@ -1459,6 +1459,24 @@ fn serving_follow_up() -> bool {
     std::env::args().any(|a| a == ENGINE_FOLLOW_UP_FLAG)
 }
 
+// P10 验收第一轮（Ocean 2026-10-27）：「已完成的项目不允许进周回顾」。Spool 自己的引擎跑周回顾时，它起的
+// `spool --mcp` 多带这一个 flag（engine.rs `server_args`），这个服务里 AI 的视图就把已完成的项目也藏起来
+// （`hide_projects`）—— 不只是材料里没有，CLI 用 get_pack / list_threads 自己去翻也翻不到。
+pub(crate) const ENGINE_WEEKLY_FLAG: &str = "--engine-weekly";
+
+#[cfg(test)]
+thread_local! {
+    static TEST_WEEKLY_RUN: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+fn serving_weekly() -> bool {
+    #[cfg(test)]
+    if TEST_WEEKLY_RUN.with(|e| e.get()) {
+        return true;
+    }
+    std::env::args().any(|a| a == ENGINE_WEEKLY_FLAG)
+}
+
 pub(crate) fn app_data_dir() -> Option<PathBuf> {
     #[cfg(test)]
     if let Some(dir) = TEST_DATA_DIR.with(|d| d.borrow().clone()) {
@@ -1522,10 +1540,20 @@ fn mcp_write_enabled(dir: &std::path::Path) -> bool {
 // ---------------------------------------------------------------------------------------
 
 /// What an AI connected through Spool may read: the library without its private projects
-/// (P9E, `hide_private_projects`). Every MCP read goes through here.
+/// (P9E, `hide_projects`). Every MCP read goes through here. Serving Spool's own weekly review
+/// (`--engine-weekly`), finished projects are out of sight as well.
 pub(crate) fn open_db(dir: &std::path::Path) -> Result<Connection, String> {
     let conn = open_db_whole(dir)?;
-    hide_private_projects(&conn)?;
+    hide_projects(&conn, serving_weekly())?;
+    Ok(conn)
+}
+
+/// P10 验收第一轮：what Spool's own weekly review reads (its material, on both roads, and the prompt
+/// a chat client fetches) — the AI's view without finished projects too. Ocean 2026-10-27:
+/// 「已完成的项目不允许进周回顾」.
+pub(crate) fn open_db_weekly(dir: &std::path::Path) -> Result<Connection, String> {
+    let conn = open_db_whole(dir)?;
+    hide_projects(&conn, true)?;
     Ok(conn)
 }
 
@@ -1591,28 +1619,33 @@ pub(crate) fn open_db_whole(dir: &std::path::Path) -> Result<Connection, String>
 // — see `hidden_from_ai`.
 // ⚠️ It keeps private projects out of what Spool hands an AI. It does not, and cannot, stop
 // an AI that reads this database file straight off the disk.
-fn hide_private_projects(conn: &Connection) -> Result<(), String> {
-    conn.execute_batch(
+/// `finished` (P10 验收第一轮): finished projects are out of the view too — the weekly review's.
+/// ⚠️ Only the projects themselves and what hangs off them: a reference block in a visible project
+/// that points at a finished one stays (the reference line just cannot open it), unlike a private
+/// one, whose very existence is hidden.
+fn hide_projects(conn: &Connection, finished: bool) -> Result<(), String> {
+    let seen = if finished { "private = 0 AND status != 'done'" } else { "private = 0" };
+    conn.execute_batch(&format!(
         "CREATE TEMP VIEW threads AS
-           SELECT rowid AS rowid, * FROM main.threads WHERE private = 0;
+           SELECT rowid AS rowid, * FROM main.threads WHERE {seen};
          CREATE TEMP VIEW blocks AS
            SELECT rowid AS rowid, * FROM main.blocks
-            WHERE thread_id IN (SELECT id FROM main.threads WHERE private = 0)
+            WHERE thread_id IN (SELECT id FROM main.threads WHERE {seen})
               AND NOT (kind = 'ref'
                        AND IFNULL(ref_thread_id, '') IN (SELECT id FROM main.threads WHERE private = 1));
          CREATE TEMP VIEW attachments AS
            SELECT rowid AS rowid, * FROM main.attachments
-            WHERE thread_id IN (SELECT id FROM main.threads WHERE private = 0);
+            WHERE thread_id IN (SELECT id FROM main.threads WHERE {seen});
          CREATE TEMP VIEW follow_up_items AS
            SELECT rowid AS rowid, * FROM main.follow_up_items
-            WHERE thread_id IN (SELECT id FROM main.threads WHERE private = 0);
+            WHERE thread_id IN (SELECT id FROM main.threads WHERE {seen});
          CREATE TEMP VIEW block_images AS
            SELECT rowid AS rowid, * FROM main.block_images
             WHERE block_id IN (SELECT id FROM temp.blocks);
          -- P9Y: folders are linked to WORKSPACES (v37 `workspace_folders`), and reached here only
          -- through a project the AI may see (folder_link.rs looks a project up in `threads`, this
-         -- view); what lists projects says `private = 0` itself.",
-    )
+         -- view); what lists projects says `private = 0` itself."
+    ))
     .map_err(|e| e.to_string())
 }
 
@@ -4614,7 +4647,7 @@ fn thread_resources(conn: &Connection) -> Result<Vec<Value>, String> {
 // ⚠️ v35 (P9G, 2026-10-16)：新建 `split_proposals`（AI 提议把一个项目拆成几个子项目，排队等点头），
 //   这边的 `propose_split` 往里写。
 // ⚠️ v36 (P9Y, 2026-10-25)：新表 `folders` / `folder_links`（项目连文件夹），`attachments` 加两个可空列
-//   （抽字时的大小和时间）。这边读文件夹走私密视图（`hide_private_projects`），`mark_folder_synced`
+//   （抽字时的大小和时间）。这边读文件夹走私密视图（`hide_projects`），`mark_folder_synced`
 //   写 `main.folders`。
 // ⚠️ v37 (P9Y 第二轮, 2026-10-25)：新表 `workspace_folders` —— 连到文件夹的改成工作区（项目归最近的那一层），
 //   `folder_links` 不再读。这边照旧按项目问（`thread_id`），由 folder_link.rs 找到它所在工作区的那条连接。
@@ -4681,7 +4714,7 @@ fn open_db_rw(dir: &std::path::Path) -> Result<Connection, String> {
     }
     // P9E: the write tools read as well — whether a project or block exists, what a quote is
     // checked against — and every one of those reads must see what the AI may see.
-    hide_private_projects(&conn)?;
+    hide_projects(&conn, serving_weekly())?;
     Ok(conn)
 }
 
@@ -10742,7 +10775,7 @@ const WEEKLY_API_SYSTEM: &str = r#"你在帮用户做一次跨项目回顾。用
 
 # 你要做的
 1. 哪些项目各占一项：「这一周新加的」里出现的每一个，加上「历史」的「近期活跃」和
-   「截止日期」两节里出现的每一个。其余的不要列。
+   「截止日期」两节里出现的每一个。其余的不要列。⛔ 已经标完成的项目不进周回顾（材料里也没有它们）。
 2. 每个项目的 did 以「这一周新加的」为准；那一节里没有这个项目，就写「这一周没动」。
 3. ⚠️ 截止日期以「历史」顶部「截止日期」一节为准。别自己算日期，更别把块正文里随手写的
    日期当成项目的截止日期 —— 只有材料里有一句话明确说这个项目的截止日期定了或改了，才提 set_deadline。
@@ -10911,7 +10944,8 @@ pub fn weekly_fresh_blocks_text(
 pub(crate) fn weekly_material_for_api(since_days: Option<i64>) -> Result<(String, String), String> {
     let dir = app_data_dir().ok_or_else(|| t!("无法定位 Spool 数据目录。", "Could not locate Spool's data directory."))?;
     refresh_lang(&dir);
-    let conn = open_db(&dir)?;
+    // P10 验收第一轮（Ocean 2026-10-27）：「已完成的项目不允许进周回顾」—— 历史和这一周的新块里都没有它们。
+    let conn = open_db_weekly(&dir)?;
     let now = now_ms();
     let days = since_days.unwrap_or(DIGEST_DEFAULT_DAYS);
     let digest = get_digest_json(&conn, None, Some(days), None, now)?;
@@ -11160,6 +11194,14 @@ fn resolve_thread(conn: &Connection, key: &str) -> Result<(String, String), Stri
 fn prompt_body(
     build: impl FnOnce(&std::path::Path, &Connection) -> Result<String, String>,
 ) -> Result<String, String> {
+    prompt_body_on(open_db, build)
+}
+
+/// …the same, on the connection `open` gives — the weekly review's sees no finished project.
+fn prompt_body_on(
+    open: fn(&std::path::Path) -> Result<Connection, String>,
+    build: impl FnOnce(&std::path::Path, &Connection) -> Result<String, String>,
+) -> Result<String, String> {
     let dir = app_data_dir()
         .ok_or_else(|| t!("无法定位 Spool 数据目录。", "Could not locate Spool's data directory."))?;
     if !mcp_enabled(&dir) {
@@ -11168,7 +11210,7 @@ fn prompt_body(
             "Spool's MCP service is off."
         ));
     }
-    let conn = open_db(&dir)?;
+    let conn = open(&dir)?;
     build(&dir, &conn)
 }
 
@@ -11252,8 +11294,8 @@ fn weekly_review_json_prompt_text(digest: &str) -> String {
         Lang::En => WEEKLY_JSON_EN,
     };
     t!(
-        "你在帮用户做一次回顾。下面是 Spool 生成的跨项目摘要(digest),它是这次回顾的事实来源。\n\n# Digest\n{material}\n\n# 你要做的\n1. 先读 digest 顶部的选取规则:它只包含窗口内每个项目最新几块加全部置顶,不是全部记录。要展开某个项目,先用 get_pack / get_blocks 补读,再下判断。\n2. 哪些项目各占一项:digest「近期活跃」里的每一个;另外,只在「截止日期」一节或末尾置顶锚点里出现、而「近期活跃」里没有的,也各占一项,did 写「这一周没动」。其余项目不要列。\n3. ⚠️ 截止日期以 digest 顶部「截止日期」一节为准。别自己算日期,更别把块正文里随手写的日期当成项目的截止日期——只有材料里有一句话明确说这个项目的截止日期定了或改了,才提 set_deadline。\n4. digest 和你补读到的东西里看不出来的就说看不出来,绝不编。\n5. 这一次是 Spool 在后台替用户跑的,屏幕前没有人。⚠️ 不要在结尾问「你同意吗」这类话——没有人会回答;也不要调用 add_block 或任何别的写入工具。建议动作只写进 JSON,用户在 Spool 里自己点。\n6. 全程用项目标题称呼项目,绝不把 id 写进去。\n7. {rule}\n\n{json}",
-        "You are helping the user look back over a stretch of time. Below is the cross-project digest Spool generated; it is the source of fact for this review.\n\n# Digest\n{material}\n\n# What to do\n1. Read the selection rules at the top of the digest first: it holds only the newest few blocks per project in the window plus every pinned block — not the full record. To open a project up, read more with get_pack / get_blocks before judging it.\n2. Which projects get an entry: every one under \u{201c}Recently active\u{201d}; plus any that appears only in the Deadlines section or the pinned anchors at the end and NOT under Recently active — those get an entry too, with \u{201c}nothing this week\u{201d} as did. List no other project.\n3. \u{26a0}\u{fe0f} Deadlines come from the \u{201c}Deadlines\u{201d} section at the top of the digest. Do not work a date out yourself, and never read a date mentioned inside a block as the project's deadline — propose set_deadline only when a sentence in the material plainly says this project's deadline was set or moved.\n4. If neither the digest nor what you read shows something, say so. Never invent.\n5. Spool ran this for the user in the background; nobody is at the screen. \u{26a0}\u{fe0f} Do not close by asking whether they agree — no one is there to answer — and do not call add_block or any other write tool. Suggested actions go into the JSON only; the user clicks them in Spool.\n6. Refer to projects by title throughout. Never write an id.\n7. {rule}\n\n{json}"
+        "你在帮用户做一次回顾。下面是 Spool 生成的跨项目摘要(digest),它是这次回顾的事实来源。\n\n# Digest\n{material}\n\n# 你要做的\n1. 先读 digest 顶部的选取规则:它只包含窗口内每个项目最新几块加全部置顶,不是全部记录。要展开某个项目,先用 get_pack / get_blocks 补读,再下判断。\n2. 哪些项目各占一项:digest「近期活跃」里的每一个;另外,只在「截止日期」一节或末尾置顶锚点里出现、而「近期活跃」里没有的,也各占一项,did 写「这一周没动」。其余项目不要列。⛔ 已经标完成的项目不进周回顾:digest 里没有它们,你也读不到,别去找、别写进 JSON。\n3. ⚠️ 截止日期以 digest 顶部「截止日期」一节为准。别自己算日期,更别把块正文里随手写的日期当成项目的截止日期——只有材料里有一句话明确说这个项目的截止日期定了或改了,才提 set_deadline。\n4. digest 和你补读到的东西里看不出来的就说看不出来,绝不编。\n5. 这一次是 Spool 在后台替用户跑的,屏幕前没有人。⚠️ 不要在结尾问「你同意吗」这类话——没有人会回答;也不要调用 add_block 或任何别的写入工具。建议动作只写进 JSON,用户在 Spool 里自己点。\n6. 全程用项目标题称呼项目,绝不把 id 写进去。\n7. {rule}\n\n{json}",
+        "You are helping the user look back over a stretch of time. Below is the cross-project digest Spool generated; it is the source of fact for this review.\n\n# Digest\n{material}\n\n# What to do\n1. Read the selection rules at the top of the digest first: it holds only the newest few blocks per project in the window plus every pinned block — not the full record. To open a project up, read more with get_pack / get_blocks before judging it.\n2. Which projects get an entry: every one under \u{201c}Recently active\u{201d}; plus any that appears only in the Deadlines section or the pinned anchors at the end and NOT under Recently active — those get an entry too, with \u{201c}nothing this week\u{201d} as did. List no other project. \u{26d4} Projects marked finished are not part of the weekly review: they are not in the digest and you cannot read them — do not look for them or put them in the JSON.\n3. \u{26a0}\u{fe0f} Deadlines come from the \u{201c}Deadlines\u{201d} section at the top of the digest. Do not work a date out yourself, and never read a date mentioned inside a block as the project's deadline — propose set_deadline only when a sentence in the material plainly says this project's deadline was set or moved.\n4. If neither the digest nor what you read shows something, say so. Never invent.\n5. Spool ran this for the user in the background; nobody is at the screen. \u{26a0}\u{fe0f} Do not close by asking whether they agree — no one is there to answer — and do not call add_block or any other write tool. Suggested actions go into the JSON only; the user clicks them in Spool.\n6. Refer to projects by title throughout. Never write an id.\n7. {rule}\n\n{json}"
     )
 }
 
@@ -11261,7 +11303,8 @@ fn weekly_review_json_prompt_text(digest: &str) -> String {
 /// （CLI 那条「发出去的材料」的一半）去比，⛔ 不能另生成一份：两次生成之间库可能变了。
 pub fn weekly_review_headless() -> Result<(String, String), String> {
     let mut digest = String::new();
-    let prompt = prompt_body(|_, conn| {
+    // P10 验收第一轮：已完成的项目不进周回顾 —— digest 里就没有它们。
+    let prompt = prompt_body_on(open_db_weekly, |_, conn| {
         digest = get_digest_json(conn, None, None, None, now_ms())?;
         Ok(weekly_review_json_prompt_text(&digest))
     })?;
@@ -11273,14 +11316,14 @@ pub fn weekly_review_headless() -> Result<(String, String), String> {
 struct WeeklyGateLibrary(Connection);
 
 impl crate::weekly_review::Library for WeeklyGateLibrary {
-    fn threads(&self) -> Vec<(String, String, String)> {
+    fn threads(&self) -> Vec<(String, String, String, bool)> {
         let Ok(mut stmt) = self.0.prepare(
-            "SELECT t.id, t.title, w.title FROM threads t JOIN workspaces w ON w.id = t.workspace_id
+            "SELECT t.id, t.title, w.title, t.status = 'done' FROM threads t JOIN workspaces w ON w.id = t.workspace_id
               WHERE t.deleted_at IS NULL AND w.deleted_at IS NULL",
         ) else {
             return Vec::new();
         };
-        stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+        stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))
             .map(|rows| rows.flatten().collect())
             .unwrap_or_default()
     }
@@ -12011,7 +12054,8 @@ fn guidance_text_for(name: &str, args: &Value, headless: bool) -> Result<String,
         }),
         // P10: the engine slot gets the JSON version; a chat client keeps the prose one.
         "weekly_review" if headless => weekly_review_headless().map(|(prompt, _)| prompt),
-        "weekly_review" => prompt_body(|dir, conn| {
+        // P10 验收第一轮：a chat client's review leaves finished projects out too.
+        "weekly_review" => prompt_body_on(open_db_weekly, |dir, conn| {
             let digest = get_digest_json(
                 conn,
                 str_arg("workspace_title"),
@@ -18936,6 +18980,52 @@ mod tests {
                 assert!(!text.contains(needle), "{needle} in:\n{text}");
             }
         }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // P10 验收第一轮（Ocean 2026-10-27）：「已完成的项目不允许进周回顾」。A finished project with a
+    // new block and a pin this week: not in the API material, not in the engine's prompt, not in the
+    // prompt / tool a chat client gets for 周回顾, and invisible to the engine's own server during a
+    // weekly run (`--engine-weekly`) — while an ordinary client, and every other engine run, still
+    // sees it (finishing a project hides it from the review, not from the AI).
+    #[test]
+    fn a_finished_project_stays_out_of_the_weekly_review() {
+        let dir = std::env::temp_dir().join(format!("spool-p10-finished-{}", std::process::id()));
+        canary_library(&dir, false);
+        let conn = Connection::open(dir.join("spool.db")).unwrap();
+        let recent = now_ms() - 2 * 86_400_000;
+        conn.execute_batch(&format!(
+            "INSERT INTO threads (id, workspace_id, title, status, is_capture_target, created_at, updated_at, completed_at)
+               VALUES ('doneT', 'wsStudio', 'Zq7finished thesis', 'done', 0, 1, {recent}, {recent});
+             INSERT INTO blocks (id, thread_id, kind, content, pinned, seq, created_at)
+               VALUES ('doneB1', 'doneT', 'text', 'Zq7finished: submitted the thesis.', 0, 1, {recent}),
+                      ('doneB2', 'doneT', 'text', 'Zq7finished pinned note', 1, 2, {recent});"
+        ))
+        .unwrap();
+        drop(conn);
+        TEST_DATA_DIR.with(|d| *d.borrow_mut() = Some(dir.clone()));
+        let (digest, fresh) = weekly_material_for_api(Some(90)).unwrap();
+        let (_, user) = weekly_messages_for_api(&digest, &fresh);
+        let (headless, _) = weekly_review_headless().unwrap();
+        let chat = guidance_text("weekly_review", &json!({ "since_days": 90 })).unwrap();
+        let call = |name: &str, args: Value| match handle_request("tools/call", &json!({ "name": name, "arguments": args })) {
+            Ok(v) => v.to_string(),
+            Err((code, msg)) => format!("ERR {code} {msg}"),
+        };
+        let ordinary = call("list_threads", json!({}));
+        TEST_WEEKLY_RUN.with(|e| e.set(true));
+        let weekly_list = call("list_threads", json!({}));
+        let weekly_pack = call("get_pack", json!({ "thread_id": "doneT" }));
+        let weekly_search = call("search_blocks", json!({ "query": "Zq7finished" }));
+        TEST_WEEKLY_RUN.with(|e| e.set(false));
+        TEST_DATA_DIR.with(|d| *d.borrow_mut() = None);
+        // The public project is there — an empty answer cannot pass for a filtered one.
+        assert!(user.contains("Garden notes") && headless.contains("Garden notes"), "{user}");
+        for (what, text) in [("api", &user), ("cli prompt", &headless), ("chat prompt", &chat), ("weekly list", &weekly_list), ("weekly pack", &weekly_pack), ("weekly search", &weekly_search)] {
+            assert!(!text.contains("Zq7finished thesis"), "{what}: {text}");
+            assert!(!text.contains("submitted the thesis"), "{what}: {text}");
+        }
+        assert!(ordinary.contains("Zq7finished thesis"), "an ordinary client still sees it: {ordinary}");
         let _ = std::fs::remove_dir_all(&dir);
     }
 
