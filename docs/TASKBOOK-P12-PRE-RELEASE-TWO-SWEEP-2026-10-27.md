@@ -107,4 +107,21 @@
 
 ## 7. 回执
 
-（执行窗填写。）
+### 7.1 开工核对 §2（10-27，对着 `7ffa2b8`）
+
+基线：`tsc` 干净；vitest 129 个文件 / 1252 条（织布那条单独连跑 30 次挂 4 次，就是第 5 条）；cargo 287 过 / 14 ignored；`i18n-check` 不缺，`--dead` 99。
+
+| # | 对不对得上 | 说明 |
+|---|---|---|
+| 1 | 对 | `WEEKLY_API_SYSTEM` 和它拼进去的 `WEEKLY_JSON_ZH` 只有中文；CLI 那条按界面语言挑 `_ZH` / `_EN`，但两份 JSON 说明里都没说 did / why 这几栏用什么语言写 |
+| 2 | 对 | `weekly_review_json_prompt_text` 第 1 条原样就是那句（中英两份都是） |
+| 3 | 对，多一处 | 「这一周新加的」每个项目一行 `## 项目名`；「还开着的跟进」那一段（P10 验收第一轮加的 `weekly_follow_ups_text`）也是 `## 项目名`，但那一段下面只有跟进行、没有块正文，撞不上，这一窗不动它 |
+| 4 | 对 | `run_env` 只给 PATH / HOME / USER（Codex 加 CODEX_HOME、Gemini 加 GEMINI_API_KEY）；试验台的绕法在 `api_engine.rs` `real_cli_weekly_on_a_copy` 那一行 `-c mcp_servers.spool.env=…` |
+| 5 | 对 | `knitStore.ts` `redeem` 拿 `Date.now()` 当身份。复现：让两次织成落在同一毫秒，5 次挂 5 次 |
+| 6 | 对 | 行号也对（7090 / 7128） |
+| 7 | **对不上** | 「文件夹唯一的项目被删，SPOOL.md 先不动」**现在已经不是这样**：P9Y 第二轮把连接改成工作区级之后，删项目（哪怕是唯一一个）下一次刷新就写成「（这里还没有项目）」，名字已经没了（单元测试实测）。**现在还留名字的是另一种：连着文件夹的那个工作区整个被删**（工作区连同里面的项目一起软删）——那时文件夹没有一个活着的连接，刷新什么都不写，工作区名和项目名都留在 SPOOL.md 里（实测）。P12-2 修的就是这一种：下一次启动时，删得比这一次打开更早的（已经撤销不了），从 SPOOL.md 里拿掉 |
+| 8 | 对，补一条 | v36 那两列（`extracted_size` / `extracted_mtime`）只说得出「文字是从哪一版读的」，说不出「用户打开过没有」。能用的是 v33 的 `target_notice` —— 它在库里的意思本来就是「还要告诉用户的事」（现在有「跟到了新位置」「知道了」两种）。P12-2 打算往里多放一种「改过、还没打开看」，**不加列、不加表**；细节见 P12-2 回执 |
+| 9 | 对 | `images.rs` 600 – 625 行；那张图在 `TemporaryItems/NSIRD_screencaptureui_*` 里，Spool 现在只拿它当「继续等」的信号 |
+| 10 | 对 | `STALE_WS_SYSTEM` 的 B 类就是项目级 |
+| 11 | 对 | 99 条。P9A 那 87 条（在 `7efc7b5` 上重跑同一个脚本复原的清单）一条不少都还在；新增 12 条 |
+| 12 | 对 | 四处写入都在 `folder_link.rs`（SPOOL.md、`.git/info/exclude`、CLAUDE.md 的 `@SPOOL.md`、AGENTS.md 一行） |
