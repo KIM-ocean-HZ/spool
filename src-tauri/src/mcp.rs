@@ -7094,8 +7094,10 @@ fn gate_stop_message(stop: GateStop, rules: &PathGateRules) -> String {
             "This file is in a hidden location (the \u{201c}{seg}\u{201d} part of the path starts \
              with a dot). An AI may not propose files from hidden locations."
         ),
+        // The folders come out of `canonicalize` — on Windows `\\?\C:\…`, which the AI would read
+        // back to the user (DISCOVERED-20261020-9). Only the words change; the judging is above.
         GateStop::System(root) => {
-            let root = root.display();
+            let root = plain_path(&root);
             t!(
                 "这个文件在系统目录 {root} 里。AI 不能提议挂系统目录里的文件。",
                 "This file is inside the system folder {root}. An AI may not propose files from \
@@ -7103,8 +7105,7 @@ fn gate_stop_message(stop: GateStop, rules: &PathGateRules) -> String {
             )
         }
         GateStop::HomePrivate => {
-            let place = rules.home.join(rules.home_private);
-            let place = place.display();
+            let place = plain_path(&rules.home.join(rules.home_private));
             let except = if rules.home_private_open.is_empty() {
                 ""
             } else {
@@ -17910,6 +17911,25 @@ mod tests {
         assert!(stops(format!(r"{system}\System32\a.dll")));
         assert!(stops(format!(r"\\?\{home}\AppData\Local\Spool\a.pdf")));
         assert!(!stops(format!(r"{home}\Documents\a.pdf")));
+    }
+
+    // P12-1（DISCOVERED-20261020-9）：Windows 上规则里的目录是 canonicalize 出来的 `\\?\C:\…`，拒绝消息
+    // 是给 AI 转述给用户的 —— 里面不能有 `\\?\`。只看字，判断不在这里（上面两条测）。
+    #[test]
+    fn a_refusal_names_the_folder_without_the_windows_prefix() {
+        let rules = PathGateRules {
+            home: PathBuf::from(r"\\?\C:\Users\ocean"),
+            system_roots: vec![PathBuf::from(r"\\?\C:\Windows")],
+            home_private: "AppData",
+            home_private_open: &[],
+        };
+        for l in [Lang::Zh, Lang::En] {
+            store_lang(l);
+            let system = gate_stop_message(GateStop::System(PathBuf::from(r"\\?\C:\Windows")), &rules);
+            assert!(system.contains(r"C:\Windows") && !system.contains(r"\\?\"), "{system}");
+            let private = gate_stop_message(GateStop::HomePrivate, &rules);
+            assert!(private.contains(r"C:\Users\ocean") && !private.contains(r"\\?\"), "{private}");
+        }
     }
 
     // P6-2：两个工具只往 `file_proposals` 排一行，⛔ 一个文件都不挂、一行 attachments 都不动。

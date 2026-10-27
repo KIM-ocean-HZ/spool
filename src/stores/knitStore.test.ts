@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { __setKnitPersistForTest } from '@/lib/knit/redemptions';
 import type { Redemption } from '@/lib/knit/knit';
 import { useKnitStore } from './knitStore';
@@ -22,15 +22,24 @@ describe('knitStore.redeem / unredeem', () => {
     useToastStore.setState({ toasts: [] });
   });
 
-  afterEach(() => useToastStore.setState({ toasts: [] }));
+  afterEach(() => {
+    useToastStore.setState({ toasts: [] });
+    vi.useRealTimers();
+  });
 
   it('knits the next item, saves it, and offers an undo that takes back only that one', async () => {
+    // A knit is known by the moment it was made (knitStore `redeem`'s `Date.now()`); two made in the
+    // same millisecond would share it, and the dishcloth's stale undo would take back the coaster.
+    // A person cannot click twice in one millisecond — this test could (DISCOVERED-20261026-1).
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(1_000_000);
     expect(await useKnitStore.getState().redeem('coaster')).toBe('locked');
     expect(await useKnitStore.getState().redeem('dishcloth')).toBe('ok');
     expect(useKnitStore.getState().redemptions.map((r) => r.item)).toEqual(['dishcloth']);
     expect(saved).toHaveLength(1);
     const [toast] = useToastStore.getState().toasts;
     expect(toast!.message).toContain('dishcloth');
+    vi.setSystemTime(1_001_000);
     expect(await useKnitStore.getState().redeem('coaster')).toBe('ok');
     // the dishcloth's undo is stale now — the coaster was its turn
     toast!.action!.run();
