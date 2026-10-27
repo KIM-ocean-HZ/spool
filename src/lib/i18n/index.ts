@@ -62,8 +62,6 @@ const EN: Record<string, string> = {
   '数据库初始化失败': 'Database initialization failed',
   '打开 DevTools（右键 → Inspect）→ Console 看完整堆栈。':
     'Open DevTools (right-click → Inspect) → Console for the full stack trace.',
-  '界面出错了': 'Something went wrong',
-  '重新加载': 'Reload',
 
   // Input Monitoring onboarding banner (2026-07-07; stale-grant recovery 2026-07-08;
   // rewritten 2026-08-02 for DESIGN_FIRST_RUN 拍板点 3/4 — the resting line names what
@@ -166,7 +164,6 @@ const EN: Record<string, string> = {
   '完成项目': 'Complete project',
   '重新打开': 'Reopen',
   '重新打开（清除完成时间和结论）': 'Reopen (clears completion time and conclusion)',
-  '更多操作': 'More actions',
   '摘要': 'Digest',
   '全记录': 'Full record',
   '清除截止日期': 'Clear deadline',
@@ -194,7 +191,6 @@ const EN: Record<string, string> = {
   '取消选择': 'Deselect',
   'Shift 点击可范围选择': 'Shift-click for range select',
   '选择此 block': 'Select this block',
-  'https://…  （Enter 添加，Esc 取消）': 'https://…  (Enter to add, Esc to cancel)',
   '置顶': 'Pin',
   '取消置顶': 'Unpin',
   '编辑': 'Edit',
@@ -203,7 +199,6 @@ const EN: Record<string, string> = {
   '批注': 'Note',
   '添加批注': 'Add note',
   '编辑文本': 'Edit text',
-  '复制内容': 'Copy content',
   '复制': 'Copy',
   '删除': 'Delete',
   '先选中要标重点的文字': 'Select text to highlight first',
@@ -243,8 +238,6 @@ const EN: Record<string, string> = {
   '还是作数的（重新放回上下文）': 'It holds after all (put it back into context)',
   '已标记「不作数了」· {when} 起不再进上下文（还在库里，搜得到）':
     'Marked as no longer holding · out of context since {when} (still in your library, still searchable)',
-  '它更正了哪一条？': 'Which one does this correct?',
-  '取消这条更正关系': 'Undo this correction link',
   // ⭐ S1（2026-08-24）：屏幕上这件事只许有一个名字 —— E3 的按钮、这条引用行的动词，全是「整条取代」。
   '整条取代了': 'replaces in full',
   '已被整条取代：': 'replaced in full by',
@@ -330,35 +323,13 @@ const EN: Record<string, string> = {
   '写下正确的说法': 'Write what is right',
   '保存更正': 'Save correction',
   '更正没能保存。': 'The correction could not be saved.',
-  '这段选区跨了格式标记，Spool 定位不到原句。请只选一句完整的原文。':
-    'That selection crosses a formatting marker, so Spool cannot find the sentence again. Select one whole sentence of the text as written.',
-  '这一条更正了项目里的哪一条？': 'Which block in this project does this one correct?',
-  '输入几个字找那一条': 'Type a few words to find it',
-  '没有匹配的块': 'No block matches',
-  '换一条': 'Pick another',
-  '那条整条都不作数了': 'That whole block no longer holds',
-  '那一条整条退出上下文，这一条顶上。它还留在库里，搜得到':
-    'That block drops out of context and this one takes its place. It stays in your library and stays searchable.',
-  '只有其中一处要改': 'Only one point in it is wrong',
-  '那一条原文照旧，底下多一行说明「其中一处已被这条更正」':
-    'That block is left exactly as it is, with one line under it saying this block corrected a point in it.',
   '跳转到这个项目': 'Jump to this project',
   '点击编辑来源': 'Click to edit source',
   '添加来源标签': 'Add source label',
   '标注来源': 'Label source',
   '+ 来源': '+ source',
-  '打开引用的项目': 'Open referenced project',
-  '引用的项目已删除': 'Referenced project was deleted',
   '无法打开附件': 'Could not open attachment',
-  '展开提取的文本': 'Expand extracted text',
-  '字符': 'chars',
-  '此文本会随打包 / 状态摘要一起发送给 AI —— 点击取消': 'This text is sent to the AI with packs / status summaries — click to opt out',
-  '勾选后，此文本会随打包 / 状态摘要一起发送给 AI': 'When on, this text is sent to the AI with packs / status summaries',
   '已完成': 'Done',
-  '已提取文字': 'Text extracted',
-  '展开预览': 'Expand preview',
-  '收起预览': 'Collapse preview',
-  '移除附件': 'Remove attachment',
   '确认删除': 'Confirm delete',
   '取消': 'Cancel',
 
@@ -378,7 +349,6 @@ const EN: Record<string, string> = {
   '删除所选 block': 'Delete selected blocks',
   '删除中…': 'Deleting…',
   '已删除 {n} 个块': 'Deleted {n} blocks',
-  '已选 {n} 个': '{n} selected',
   '复制到… 搜索项目': 'Copy to… search projects',
   '没有匹配的项目': 'No matching projects',
 
@@ -469,7 +439,6 @@ const EN: Record<string, string> = {
   '{n} 条结果': '{n} results',
   '全文搜索 · 纯本地': 'Full-text search · fully local',
   '↑↓ 选择 · ↵ 跳转 · esc 关闭': '↑↓ select · ↵ jump · esc close',
-  '无匹配': 'No matches',
   '上一个匹配 (⇧⌘G / ⇧↵)': 'Previous match (⇧⌘G / ⇧↵)',
   '上一个匹配': 'Previous match',
   '下一个匹配 (⌘G / ↵)': 'Next match (⌘G / ↵)',
@@ -481,12 +450,7 @@ const EN: Record<string, string> = {
   '这个项目结束了。': 'This project is done.',
   '要不要加一段结论？': 'Add a conclusion?',
   '一句话写下这个项目的结论…（可以留空）': 'Write a one-line conclusion… (can be left empty)',
-  '先给重要的信息块加上置顶标记': 'Pin the important blocks first',
-  '从置顶的信息块生成一段结论草稿': 'Draft a conclusion from the pinned blocks',
-  '总结中…': 'Summarizing…',
-  '让 AI 总结': 'Let AI summarize',
   '结论': 'Conclusion',
-  '置顶的信息块': 'Pinned blocks',
   // DESIGN_PROJECT_FILES §3.2 — 「项目文件」, the right rail panel that replaced the block
   // action bar's 📎 and 🔗.
   '项目文件': 'Project files',
@@ -521,8 +485,6 @@ const EN: Record<string, string> = {
   '一起从项目里去掉': 'Remove from project too',
   '这次更新去掉了「附加链接」，你原来加的 {n} 个链接已经删掉了。':
     'This update removed the \u201cattach link\u201d feature. The {n} link(s) you had added have been deleted.',
-  '这个项目没有标记过的重点。翻翻完整记录？': 'No marked highlights in this project. Browse the full record?',
-  '查看完整记录': 'View full record',
 
   // Digest / feed / misc
   '这个项目没有标记重点。要看完整记录吗？': 'No marked highlights in this project. Browse the full record?',
@@ -618,16 +580,11 @@ const EN: Record<string, string> = {
   '{n} 小时前': '{n} h ago',
   '{n} 天前': '{n} d ago',
 
-  // Empty states
-  '双击 ⌥ 捕捉第一条信息，或在下方直接写。': 'Double-tap ⌥ to capture your first piece, or write below.',
-  '选择或新建一个项目': 'Select or create a project',
-
   // Settings
   '设置': 'Settings',
   '通用': 'General',
   '快捷键': 'Shortcuts',
   '高级': 'Advanced',
-  '浏览器权限': 'Browser access',
   '开机启动': 'Launch at login',
   '登录时自动运行,捕捉快捷键随时可用': 'Runs at login so capture shortcuts are always ready',
   '自动提取附件文字内容': 'Auto-extract attachment text',
@@ -687,7 +644,6 @@ const EN: Record<string, string> = {
   // 2026-08-12 — the one client row whose product name covers two different capabilities.
   // "Codex" alone is accurate and unfindable; this is what keeps the word ChatGPT on the row
   // while saying which half of it works.
-  '把这个项目的问题复制好，并跳到 {app}': 'Copy the question about this project and jump to {app}',
   // 2026-08-17 (Ocean, Windows 验收): the badge said 已接入 and the AI panel still could not
   // see Spool — every client reads its config at launch, and VS Code additionally refuses to
   // start a server that appeared while it was not looking. These say what is left to do.
@@ -744,7 +700,6 @@ const EN: Record<string, string> = {
   '确认清除': 'Confirm clear',
   '清除中…': 'Clearing…',
   '清除': 'Clear',
-  '语言 / Language': 'Language / 语言',
 
   // 2026-08-18 (Ocean, Windows 验收 #1) — the one-time card on the first ✕. Windows only;
   // components/CloseToTrayHint has the reasoning, including why the drag is the user's step.
@@ -820,13 +775,10 @@ const EN: Record<string, string> = {
     'The finding: breaking every 30 minutes relieved fatigue most strongly, but in real work it felt too frequent for people to keep up year after year. Weighing both \u201cbetter mood, less fatigue\u201d and \u201cno drop in productivity\u201d, 5 minutes of movement every 60 minutes proved to be the \u201cgolden frequency\u201d — the one most people accept and can sustain.',
 
   // DESIGN_AI_ENGINE §1.4 / §3 / §7 — the on-machine engine slot (claude or codex).
-  '本机 AI 引擎': 'On-machine AI engine',
   // 2026-08-18 (Ocean): the resting line names the product, not the executable — see
   // The local engine's status line (AiSetup/LocalEngine since P9T).
   '✓ 已连接 {name}': '✓ Connected to {name}',
   '✓ 已连接 {name}（还装了另外 {n} 个）': '✓ Connected to {name} ({n} more installed)',
-  '检测到你装了 Claude Code 或 Codex 时，项目菜单里会多出「让 AI 维护」——用你自己已经登录的那个 CLI 跑，Spool 不存任何 API key，也不联网。':
-    'When Claude Code or Codex is detected on this machine, a "Let AI maintain" group appears in the project menu. It runs through the CLI you are already logged into — Spool stores no API key and still never goes online.',
   '装 Claude Code': 'Get Claude Code',
   '装 Codex': 'Get Codex',
   // DESIGN_AI_ENGINE §7.8 — measured, not hedged: 20 requests per model per day, and one
@@ -835,13 +787,6 @@ const EN: Record<string, string> = {
     "Gemini's free allowance is counted per model — about 20 runs a day each. When one is used up, switching model gets you going again.",
   '联网搜索这一项 Gemini CLI 跑不了——它的免费额度一次跟进就用完了。换成 Claude Code 或 Codex 才有。':
     'The Gemini CLI cannot carry a web follow-up — one run uses up its whole free allowance. Switch to Claude Code or Codex for this one.',
-  '用哪个引擎': 'Engine to use',
-  '两个都装了。跑的是哪个，用的就是那个账号的额度。':
-    'Both are installed. Whichever runs is the account whose allowance gets spent.',
-  '安装方法': 'How to install',
-  '在项目菜单里显示 AI 维护动作': 'Show AI maintenance actions in the project menu',
-  '需要上面两个开关都打开——AI 维护的产出是写回一块，读权限不够用。':
-    'Both switches above must be on — these actions write a block back, so read access alone is not enough.',
   '单次最长运行时间': 'Time limit per run',
   '超过就停下（已经写进去的块会留着——Spool 只追加，不回滚）。上限 10 分钟。':
     'Stops when it runs over. Blocks already written stay — Spool only ever appends, it never rolls back. 10 minutes maximum.',
@@ -924,28 +869,13 @@ const EN: Record<string, string> = {
   '这一周织的布': 'Knitted this week',
   '这周织了 {n} 针，织好 {m} 块布': 'Knitted this week: {n} stitches, {m} patches',
   '织成了': 'made',
-  'AI 整理中…': 'AI working…',
-  '用本机的 {engine} 把这条脉络提炼成一块结论':
-    'Use the {engine} on this machine to distil this thread into one conclusion block',
-  '让本机的 {engine} 查一遍重复块、失效引用，看摘要过没过期':
-    'Have the {engine} on this machine look for duplicate blocks and dead citations, and judge whether the summary has gone stale',
-  '让本机的 {engine} 回顾最近一周——跨所有项目，不只这一个':
-    'Have the {engine} on this machine look back over the past week — across every project, not just this one',
   // DESIGN_FOLLOW_UP §3.2/§3.3 — the follow-up brief and the one action that goes outside.
-  '联网跟进…': 'Follow up on the web…',
   '跟进': 'Follow up',
-  '改要盯的东西': 'Change what to watch',
   // §11.2-E (Ocean 2026-08-11): it used to call itself 「起草跟进目标」, which reads like
   // paperwork. Same mechanism, named after what it is FOR — the AI reads the project and
   // says what is still open.
   '找出还没解决的问题': 'Find what is still unresolved',
-  '定几行「要盯什么」，之后才能让 AI 出去查':
-    'Set a few lines of "what to watch" before the AI can go looking',
-  '照你定的那几行,让本机的 {engine} 联网搜索有没有新进展':
-    'Have the {engine} on this machine search the web for news, against the lines you set',
   '这个项目跟进什么': 'What should this project watch?',
-  '一行一件事。比如：CMU 的申请截止日期和 GRE 要求有没有变。':
-    'One per line. For example: whether CMU’s application deadline or GRE requirements have changed.',
   '让 AI 看看还缺什么': 'Let the AI see what is missing',
   'AI 在读这个项目…': 'The AI is reading this project…',
   '这一步只读你库里的东西，不联网。': 'This step only reads your library. It does not go online.',
@@ -980,13 +910,10 @@ const EN: Record<string, string> = {
 
   // DESIGN_AI_ENGINE M3 — the "AI 活动" fold.
   'AI 活动': 'AI activity',
-  'AI 活动 · 这个项目里有 {n} 块是 AI 写的':
-    'AI activity · {n} block(s) here were written by an AI',
   '{source} · {when} · {n} 块': '{source} · {when} · {n} block(s)',
   '归档了 {n} 块': 'filed {n} block(s)',
   '没有新增块': 'nothing new',
   '被你停下了': 'you stopped it',
-  '被你停下了，写进去的 {n} 块留着': 'you stopped it; the {n} block(s) written stay',
   '没跑成': 'did not run',
   '跳到这一块': 'Jump to this block',
 
@@ -1263,7 +1190,6 @@ const EN: Record<string, string> = {
   '未设置': 'Not set',
   '清除捕捉快捷键': 'Clear the capture shortcut',
   '搜索快捷键': 'Search shortcut',
-  '打开全文搜索': 'Open full-text search',
   '在别的软件里也能按，直接叫出 Spool 的搜索。窗口在最前面时，按 ⌘F 就行。':
     'Works from any other app — it brings Spool up and opens search. When the Spool window is already in front, ⌘F does it.',
   '按下新的组合键，或按 Esc 取消': 'Press a new combination, or Esc to cancel',
@@ -1330,12 +1256,10 @@ const EN: Record<string, string> = {
   '还没有项目。按 ⌘N 新建一个。': 'No projects yet. Press ⌘N to make one.',
 
   // The project board (§9.4, rebuilt as expandable rows in §9.13).
-  '{n} 个项目在进行': '{n} projects in progress',
   '{n} 个快到期': '{n} due soon',
   '按截止日期': 'By deadline',
   '按新建时间': 'By date created',
   '迟 {n} 天': '{n}d late',
-  '{n} 天': '{n}d',
   '{n} 块 · {chars} 字': '{n} blocks · {chars} chars',
   '{n} 块重复': '{n} duplicate(s)',
   '这个项目里有一模一样的块。打开项目自己处理——Spool 不会替你合并或删除。':
@@ -1356,17 +1280,6 @@ const EN: Record<string, string> = {
     'Writing a review takes an AI: Claude Code or Codex on this Mac, or your own API key.',
   '写回顾要用一个 AI：你自己的 API key。': 'Writing a review takes an AI: your own API key.',
   '这次什么也没回来': 'nothing came back this time',
-
-  // 「问 AI」 (§9.13) — the row's one-click question.
-  '把这个项目的问题复制好，并跳到你的 AI 软件':
-    'Copy a question about this project and bring your AI app to the front',
-  '只复制': 'copy only',
-  '问题已复制，{app} 已经在前面了——⌘V 回车就行':
-    'Question copied, and {app} is in front — just ⌘V and hit return',
-  '问题已复制——在你的终端里粘上就行':
-    'Question copied — paste it in your terminal',
-  '读一下我 Spool 里「{title}」这个项目的完整脉络，然后告诉我三件事：我卡在哪、已经定下来了什么、接下来该做什么。':
-    'Read the full thread of my Spool project “{title}”, then tell me three things: where I am stuck, what I have already settled, and what to do next.',
 
   // Run cards (§3.1) and the inbox (§3.3 / §9.2 R2).
   '提了 {n} 条待你过目': 'proposed {n} item(s) for you to review',
@@ -1415,8 +1328,6 @@ const EN: Record<string, string> = {
   '这一块是「联网搜索」跟进带回来的': 'Brought back by a web follow-up search',
   '联网搜索': 'Search the web',
   // P9C — the two follow-up buttons while locked.
-  '联网搜索要用本机的 Claude Code 或 Codex。': 'Web search runs on Claude Code or Codex on this Mac.',
-  '要用本机的 Claude Code 或 Codex。': 'This runs on Claude Code or Codex on this Mac.',
   // The brief editor's placeholder. Replaced 2026-08-06 (Ocean #10: the CMU example was too
   // niche) and never translated — the shape is the point, so the English keeps it concrete
   // enough to act as a search rule rather than becoming an abstraction.
@@ -1455,20 +1366,16 @@ const EN: Record<string, string> = {
     'One thing this can\u2019t stop: an AI that reads files on your computer directly can still read it by going around Spool.',
   '取消私密之后，通过 Spool 连接的 AI 又能读到它，Spool 自带的 AI 功能也能用了。':
     'Once it\u2019s no longer private, AIs connected through Spool can read it again, and Spool\u2019s own AI features work on it again.',
-  '现在打开': 'Turn on now',
-  '没打开': 'Could not turn it on',
   '用本机的 Claude Code / Codex（不花钱）': 'Use Claude Code or Codex on this Mac (no extra cost)',
   '用本机的 {engine}（不花钱）': 'Use {engine} on this Mac (no extra cost)',
   '用你自己的 API key（按字数花钱）': 'Use your own API key (paid per character)',
   '正在看你存没存过 key…': 'Checking whether a key is already saved…',
-  '接口地址和模型在设置里改。': 'The endpoint and model can be changed in Settings.',
   // ---------------------------------------------------------------------------------------
   // 形态 C：Spool 自己调 API 压缩上下文（WORKPLAN-2026-08-20 §6.2 / §6.4.1）
   //
   // ⚠️ 这一组里有几句是**在改一句对外说了很久的话**（§6.3 把「永不联网」精确化）。
   // 英文这一侧不是意译：它跟中文一样,必须把「谁发的请求、用谁的额度、内容到了谁那里」
   // 三件事说全。少说一件,英文用户读到的就是一个比中文更宽的承诺。
-  '用你自己的 API key': 'Use your own API key',
   'Spool 主程序不发任何网络请求。连上 key 之后，请求由 Spool 启动的一个本地小程序发出，用你自己的 key 和额度，内容会到达你选的那家模型厂商。':
     'Spool itself makes no network request. Once a key is connected, the request is sent by a small program Spool starts on this machine, using your own key and your own credit, and what you send reaches the model vendor you picked.',
   // P9U-3 — the API key block (AiSetup/ApiKey): any vendor's key, recognised when pasted.
@@ -1516,24 +1423,16 @@ const EN: Record<string, string> = {
   '这次没有新进展。': 'Nothing new this time.',
   '这家的 key 不能联网搜，换一家或用本机 CLI。': 'This vendor\u2019s key cannot search the web \u2014 use another vendor or the local CLI.',
   '夜里跑，你不用守在电脑前，早上起来核对就行。': 'It runs overnight \u2014 no need to sit there; check the drafts in the morning.',
-  '已经装了 claude / codex 这类命令行工具的话，用「AI 引擎」那一节就行，一分钱不花、一个 key 不用填。这一节是给不想装命令行工具的人的第二条路。':
-    'If you already have a CLI like claude or codex, use the section below instead — it costs nothing and needs no key. This section is the other route, for people who would rather not install one.',
-  'key 存在你这台电脑的系统钥匙串里，和别的密码放在一起。它不会进设置文件，也不会跟着导出的库走。':
-    'Your key lives in this machine’s system keychain, alongside your other passwords. It never enters the settings file, and it does not travel with an exported library.',
   '接口地址': 'Endpoint',
   '思考力度': 'How hard it thinks',
   // '默认' 上面第 930 行已经有了，不重复。
   '关掉': 'Off',
-  '模型下笔之前会先想一会儿，这一段也按字数收费。默认 low：想得短一点，压出来的东西不比想得久的差，钱和时间都省下大半。不认的值会被接口顶回来，那一次不收费。':
-    'The model thinks before it writes, and that thinking is billed by the word like everything else. The default is low: thinking briefly compresses just as well as thinking at length, for well under half the money and the time. A value the endpoint rejects is not billed.',
   '模型': 'Model',
   '单次最长等待（秒）': 'Longest wait per run (seconds)',
   '必须是 https 开头 —— 用普通 http 的话，你的 key 会明文发出去。':
     'This must start with https:// — over plain http your key would go out in the clear.',
   '找不到负责联网的那个小程序（spool-ai）。重装一次 Spool 应该能修好。':
     'The program that does the networking (spool-ai) is missing. Reinstalling Spool should fix it.',
-  '显示': 'Show',
-  '隐藏': 'Hide',
 
   // 并排核对
   // '压缩' / '停下' 上面已经有了（第 679 / 942 行），这里不重复。
@@ -1553,10 +1452,6 @@ const EN: Record<string, string> = {
   '请求已经发出去了，正在等它开口…': 'The request is out — waiting for it to start…',
   '模型在思考…已经想了 {n} 字，还没开始写': 'Thinking… {n} characters of reasoning so far, nothing written yet',
   '正在写压缩稿…已经写了 {n} 字': 'Writing the briefing… {n} characters so far',
-  '⚠️ 这一档模型会先想完再动笔。上面那个数字一直在涨，就说明它没卡住。':
-    '⚠️ This model thinks the whole thing through before writing. As long as that number keeps rising, it is not stuck.',
-  '上面那个字数一直在涨，就说明它在正常干活。':
-    'As long as that count keeps rising, it is working normally.',
   '压缩稿写到一半连接断了，没拿到完整的一份。⚠️ 半份稿子看起来和「删得很狠」一模一样，所以没有交给你。把设置里的「单次最长等待」调大，或者换个小一点的打包范围。':
     'The briefing was cut off partway, so no complete version came back. ⚠️ A half-written briefing looks exactly like an aggressively compressed one, so it is not shown. Raise “Longest wait per run” in Settings, or pack a smaller range.',
   '已经等了 {n} 秒（最长等 {max} 秒）': 'Waited {n}s so far (it gives up after {max}s)',
@@ -1571,18 +1466,7 @@ const EN: Record<string, string> = {
   '压缩稿': 'Compressed',
   '复制压缩稿': 'Copy the compressed version',
   // D4-a：结论行。⚠️ D5-b：整块屏幕上只有这一句里允许出现 ⚠️。
-  '⚠️ 这一份别用 —— {why}': '⚠️ Do not use this one — {why}',
-  '这一份没压出什么来 —— 一个字都没短。': 'Nothing came off this one — it is no shorter.',
-  '这一份可以复制走 —— 比原来短了 {d}%。': 'This one is good to copy — {d}% shorter than the original.',
-  '它把同样的内容写了两遍': 'it wrote the same content twice',
-  '丢了 {n} 个数字或日期': '{n} number(s) or date(s) are gone',
-  '有 {n} 块整块不见了': '{n} whole block(s) are missing',
-  '它写了 {n} 条你没写过的批注': 'it wrote {n} annotation(s) you never wrote',
-  '少了整节': 'a whole section is gone',
-  '少了 {n} 条引用或替代关系': '{n} citation/supersede link(s) are gone',
-  '它编了 {n} 个原文里没有的编号': 'it invented {n} block number(s) the original never had',
   // D4-b：改写是第三类 —— 同一条被改写,不是「丢了一条」加「编了一条」。
-  '它改写了 {n} 条批注': 'it rewrote {n} annotation(s)',
   '有 {n} 条批注被改写了 —— 下面按块列出了改之前和改之后。':
     '{n} annotation(s) were rewritten — before and after are listed block by block below.',
   '它把一条批注改写了：': 'It rewrote an annotation:',
@@ -1590,8 +1474,6 @@ const EN: Record<string, string> = {
   '改之后：{s}': 'After: {s}',
   // 「少了 {n} 条批注」/「少了 {n} 条你自己写的内容」/「少了 {n} 处你划的重点」下面证据那一段
   // 已经有了，同一个键复用，不重复写。
-  '比原来短了 {d}%': '{d}% shorter than the original',
-  '反而比原来长了 {d}%': '{d}% LONGER than the original',
   '短了 {d}%': '{d}% shorter',
   '反而长了 {d}%': '{d}% longer',
   '没变短': 'no shorter',
@@ -1648,7 +1530,6 @@ const EN: Record<string, string> = {
     'Every claim the AI makes has to match your blocks word for word; Spool will not change your library on one that does not.',
   '这一页只连线，不改任何一块的正文。': 'This page only links blocks together \u2014 it never edits the text of any of them.',
   '正在查…': 'Checking\u2026',
-  '正在查（{n}s）': 'Checking ({n}s)',
   '找到': 'Found',
   '还没决定': 'Undecided',
   '{n} 条': '{n}',
@@ -1767,7 +1648,6 @@ const EN: Record<string, string> = {
     '{n} correction(s) point at a sentence that can no longer be found after compression. They all stay; they just no longer mark which sentence.',
   '已还原成压缩前的原文': 'Restored to the pre-compression original',
   '这一块压缩时没有留原文，还原不了。': 'No original was kept when this block was compressed, so it cannot be restored.',
-  '这一块被压过': 'This block has been compressed',
   '备份压缩前的原文': 'Keep the pre-compression original',
   '压缩把块的正文换成更短的版本。留着原文，块的工具条上就有一个入口能打开看，也能随时换回去；关掉的话省一点磁盘，但压过就找不回原来的字了。':
     'Compression replaces a block\u2019s text with a shorter version. Keep the original and the block\u2019s toolbar gets a way to open it and to switch back at any time; turn this off to save a little disk, but the original words are then gone for good.',
@@ -1832,8 +1712,6 @@ const EN: Record<string, string> = {
   // 左侧边栏：正在压缩的那个项目（Ocean 2026-08-22）。
   '压缩中': 'Compressing',
   '这个项目正在压缩': 'This project is being compressed right now',
-  '一块对一块地核对。库里一个字都不动。':
-    'Checked block by block. Nothing in your library is touched.',
   '只压这一块（第 {n} 块）。库里一个字都不动。':
     'Compressing block #{n} only. Nothing in your library is touched.',
   '不要这一份': 'Discard this draft',
@@ -1940,13 +1818,6 @@ const EN: Record<string, string> = {
   '别的项目里压好的（{n}）': 'Compressed in other projects ({n})',
   '《{name}》—— 切过去核对': '{name} — switch over and check it',
   '会先切到《{name}》，再打开它的核对桌': 'Switches to {name} first, then opens its check table',
-  '上一份还没核对完': 'The last one is not checked yet',
-  '这个项目上一份压缩稿还没核对完 —— 先看完那一份，或者把它划掉':
-    'The last compressed version of this project has not been checked — finish with it, or strike it off the list',
-  '点上面那行回到那一份。核对完了，或者不要了，把它划掉就能再压一次。':
-    'Click the line above to go back to it. Once it is checked — or you no longer want it — strike it off and you can compress again.',
-  '核对桌就开着。关掉它就等于不要这一份，然后可以再压一次。':
-    'Its check table is open. Closing it discards that version, and then you can compress again.',
   '《{name}》没压成：{why}': '{name} did not compress: {why}',
   '核对完了，从单子上去掉': 'Checked — take it off the list',
   '这个项目已经不在了': 'that project is gone',
