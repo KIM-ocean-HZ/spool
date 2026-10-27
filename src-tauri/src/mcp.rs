@@ -10772,12 +10772,13 @@ pub fn stale_ws_messages_for_api(packs: &[(String, String)]) -> (String, String)
 const WEEKLY_API_SYSTEM: &str = r#"你在帮用户做一次跨项目回顾。用户下一条消息里是两段材料：
 
 - **# 历史**：Spool 生成的跨项目摘要（digest）—— 每个项目到目前为止是怎么回事。
-- **# 这一周新加的**：这段时间里真正新写进去的块，按项目分组。⚠️ 这一段是「新动作」。
+- **# 这一周新加的**：这段时间里真正新写进去的块，按项目分组：每个项目从一行 `==== 项目名 ====` 开始，
+  块正文里自己的小标题（# 开头的那些）不是项目。⚠️ 这一段是「新动作」。
 
 # 你要做的
 1. 哪些项目各占一项：「这一周新加的」里出现的每一个，加上「历史」的「近期活跃」和
    「截止日期」两节里出现的每一个。其余的不要列。⛔ 已经标完成的项目不进周回顾（材料里也没有它们）。
-2. 每个项目的 did 以「这一周新加的」为准；那一节里没有这个项目，就写「这一周没动」。
+2. 每个项目的 did 以「这一周新加的」为准；那一节里没有这个项目，就写「{idle}」。
 3. ⚠️ 截止日期以「历史」顶部「截止日期」一节为准。别自己算日期，更别把块正文里随手写的
    日期当成项目的截止日期 —— 只有材料里有一句话明确说这个项目的截止日期定了或改了，才提 set_deadline。
 4. ⛔⛔ **你手上只有这两段材料，没有别的。** 你**没有**任何可以调用的工具，
@@ -10785,6 +10786,7 @@ const WEEKLY_API_SYSTEM: &str = r#"你在帮用户做一次跨项目回顾。用
    ⛔ 也不要说「我去查一下」或者建议自己再读点什么。
 5. 全程用项目标题称呼项目，⛔ 绝不把 id 写进去。
 6. {rule}
+7. {lang}
 
 {json}"#;
 
@@ -10797,7 +10799,7 @@ const WEEKLY_JSON_ZH: &str = r#"# 回什么
 {"projects":[{"title":"…","did":"…","stuck":"…","signals":[{"quote":"…","why":"…"}],"actions":[…]}],"next":"…"}
 
 - projects：按截止日期排，最紧的、已逾期的在最前，没设截止日期的在最后。
-- title：项目标题，照材料里的写法原样抄，一个字不改；材料里写成「工作区 / 项目」的，连工作区一起抄。
+- title：项目标题，照材料里的写法原样抄，一个字不改；材料里写成「工作区 / 项目」的，连工作区一起抄；`==== 项目名 ====` 那一行只抄中间的项目名。
 - did：这一周做了什么，大白话，别用项目管理黑话，不超过 80 字。
 - stuck：卡在哪、还剩什么、下一步要碰的，不超过 80 字。
 - signals：看到的信号，最多 3 条。quote 是材料里的一句原话，**逐字复制**（标点也算，数字改一个就不算）；
@@ -10821,7 +10823,7 @@ const WEEKLY_JSON_EN: &str = r#"# What to send back
 {"projects":[{"title":"…","did":"…","stuck":"…","signals":[{"quote":"…","why":"…"}],"actions":[…]}],"next":"…"}
 
 - projects: ordered by deadline — overdue and tightest first, projects with no deadline last.
-- title: the project's title, copied exactly as the material writes it; where the material writes "workspace / project", copy the workspace too.
+- title: the project's title, copied exactly as the material writes it; where the material writes "workspace / project", copy the workspace too; from a `==== name ====` line, copy only the name between the markers.
 - did: what moved this week, in plain language with no project-management jargon, at most 50 words.
 - stuck: what is stuck, unsettled, or next to touch, at most 50 words.
 - signals: what you noticed, at most 3. quote is one sentence from the material, **copied word for word**
@@ -10840,6 +10842,15 @@ const WEEKLY_JSON_EN: &str = r#"# What to send back
 - ⛔ An item whose quote does not match the material is dropped whole by Spool — propose less rather than pad.
 - The word limits are a request: when something does not fit, say it shorter — ⛔ never stop mid-sentence, and no ellipses."#;
 
+/// P12-5（DISCOVERED-20261027-4）：周回顾写成界面的语言 —— 和过期检测的 `stale_ws_why_rule` 一个做法，
+/// 两条路都插这一句，⛔ 不整段翻译提示词。照抄的那几样不跟着变：引文要逐字过闸，标题要对上项目。
+fn weekly_lang_rule() -> &'static str {
+    ts!(
+        "did、stuck、每一条 why、add_follow_up 的 text 和 next 用中文写。title、quote、old_quote、new_quote 和 close_follow_up 的 line 仍然从材料里逐字照抄 —— 原文是什么语言就照抄什么语言，不要翻译。",
+        "Write did, stuck, every why, the text of add_follow_up and next in English. title, quote, old_quote, new_quote and the line of close_follow_up are still copied word for word from the material, in whatever language it uses there — never translate them."
+    )
+}
+
 /// 周回顾（形态 C）的两段消息。⚠️ 规则整个在 `system` 里、材料在 `user` 里 ——
 /// 反过来放前缀缓存一次都命中不了（和 `compress_messages_for_api` 同一条纪律）。
 ///
@@ -10847,7 +10858,11 @@ const WEEKLY_JSON_EN: &str = r#"# What to send back
 /// 「关掉这条跟进」，也凭它不再提重复的新跟进。⚠️ 返回的第三样是**引文能出自的那一段**（历史 + 这一周
 /// 新加的），⛔ 不含跟进那一段：「回答了这条跟进」的依据必须是材料里的一句话，不能是这条跟进自己。
 pub fn weekly_messages_for_api(digest: &str, fresh: &str, follow_ups: &str) -> (String, String, String) {
-    let system = WEEKLY_API_SYSTEM.replace("{rule}", material_rule()).replace("{json}", WEEKLY_JSON_ZH);
+    let system = WEEKLY_API_SYSTEM
+        .replace("{rule}", material_rule())
+        .replace("{lang}", weekly_lang_rule())
+        .replace("{idle}", ts!("这一周没动", "nothing this week"))
+        .replace("{json}", WEEKLY_JSON_ZH);
     let quotable = format!(
         "# 历史\n{}\n\n# 这一周新加的\n{}",
         fenced_material(digest),
@@ -10899,6 +10914,9 @@ pub fn weekly_follow_ups_text(conn: &Connection) -> Result<String, String> {
 ///
 /// ⚠️ 退了的块（`stale_at`）不进来 —— 和 pack、digest 同一条规矩：用户说不作数的东西，
 /// 不该出现在「这一周做了什么」里。
+///
+/// P12-5（DISCOVERED-20261027-1）：每个项目一行 `==== 项目名 ====`，⛔ 不是 `## 项目名` —— 块正文原样跟在
+/// 下面，块里自己的 `## 一、…` 小标题和项目标题同一级的话，模型分不清哪一行是项目。
 pub fn weekly_fresh_blocks_text(
     conn: &Connection,
     since_days: i64,
@@ -10968,7 +10986,7 @@ pub fn weekly_fresh_blocks_text(
     for (title, b) in &rows {
         if *title != current {
             current = title.clone();
-            out.push(format!("\n## {}", if title.is_empty() { untitled() } else { title }));
+            out.push(format!("\n==== {} ====", if title.is_empty() { untitled() } else { title }));
         }
         // ⛔ `ref_blocks` 故意是空的：被引的那一块多半是**历史**，不在这一周里，
         // 把它拉进来就等于绕开「只发本周」这条边界。引用行会退成「引用的块不在这份材料里」，
@@ -11333,13 +11351,14 @@ fn weekly_review_json_prompt_text(digest: &str, follow_ups: &str) -> String {
     let material = fenced_material(digest);
     let open_lines = fenced_material(follow_ups);
     let rule = material_rule();
+    let lang_rule = weekly_lang_rule();
     let json = match lang() {
         Lang::Zh => WEEKLY_JSON_ZH,
         Lang::En => WEEKLY_JSON_EN,
     };
     t!(
-        "你在帮用户做一次回顾。下面是 Spool 生成的跨项目摘要(digest),它是这次回顾的事实来源。\n\n# Digest\n{material}\n\n# 还开着的跟进\n{open_lines}\n\n# 你要做的\n1. 先读 digest 顶部的选取规则:它只包含窗口内每个项目最新几块加全部置顶,不是全部记录。要展开某个项目,先用 get_pack / get_blocks 补读,再下判断。\n2. 哪些项目各占一项:digest「近期活跃」里的每一个;另外,只在「截止日期」一节或末尾置顶锚点里出现、而「近期活跃」里没有的,也各占一项,did 写「这一周没动」。其余项目不要列。⛔ 已经标完成的项目不进周回顾:digest 里没有它们,你也读不到,别去找、别写进 JSON。\n3. ⚠️ 截止日期以 digest 顶部「截止日期」一节为准。别自己算日期,更别把块正文里随手写的日期当成项目的截止日期——只有材料里有一句话明确说这个项目的截止日期定了或改了,才提 set_deadline。\n4. digest 和你补读到的东西里看不出来的就说看不出来,绝不编。\n5. 这一次是 Spool 在后台替用户跑的,屏幕前没有人。⚠️ 不要在结尾问「你同意吗」这类话——没有人会回答;也不要调用 add_block 或任何别的写入工具。建议动作只写进 JSON,用户在 Spool 里自己点。\n6. 全程用项目标题称呼项目,绝不把 id 写进去。\n7. {rule}\n\n{json}",
-        "You are helping the user look back over a stretch of time. Below is the cross-project digest Spool generated; it is the source of fact for this review.\n\n# Digest\n{material}\n\n# Open follow-up lines\n{open_lines}\n\n# What to do\n1. Read the selection rules at the top of the digest first: it holds only the newest few blocks per project in the window plus every pinned block — not the full record. To open a project up, read more with get_pack / get_blocks before judging it.\n2. Which projects get an entry: every one under \u{201c}Recently active\u{201d}; plus any that appears only in the Deadlines section or the pinned anchors at the end and NOT under Recently active — those get an entry too, with \u{201c}nothing this week\u{201d} as did. List no other project. \u{26d4} Projects marked finished are not part of the weekly review: they are not in the digest and you cannot read them — do not look for them or put them in the JSON.\n3. \u{26a0}\u{fe0f} Deadlines come from the \u{201c}Deadlines\u{201d} section at the top of the digest. Do not work a date out yourself, and never read a date mentioned inside a block as the project's deadline — propose set_deadline only when a sentence in the material plainly says this project's deadline was set or moved.\n4. If neither the digest nor what you read shows something, say so. Never invent.\n5. Spool ran this for the user in the background; nobody is at the screen. \u{26a0}\u{fe0f} Do not close by asking whether they agree — no one is there to answer — and do not call add_block or any other write tool. Suggested actions go into the JSON only; the user clicks them in Spool.\n6. Refer to projects by title throughout. Never write an id.\n7. {rule}\n\n{json}"
+        "你在帮用户做一次回顾。下面是 Spool 生成的跨项目摘要(digest),它是这次回顾的事实来源。\n\n# Digest\n{material}\n\n# 还开着的跟进\n{open_lines}\n\n# 你要做的\n1. 先读 digest 顶部的选取规则:它只包含窗口内每个项目最新几块加全部置顶,不是全部记录。只在 digest 里看不出来、又是下判断要用的时候,才用 get_pack / get_blocks 补读那一个项目;digest 够用就不要再读。\n2. 哪些项目各占一项:digest「近期活跃」里的每一个;另外,只在「截止日期」一节或末尾置顶锚点里出现、而「近期活跃」里没有的,也各占一项,did 写「这一周没动」。其余项目不要列。⛔ 已经标完成的项目不进周回顾:digest 里没有它们,你也读不到,别去找、别写进 JSON。\n3. ⚠️ 截止日期以 digest 顶部「截止日期」一节为准。别自己算日期,更别把块正文里随手写的日期当成项目的截止日期——只有材料里有一句话明确说这个项目的截止日期定了或改了,才提 set_deadline。\n4. digest 和你补读到的东西里看不出来的就说看不出来,绝不编。\n5. 这一次是 Spool 在后台替用户跑的,屏幕前没有人。⚠️ 不要在结尾问「你同意吗」这类话——没有人会回答;也不要调用 add_block 或任何别的写入工具。建议动作只写进 JSON,用户在 Spool 里自己点。\n6. 全程用项目标题称呼项目,绝不把 id 写进去。\n7. {rule}\n8. {lang_rule}\n\n{json}",
+        "You are helping the user look back over a stretch of time. Below is the cross-project digest Spool generated; it is the source of fact for this review.\n\n# Digest\n{material}\n\n# Open follow-up lines\n{open_lines}\n\n# What to do\n1. Read the selection rules at the top of the digest first: it holds only the newest few blocks per project in the window plus every pinned block — not the full record. Read more with get_pack / get_blocks only when the digest does not show something a judgement needs — and then only that one project; when the digest is enough, read nothing more.\n2. Which projects get an entry: every one under \u{201c}Recently active\u{201d}; plus any that appears only in the Deadlines section or the pinned anchors at the end and NOT under Recently active — those get an entry too, with \u{201c}nothing this week\u{201d} as did. List no other project. \u{26d4} Projects marked finished are not part of the weekly review: they are not in the digest and you cannot read them — do not look for them or put them in the JSON.\n3. \u{26a0}\u{fe0f} Deadlines come from the \u{201c}Deadlines\u{201d} section at the top of the digest. Do not work a date out yourself, and never read a date mentioned inside a block as the project's deadline — propose set_deadline only when a sentence in the material plainly says this project's deadline was set or moved.\n4. If neither the digest nor what you read shows something, say so. Never invent.\n5. Spool ran this for the user in the background; nobody is at the screen. \u{26a0}\u{fe0f} Do not close by asking whether they agree — no one is there to answer — and do not call add_block or any other write tool. Suggested actions go into the JSON only; the user clicks them in Spool.\n6. Refer to projects by title throughout. Never write an id.\n7. {rule}\n8. {lang_rule}\n\n{json}"
     )
 }
 
@@ -13822,6 +13841,7 @@ mod tests {
         add("b_old", "去年就写下的老结论", now - 200 * day, None);
         add("b_new", "这一周才定下来的新结论", now - day, None);
         add("b_retired", "这一周写的但用户说不作数了", now - day, Some(now));
+        add("b_heading", "## 一、篇幅\n两页以内", now - day, None);
 
         let fresh = weekly_fresh_blocks_text(&conn, 7, now).unwrap();
         assert!(fresh.contains("这一周才定下来的新结论"), "{fresh}");
@@ -13831,6 +13851,9 @@ mod tests {
         assert!(!fresh.contains("用户说不作数了"), "{fresh}");
         // 项目名要在，否则模型分不出这几块是谁的。
         assert!(fresh.contains("申请规划"), "{fresh}");
+        // P12-5（DISCOVERED-20261027-1）：项目那一行和块正文自己的 `## ` 小标题分得开；块正文一个字不动。
+        assert!(fresh.lines().any(|l| l == "==== 申请规划 ===="), "{fresh}");
+        assert!(fresh.lines().all(|l| !l.starts_with("## ") || l == "## 一、篇幅"), "{fresh}");
 
         // ⚠️「这一周什么都没加」是一个结果，不是没有结果 —— ⛔ 不许发一段空的过去。
         let quiet = weekly_fresh_blocks_text(&conn, 7, now + 400 * day).unwrap();
@@ -14964,6 +14987,36 @@ mod tests {
         // The API road has no tools, and says so; the CLI road may read more but never write.
         assert!(prompts[0].1.contains("没有**任何可以调用的工具"), "{}", prompts[0].1);
         assert!(prompts[1].1.contains("get_pack / get_blocks"), "{}", prompts[1].1);
+    }
+
+    // P12-5：周回顾写成界面的语言（DISCOVERED-20261027-4），标题和引文照抄、不翻译；本机 CLI 只在 digest
+    // 看不出来时才补读那一个项目（-3）；「这一周新加的」里项目那一行是 `==== 项目名 ====`（-1）。
+    #[test]
+    fn the_weekly_review_writes_in_the_ui_language_and_reads_only_what_it_needs() {
+        for (l, write, keep) in [(Lang::Zh, "next 用中文写", "不要翻译"), (Lang::En, "next in English", "never translate")] {
+            store_lang(l);
+            let (api, _, _) = weekly_messages_for_api("D", "F", "U");
+            let cli = weekly_review_json_prompt_text("D", "U");
+            for (road, p) in [("api", &api), ("cli", &cli)] {
+                assert!(p.contains(write) && p.contains(keep), "{road} {l:?}: {p}");
+                assert!(p.contains("title、quote") || p.contains("title, quote"), "{road} {l:?}: the title is copied too");
+                assert!(!p.contains("{lang}") && !p.contains("{lang_rule}"), "{road} {l:?}");
+                assert!(p.contains("`==== "), "{road} {l:?}: the title rule says what to take from a ==== line");
+            }
+            assert!(
+                cli.contains("只在 digest 里看不出来") || cli.contains("only when the digest does not show"),
+                "{l:?}: {cli}"
+            );
+            assert!(!cli.contains("before judging it") && !cli.contains("补读,再下判断"), "{l:?}: {cli}");
+        }
+        // Only the API road has the 「这一周新加的」 section to describe. Its one fixed phrase for an idle
+        // project follows the UI too, or an English review would be told to write it in Chinese.
+        store_lang(Lang::Zh);
+        let zh = weekly_messages_for_api("D", "F", "U").0;
+        assert!(zh.contains("一行 `==== 项目名 ====` 开始") && zh.contains("就写「这一周没动」"), "{zh}");
+        store_lang(Lang::En);
+        let en = weekly_messages_for_api("D", "F", "U").0;
+        assert!(en.contains("就写「nothing this week」") && !en.contains("{idle}"), "{en}");
     }
 
     // The lines between one "## " heading and the next.
