@@ -50,6 +50,9 @@ const FRONTMOST_HOT_PATH_MS = 80;
 // two sequential osascript calls (frontmost process, then browser tab title).
 const FRONTMOST_BACKFILL_MS = 2200;
 const CLIPBOARD_RETRY_DELAYS_MS = [120, 240]; // up to 3 attempts total
+// P12-6: a screenshot still in its thumbnail is taken from there at once (images.rs), so 「等截图存好」
+// is only said once there has really been a wait this long.
+const SHOT_NOTICE_AFTER_MS = 400;
 
 const sleep = (ms: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, ms));
@@ -310,7 +313,7 @@ export function useCapture(): void {
           let text = pictureFirst || shotToFile || copiedFiles.length > 0 ? '' : await readClipboardWithRetry();
           let image: ImageSource | null = copiedFiles.length > 0 ? { kind: 'paths', paths: copiedFiles } : null;
           if (shotToFile) {
-            showNoticeInOverlay({ kind: 'shot-waiting' });
+            const waiting = setTimeout(() => showNoticeInOverlay({ kind: 'shot-waiting' }), SHOT_NOTICE_AFTER_MS);
             let path: string | null;
             try {
               path = await findNewScreenshot(shot.atMs);
@@ -320,6 +323,8 @@ export function useCapture(): void {
                 denied ? { kind: 'shot-denied' } : { kind: 'error', msg: t('捕捉失败：{msg}', { msg: String(err) }) },
               );
               return;
+            } finally {
+              clearTimeout(waiting);
             }
             if (!path) {
               showNoticeInOverlay({ kind: 'shot-missing' });
