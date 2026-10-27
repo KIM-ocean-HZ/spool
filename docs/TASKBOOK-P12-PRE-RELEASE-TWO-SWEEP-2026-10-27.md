@@ -125,3 +125,20 @@
 | 10 | 对 | `STALE_WS_SYSTEM` 的 B 类就是项目级 |
 | 11 | 对 | 99 条。P9A 那 87 条（在 `7efc7b5` 上重跑同一个脚本复原的清单）一条不少都还在；新增 12 条 |
 | 12 | 对 | 四处写入都在 `folder_link.rs`（SPOOL.md、`.git/info/exclude`、CLAUDE.md 的 `@SPOOL.md`、AGENTS.md 一行） |
+
+### 7.2 P12-5 真跑：先写死的判定标准（跑之前写的，跑完不改）
+
+**在哪跑**：`~/Desktop/Spool/P12-realrun-20261027/lib/` —— 10-27 23:02 真库 `VACUUM INTO` 的副本（v37、1310 块、67 个活项目）+ 一份 settings.json，**界面语言改成 en**（要验的就是英文界面；⚠️ 真库那份 settings.json 现在写的是 `zh`，和「我的界面是英文」对不上，回执里问）。真库一个字不碰；证明：CLI 那条起的 `spool --mcp` 把 `mcp-clients.json` 写进副本目录，真库那份的修改时间跑前跑后不变。原始数据（提示词、材料、模型原话、读好的 JSON、token、余额）全存在那个文件夹里，⛔ 不进仓库；key 只走环境变量，跑完 `grep -r` 那个文件夹确认没有。
+**用什么跑**：和 app 一样。API 那条 `weekly_material_for_api` + `weekly_messages_for_api` + `spool-ai`（DeepSeek：`deepseek-v4-flash`、思考 low、温度 0.2，和你的设置一样）；CLI 那条 `weekly_review_headless` + `engine::codex_args`（`SPOOL_DATA_DIR` 走 P12-4 那条路，试验台不再自己插 `-c`），MCP 服务是这一次构建的 `target/debug/spool`（`--engine-run --engine-weekly`）。两条都过 `weekly_structured`。
+**次数和钱**：DeepSeek 3 次、本机 Codex 3 次；P12 一共（含 P12-7 那 1 次 DeepSeek）不超过 0.5 美元，以 DeepSeek 余额前后差为准（余额有十几分钟延迟：跑完至少 15 分钟再读一次）。Codex 走订阅，只记 token。
+
+**判定标准**（每条路分开算，跑成的几次合在一起）：
+
+| # | 看什么 | 过的线 |
+|---|---|---|
+| 1 – 9 | 和 P10 任务书 §7.2 一样：解析 100%；引文过闸 ≥ 80%；**标题对不上整项丢 = 0**（这一条现在也是在验 `==== 项目名 ====`）；六种以外的动作 = 0；模型自己截断的字段 = 0；花费（见上）；结果里的已完成项目 = 0；和还开着的某一行一字不差的新跟进 = 0；关跟进照实报、不设线 | 同 P10 |
+| 10 | **英文界面下这几栏是英文**：did、stuck、signals[].why、actions[].why、add_follow_up 的 text、next。一栏怎么算「英文」：先去掉这一栏里出现的项目标题原文（材料里有的那些）和成对引号里的内容（「」『』“”"" 〈〉），剩下的非空白字符里汉字占比 ≤ 10% | 两条路各自 **≥ 95% 的栏是英文，并且没有一栏汉字占比 > 50%**（整句中文）。不是英文的栏原话列进回执 |
+| 11 | 照抄的没被翻译：quote、old_quote、new_quote、关跟进的 line | 已经由第 2 条的闸量着（翻了就对不上原文）；另报丢掉的引文里有几条是翻译造成的 |
+| 12 | **CLI 每次的输入**（P10 两轮：第一次 43 – 44 万 token，另两次 3.1 – 3.4 万） | **每次 ≤ 100,000 token**；另报每次调了几次 `get_pack` / `get_blocks` |
+
+没过的那一条照实写进回执，⛔ 不为了让它过去改判定标准或改提示词再跑（要改提示词先问 Ocean，次数照算）。
