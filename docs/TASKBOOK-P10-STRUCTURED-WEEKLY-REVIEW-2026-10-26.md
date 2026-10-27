@@ -1,6 +1,7 @@
 # TASKBOOK P10 · 周回顾二：结构化 + 建议动作卡片 + 更新时弹消息（2026-10-26）
 
-> **状态：ACTIVE（10-26 下发）。** §4 五题 Ocean 10-26 都答了（HANDOFF §9.2 第 217 – 221 条）：先做 P10、**API 和本机 CLI 两条一起改（原 P11 并进来）**、取代 / 更正进待审、弹消息用捕捉浮窗卡的位置弹小卡、真跑总花费不超过 1 美元。10-26 开工，进度和回执在 §6。
+> **状态：COMPLETE —— 待 Ocean 验收（先不归档）。** 10-26 下发、开工，10-27 施工完：P10-1 – P10-5 全做了，真跑六条判定标准全过，10-27 10:07 已换装（本机构建 0.7.4，未公证，库仍 v37）。**验收单在 §6.9**，回执 §6.1 – §6.8。没推送、没发版。
+> §4 五题 Ocean 10-26 都答了（HANDOFF §9.2 第 217 – 221 条）：先做 P10、**API 和本机 CLI 两条一起改（原 P11 并进来）**、取代 / 更正进待审、弹消息用捕捉浮窗卡的位置弹小卡、真跑总花费不超过 1 美元。
 >
 > 来源：HANDOFF §9.7「P10」（09-30 写的正文，本任务书 §1 原样搬来）、§9.3 路线图 P10 那一行、§10.7 真跑纪律。
 > 返回点：P11 已并进本任务书（第 218 条）。P10 之后的下一件由 Ocean 在验收时定；P9T、P9R §6 仍等 Ocean 真手指。
@@ -166,3 +167,64 @@
 3. **只看了格式和闸，没评内容好坏**：信号挑得准不准、跟进问题有没有用，要 Ocean 用一两周才知道。
 4. OpenAI 的钱是上限估算，不是账单。
 5. Codex 那三次用的是它的默认模型（usage 里不报模型名）。
+
+### 6.5 做了什么（提交都在本地 main，没推送）
+
+| 一步 | 提交 | 做了什么 |
+|---|---|---|
+| 开工核对 | `4ff3d63` | §6.1 |
+| P10-1 | `5823e91` | 两条路回同一个 JSON（`WEEKLY_JSON_ZH` / `_EN`，API 那条 `WEEKLY_API_SYSTEM`、CLI 后台那一版 `weekly_review_json_prompt_text`；聊天客户端拿到的照旧是文字）。新模块 `src-tauri/src/weekly_review.rs` 读：只认一个完整的 JSON 对象，截断的读不成 = 整次失败；格式不对的单条丢、连原话带出去；不截字。CLI 那条读不成时结果里带 `error`、用量照记；API 那条报 `bad_json`、token 照留。存进 `engine_runs.result_text`（带 `format: spool-weekly-1`），不改库结构；旧的纯文字周回顾照旧按 P9S-5 拆卡 |
+| P10-2 | `2869757` | 逐字闸走 `quote_passes`（过期检测同一个 `locate`）；API 那条拿这一次发出去的 `user` 比，CLI 那条拿提示词里的 digest + 那个项目每块的正文和批注比（§6.1 第 1 条）。标题对项目走 AI 的视图（私密项目对不上），认「工作区 / 项目」，同名不猜。取代 / 更正在那个项目里找两块。丢掉的连原话在页面底下列出来 |
+| P10-3 | `9932de9`、`6918748` | 卡片下的按钮：标完成 / 改截止日期 / 加跟进行点一下生效、进 ⌘Z（新撤销记录 `review_action`，撤销确认卡写「周回顾里点的一步」）；取代 / 更正点下去往 `supersede_proposals` 排一行（同一张表、7 天、同一对只排一条），卡上写「在待审里等你」。按钮显示什么从库里读（已完成 / 已是那天 / 跟进里已有 / 在待审 / 已处理 / 块不在了）；已完成的项目只留一句，私密项目不出动作。`6918748` 是截图时看到的两处小毛病 |
+| P10-4 | `c6b1f9e`（复述）、`3c4db24` | `show_review_notice` + 浮窗进程的 `review` 卡，照休息卡那一套（§6.2）；两条路、手动和自动，存好一份读成了的周回顾才弹 |
+| P10-5 | `2a11771`（判定标准）、`20db7e4` | §6.3、§6.4 |
+
+**测试**（全部在最后一笔 `6918748` 上跑）：`tsc --noEmit` 干净；vitest **129 文件 / 1251 条全过**（开工 125 / 1237，+14：结构化卡片、按钮真 SQLite 点击 → ⌘Z → 重做、API 那条记账和弹卡、CLI 那条经引擎队列记账和弹卡）；cargo **284 过 / 14 ignored**（开工 272 / 11；+12：`weekly_review.rs` 10 条、私密项目不被闸对上、两条路同一份 JSON 规格；ignored +3 是真跑试验台）；`i18n-check` 不缺，`--dead` 99、和开工逐条一样；clippy 12 条警告全是原来就有的，这一窗加的行上 0 条；`cargo tree` 主 crate 没有联网的库。
+⚠️ 开工时的基线 vitest 是 1236 / 1237：挂的那条就是 DISCOVERED-20261026-1（织布同一毫秒），单独连跑三次挂一次，这一窗没动它。
+
+### 6.6 截图（真组件 + 假数据，离屏 WebKit）
+
+`~/Desktop/Spool/P10-screenshots-20261027/`，13 张，harness 在同目录 `harness/`：
+- `review.png` / `review-en.png` / `review-dark.png`：周回顾页，这一周的结构化回顾（卡片、按钮、依据原话、只差标点的提示、底下「AI 还说了 1 条，没放上来」）+ 上周的纯文字回顾照旧拆卡。
+- `review-states(-en).png`：库已经动过的样子 —— 截止日期已是那天、跟进里已有、在待审里等你、已完成的项目只留一句、项目不在了（建议照旧看得见、没有按钮）。
+- `review-clicked(-en).png`：点了「加一条跟进」和「截止日期从…改成…」之后：标题旁的截止日期变了，两条旁边写「已改好 / 已加进跟进。⌘Z 可以撤销。」
+- `review-queued.png`：点了「提一次更正（进待审）」之后写「在待审里等你」。
+- `overlay-zh / en / zh-dark / en-dark / zh-val.png`：「周回顾更新了 · 8 个项目 · 9 条建议动作 · 点一下打开」那张浮窗小卡。
+
+### 6.7 换装（10-27 10:07，Europe/London）
+
+- 停 GUI 前问了 Ocean：「没有，直接换装」；`drafts.json` 两类都空。`lsappinfo` 看到 GUI 在跑（10-26 15:09 起的 7362 / 7396）。
+- 构建：`APPLE_SIGNING_IDENTITY="Developer ID Application: Hanze JIN (Q5Y5JRXZ58)" npx tauri build --bundles app`，和现装同一个 Developer ID，带时间戳、`codesign --verify --deep --strict` 过；只出 `.app`、没公证；版本号 0.7.4（`tauri.conf.json` 发版时已是 0.7.4，原来装的是 0.7.3 的本机构建）。
+- 备份：`~/Desktop/Spool/db/spool.prestop-p10-install-20261027-100658.db`（停之前）、`spool.before-p10-install-20261027-100658.db`（停之后），11 份 JSON `*.before-p10-install-20261027-100658.json`（逐字节核过）；旧 app 挪到 `~/Desktop/Spool/spool-pre-install/Spool-v0.7.3-p9y-round6-before-p10-20261027-100658.app`。
+- 只停了 7362 / 7396（TERM，1 秒就退）；20 个 `spool --mcp`（各个 AI 客户端连着的）都没动。新 GUI 22057 / 22072，10:07:08 起。日志：`~/Desktop/Spool/spool-pre-install/p10-run-20261027-100658.{out,err}.log`。
+- 核对：装好的 `spool` SHA256 `e6b8f79b…a100` 和构建产物一样，`spool-ai` `fd01ea8b…be36`；签名过；库 **v37**、`integrity_check = ok`、没有新的迁移快照；18 张非 FTS 表和停之后那份**逐行逐字段一样**（90 个项目、1305 块、30 个工作区、68 个文件、34 条跟进、32 次引擎运行、5 个文件夹）；stderr 有 `[double-tap] installed at HID/active`（两个授权都还在）。
+- ⚠️ 开着的 AI 客户端（Claude 桌面版、各个 Claude Code、Codex）不用重启：库结构没变，MCP 工具也没变。
+
+### 6.8 新发现（照 HANDOFF 格式写进 §9.9 末尾，默认 captured）
+
+- **DISCOVERED-20261027-1** · 「这一周新加的」材料里，块正文自己的 `## ` 小标题和项目标题是同一级（真库副本里〈剩余推荐信〉一块就有十来个），模型可能把它当成项目。9 次真跑都没认错；认错了闸也会整项丢、不进库。P3。
+- **DISCOVERED-20261027-2** · 引擎起 CLI 只给 PATH / HOME / USER，`SPOOL_DATA_DIR` 传不到引擎再起的 `spool --mcp`：一个用 `SPOOL_DATA_DIR` 指着别的库跑的 Spool，引擎读的却是默认库。正式 app 不设这个变量，所以用户碰不到；试验台会碰到（这一窗就是这么发现的，已在试验台里绕开）。P3。
+- **DISCOVERED-20261027-3** · 本机 CLI 的周回顾有时会把每个项目都 `get_pack` 一遍：真跑第一次 44 万 token，另两次 3 万。提示词写的是「要展开某个项目，先补读」，没说「只在需要时」。花的是订阅额度。P3。
+- **DISCOVERED-20261027-4** · API 那条的周回顾提示词只有中文（P10 之前就这样），英文界面下回顾内容也是中文；CLI 那条英文提示词也因为材料是中文而回了中文。和 DISCOVERED-20260923-2 同类。P3。
+
+### 6.9 验收单（给 Ocean 照着点；你的界面是英文，下面按英文写按钮名）
+
+0. Spool 已经换好了，正常用就行（不用退出重开）。
+1. 左边点 **Weekly review**。顶上 **With** 后面选 **API**（你原来就是 API），点 **Review this week**，等半分钟。
+   看：下面一个项目一张卡，四行 **What moved / Stuck on / Signals / Suggested**；信号和建议下面有「依据」原话；卡片最后是一句建议先做的事。哪条引文对不上，页面底下会有一块写「The AI said N more, which are not shown above」并列出它的原话。
+2. 第 1 步那次跑的时候（或者再点一次），切到别的 app（比如浏览器）等它跑完：屏幕上捕捉卡那个位置弹一张 **Weekly review updated · N projects · M suggested actions · click to open**。这时直接打字，字还进浏览器（它不抢键盘）；不管它，8 秒左右自己收起；鼠标放上去就不收。
+3. 再让它弹一次，这次点那张卡：Spool 主窗被抬上来，停在 Weekly review 页。
+4. 找一个 **Add a follow-up: …** 点一下：旁边变成 **Added to follow-ups. ⌘Z undoes it.** 打开那个项目的跟进面板能看到这一条。回到周回顾按 ⌘Z：弹「Undone」那张小卡，跟进面板里那条没了。
+5. 有 **Set the deadline to … / Move the deadline from … to …** 的话：点一下，卡片标题旁的 **Due …** 和项目顶上的日期都变了；⌘Z 回去。（真跑那 9 次一次都没提这一种 —— 你库里这周没有设截止日期的项目。没出现就跳过。）
+6. 有 **Propose a correction / Propose replacing the old block (goes to Review)** 的话：点一下，旁边写 **Waiting for you in Review.**；左栏底部那个收件箱的数 +1，打开能看到这一条，有更正 / 取代 / 不动三个按钮。块本身没变。
+7. 有 **Mark done** 的话：点一下，那张卡的建议动作变成一句「This project is marked done…」，左栏里它进了完成；⌘Z 回来。（同样，真跑一次都没提，没出现就跳过。）
+8. 往下翻到以前的周回顾（纯文字那种）：照旧一个项目一张卡，没有按钮。
+9. 本机 CLI：**With** 切到 **Local CLI**，再点 **Review this week**（花 Codex 订阅额度，一次 3 万到 44 万 token 不等）。结果同样是卡片 + 按钮，跑完同样弹卡。看完切回 **API**（每周自动回顾走你选的这一类）。
+10. 看完告诉我：通过 / 哪一步不对。
+
+### 6.10 要你定的
+
+1. **验收**：照 §6.9 点。
+2. **OpenAI 那三次的钱**：这个 key 读不到用量，要在 OpenAI 后台看一眼（上限估算不到 0.5 美元）。
+3. **发不发版、推不推送**：这一窗都没做，等你说。
+4. §6.8 四条新发现要不要做（默认都只记着）。
