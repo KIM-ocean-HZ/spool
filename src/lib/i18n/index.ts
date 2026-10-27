@@ -2315,4 +2315,6 @@ const EN: Record<string, string> = {
   '{key} 可以撤销。': '{key} undoes it.',
   '周回顾更新了': 'Weekly review updated',
   '{p} 个项目 · {a} 条建议动作 · 点一下打开': '{p} projects · {a} suggested actions · click to open',
+  '已改好。': 'Done.',
+  '已加进跟进。': 'Added to follow-ups.',
 };

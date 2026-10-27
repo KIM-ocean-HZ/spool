@@ -82,8 +82,8 @@ export default function StructuredReview({ review, client }: { review: WeeklyRev
               )}
             </header>
             <dl className="mt-2 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1.5 text-[13px] leading-relaxed">
-              <Row label={t('做了什么')}>{p.did}</Row>
-              <Row label={t('卡在哪')}>{p.stuck}</Row>
+              {p.did && <Row label={t('做了什么')}>{p.did}</Row>}
+              {p.stuck && <Row label={t('卡在哪')}>{p.stuck}</Row>}
               {p.signals.length > 0 && (
                 <Row label={t('看到的信号')}>
                   <ul className="space-y-1">
@@ -241,12 +241,17 @@ function ActionItem({
           : a.kind === 'propose_supersede'
             ? t('提一次整条取代（进待审）')
             : t('提一次更正（进待审）');
+  // Clicked here just now reads as done; found that way in the library reads as already so.
   const after: Record<string, string> = {
     applied:
       a.kind === 'set_deadline'
-        ? t('截止日期已经是这一天。')
+        ? mine
+          ? t('已改好。')
+          : t('截止日期已经是这一天。')
         : a.kind === 'add_follow_up'
-          ? t('跟进里已经有这一条。')
+          ? mine
+            ? t('已加进跟进。')
+            : t('跟进里已经有这一条。')
           : t('已标完成。'),
     queued: t('在待审里等你。'),
     settled: t('这两块已经处理过了。'),
