@@ -163,7 +163,12 @@ const noticeText = (n: OverlayNotice): string => {
   if (n.kind === 'no-target') return t('没有捕捉目标 — 打开 Spool 在项目顶栏点「捕捉到此」');
   // P7-7 — a screenshot saved as a file (⌘⇧4) is written only once the thumbnail in the corner
   // goes away; the capture card takes this notice's place when it arrives.
-  if (n.kind === 'shot-waiting') return t('等截图存好… 右下角的小图消失之后就有了');
+  // P12 验收第一轮（Ocean 10-28 第 237 条）: measured again — while the thumbnail is up the picture is on
+  // no disk at all, so there is nothing to take early. The Mac line says how to not wait.
+  if (n.kind === 'shot-waiting')
+    return IS_MAC
+      ? t('等截图存好… 右下角的小图消失之后就有了。不想等：在 ⌘⇧5 的「选项」里关掉「显示浮动缩略图」')
+      : t('等截图存好… 右下角的小图消失之后就有了');
   if (n.kind === 'shot-missing')
     return t('没等到这张截图 — 等右下角的小图消失后再双击 ⌥；或者在 ⌘⇧5 的「选项」里关掉「显示浮动缩略图」');
   if (n.kind === 'shot-denied')

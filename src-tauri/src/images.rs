@@ -613,56 +613,15 @@ pub fn screenshot_pending_since(_since_ms: u64) -> bool {
 }
 
 /// The question above, given `TemporaryItems`: a picture written since `since_ms` in one of the
-/// screenshot UI's folders.
+/// screenshot UI's folders. Folders untouched since then are not opened (there are dozens).
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 fn shot_pending_in(temp_items: &std::path::Path, since_ms: u64) -> bool {
-    pending_shot_in(temp_items, since_ms).is_some()
-}
-
-/// P12-6 (DISCOVERED-20261018-2): which picture that is — the newest one written since `since_ms`
-/// across the screenshot UI's folders. Folders untouched since then are not opened (there are dozens).
-#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
-fn pending_shot_in(temp_items: &std::path::Path, since_ms: u64) -> Option<(u64, std::path::PathBuf)> {
-    std::fs::read_dir(temp_items)
-        .ok()?
-        .flatten()
-        .filter(|e| {
-            e.file_name().to_string_lossy().starts_with("NSIRD_screencaptureui_")
-                && e.metadata().is_ok_and(|m| m.is_dir() && modified_ms(&m) + SHOT_SLACK_MS >= since_ms)
-        })
-        .filter_map(|e| newest_shot_in(&e.path(), since_ms, |_| true).ok().flatten())
-        .max_by_key(|(at, _)| *at)
-}
-
-/// P12-6: the picture still in the thumbnail, as a copy of Spool's own — so a capture made right
-/// after the screenshot does not wait for the thumbnail to go. ⛔ The system's file is only read: not
-/// moved, deleted or changed, and the system saves the real screenshot where it always does once the
-/// thumbnail goes. Copied at once: the system clears its folder when the thumbnail goes, which can
-/// fall between this look and the capture reading the picture. ⚠️ With Markup open on the
-/// thumbnail, this is the picture before the markup.
-#[cfg(target_os = "macos")]
-fn take_pending_shot(since_ms: u64) -> Option<std::path::PathBuf> {
-    let (_, src) = pending_shot_in(&user_temp_dir()?.join("TemporaryItems"), since_ms)?;
-    copy_shot(&src, &std::env::temp_dir().join("spool-shots"), now_ms()).ok()
-}
-#[cfg(not(target_os = "macos"))]
-fn take_pending_shot(_since_ms: u64) -> Option<std::path::PathBuf> {
-    None
-}
-
-/// `src`'s bytes into a new file in `dir` — a folder only Spool writes, emptied of the last copy
-/// first (the capture that read it is done: captures run one at a time).
-#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
-fn copy_shot(src: &std::path::Path, dir: &std::path::Path, now: i64) -> std::io::Result<std::path::PathBuf> {
-    let bytes = std::fs::read(src)?;
-    std::fs::create_dir_all(dir)?;
-    for old in std::fs::read_dir(dir)?.flatten() {
-        let _ = std::fs::remove_file(old.path());
-    }
-    let name = src.file_name().map_or_else(|| "screenshot.png".into(), |n| n.to_string_lossy().into_owned());
-    let dest = dir.join(format!("{now}-{name}"));
-    std::fs::write(&dest, bytes)?;
-    Ok(dest)
+    let Ok(entries) = std::fs::read_dir(temp_items) else { return false };
+    entries.flatten().any(|e| {
+        e.file_name().to_string_lossy().starts_with("NSIRD_screencaptureui_")
+            && e.metadata().is_ok_and(|m| m.is_dir() && modified_ms(&m) + SHOT_SLACK_MS >= since_ms)
+            && matches!(newest_shot_in(&e.path(), since_ms, |_| true), Ok(Some(_)))
+    })
 }
 
 /// The per-user temp dir (`/var/folders/…/T/`), asked of the system rather than of `$TMPDIR`,
@@ -781,8 +740,6 @@ pub fn screenshot_goes_to_clipboard() -> bool {
 /// Wait for the screenshot taken at `since_ms` to land as a file. While the floating
 /// thumbnail is up (the system default, about five seconds) the file is not written yet, so
 /// this looks again every 150 ms until `timeout_ms`. `Ok(None)` = nothing came.
-/// P12-6: a picture still in the thumbnail is taken from there at once (`take_pending_shot`); the
-/// wait is for when it is not there either.
 /// ⚠️ Reading the Desktop is what makes macOS ask once 「“Spool”想访问“桌面”文件夹中的文件」
 /// (Ocean 2026-10-08: 弹一次就弹一次). A refusal comes back as `Err("denied")`.
 /// 2026-10-18: `timeout_ms` is the least it waits; while the picture is still in the thumbnail
@@ -795,9 +752,6 @@ pub fn find_new_screenshot(since_ms: u64, timeout_ms: u64) -> Result<Option<Stri
     let mut deadline = start + Duration::from_millis(timeout_ms);
     loop {
         if let Some(p) = pick_new_screenshot(&dir, since_ms)? {
-            return Ok(Some(p.to_string_lossy().into_owned()));
-        }
-        if let Some(p) = take_pending_shot(since_ms) {
             return Ok(Some(p.to_string_lossy().into_owned()));
         }
         let now = Instant::now();
@@ -1168,24 +1122,6 @@ mod tests {
         put("NSIRD_screencaptureui_new", "Screenshot 2026-10-18 at 14.44.06.png", chord + 3_000);
         assert!(shot_pending_in(&items, chord));
         assert!(!shot_pending_in(&items, chord + 10_000), "taken before this chord");
-
-        // P12-6: which picture — the newest across the screenshot UI's folders, never somebody else's.
-        put("NSIRD_screencaptureui_newer", "Screenshot 2026-10-18 at 14.44.09.png", chord + 6_000);
-        put("NSIRD_screencaptureui_newer", "notes.txt", chord + 9_000);
-        let (at, path) = pending_shot_in(&items, chord).unwrap();
-        assert_eq!((at, path.file_name().unwrap().to_string_lossy().into_owned()), (chord + 6_000, "Screenshot 2026-10-18 at 14.44.09.png".into()));
-        assert_eq!(pending_shot_in(&items, chord + 10_000), None);
-
-        // Copied into a folder of Spool's own; the system's file is left exactly as it was.
-        std::fs::write(&path, b"the picture").unwrap();
-        stamp(&path, chord + 6_000);
-        let mine = items.join("spool-shots");
-        let first = copy_shot(&path, &mine, 1).unwrap();
-        let copy = copy_shot(&path, &mine, 2).unwrap();
-        assert!(copy.starts_with(&mine) && !first.exists(), "the last copy goes when a new one comes");
-        assert_eq!(std::fs::read(&copy).unwrap(), b"the picture");
-        assert_eq!(std::fs::read(&path).unwrap(), b"the picture");
-        assert_eq!(modified_ms(&std::fs::metadata(&path).unwrap()), chord + 6_000);
         let _ = std::fs::remove_dir_all(&items);
     }
 

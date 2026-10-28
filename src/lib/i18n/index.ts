@@ -1630,6 +1630,8 @@ const EN: Record<string, string> = {
   '不要这张': 'Remove this one',
   '一张图片（{w}×{h}）': 'An image ({w}×{h})',
   '等截图存好… 右下角的小图消失之后就有了': 'Waiting for the screenshot to be saved… it appears once the thumbnail in the corner goes away',
+  '等截图存好… 右下角的小图消失之后就有了。不想等：在 ⌘⇧5 的「选项」里关掉「显示浮动缩略图」':
+    'Waiting for the screenshot to be saved… it appears once the thumbnail in the corner goes away. To skip the wait, turn off “Show Floating Thumbnail” under Options in ⌘⇧5',
   '没等到这张截图 — 等右下角的小图消失后再双击 ⌥；或者在 ⌘⇧5 的「选项」里关掉「显示浮动缩略图」': 'The screenshot did not arrive — wait for the thumbnail in the corner to go away, then double-tap ⌥ again; or turn off “Show Floating Thumbnail” under Options in ⌘⇧5',
   '读不到桌面上的截图 — 到「系统设置 → 隐私与安全性 → 文件和文件夹」里给 Spool 打开「桌面」': 'Spool cannot read screenshots on the Desktop — turn on “Desktop Folder” for Spool in System Settings → Privacy & Security → Files and Folders',
   '这一份丢了数字或日期，不能进库 —— 先用上面那个「加回去」。':
