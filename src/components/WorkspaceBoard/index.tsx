@@ -13,7 +13,9 @@ import { fileLabel, openAttachment } from '@/lib/files/openFile';
 import { folderError, setFolderPrimary } from '@/lib/folders/api';
 import { dateLocale, useT } from '@/lib/i18n';
 import { CENTRE_HEADER_HEIGHT } from '@/lib/layout';
+import { noticeRenamed } from '@/lib/names/renameNotice';
 import { DUE_SOON_DAYS, dueInDays } from '@/lib/threads/deadline';
+import { isImeComposing } from '@/lib/utils/ime';
 import { useFolderStore } from '@/stores/folderStore';
 import { useThreadsStore } from '@/stores/threadsStore';
 import { useWorkspacesStore } from '@/stores/workspacesStore';
@@ -57,6 +59,19 @@ export default function WorkspaceBoard({ projectRightInset = 0 }: { projectRight
 
   const ws = workspaces.find((w) => w.id === workspaceId);
   const title = ws?.title.trim() || t('未命名');
+
+  // P12 验收第一轮（Ocean 10-28）:「工作区重命名也需要和项目重命名一样，除了双击左侧边栏，也可以直接双击标题」.
+  // Same act as the sidebar's double click (WorkspaceGroup): Enter, Esc or clicking away saves once, and a
+  // name taken on that level comes back as 「<name> 2」 with the same notice.
+  const rename = useWorkspacesStore((s) => s.rename);
+  const [titleDraft, setTitleDraft] = useState<string | null>(null);
+  useEffect(() => setTitleDraft(null), [workspaceId]);
+  const commitTitle = (): void => {
+    const asked = titleDraft;
+    setTitleDraft(null);
+    if (!ws || asked === null || asked === ws.title) return;
+    void rename(ws.id, asked).then((stored) => noticeRenamed('workspace', asked, stored));
+  };
 
   useLayoutEffect(() => {
     const root = rootRef.current;
@@ -284,7 +299,31 @@ export default function WorkspaceBoard({ projectRightInset = 0 }: { projectRight
         className="flex flex-none items-baseline justify-between gap-3 border-b border-line px-6 py-6"
         style={{ minHeight: CENTRE_HEADER_HEIGHT }}
       >
-        <h2 className="min-w-0 truncate font-serif text-2xl text-ink">{title}</h2>
+        {titleDraft !== null ? (
+          <input
+            autoFocus
+            value={titleDraft}
+            onChange={(e) => setTitleDraft(e.target.value)}
+            onBlur={commitTitle}
+            onKeyDown={(e) => {
+              if (isImeComposing(e.nativeEvent)) return;
+              if (e.key === 'Enter' || e.key === 'Escape') {
+                e.preventDefault();
+                e.currentTarget.blur();
+              }
+            }}
+            placeholder={t('未命名')}
+            className="min-w-0 flex-1 bg-transparent font-serif text-2xl text-ink outline-none placeholder:text-muted/50"
+          />
+        ) : (
+          <h2
+            onDoubleClick={() => ws && setTitleDraft(ws.title)}
+            title={t('双击重命名')}
+            className="min-w-0 truncate font-serif text-2xl text-ink"
+          >
+            {title}
+          </h2>
+        )}
         <span className="flex-none text-xs text-muted">
           {parent ? t('在「{ws}」里 · ', { ws: parent.title.trim() || t('未命名') }) : ''}
           {t('{n} 个项目', { n: threads.length })}
