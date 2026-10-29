@@ -1,14 +1,12 @@
 <!-- PURGE-BEFORE-APPLICATION: 本文件是给申请作品集用的事实表，§11.4 列着哪些文件含申请相关内容；发送申请前一并清除或移出公开仓库。总清单：本文件 §11.4。标记于 2026-09-25。 -->
 # Spool — 作品集事实表（PORTFOLIO_FACTS）
 
-> **生成日期**：2026-09-23（本机时区 UTC+1；实测命令的 UTC 时间写在各条里）
+> **生成日期**：2026-10-29 重跑（初版 2026-09-23）。本机时区 GMT（UTC+0）；实测命令的 UTC 时间写在各条里。
 >
 > **依据**
-> - 最新公开 release：**v0.6.2**，annotated tag `04e1386` → commit **`58ec01f`**（2026-08-24 16:05:39 +0800）
-> - 公开 main（`origin/main`）：**`7d1b2b7`**（2026-08-27）
-> - 本地 main HEAD：**`bbf31e8`**（内容是 2026-09-03 的；比 `origin/main` 多 40 个提交，**没有推送**）。
->   2026-09-23 按 `CLAUDE.md` §5 改写了最顶上 4 个提交的提交信息，所以哈希变了：原来的 HEAD 是 `a0236a3`，tree 完全相同。
->   2026-09-24 在它上面又加了两个修复提交 `d1c972c`、`d576ee3`（§2.3），同样没推送。
+> - 最新公开 release：**v0.7.4**，annotated tag `ec18c3e` → commit **`ba7d2a7`**（2026-10-26 16:53:54 +0000），GitHub 发布于 2026-10-26T20:18:07Z。
+> - 公开 main（GitHub API `commits/main`）= 本地 main HEAD = **`cbbda2e`**（2026-10-28）。**本地没有未推送的提交**（上一轮那 40 个本地提交都已推送）。
+> - v0.6.2 那一轮（tag `04e1386` → `58ec01f`，2026-09-23 测）的数字**保留原版本号**，不继承到 v0.7.4；被取代的值挪进 §14。
 >
 > **读者**：作品集仓库 `~/Desktop/portfolio` 的 Claude Code 和 Hanze。网站读者是美国 CS / HCI 硕士项目的招生委员和教授。
 >
@@ -21,9 +19,8 @@
 > 查不到的写「**缺**」，并写清缺什么、谁能补、怎么补。
 >
 > **这份文档不是什么**：它不是执行光标，也不改变 `docs/EXECUTION_POLICY.md` 和 HANDOFF 的任何安排。
-> 2026-09-23 第一轮只新建了本文件。同一天第二轮按 Hanze 的指示多做了三件事（§14 有记录）：
-> 改写 4 个本地提交的信息、给 28 份文档加清除标记、补拍截图（09-23 共 18 张，09-24 起为 20 张，§9.2）。
-> 两轮都没有提交、推送、打 tag 或发版。
+> 2026-10-29 这一轮是 Hanze 交代的一次性任务（作品集要按 v0.7.4 重跑）：只改了本文件，没有拍新截图、没有改作品集仓库、没有推送。
+> 2026-09-23 / 09-24 那几轮做过的额外事情（改写提交信息、加清除标记、补拍截图）见 §14。
 
 ---
 
@@ -33,292 +30,331 @@
 
 | 节 | 重核什么 | 命令（在仓库根目录跑，除非另注） |
 |---|---|---|
-| 头部 · §1 | 最新 release、日期、资产、是否 prerelease | `gh release list --limit 10` · `gh release view <tag> --json tagName,isPrerelease,isDraft,publishedAt,assets` · `git tag --sort=-creatordate --format='%(refname:short) %(objectname:short) %(*objectname:short) %(creatordate:iso)'` |
-| §1 | 签名、公证、sha256（拿**下载回来的发布件**核，不拿本机 `/Applications` 里的） | `gh release download <tag> --pattern '*.dmg'` → `shasum -a 256 *.dmg` → `spctl -a -vv -t install <dmg>` → `xcrun stapler validate <dmg>` → `hdiutil attach -nobrowse -readonly -mountpoint <tmp> <dmg>` → `spctl -a -vv <tmp>/Spool.app` → `hdiutil detach <tmp>`。公证 submission id 只能从 `CASE_STUDY_LEDGER.md` §1.2 抄，或由 Hanze 用 `xcrun notarytool history` 复核 |
-| §1 | 本机装的是不是发布版 | `defaults read /Applications/Spool.app/Contents/Info.plist CFBundleShortVersionString` 加 `spctl -a -vv /Applications/Spool.app`（**只有 `Notarized` 才是发布版**，`Unnotarized Developer ID` 是开发构建） |
-| §1 · §3 | MCP 工具数（从发布的二进制实数，不从源码数） | 见 §3.6 那段探针；**必须**带 `SPOOL_DATA_DIR=<空临时目录>`，否则会连到真库 |
-| §2 | 哪些提交在 release 里、哪些只在 main、哪些只在本地 | `git log --format='%h %ad %s' --date=short <tag>..origin/main -- . ':(exclude)docs'` · `git log --format='%h %ad %s' --date=short origin/main..main -- . ':(exclude)docs'` · 每个分支：`git merge-base --is-ancestor <branch> <tag>` |
+| 头部 · §1 | 最新 release、日期、资产、是否 prerelease | `gh release list --limit 12` · `gh release view <tag> --json tagName,isPrerelease,isDraft,publishedAt` · `gh release view <tag> --json assets --jq '.assets[]\|[.name,.size,.downloadCount,.digest]\|@tsv'` · `git tag --sort=-creatordate --format='%(refname:short) %(objectname:short) %(*objectname:short) %(creatordate:iso)'` |
+| §1 | 签名、公证、sha256（拿**下载回来的发布件**核，不拿本机 `/Applications` 里的） | `gh release download <tag> --pattern '*_aarch64.dmg'` → `shasum -a 256 *.dmg` → `spctl -a -vv -t install <dmg>` → `xcrun stapler validate <dmg>` → `hdiutil attach -nobrowse -readonly -mountpoint <tmp> <dmg>` → `spctl -a -vv <tmp>/Spool.app` → `codesign -dvv <tmp>/Spool.app` 和 `…/Contents/MacOS/spool-ai` → `hdiutil detach <tmp>`。公证 submission id 只能从 `CASE_STUDY_LEDGER.md` §1.2 抄，或由 Hanze 用 `xcrun notarytool history` 复核。⚠️ 下载一次，GitHub 的下载计数就 +1（§10） |
+| §1 | 本机装的是不是发布版 | `defaults read /Applications/Spool.app/Contents/Info.plist CFBundleShortVersionString` 加 `spctl -a -vv /Applications/Spool.app`（**只有 `Notarized` 才是发布版**，`Unnotarized Developer ID` 是开发构建）。⚠️ main 上的开发构建版本号也写 0.7.4，只看版本号分不出来 |
+| §1 · §3 | MCP 工具数（从发布的二进制实数，不从源码数） | 见 §3.6 那段探针；**必须**带 `SPOOL_DATA_DIR=<空临时目录>`，否则会连到真库。引擎模式再加 `--engine-run` 跑一次 |
+| §1.3 | Windows 现状 | 当前 HANDOFF §9.8、§9.3 的 P13 / 发版二两行；`docs/TASKBOOK-P13-*` 的 §7 回执；`curl -s -o /dev/null -I -L -w '%{http_code}'` 打 README / 官网上的 Windows 下载地址 |
+| §2 | 哪些提交在 release 里、哪些只在 main、哪些只在本地 | `gh api repos/KIM-ocean-HZ/spool/commits/main --jq .sha`（这台机器 SSH `git fetch` 不通，`origin/main` 可能是旧的）· `git log --format='%h %ad %s' --date=short <tag>..main -- . ':(exclude)docs'` · 每个分支：`git merge-base --is-ancestor <branch> <tag>` |
 | §2 | MCP Registry 条目 | `curl -s 'https://registry.modelcontextprotocol.io/v0.1/servers?search=io.github.KIM-ocean-HZ%2Fspool'` |
-| §3 | 代码行号 | 行号钉在 tag 上：`git show <tag>:<path> \| grep -n <pattern>`。发版后逐条重 grep，行号全部换成新 tag 的 |
-| §3 | 主进程没有网络库 | 在 tag 的 worktree 里：`cd src-tauri && cargo tree -e normal --prefix none \| awk '{print $1}' \| sort -u \| grep -xiE 'ureq\|rustls\|reqwest\|hyper\|native-tls\|openssl\|ring\|curl'`（⚠️ 不要用不带 `-x` 的 grep：`string_cache` 里的 "ring" 会误报） |
-| §4 | 测试实跑 | 见 §4.1 的脚本。在 `git worktree add --detach <tmp> <tag>` 里跑，跑完 `git worktree remove` |
-| §5–§7 | 有没有新一轮评测、新 blocker | `grep -n '^## ' docs/Deepseek-API-compress-test.md`（当前最后一节是 §8 第六轮）· `grep -n '^### 3\.' docs/CASE_STUDY_LEDGER.md`（当前最后是 §3.46）· `grep -n '^| Field' docs/CASE_STUDY_LEDGER.md`（当前最后一列是 v0.6.2） |
+| §3 | 代码行号 | 行号钉在 tag 上：在 §4.1 那份 `git archive` 副本里 `grep -n`，或 `git show <tag>:<path> \| grep -n <pattern>`。发版后逐条重 grep，行号全部换成新 tag 的 |
+| §3 | 主进程没有网络库 | 在 tag 的副本里：`cd src-tauri && cargo tree -e normal --prefix none \| awk '{print $1}' \| sort -u \| grep -xiE 'ureq\|rustls\|reqwest\|hyper\|native-tls\|openssl\|ring\|curl\|webpki-roots'`（⚠️ 不要用不带 `-x` 的 grep：`string_cache` 里的 "ring" 会误报）；`sidecar/` 里同一条命令应当命中 `ureq rustls ring webpki-roots` |
+| §4 | 测试实跑 | 见 §4.1。**用 `git archive <tag> \| tar -x -C /tmp/<新目录>` 解出干净副本**，在副本里 `npm ci`、构建、跑测试；不在工作区里装依赖或构建 |
+| §5–§7 | 有没有新一轮评测、新 blocker | `grep -n '^## ' docs/Deepseek-API-compress-test.md`（当前最后一节仍是 §8 第六轮）· `grep -n '^### 3\.' docs/CASE_STUDY_LEDGER.md`（当前最后仍是 §3.46）· `grep -n '^| Field' docs/CASE_STUDY_LEDGER.md`（当前最后一列是 v0.7.4）· 归档任务书里的「真跑」回执（§5.0） |
 | §9 | 截图 | `git log --format='%h %ad' --date=short -- docs/screenshots/<file>` |
-| §9 | 发版后重拍 | 照 §9.2 的做法：新 tag 的 worktree 里改 bundle id、`APP_IDENTIFIER`、`KEYCHAIN_SERVICE` 三处常量（行号按新 tag 重 grep），`npx tauri build --bundles app`，用新 tag 的 `scripts/seed-demo-library.sh`（改目标目录）灌演示库；每次点击前核对最前面的窗口属于隔离版；⛔ 不碰「Launch at login」和「Update config」 |
-| §11.4 | 清除清单 | `grep -rl 'PURGE-BEFORE-APPLICATION' --include='*.md' . \| grep -v node_modules`；源码清单用 §11.4 里那条 `git grep` 重算 |
+| §9 | 发版后重拍 | 照 §9.4 的建议清单；做法照 §9.2：新 tag 的副本里改 bundle id、`APP_IDENTIFIER`、`KEYCHAIN_SERVICE` 三处常量 + `productName`（v0.7.4 行号：`tauri.conf.json:3/5`、`mcp.rs:1352`、`api_engine.rs:714`），`npx tauri build --bundles app`；用新 tag 的 `scripts/seed-demo-library.sh` 灌演示库（**脚本默认写 `com.oceanjin.spool.verify`，要改 `DIR`**）；构建出的 app 别放 `/private/tmp`；每次点击前核对最前面的窗口属于隔离版；⛔ 不碰「Launch at login」和「Update config」 |
+| §11.4 | 清除清单 | `git grep -l 'PURGE-BEFORE-APPLICATION' HEAD -- '*.md'`（⚠️ 会把「提到」这个词的文件也算进来，要逐个看第一行）；源码清单用 §11.4 里那条 `git grep` 重算 |
 | §10 | 下载数 | `gh api repos/KIM-ocean-HZ/spool/releases --paginate --jq '.[] \| [.tag_name, ([.assets[].download_count]\|add)] \| @tsv'` |
-| §12 | 作品集口径 | 只读打开 `~/Desktop/portfolio/content/facts.yaml`（`id: spool`）、`content/evidence.yaml`（`project: spool`）、`docs/CONTENT-GUIDE.md` §4 |
+| §12 | 作品集口径 | 只读打开 `~/Desktop/portfolio/content/evidence.yaml`（`project: spool`）、`content/projects/spool.md`、`content/facts.yaml`（`id: spool`）、`docs/CONTENT-GUIDE.md` §4 |
 
 ---
 
 ## 1. 发布记录
 
-### 1.1 最新公开 release：v0.6.2
+### 1.1 最新公开 release：v0.7.4
 
 | 字段 | 值 | 条件 / 出处 | 日期 | 上站 |
 |---|---|---|---|---|
-| 版本 | **v0.6.2** | `gh release list`：标 `Latest`，`isPrerelease=false`，`isDraft=false` | 2026-09-23 查 | 可上站 |
-| 发布时间 | **2026-08-24T08:06:24Z** | `gh release view v0.6.2 --json publishedAt` | — | 可上站 |
-| Tag | `v0.6.2`（tag 对象 `04e1386`）→ commit **`58ec01f`** | `git tag` 输出；commit 时间 2026-08-24 16:05:39 +0800 | — | 可上站 |
-| 平台 | **macOS，Apple Silicon（aarch64）**；release notes 写 macOS 11 或更新 | `docs/RELEASE_NOTES_v0.6.2.md` "Download" 一节 | — | 可上站 |
-| 产物 | `Spool_0.6.2_aarch64.dmg` 与 `Spool-macOS-arm64.dmg`，同一份字节，各 **10,390,759** 字节 | `gh release view` 的 assets | — | 可上站 |
-| sha256 | **`fc74abee8f3c1084d70a885ccdd79520cb200a266b349536c3ad3fb12d992899`**（两个名字都是这个值） | 2026-09-23 下载回来实测 `shasum -a 256`；与 `CASE_STUDY_LEDGER.md` §1.2 一致 | 2026-09-23 | 可上站 |
-| 签名身份 | Developer ID Application，Team **`Q5Y5JRXZ58`**；随包的 `spool-ai` 同一个 Team | 2026-09-23 挂载发布件后跑 `codesign -dvv`；codesign 时间戳 2026-08-24 09:01:34（本机时区 UTC+1） | 2026-09-23 | 可上站 |
-| Gatekeeper | `.dmg` 和其中的 `.app` 都是 **`accepted` · `source=Notarized Developer ID`**；`xcrun stapler validate` 对 `.dmg` 通过 | 2026-09-23 对**下载回来的发布件**实测 | 2026-09-23 | 可上站 |
-| 公证 · `.app` | submission `19bba6d2-ab45-4f1e-94c1-79a3ee59f9ee` · Accepted（上传名是 `Spool.zip`） | `CASE_STUDY_LEDGER.md` §1.2 v0.6.2 那一列（id 是事后用 `xcrun notarytool history` 捞回来的）。**本轮没有复核**：需要 Apple 凭据 | 2026-08-24 | 可上站 |
-| 公证 · `.dmg` | submission `64c13142-db18-43fc-b208-0a2df177d309` · Accepted | 同上 | 2026-08-24 | 可上站 |
-| 固定名链接 | `releases/latest/download/Spool-macOS-arm64.dmg` → **HTTP 200** | 2026-09-23 `curl -I -L` 实测 | 2026-09-23 | 可上站 |
-| 库版本 | schema **v23 → v24**（加两列、不改已有行） | release notes；`src/lib/db/client.test.ts:902`（v0.6.2） | — | 可上站 |
-| 内置 MCP 服务 | `serverInfo` = `spool 0.6.2`；**20 个工具（13 读 / 7 写）+ 7 个 prompt** | 2026-09-23 对挂载的发布件跑 `tools/list` + `prompts/list`，数据目录指向空临时目录（§3.6） | 2026-09-23 | 可上站 |
+| 版本 | **v0.7.4**（release 名 "Spool 0.7.4 (macOS)"） | `gh release list`：标 `Latest`；`isPrerelease=false`，`isDraft=false` | 2026-10-29 查 | 可上站 |
+| 发布时间 | **2026-10-26T20:18:07Z** | `gh release view v0.7.4 --json publishedAt` | — | 可上站 |
+| Tag | `v0.7.4`（tag 对象 `ec18c3e`，打 tag 2026-10-26 20:17:39 +0000）→ commit **`ba7d2a7`**（2026-10-26 16:53:54 +0000） | `git tag` 输出；ledger §1.2 v0.7.4 列：tag 之后 main 上的提交在发版时只改文档和 `server.json` | — | 可上站 |
+| 平台 | **macOS，Apple Silicon（aarch64）**；release notes 写 "Apple Silicon (M1 or later), macOS 11 or newer" | `docs/RELEASE_NOTES_v0.7.4.md` "Download" 一节。⚠️ 发布件 `Info.plist` 的 `LSMinimumSystemVersion` 是 **10.13**（2026-10-29 实读）；ledger 写 "minimum macOS 11.0"。Apple Silicon 本身最低就是 macOS 11，所以对用户没差别，但两处写法不一致（仅内部） | 2026-10-29 | 可上站（用 release notes 的写法） |
+| 产物 | `Spool_0.7.4_aarch64.dmg` 与 `Spool-macOS-arm64.dmg`，同一份字节，各 **11,962,561** 字节 | `gh release view v0.7.4 --json assets`；两个资产的 `digest` 相同 | 2026-10-29 | 可上站 |
+| sha256 | **`e70c78f74c582728ea2821ea0ef14ce7ac19aeeecd5566b044ce19e1d9a5c9ad`** | 2026-10-29T16:03:20Z 下载 `Spool_0.7.4_aarch64.dmg` 实测 `shasum -a 256`；与 release notes、ledger §1.2、GitHub `digest` 一致 | 2026-10-29 | 可上站 |
+| 签名身份 | Developer ID Application: **Hanze JIN**，Team **`Q5Y5JRXZ58`**；随包的 `spool-ai` 同一个 Team、同一个证书 | 2026-10-29 挂载发布件后跑 `codesign -dvv`（`.app` 与 `Contents/MacOS/spool-ai`）；签名时间戳 2026-10-26 20:15:26 | 2026-10-29 | 可上站 |
+| Gatekeeper | `.dmg` 和其中的 `.app` 都是 **`accepted` · `source=Notarized Developer ID`**；`xcrun stapler validate` 对 `.dmg` 通过（"The validate action worked!"） | 2026-10-29 对**下载回来的发布件**实测（**本轮复核**） | 2026-10-29 | 可上站 |
+| 公证 · `.app` | submission `fe33298f-0cdc-44c0-b7a7-ef3c1d241ce5` · Accepted | `CASE_STUDY_LEDGER.md` §1.2 v0.7.4 列。**本轮没有复核 submission id**：要 Apple 凭据（Hanze 跑 `xcrun notarytool history`）。本轮复核的是结果：Gatekeeper 认它为已公证（上一行） | 2026-10-26 | 可上站 |
+| 公证 · `.dmg` | submission `5ddcb4b2-9493-41a1-8d25-8cdfc99c4c29` · Accepted | 同上 | 2026-10-26 | 可上站 |
+| 固定名链接 | `releases/latest/download/Spool-macOS-arm64.dmg` → **HTTP 200** | 2026-10-29T16:07Z `curl -I -L` 实测 | 2026-10-29 | 可上站 |
+| 库版本 | schema **v35 → v37**（加两张连接文件夹的表、`attachments` 加两列可空列；已有的行不动）。从 v0.6.2 升上来一共 v24 → v37，13 步，全部只加不改 | release notes v0.7.4 "Upgrading…"；ledger §1.2 v0.7.4 / v0.7.0 列；`src/lib/db/client.ts:41` `SCHEMA_VERSION = 37`、迁移 `:1153`（35→36）、`:1200`（36→37）；`src-tauri/src/mcp.rs:4621` `EXPECTED_SCHEMA_VERSION = 37`（v0.7.4） | — | 可上站 |
+| 内置 MCP 服务 | `serverInfo` = `spool 0.7.4`；**28 个工具（15 读 / 13 写）+ 7 个 prompt**；引擎模式（`--engine-run`）**26 个** | 2026-10-29T16:03Z 对挂载的发布件跑 `tools/list` + `prompts/list`，数据目录指向空临时目录（§3.6）。ledger 的 28 / 15 / 13 / 26 是「用发布提交的构建」数的，本轮**用发布件本身**复数，一致 | 2026-10-29 | 可上站 |
+| MCP Registry | `io.github.KIM-ocean-HZ/spool` **0.7.4** 已发布、`isLatest: true`（2026-10-26T20:50:40Z），只有元数据（没有 `packages` / `remotes`）；0.6.2、0.7.0 – 0.7.3 也都还列着 | 2026-10-29T16:05Z `GET registry…/v0.1/servers?search=…`。ledger 写这一列时还是「没发」，之后 Hanze 手动发了 | 2026-10-29 | 可上站 |
 
 **建议上站写法**
 
-- "Spool v0.6.2 shipped on 2026-08-24 as a Developer ID–signed, Apple-notarized build for Apple Silicon Macs."
-- "Re-checked on 2026-09-23: the published .dmg and the app inside both pass Gatekeeper as notarized."
+- "Spool v0.7.4 shipped on 2026-10-26 as a Developer ID–signed, Apple-notarized build for Apple Silicon Macs."（作品集已有，SPL-REL-074）
+- "Re-checked on 2026-10-29: the published .dmg and the app inside both pass Gatekeeper as notarized."
 
-### 1.2 v0.6.2 没覆盖的平台
+### 1.2 v0.7.0 – v0.7.4 发布表（v0.6.2 之后的五个版本）
 
-| 平台 | 状态 | 原因 / 出处 | 上站 |
+全部只有 macOS（Apple Silicon，签名 + 公证），都没有 Windows 包。sha256、公证、schema、工具数照 ledger §1.2 各列；发布时间、tag、资产大小 2026-10-29 用 `gh` / `git` 实查。
+
+| 版本 | 发布（GitHub，UTC） | tag → commit | 一句话（release notes 首段） | dmg 字节 | 公证 `.app` / `.dmg`（ledger） | schema | MCP 工具（读/写；引擎） |
+|---|---|---|---|---|---|---|---|
+| **v0.7.0** | 2026-10-19T15:31:30Z | `3960d23` → `20cebca` | 项目里能放图片和文件；AI 的改动先提议、等用户点 | 11,478,440 | `e49524ae-4533-4d9a-ab12-c116e8b092fd` / `0e012752-73dc-45cc-8ef7-5b41005ef510` · 都 Accepted | v24 → **v35**（11 步只加） | 26（14 / 12；引擎 25） |
+| **v0.7.1** | 2026-10-23T19:06:52Z | `ca6bb89` → `8402d9e` | 绿点提示 AI 写入；周回顾按项目分卡；跟进可每周自己跑（默认关） | 11,483,019 | `92748691-e320-4d15-b939-13561a7c6555` / `2c4a01d8-a3f6-44bb-8274-0c892be01146` · 都 Accepted | v35 不变 | 26（14 / 12；25） |
+| **v0.7.2** | 2026-10-24T10:56:19Z | `474b484` → `de9e2ec` | 修 npm 装的 CLI 被判没装；一键连上 | 11,484,755 | `943011d2-720f-4212-830b-e0a4dd9747b8` / `0c63a5ac-c015-41ee-b391-5d39da689b9e` · 都 Accepted | v35 不变 | 26（14 / 12；25） |
+| **v0.7.3** | 2026-10-25T15:30:02Z | `62ce424` → `d40cec6` | 本机 CLI 与 API key 两条路做同样四件事；过期检测查整个工作区 | 11,645,376 | `67f4908f-c4e6-4e0d-814d-10175eb821bf` / `8def0f4d-28a5-42a2-a9e2-8f00c9fab4fd` · 都 Accepted | v35 不变 | 26（14 / 12；25） |
+| **v0.7.4** | 2026-10-26T20:18:07Z | `ec18c3e` → `ba7d2a7` | 工作区能连一个本机文件夹（代码仓库、论文文件夹），放一份 `SPOOL.md` | 11,962,561 | `fe33298f-0cdc-44c0-b7a7-ef3c1d241ce5` / `5ddcb4b2-9493-41a1-8d25-8cdfc99c4c29` · 都 Accepted | v35 → **v37** | **28（15 / 13；26）** |
+
+submission id 照 ledger §1.2 各列逐字抄（本轮没有复核，要 Apple 凭据）。v0.7.4 的 sha256 本轮复核过；v0.7.0 – v0.7.3 的 sha256 只核了 GitHub 资产的 `digest`（与 release notes 写的一致），没有逐个下载。上站时只写版本和日期即可。
+
+"Five macOS releases shipped between 2026-10-19 and 10-26 (v0.7.0 – v0.7.4), each signed and notarized." —— 可上站。
+
+### 1.3 Windows（单列）
+
+| 事实 | 值 | 出处 | 上站 |
 |---|---|---|---|
-| Windows | **v0.6.2 没有 Windows 包。** 最后一个 Windows 安装包是 **v0.6.1**（2026-08-19，`Spool_0.6.1_x64-setup.exe`，**没有代码签名**，CI run `32228101203`） | Windows 流水线只在 `windows-port` 分支上跑，这一版没跑；Hanze 2026-08-24 明说只发 macOS（`WORKPLAN-2026-08-22.md` 第 103 行；ledger §1.2 v0.6.2 列）。不签名是 2026-08-15 的决定（WORKPLAN §4.1） | 可上站 |
-| Intel Mac（x86_64） | 历次 release 都只有 `aarch64` 包 | `gh release view` 各版资产 | 可上站 |
-| Linux | 没有 | 同上 | 可上站 |
+| 最后一个 Windows 安装包 | **v0.6.1**（2026-08-19，`Spool_0.6.1_x64-setup.exe`，**没有代码签名**，CI run `32228101203`）。v0.6.2 和 v0.7.0 – v0.7.4 都没有 Windows 包 | ledger §1.2 v0.6.1 列；各版 release 资产 | 可上站 |
+| 下载按钮现在指向 | README 1 处、官网首页 3 处，都写死 `releases/download/v0.6.1/Spool-windows-x64-setup.exe` → **HTTP 200**。上一轮记的「`latest/download/…windows…` 返回 404」已在 v0.7.0 发版时改掉（ledger §1.2 v0.7.0 "Windows" 一行）；`latest/download/Spool-windows-x64-setup.exe` 本身仍是 404，作品集别链它 | 2026-10-29T16:07Z `curl` 实测；`README.md:13`、`site/index.html:73/367/696` | 可上站 |
+| 现在测到哪一步 | **进行中，没有发布。** P13「发版二之前：Windows 真机验证」2026-10-28 下发、状态 **ACTIVE**：在 Hanze 自己的 Windows 电脑上，用 `main`（代码 = `33a2390`）编译、跑全套测试、打不签名的 NSIS 安装包、升级验证（v0.6.1 / 库 v23 → v37）、和 Hanze 一起走 52 条；**只验不发**。到 2026-10-29 为止 P13 的 §7 回执还是空的（仓库里没有任何结果记录）。 | `docs/TASKBOOK-P13-RELEASE-TWO-WINDOWS-VERIFY-2026-10-28.md` 首屏与 §7；HANDOFF §9.8、§9.3 P13 行 | 可上站（只写 "A Windows build is in testing."） |
+| 之前的 Windows 验证 | P9W（2026-10-20）在一台学校电脑上被安全软件拦住，43 条一条都没测；之后 P9X 修了 Windows 上测试编不过等问题，GitHub 的 Windows 机器上全绿 | P13 任务书首屏「来历」；HANDOFF §9.3 P9W / P9X 两行 | 仅内部 |
+| 谁决定什么时候发 | **Hanze。** P13 验收通过 ⇒ 下一件是「发版二：Mac + Windows 统一发版」，另开一窗做（版本号、发版说明、Mac 公证、Windows 安装包、官网 / README 的 Windows 按钮、MCP Registry），推送前要问 Hanze | HANDOFF §9.8「返回点」；§9.3「发版二」行（Hanze 原话「验收通过就是 win+mac 统一发版」，第 241 条） | 仅内部 |
+| Windows 签名 | 仍不签名（2026-08-15 的决定，WORKPLAN §4.1，现并入 HANDOFF §10） | — | 可上站（只写 "unsigned"） |
+| `docs/WINDOWS-CHECK.md` | 是 2026-08-18 首个 Windows 版（v0.5.0 前后）给 Hanze 的装机清单，**不是**现在这一轮；现在这一轮只看 P13 任务书 | 文件首屏；最后修改 `b2a7627`（2026-08-18） | 仅内部 |
 
-- "v0.6.2 is macOS-only. The last Windows installer, unsigned, shipped in v0.6.1 on 2026-08-19."
+- "Spool runs on Apple Silicon Macs today; a Windows build is in testing. The last Windows installer, unsigned, was v0.6.1."
 
-**已知问题（Hanze 2026-09-23 定：以后会更新安装包，暂时不处理）**：README（公开 main）和官网 spoolapp.org 首页一共挂着 **4 处**「Download for Windows」（README 1 处，线上首页 3 处），都指向 `releases/latest/download/Spool-windows-x64-setup.exe`。最新 release 没有这个资产，所以 2026-09-23 实测返回 HTTP 404。作品集别链这个地址。
-
-### 1.3 v0.6.2 之后正在路上的（不算 Released）
+### 1.4 v0.7.4 之后正在路上的（不算 Released）
 
 | 东西 | 状态 | 出处 | 上站 |
 |---|---|---|---|
-| 公开 main 上的新提交 | `v0.6.2..origin/main` 共 22 个提交，其中 **10 个**动了 `docs/` 以外的代码（功能列表见 §2.2） | `git log v0.6.2..origin/main` | 可上站（写成 "on main, unreleased"） |
-| 只在本地 main 的提交 | `origin/main..main` 共 40 个；**4 个**动了代码（§2.3），其余 36 个只改 `docs/` | `git log origin/main..main` | 仅内部（没推送，外人看不到） |
-| 下一版 | **缺**：没有版本号、没有日期、没有 release 草稿 | `gh release list` 里没有 draft | — |
-| 本机装的 Spool | `/Applications/Spool.app` 自报 **0.6.2**，但 `spctl` 显示 **`Unnotarized Developer ID`**，签名时间 2026-08-30 02:54（本机时区）。它是 `ee3dbda` 那一版的**开发构建**，含未发布功能，库是 v29。**它不是 v0.6.2 发布版** | 2026-09-23 `defaults read` + `spctl` + `codesign -dv`；`ee3dbda` 提交信息「全部已装机」 | 仅内部 |
+| 公开 main 上的新提交 | `v0.7.4..main` 共 **37** 个提交，其中 **19** 个动了 `docs/` 以外的文件（1 个只改 `server.json`；功能列表见 §2.2）。**全部已推送、公开** | `git log v0.7.4..main`；GitHub API `commits/main` = `cbbda2e` | 可上站（写成 "on main, unreleased"） |
+| 只在本地的提交 | **没有**（本地 main = 公开 main） | 同上 | — |
+| 下一版 | 「发版二」= Mac + Windows 一起发，等 P13 验收通过；**缺**：没有版本号、没有日期、没有 release 草稿 | `gh release list` 里没有 draft；HANDOFF §9.8 | — |
+| 本机装的 Spool | `/Applications/Spool.app` 自报 **0.7.4**，但 `spctl` 是 **`rejected` · `Unnotarized Developer ID`**，签名时间 2026-10-28 14:50:31。它是 2026-10-28 14:51 换装的 **main 开发构建**（含 P10 + P12，库 v37），**不是 v0.7.4 发布版** | 2026-10-29 `defaults read` + `spctl` + `codesign -dvv`；HANDOFF §9.8「本机现状」 | 仅内部 |
 
-⚠️ 用本机这个 app 拍的截图会显示**未发布**的界面，不能标成 v0.6.2（§9）。
+⚠️ 用本机这个 app 拍的截图会显示**未发布**的界面（P10 的周回顾卡片等），不能标成 v0.7.4（§9.4）。
 
-### 1.4 更早的 release（给时间线用）
+### 1.5 更早的 release（给时间线用）
 
 | 版本 | 发布（GitHub） | 平台 | 出处 |
 |---|---|---|---|
+| v0.6.2 | 2026-08-24T08:06:24Z | macOS（公证）；tag `04e1386` → `58ec01f`；schema v23 → v24；20 个工具（13 / 7） | 上一轮 §1.1（2026-09-23 复核），现挪进 §14 |
 | v0.6.1 | 2026-08-19T07:40:50Z | macOS（公证）+ Windows（未签名） | ledger §1.2 |
 | v0.6.0 | 2026-08-19T04:56:37Z | macOS（公证）+ Windows（未签名） | ledger §1.2 |
 | v0.5.0 | 2026-08-18T15:15:08Z | macOS（公证）+ Windows 首发（未签名） | ledger §1.2 |
 | v0.4.0 | 2026-08-07T17:22:11Z | macOS（公证） | ledger §1.2 |
 | v0.3.0 | 2026-07-30T05:48:53Z | macOS，首个公开 release | `gh release list` |
 
-仓库在 GitHub 上建于 **2026-05-17T13:01:22Z**，第一个 commit `33b07d8` 也是 2026-05-17（`gh repo view`；`git log --reverse`）。v0.6.2 时共 568 个 commit，本地 main HEAD 时 630 个，作者全部是 `KIM-ocean-HZ`。可上站。
+仓库在 GitHub 上建于 **2026-05-17T13:01:22Z**，第一个 commit `33b07d8` 也是 2026-05-17（`gh repo view`；`git log --reverse`）。v0.7.4 时共 **887** 个 commit，main HEAD `cbbda2e` 时 **924** 个，作者全部是 `KIM-ocean-HZ`（2026-10-29 `git rev-list --count`、`git log --format=%an \| sort \| uniq -c`）。仓库 PUBLIC。可上站。
 
 ---
 
 ## 2. 功能状态三栏
 
 判定口径：
-- **Released** = 在 tag `v0.6.2` 的代码里，并且发布件里能用到。
-- **Merged, unreleased** = 在 main 上、不在 v0.6.2 里。再分「已推到公开 main」和「只在本地 main」两档。
-- **Branch / evaluating** = 只在分支上，或只有设计稿 / 评估。
+- **Released** = 在 tag `v0.7.4` 的代码里，并且发布件里能用到。
+- **Merged, unreleased** = 在 main 上、不在 v0.7.4 里。这一轮 main 全部已推送，所以只有「公开 main」一档。
+- **Planned** = HANDOFF 路线图里排了、或者只有设计稿 / 评估，没有功能代码。
 
-**分支核对（2026-09-23）**：本地和远端的 `feat/api-compress-sidecar`、`fix/tailwind-alpha`、`valentine-edition`、`windows-port` **全部是 v0.6.2 的祖先**（`git merge-base --is-ancestor`）。所以**没有只在分支上的功能代码**；第三栏只剩设计稿和评估中的东西。
+**分支核对（2026-10-29）**：本地 `feat/api-compress-sidecar`、`fix/tailwind-alpha`、`valentine-edition`、`windows-port` 和远端同名分支**全部是 v0.7.4 的祖先**（`git merge-base --is-ancestor`）。没有只在分支上的功能代码。
 
-### 2.1 Released（v0.6.2）
+证据行号全部钉在 **tag `v0.7.4`**（在 §4.1 的 `git archive` 副本里 grep）。
 
-| 功能 | 英文一句话（可上站） | 证据（v0.6.2） |
+### 2.1 Released（v0.7.4 里有的）
+
+#### A. v0.6.2 就有、v0.7.4 里仍然成立的（句子沿用，标注变化）
+
+| 功能 | 英文一句话（可上站） | v0.7.4 里的变化 / 证据 |
 |---|---|---|
-| **AI 压缩（Compress 页签）** | "An opt-in Compress tab sends a project's pack to an AI with the user's own key, then shows a checked diff." | Release notes「New: compressing a project's context」；`src-tauri/src/api_engine.rs:137` `compress_pack_via_api`；默认关：`src/stores/settingsStore.ts:359` `apiEngineEnabled: false`；默认端点 `:362` `https://api.deepseek.com`，模型 `:366` `deepseek-v4-flash` |
-| **spool-ai 子进程** | "Network calls for AI features run in a separate subprocess, spool-ai; the main app links no HTTP library." | `src-tauri/sidecar/src/main.rs:1-24`（契约）；`tauri.conf.json:32` `externalBin`；§3 的 `cargo tree` 实测 |
-| 压缩写回库的三道闸 | "A draft that dropped a number or date cannot be saved; the original text stays on each block." | `src/stores/compressStore.ts:675` `useDraft`（数字闸、结构闸、没变就不写）；`src/lib/db/blocks.ts:642` `applyCompression`（`original_content` 只写第一次）；一键还原 `restoreBlockOriginal` |
-| 夜间压缩队列 | "Projects can be queued for an overnight compression run; each draft waits for the user's check in the morning." | Release notes「compress overnight」；只在 app 开着时跑（`compressStore.ts` ⑥ 段注释） |
-| **查过期（Out-of-date check）** | "An out-of-date check asks an AI which blocks were overtaken; every quoted line is verified before the user sees it." | Release notes「New: an out-of-date check」；`api_engine.rs:1131` `stale_scan_via_api`（同样走 spool-ai、要 key）；`src/lib/blocks/staleGuards.ts`（不许覆盖已有关系） |
-| **MCP 读** | "Any MCP client can read projects over stdio: 13 read tools; the MCP service is off by default." | 发布件实测 13 个读工具（§3.6）；默认关：`settingsStore.ts:329`、`src-tauri/src/mcp.rs:1204-1212` |
-| **MCP 写** | "Seven write-gated tools let an AI add attributed blocks; it cannot edit or delete what the user wrote." | 发布件实测 7 个写工具；闸 `mcp.rs:6518-6520`；append-only 说明 `mcp.rs:3583-3590` |
-| 一键接入 | "One click registers Spool with Claude Desktop, Claude Code, Cursor, VS Code, Windsurf or Codex." | `mcp.rs:7001-7034`（六个客户端的配置文件路径）；`mcp.rs:7094` `configure_client` |
-| **CLI 引擎槽** | "If Claude Code, Codex CLI or Gemini CLI is installed, Spool can run it headless to maintain a project." | `src-tauri/src/engine.rs:118-122` `EngineKind`；动作五个：`src/stores/engineStore.ts:43-48`；出现条件 `src/lib/engine/gate.ts:32-33` |
-| **联网跟进（Follow up）** | "Each project lists what to watch; a follow-up runs the user's own Claude Code with web search and queues sourced findings for approval." | 引擎槽的第五个动作（v0.6.2 `engineStore.ts:48`）；**只有这个动作能上网**（`lib.rs:129` `let web = action == "follow_up"`，给 `WebSearch` / `WebFetch`）；每条要求带 URL、最多 5 条、只进待审面不直接入库（`mcp.rs` `follow_up_prompt_text` 第 3–6 条）；清单分「单次」（One-off，答上就结束）和「永久」（Permanent，一直查，只有用户能结束）（`FollowUpPanel.tsx:116`、`:287`）。⚠️ 两处限定：① v0.6.2 里引擎**关不掉**答上的单次问题（白名单缺 `close_follow_up_item`，本地 main `d1c972c` 已修、未发布，§2.3）；② **Codex** 跑跟进时，写类调用会被 Codex 自己取消（HANDOFF `DISCOVERED-20260924-1`，提案这一步是否也受影响**没验证**），所以英文句只写 Claude Code。截图：§9.2 B 的 05–11 |
-| 捕捉 | "Double-tap ⌥ in any app to file the clipboard into the current project, with a note box already focused." | `src-tauri/src/double_tap.rs`、`capture.rs`；README "Capture" 一段 |
-| Pack | "Any project packs into a plain-text briefing for pasting into any AI." | `src/lib/pack/assemble.ts`；Rust 版 `mcp.rs`（§4.3 golden 测试） |
+| 捕捉 | "Double-tap ⌥ in any app to file the clipboard into the current project, with a note box already focused." | 仍成立。v0.7.0 起截图、图片也能捕（见 B）；长按 ⌥ 直接写笔记。`src-tauri/src/double_tap.rs`、`capture.rs` |
+| Pack | "Any project packs into a plain-text briefing for pasting into any AI." | 仍成立。v0.7.0 起图片在 pack 里按路径列出；能导出 .md / 带文件的文件夹 |
+| AI 压缩（Compress 页签） | "Compression is opt-in and checked before saving; it runs on the user's own CLI or API key." | **变了**：v0.6.2 只能走 API key（spool-ai），v0.7.3 起也能走本机 CLI（`api_engine.rs:207` `compress_pack_via_cli`，同一份提示词、同一套核对）。默认关：`settingsStore.ts:439` `apiEngineEnabled: false`；默认端点 `:443` `https://api.deepseek.com`、模型 `:447` |
+| 压缩写回库的三道闸 | "A draft that dropped a number or date cannot be saved; the original text stays on each block." | 仍成立。`compressStore.ts:207`、`:801` `useDraft`；`src/lib/db/blocks.ts:1034` `applyCompression`（`:1048` `original_content = COALESCE(original_content, content)`，只写第一次） |
+| 查过期（Out-of-date check） | "An out-of-date check asks an AI which blocks were overtaken; every quoted line is verified before the user sees it." | 仍成立；v0.7.3 起能查整个工作区、也能走本机 CLI（见 B） |
+| MCP 读 / 写 | 见 §3.6 新数字 | 20（13 / 7）→ **28（15 / 13）**。开关、只追加的规则见 §3.4，v0.7.4 里仍成立 |
+| 一键接入 | "One click registers Spool with Claude Desktop, Claude Code, Cursor, VS Code, Windsurf or Codex." | 仍成立。`mcp.rs:10053` 起 `configure_client`；`spool:begin` 段 `mcp.rs:10175` |
+| CLI 引擎槽 | "If Claude Code, Codex or Gemini CLI is installed, Spool can run it headless for its AI actions." | 仍成立；v0.7.2 起 npm / nvm 装的、ChatGPT 桌面版自带的 Codex 也找得到。`engine.rs:141` `EngineKind`（Claude / Codex / Gemini） |
+| 联网跟进（Follow up） | "Each project lists what to watch; a follow-up runs the user's own Claude Code with web search and queues sourced findings for approval." | **仍成立，但范围变大**：v0.7.0 起 Codex 跑跟进能写回（release notes v0.7.0 "Follow Up with the Codex CLI can write its findings back"；上一轮那条 `DISCOVERED-20260924-1` 就是这一条）；v0.7.1 起能每周自己跑（**默认关**，每个项目一个开关）；v0.7.3 起也能走 API key，用 OpenAI / Claude / Gemini / Kimi / 通义各家自带的联网。只有跟进能上网：`lib.rs:151` `let web = action == "follow_up"`。Gemini CLI 不跑跟进 |
 
-⚠️ **别把两个「压缩」混在一起**：CLI 引擎槽里有个动作 `distill`，中文界面标签也叫「压缩」（`engineStore.ts:53`）。作品集里说的「AI compression」指的是 **Compress 页签 + spool-ai**，不是这个。
+#### B. v0.7.0 – v0.7.4 新发布的
 
-**「CLI」在 Spool 里到底指什么（按代码核实）**：
-- 指的是 **引擎槽**：Spool 在本机找到用户自己装、自己登录的 `claude` / `codex` / `gemini`，作为**子进程**起它，并给它挂上 Spool 自己的 MCP 服务（`engine.rs:1-26` 模块说明；`engine.rs:577` `mcp_config_json`；`engine.rs:1382` 起进程）。
-- **Spool 没有给用户用的命令行。** 二进制的 `--mcp` 和 `--overlay` 是内部进程模式，不是 CLI 工具（`src-tauri/src/main.rs:7-17`）。
-- 容易混的一点：Claude Code、Codex CLI 这些命令行工具**也可以当 MCP 客户端**直接连 Spool（README 的 `mcp-library.png` 就是 Codex CLI 读库）。那一条算 **MCP**，不算引擎槽。
-- 建议作品集的三个接口写成：**"Desktop app · MCP server · CLI engine slot"**，并附一句定义：
+| 功能 | 首发 | 英文一句话（≤ 25 词，可上站） | 证据（v0.7.4） |
+|---|---|---|---|
+| **AI 提议要用户批准** | v0.7.0 | "Corrections, replacements, files and project splits an AI proposes wait on a review screen until the user clicks." | 待审表 `client.ts:330` `proposal_batches`、`:341` `proposals`、`:803` `supersede_proposals`、`:1000` `file_proposals`、`:1130` `split_proposals`；工具 `mcp.rs:8643` `propose_supersede`、`:8661` `propose_split`、`:8824` `propose_attach_file`、`:8841` `propose_replace_file`。release notes v0.7.0「AI proposals wait for you」「What changes for you」第 2 条（AI 的「更正 / 取代」只算建议） |
+| **图片** | v0.7.0 | "Screenshots and copied images become picture blocks; an AI connected over MCP can fetch them with get_block_images." | `src-tauri/src/images.rs`；`block_images` 表（`client.ts:1024` 注释）；`mcp.rs:8790` `get_block_images`。原图存进库文件 |
+| **项目文件** | v0.7.0 | "Each project keeps its files in one list; Spool follows a file the user moves, and an AI may only propose adding one." | `src-tauri/src/file_follow.rs`、`file_identity.rs`；release notes v0.7.0「project files in one place」。用户亲手加的文件默认 AI 可读，每个文件有自己的开关 |
+| **项目拆分** | v0.7.0 | "An AI can propose splitting a long project into sub-projects; nothing moves until the user presses Split, and one undo reverts it." | `mcp.rs:8661` `propose_split`；`client.ts:1130` `split_proposals`；已完成的项目不拆（release notes v0.7.0）。引擎拿不到这个工具（§3.6） |
+| **私有项目** | v0.7.0 | "A private project is hidden from AI clients connected through Spool, though they can still write into it." | `mcp.rs:1594` `hide_private_projects`，所有 MCP 读都经 `mcp.rs:1526` `open_db`；`client.ts:1111` `threads.private`。限定：只管经过 Spool 的这条路，不加密磁盘上的任何东西（release notes v0.7.0 Known limits） |
+| 周回顾「活动」 | v0.7.0 | "Weekly Review opens with a no-AI summary of the week: focus time per day and which projects gained blocks." | release notes v0.7.0「Activity in Weekly Review」；不花钱、不出网 |
+| 周回顾走 API key | v0.7.0 | "Weekly Review can run through the user's own API key as well as a local CLI." | release notes v0.7.0「The network」：发的是跨项目 digest + 本周新块，不是整份 pack。⚠️ spool-ai 多了一种发出去的内容（§3.5） |
+| 撤销 / 重做、草稿不丢 | v0.7.0 | "Undo has redo, and unfinished text is saved as the user types, so a quit or crash loses nothing." | release notes v0.7.0「Undo, redo…」；`drafts.json` |
+| 块摘要（Gist）、整块取代、批注可更正 | v0.7.0（代码 08-25 就在 main 上，上一轮记在「Merged, unreleased」） | "Every block's one-line gist is visible and editable; an AI cannot overwrite a gist the user wrote." | `mcp.rs` `set_block_gist`；release notes v0.7.0「Also in this release」 |
+| AI 写入亮绿点 | v0.7.1 | "A project's dot turns green when an AI adds something, and clears once the new block has been on screen." | release notes v0.7.1；`ai-seen.json`（每台电脑一份） |
+| 跟进每周自动跑 | v0.7.1 | "Follow-up can search weekly on its own, off by default per project, and speaks up only when it finds something." | release notes v0.7.1「What changes for you」第 3 条；结果进待审、标 "Follow up" |
+| 引擎找得到 + 一键连上 | v0.7.2 | "Spool finds a Claude Code or Codex installed with npm, or the Codex inside the ChatGPT app, and connects it in one click." | release notes v0.7.2；不在 Desktop / Documents / iCloud 里找 CLI（会触发系统授权框） |
+| **本机 CLI 与 API key 两条路** | v0.7.3 | "Weekly review, follow-up, compression and the out-of-date check each run on the user's own CLI or own API key." | `api_engine.rs:207` `compress_pack_via_cli`、`:236` `stale_scan_via_cli`；`compressStore.ts:472` `routeFor(…)`；release notes v0.7.3「Two equal routes」 |
+| 多家 API key | v0.7.3 | "Paste a key from OpenAI, Claude, Gemini, DeepSeek, Kimi, Qwen, Zhipu or OpenRouter; Spool recognises the provider and lists its models." | `src/lib/ai/vendors.ts:60 – 180`：8 家具名 + `custom`（自定义 HTTPS 端点）。⚠️ release notes 写 "nine providers" 却只列了 8 个名字；代码是 8 + 自定义。上站按 8 家写 |
+| 过期检测查整个工作区 + 每月一次 | v0.7.3 | "The out-of-date check can cover a whole workspace and flag projects that may be finished; a monthly run is optional." | release notes v0.7.3；已完成、私有的项目不发；每月检查默认关 |
+| **连接文件夹与 SPOOL.md** | v0.7.4 | "A workspace can link to a local folder; a SPOOL.md there tells AI tools which Spool projects the folder belongs to." | `src-tauri/src/folder_link.rs:1 – 30`（模块说明：只写四处 —— `SPOOL.md` 的标记段、`.git/info/exclude` 一行、可选的 `CLAUDE.md` `@SPOOL.md` 一行、可选的 `AGENTS.md` 一行）；`client.ts:1167` `folders`、`:1180` `folder_links`、`:1204` `workspace_folders` |
+| 文件夹的计划变了会提示 | v0.7.4 | "When a linked folder's plan files change after a sync, Spool flags the project and pauses its weekly follow-up." | `mcp.rs:8744` `get_folder_status`、`:8758` `mark_folder_synced`；Spool 自己的后台任务不能标「已对过」（`mcp.rs:1402` `ENGINE_EXCLUDED_TOOLS`） |
+| 挂的文件变了会重读 | v0.7.4 | "An attached file that changed on disk is read again the next time it is used, and marked as changed." | release notes v0.7.4「New」最后一条 |
+
+⚠️ **v0.7.4 的一条限定必须跟着「连接文件夹」一起写**：Spool 管不了 AI 客户端用它自己的文件工具去读文件夹（release notes v0.7.4 Known limits；HANDOFF 10-26 撤回了 `request_folder_file`）。建议："Spool cannot stop an AI client from reading the linked folder with its own file tools." 可上站。
+
+⚠️ **别把两个「压缩」混在一起**：CLI 引擎槽的动作 `distill`，中文界面标签也叫「压缩」（`engineStore.ts:57`）。作品集说的「AI compression」指 **Compress 页签**（v0.7.3 起两条路都能跑），不是 `distill`。
+
+**「CLI」在 Spool 里到底指什么（v0.7.4 仍然如此）**：
+- 指的是 **引擎槽**：Spool 在本机找到用户自己装、自己登录的 `claude` / `codex` / `gemini`，作为**子进程**起它，并给它挂上 Spool 自己的 MCP 服务（`engine.rs:726` `mcp_config_json`）。v0.7.3 起压缩和查过期也能走这条路（`api_engine.rs:207`、`:236`，直接把提示词交给 CLI）。
+- **Spool 没有给用户用的命令行。** 二进制的 `--mcp`、`--overlay`、`--engine-run`、`--engine-follow-up` 都是内部进程模式（`src-tauri/src/main.rs:7`、`:14`；`mcp.rs:1399`、`:1421`）。
+- 容易混的一点：Claude Code、Codex CLI **也可以当 MCP 客户端**直接连 Spool（v0.7.4 起还会读文件夹里的 `SPOOL.md`）。那一条算 **MCP**，不算引擎槽。
+- 建议作品集的三个接口仍写成 **"Desktop app · MCP server · CLI engine slot"**，定义句照旧：
   "The CLI engine slot runs the user's own Claude Code, Codex or Gemini CLI as a subprocess."
 
-### 2.2 Merged, unreleased —— 已推到公开 main（`origin/main` = `7d1b2b7`）
+### 2.2 Merged, unreleased —— 公开 main（`v0.7.4..cbbda2e`，全部已推送）
 
-| 提交 | 日期 | 功能（英文一句话） | 备注 |
+| 提交 | 日期 | 功能（英文一句话，≤ 25 词） | 备注 |
 |---|---|---|---|
-| `9cd2fe0` | 08-25 | "Whole-block supersession and readable relation lines; new MCP tool propose_supersede." | 工具数 20 → 21；库 v24 → v27 |
-| `cc7ec76` | 08-25 | "Annotations can be corrected; AI annotations are marked and must cite a sentence." | |
-| `16f7f20` | 08-25 | "Citations carry a reason field (ref_note)." | 库 v27 → v28 |
-| `cf45a1e` | 08-25 | "New MCP tool set_block_gist lets an AI add or fix a block summary." | 工具数 21 → 22 |
-| `74b6d28` | 08-25 | "A Block summary tab shows and edits those summaries." | |
-| `a24d050` | 08-25 | 修：周回顾页面印出整段 NDJSON | |
-| `d9fb8c3` | 08-26 | "Weekly review can run through the API engine (DeepSeek) as well as a CLI." | ⚠️ **spool-ai 多了一种发出去的内容**（周回顾），见 §3.5 |
-| `3e6b8a5` | 08-26 | "Weekly review offers a model picker and groups by week." | |
-| `5894dbc` | 08-26 | "The API engine shows the account's remaining balance." | ⚠️ 从这个提交起 **spool-ai 的测试目标编译不过**（§4.2） |
-| `6a94e30` | 08-27 | "Three body-text sizes, ⌘F in-project find, and a scrollbar that marks search hits." | |
+| `5823e91` `2869757` `9932de9` `6918748` | 10-26 – 10-27 | "Weekly Review returns structured cards whose suggested actions — close, correct, replace — are one click and undoable." | P10-1 – P10-3：两条路都回 JSON、逐字闸、动作按钮（取代 / 更正进待审） |
+| `3c4db24` | 10-26 | "A small card appears where captures appear when a new weekly review is ready." | P10-4 |
+| `84f1cb9` | 10-27 | "Finished projects are left out of Weekly Review everywhere: materials, prompt, the engine's MCP view and the gate." | P10 验收第一轮 |
+| `310dc9f` | 10-27 | "Weekly Review can suggest closing a follow-up line; one click closes it, and it skips duplicates of existing lines." | 同上 |
+| `20db7e4` | 10-26 | （测试）周回顾两条路真跑：库副本上 9 次 | 只加 `#[ignore]` 测试和回执；§5.0 |
+| `d48acf2` `4c2f641` | 10-27 | "Weekly Review is written in the interface language; quotes and project names stay as written." | P12-5；真跑回执见 §5.0 |
+| `821c458` | 10-27 | "Deleting a linked workspace removes its section from SPOOL.md the next time Spool opens." | P12-2 |
+| `223d5dd` | 10-27 | 修：Spool 开在 `SPOOL_DATA_DIR` 上时，引擎起的 MCP 服务读同一个库 | P12-4，内部修复 |
+| `c2fd313` | 10-27 | 修：织布测试偶发红；路径闸的拒绝消息不再带 `\\?\` | P12-1 |
+| `1e503da` | 10-27 | 删 99 条没人用的界面词条 | P12-3，内部 |
+| `6de2899` → `0ddb718` | 10-27 → 10-28 | 先加「截完图马上双击就能捕」，**第二天撤回**：实测 macOS 小图挂着时图根本不在磁盘上；捕捉卡改成提示关掉浮动缩略图 | **两笔抵消，净结果只是一句提示**；别写成新功能 |
+| `33a2390` | 10-28 | "A workspace's title can be renamed by double-clicking it on its page." | P12 验收第一轮 |
+| `d5f4abd` | 10-26 | `server.json` 版本改 0.7.4（MCP Registry 元数据） | 不是功能 |
 
-2026-09-23 在公开 main 上数：**22 个工具（13 读 / 9 写）**，库 schema **v28**。仅内部（未发布的数字不上站，除非写明 "on main"）。
+main 上的工具数和库版本**与 v0.7.4 相同**：28 个工具（`git diff v0.7.4 HEAD -- src-tauri/src/mcp.rs` 里没有新增或删除的工具名），库 v37（`mcp.rs:4654`、`client.ts:41`）。2026-10-29 查。
 
-### 2.3 Merged, unreleased —— 只在本地 main（没推送，外人看不到）
+上站写这些要写 "on main, unreleased"；Hanze 若只想展示已发布的，整栏可以不用。
 
-| 提交 | 日期 | 内容 | 备注 |
-|---|---|---|---|
-| `fa4bf47` | 08-27 | 十条修复：10 个会阻塞的 Tauri 命令搬下主线程；长按 ⌥ 直接写笔记；查找计数等 | 提交信息里的对照实验：同步命令占 3 秒 → 主线程冻 3001 ms；加 `(async)` 后 0 次冻结。n 未写，**缺**样本量 |
-| `e37950c` | 08-27 | 「今天已专注 N 分钟」按天计、跨重启 | |
-| `cb3c4b0` | 08-29 | 仓库根目录的 `server.json`（MCP Registry 元数据） | 见下面 Registry 一行 |
-| `ee3dbda` | 08-30 | F2「来龙去脉」的数据那一半 + 退役块折行 | 库 v28 → v29；提交信息写「TS 803、Rust 139 全绿」—— 那个 139 **只是主 crate**（§4.2） |
-| `d1c972c` | 09-24 | 修两个作品集实拍撞到的缺陷：引擎白名单补上 `close_follow_up_item`（跟进答上的单次问题能自己收掉）；查过期的原因跟界面语言走 | HANDOFF `DISCOVERED-20260923-1/2`；演示版实测都过了（§9.2 B）。TS 803、主 crate Rust 141 |
-| `d576ee3` | 09-24 | 引擎白名单补齐为 mcp.rs 的全部 22 个工具（原来 15 个，漏了 7 个后加的工具）；测试改成「白名单 = 全部工具」，差一个就红 | 起因：服务器说明和别的工具的返回值会把 AI 指向白名单外的工具（例如搜索命中锁定文件时叫它用 `request_file_access`），一调就被拒、整次运行以「请给我权限」收尾。只有单元测试，没做真机 |
-
-### 2.4 官方 MCP Registry 上架（发行渠道，不是代码功能）
-
-| 字段 | 值 | 出处 | 上站 |
-|---|---|---|---|
-| 条目名 | `io.github.KIM-ocean-HZ/spool` | 2026-09-23 实测 `GET https://registry.modelcontextprotocol.io/v0.1/servers?search=io.github.KIM-ocean-HZ%2Fspool` | 可上站 |
-| 状态 | `status: active`，`isLatest: true` | 同上 | 可上站 |
-| 首次发布 | **2026-08-29T07:16:38Z** | 同上 `publishedAt` | 可上站 |
-| 登记的版本 | `0.6.2` | 同上 | 可上站 |
-| 形态 | **只有元数据**：name / title / description / repository / websiteUrl；没有 `packages`、没有 `remotes`。用户仍要自己下载 .dmg | 同上；`cb3c4b0` 提交信息 | 可上站 |
-| 源文件 | `server.json` **只在本地 main**（`cb3c4b0`），公开仓库里还没有 | `git merge-base --is-ancestor cb3c4b0 origin/main` → 否 | 仅内部 |
-
-**归栏结论**：条目本身**已经在线、公开可查**，指向的是已发布的 v0.6.2；但它不属于任何一个 release，产生它的提交也没推送。建议上站写：
-- "Listed in the official MCP Registry as io.github.KIM-ocean-HZ/spool since 2026-08-29 (metadata-only entry)."
-
-### 2.5 Branch / evaluating（只有设计稿或评估，没有功能代码）
+### 2.3 Planned（排了或只有设计，没有功能代码）
 
 | 东西 | 状态 | 出处 | 上站 |
 |---|---|---|---|
-| F2 来龙去脉的**界面**那一半 | 数据那一半在本地 `ee3dbda`；界面没做 | `ee3dbda` 提交信息 | 仅内部 |
-| F3 事件 / 时间层（C1–C7） | 设计中；存储模型要 Hanze 先定 | `HANDOFF-2026-09-04.md` §10.2（原 `WORKPLAN-2026-08-22.md` §2.F3，已归档）；`EXECUTION_POLICY.md` §6.8 | 仅内部 |
-| F4 音视频 | 开工前五项调查未做 | WORKPLAN §2.F4 | 仅内部 |
-| 压缩用 `supersedes` 写回（整条取代旧块） | **封着**：它压得动时会丢日期 | WORKPLAN §1「G 批」 | 仅内部 |
-| Windows 新版本 / Windows 代码签名 | 流水线在 `windows-port` 分支；签名跟着收费走 | WORKPLAN §1「G 批」、§4.1 | 可上站（只写 "not planned for now"） |
-| 跨生态记忆实验 | **不在本文范围**（见 §11.3） | — | 不得公开 |
+| **发版二：Mac + Windows 一起发** | 等 P13 Windows 真机验证通过；Hanze 定发版时间 | HANDOFF §9.3「发版二」、§9.8 | 可上站（只写 "A Windows build is in testing."） |
+| F2 来龙去脉的**界面** | 数据那一半早在 main（`ee3dbda`，08-30，已随 v0.7.0 发布）；界面没做；方针 §6.8 里排在 MEM 之后 | `EXECUTION_POLICY.md` §6.8 | 仅内部 |
+| F3 事件 / 时间层（C1–C7） | 「到时再问 Ocean」；存储模型要 Hanze 先定 | HANDOFF §9.3 F3 行、§10.2；方针 §6.8 | 仅内部 |
+| F4 音视频 | 开工前五项调查未做 | 方针 §6.8 | 仅内部 |
+| 宣发（问卷、海报等） | 等发版二 + 方针 §5.3 营销闸门；Hanze 未决定 | HANDOFF §9.3「宣发」行、§11 | 不得公开（未公开的计划） |
+| 压缩用 `supersedes` 写回 | **封着**：它压得动时会丢日期 | HANDOFF §10（原 WORKPLAN §1「G 批」） | 仅内部 |
+| 跨生态记忆实验 | **暂停在 GR16**（2026-09-30 起切回产品线）；不在本文范围（§11.3） | HANDOFF 首屏「当前光标」 | 不得公开（细节）；见 §12 关于 SPL-RES-STATUS |
 
 ---
 
 ## 3. 三个入口与写入边界（给架构图用）
 
-以下行号全部钉在 **tag `v0.6.2`（`58ec01f`）**。本地 main 上行号已经漂移。
+以下行号全部钉在 **tag `v0.7.4`（`ba7d2a7`）**。v0.6.2 的旧行号不再列（要查用 `git show v0.6.2:<path>`）。
 
 ### 3.1 进程
 
 | 进程 | 谁起它 | 做什么 | 代码 |
 |---|---|---|---|
-| `spool`（GUI） | 用户 | Tauri 主程序：Rust 核心 + WebView（React）。**库的唯一迁移者** | `main.rs:18` → `lib.rs:325` `run()` |
-| `spool --overlay` | GUI 启动并常驻 | 捕捉浮窗的独立进程。**从不打开 SQLite**，五个库调用都转回主进程 | `main.rs:14-17`；`overlay.rs:1-34`（第 21-25 行是「从不开库」那条）；起进程 `overlay.rs:133` |
-| `spool --mcp` | **MCP 客户端**（或引擎槽里的 CLI）起它 | MCP 服务，stdio 上的 JSON-RPC；不监听任何端口 | `main.rs:7-10`；`mcp.rs:1-26` 说明；`mcp.rs:8888` `run()` |
-| `spool-ai` | GUI 在需要时起它，跑完就退 | **唯一**会开 socket 的进程；stdin 进一个 JSON，stdout 出一行信封 | `sidecar/src/main.rs:1-24`、`:118` `main()`；GUI 侧 `api_engine.rs:251` |
-| `claude` / `codex` / `gemini` | GUI（引擎槽） | 用户自己的 CLI，headless 跑；它自己再起 `spool --mcp` | `engine.rs:1382`；临时 MCP 配置 `engine.rs:577` |
+| `spool`（GUI） | 用户 | Tauri 主程序：Rust 核心 + WebView（React）。**库的唯一迁移者** | `main.rs:18` → `lib.rs:348` `run()` |
+| `spool --overlay` | GUI 启动并常驻 | 捕捉浮窗的独立进程。**从不打开 SQLite**，库调用都转回主进程 | `main.rs:14`；`overlay.rs:21`（「从不开库」那条）；起进程 `overlay.rs:135` |
+| `spool --mcp` | **MCP 客户端**（或引擎槽里的 CLI）起它 | MCP 服务，stdio 上的 JSON-RPC；不监听任何端口。引擎起它时多带 `--engine-run`（少两个工具）、跟进时再带 `--engine-follow-up` | `main.rs:7`；`mcp.rs:12557` `run()`；`mcp.rs:1399`、`:1421` |
+| `spool-ai` | GUI 在需要时起它，跑完就退 | **唯一**会开 socket 的进程；stdin 进一个 JSON，stdout 出一行信封 | `sidecar/src/main.rs:165` `main()` |
+| `claude` / `codex` / `gemini` | GUI（引擎槽；v0.7.3 起压缩 / 查过期也走） | 用户自己的 CLI，headless 跑；它自己再起 `spool --mcp` | `engine.rs:726` `mcp_config_json`；`api_engine.rs:207`、`:236` |
 
 ### 3.2 数据存储
 
 | 存储 | 位置 | 谁写 | 出处 |
 |---|---|---|---|
-| `spool.db`（SQLite） | `~/Library/Application Support/com.oceanjin.spool/` | GUI（全部）；`spool --mcp`（仅写工具） | `docs/PRIVACY.md`「数据存放在哪里」；`mcp.rs:1236-1275`、`:3635-3657` |
-| `settings.json` | 同一目录 | GUI；`spool --mcp` 只读它来判开关 | `mcp.rs:1202-1230` |
-| `mcp-clients.json` | 同一目录 | `spool --mcp`：客户端名 + 最后一次连接时间 | `mcp.rs:3704`、`:3741`；2026-09-23 用发布件实测确实写了这个文件 |
-| 迁移前快照 | 同一目录 | GUI，每次迁移前 `VACUUM INTO` | ledger §3.1 第 3 条 |
-| API key | **macOS 钥匙串**，service `com.oceanjin.spool` | GUI | `api_engine.rs:525-561` |
-| 其他客户端的配置文件 | `claude_desktop_config.json`、`~/.cursor/mcp.json`、`~/.claude.json`、VS Code `User/mcp.json`、`~/.codeium/windsurf/mcp_config.json`、`~/.codex/config.toml` | GUI，**只在用户点「一键接入」时** | `mcp.rs:7001-7034` |
-| 其他 AI 的说明文件 | `~/.claude/CLAUDE.md`、`~/.codex/AGENTS.md` 里一段 `<!-- spool:begin -->…<!-- spool:end -->` | GUI，一键接入时 | `mcp.rs:7216-7231`；这段**不含任何库内容**（`mcp.rs:7212-7215` 注释） |
-| Pack 文件夹 / 导出的库 | 用户在对话框里选的位置 | GUI | `pack.rs:62`；`transfer.rs:71` |
+| `spool.db`（SQLite） | `~/Library/Application Support/com.oceanjin.spool/` | GUI（全部）；`spool --mcp`（仅写工具） | `docs/PRIVACY.md`；`mcp.rs:1540`（只读打开）、`:4666`（读写打开） |
+| 块里的图片 | **库文件里**（`block_images` 表）；pack 用的副本在旁边的 `image-cache` 文件夹 | GUI | release notes v0.7.0「What changes for you」第 3 条 |
+| `settings.json` | 同一目录 | GUI；`spool --mcp` 只读它来判开关 | `mcp.rs:1492`、`:1510` |
+| `mcp-clients.json` | 同一目录 | `spool --mcp`：客户端名 + 最后一次连接时间 | `mcp.rs:4733`、`:4740`；2026-10-29 用发布件对空目录实跑，确实只多出这一个文件 |
+| `focus.json`、`drafts.json`、`knit.json`、`ai-seen.json` | 同一目录 | GUI；不进库、不随导出走、从不发出去 | release notes v0.7.0、v0.7.1 |
+| 迁移前快照 | 同一目录 | GUI，每次迁移前 `VACUUM INTO` | ledger §3.1 第 3 条；release notes v0.7.4 |
+| API key | **macOS 钥匙串**，service `com.oceanjin.spool` | GUI | `api_engine.rs:714` `KEYCHAIN_SERVICE` |
+| 其他客户端的配置文件、其他 AI 的说明文件（`~/.claude/CLAUDE.md`、`~/.codex/AGENTS.md` 里的 `spool:begin` 段） | 各客户端自己的位置 | GUI，**只在用户点「一键接入」时**；说明段不含库内容 | `mcp.rs:10053` 起；`:10175`、`:10219` |
+| **用户连接的文件夹里的四处**（v0.7.4 新） | `SPOOL.md` 的标记段；`.git/info/exclude` 一行（选「只留在这台电脑」时）；文件夹自己 `CLAUDE.md` 末尾 `@SPOOL.md` 一行、`AGENTS.md` 末尾一行（都只在文件已存在且用户勾了时） | GUI，用户连接时逐项看过；别的文件只读不写；改之前的备份放 Spool 自己的数据目录 | `folder_link.rs:15 – 30` |
+| Pack 文件夹 / 导出的库 | 用户在对话框里选的位置 | GUI | `pack.rs`；`transfer.rs` |
 
 ### 3.3 连线（谁调谁、走什么）
 
 | 从 | 到 | 协议 | 代码 |
 |---|---|---|---|
-| GUI WebView | `spool.db` | `tauri-plugin-sql` | `Cargo.toml` 依赖；迁移注册表 `src/lib/db/client.ts` |
-| GUI | overlay | 双向，每行一个 JSON（overlay 的 stdin / stdout） | `overlay.rs:30-34` |
-| MCP 客户端 | `spool --mcp` | 客户端起子进程，stdio 上的 JSON-RPC 2.0 | `mcp.rs:1-8` |
-| `spool --mcp` | `spool.db` | 读：**每次调用新开一个只读连接**；写：只读写工具开读写连接，2 秒 busy timeout | `mcp.rs:1236-1241`（`SQLITE_OPEN_READ_ONLY`）；`mcp.rs:3635-3645`（`READ_WRITE`） |
-| GUI | CLI 引擎 | 起子进程，带临时 MCP 配置 + 工具白名单 | `engine.rs:67`（14 个 Spool 工具，逐个列出）；claude `--allowedTools` `engine.rs:704`；codex `--sandbox read-only` `engine.rs:884-885` |
-| CLI 引擎 | `spool --mcp` | 同 MCP 客户端那条 | `engine.rs:21-26` |
-| GUI | `spool-ai` | 起子进程；**请求连同 key 走 stdin，从不走 argv** | `sidecar/src/main.rs:9-12`；`api_engine.rs:251` |
-| `spool-ai` | 模型厂商 | HTTPS `POST {base_url}/chat/completions`；**明文 http 直接拒绝** | `sidecar/src/main.rs:158`、`:168` |
-| CLI 引擎 | CLI 的厂商 | CLI 自己的网络请求，用用户自己的账号 | `engine.rs:18-21` |
+| GUI WebView | `spool.db` | `tauri-plugin-sql` | 迁移注册表 `src/lib/db/client.ts:166` `MIGRATIONS` |
+| GUI | overlay | 双向，每行一个 JSON（overlay 的 stdin / stdout） | `overlay.rs` 模块说明 |
+| MCP 客户端 | `spool --mcp` | 客户端起子进程，stdio 上的 JSON-RPC 2.0 | `mcp.rs` 模块说明 |
+| `spool --mcp` | `spool.db` | 读：**每次调用新开一个只读连接，并先藏掉私有项目**；写：只读写工具开读写连接，2 秒 busy timeout | `mcp.rs:1526` `open_db` → `:1594` `hide_private_projects`；`:1540`（`SQLITE_OPEN_READ_ONLY`）；`:4666 – 4668`（`READ_WRITE` + busy timeout） |
+| GUI | CLI 引擎 | 起子进程，带临时 MCP 配置 + 工具白名单（26 个） | `engine.rs:78` `ALLOWED_TOOL_NAMES: [&str; 26]`；claude `--allowedTools` `engine.rs:910`；codex `--sandbox read-only` `engine.rs:858 – 859`、`:1106 – 1107` |
+| CLI 引擎 | `spool --mcp --engine-run` | 同 MCP 客户端那条；少 `propose_split`、`mark_folder_synced` | `mcp.rs:1402` |
+| GUI | `spool-ai` | 起子进程；**请求连同 key 走 stdin，从不走 argv** | `sidecar/src/main.rs` 头部契约 |
+| `spool-ai` | 模型厂商 | HTTPS；**明文 http 直接拒绝** | `sidecar/src/main.rs:205 – 206`（`run()` 里第一道检查） |
+| CLI 引擎 | CLI 的厂商 | CLI 自己的网络请求，用用户自己的账号 | `engine.rs` 模块说明 |
 
-### 3.4 哪些路径能写库，要过哪几道开关
+### 3.4 哪些路径能写库，要过哪几道开关（v0.7.4 仍成立）
 
-| 写入者 | 能写什么 | 要过的闸（按顺序） | 代码 |
+| 写入者 | 能写什么 | 要过的闸（按顺序） | 代码（v0.7.4） |
 |---|---|---|---|
 | 用户（GUI） | 全部 | — | — |
-| **GUI 替 AI 压缩写回** | `blocks.content` ← 压缩稿；原文存进 `original_content`（设置里能关） | ① API 引擎开着（默认关）且 key 在 → ② 用户按 **「Use this one」** → ③ 数字 / 日期闸（丢了就拒，不许用户确认放行）→ ④ 结构闸（少块、多编号、重复都拒）→ ⑤ 没变短的块不写 | `compressStore.ts:667-695`；`blocks.ts:642-666` |
-| GUI 替查过期写关系 | 新块的引用关系，或旧块的 `stale_at` | 用户在三选一里点 → 已经指着别的块的，拒绝覆盖（`8c0e007` 修的就是这个） | `src/lib/blocks/staleGuards.ts`；`blocks.ts:697` `setBlockSupersession` |
-| **MCP 写工具** | 直接写：`create_thread`、`add_block`（只追加、带来源标签）、`set_thread_summary`（不覆盖用户写的摘要）、`close_follow_up_item`。只排队不入库：`propose_blocks`、`request_file_access`、`suggest_follow_up_item` | ① 用户自己配置了客户端 → ② **`mcpEnabled`**（默认 **false**；读不到 settings 也算关）→ ③ **`mcpWriteEnabled`**（默认 **true**，只在 ② 打开后才有意义；settings 读不到或解析不了 = 不许写）→ ④ 库版本必须**严格等于** 24，否则拒写 → ⑤ 单个工具的规则（例如拒绝在正文里写原始 id） | ② `mcp.rs:1204-1212`，检查点 `mcp.rs:6355`；③ `mcp.rs:1222-1230`，检查点 `mcp.rs:6518-6520`；④ `mcp.rs:3595`、`:3647-3656`；⑤ 测试 `mcp.rs:10510` |
-| CLI 引擎 | **没有自己的写入路**；只能调上面那些 MCP 写工具 | 界面出现条件四个全满足：检测到 CLI ∧ `mcpEnabled` ∧ `mcpWriteEnabled` ∧ `aiEngineActionsEnabled`（默认 true）→ 用户点动作。自动跑只有「周回顾」一种，且要 `aiAutoMaintain`（默认 **false**） | `gate.ts:32-33`；`engine.rs:21-26`；`settingsStore.ts:337`、`:349`；`src/hooks/useAutoMaintain.ts` |
-| `spool-ai` | **本地什么都不写**，只往 stdout 吐一行信封 | — | `sidecar/src/main.rs:1-7` |
-| `spool --mcp`（不经开关） | 只写 `mcp-clients.json`（客户端名 + 时间），**不碰库** | 在 `initialize` 时写，不看开关 | `mcp.rs:3700-3704`、`:3741` |
-| overlay | 什么都不直接写 | 库调用转交主进程 | `overlay.rs:21-25` |
+| **GUI 替 AI 压缩写回** | `blocks.content` ← 压缩稿；原文存进 `original_content`（设置里能关） | ① 用户选了一条路（API key 或本机 CLI，默认都没开）→ ② 用户按 **「Use this one」** → ③ 数字 / 日期闸 → ④ 结构闸 → ⑤ 没变短的块不写 | `compressStore.ts:207`、`:801`；`blocks.ts:1034 – 1054` |
+| GUI 替查过期写关系 | 新块的引用关系，或旧块的 `stale_at` | 用户在三选一里点 → 已经指着别的块的，拒绝覆盖 | `src/lib/blocks/staleGuards.ts` |
+| **MCP 写工具（13 个）** | **直接写（6）**：`create_thread`、`add_block`（只追加、带来源标签）、`set_thread_summary`（不覆盖用户写的）、`set_block_gist`（不覆盖用户写的）、`close_follow_up_item`、`mark_folder_synced`。**只排队、用户点了才生效（7）**：`propose_blocks`、`propose_supersede`、`propose_split`、`propose_attach_file`、`propose_replace_file`、`request_file_access`、`suggest_follow_up_item`。⚠️ v0.7.0 起 `add_block` 带「更正 / 取代」时，块照存，**关系进待审** | ① 用户自己配置了客户端 → ② **`mcpEnabled`**（默认 **false**；读不到 settings 也算关）→ ③ **`mcpWriteEnabled`**（默认 **true**，只在 ② 打开后才有意义；读不到或解析不了 = 不许写）→ ④ 库版本必须**严格等于** 37，否则拒写 → ⑤ 单个工具的规则（例如拒绝在正文里写原始 id；私有项目能写不能读） | ② `mcp.rs:1492`，检查点 `:8929`；③ `mcp.rs:1510`，检查点 `:9149 – 9153`（13 个工具名逐个列在 match 里）；④ `mcp.rs:4621`、`:4673`；默认值 `settingsStore.ts:399`、`:406` |
+| CLI 引擎 | **没有自己的写入路**；只能调上面那些 MCP 写工具（少两个） | 检测到 CLI ∧ `mcpEnabled` ∧ `mcpWriteEnabled` ∧ `aiEngineActionsEnabled`（默认 true，`settingsStore.ts:407`）→ 用户点动作。自动跑的有：周回顾（`aiAutoMaintain` 默认 **false**，`:421`）、每个项目的每周跟进（默认关）、每月过期检测（默认关） | `engine.rs:78`；`mcp.rs:1402` |
+| `spool-ai` | **本地什么都不写**，只往 stdout 吐一行信封 | — | `sidecar/src/main.rs` 头部 |
+| `spool --mcp`（不经开关） | 只写 `mcp-clients.json`，**不碰库** | 在 `initialize` 时写，不看开关 | `mcp.rs:4733 – 4740` |
+| overlay | 什么都不直接写 | 库调用转交主进程 | `overlay.rs:21` |
 
-### 3.5 内容离开本机的全部路线（v0.6.2）
+**结论（2026-10-29 对 v0.7.4 源码和发布件核）**：「写入要两道开关」和「AI 写的块只追加、带客户端名、AI 改不了也删不了用户写的东西」**仍然成立**。新增的边界是：AI 想改关系、挂文件、拆项目，都只能**提议**，用户点了才生效。`add_block` 的工具说明原话："Blocks are append-only to YOU: you have no edit or delete tool"（`mcp.rs:8582`）。
+
+### 3.5 内容离开本机的全部路线（v0.7.4）
+
+v0.7.4 release notes 写「exactly three routes」，不算用户自己复制粘贴 Pack。加上那一条一共四行，和 `docs/PRIVACY.md` 数据去向表的四行（`PRIVACY.md:38 – 41`）一一对应。
 
 | # | 路线 | 谁发起 | 默认 | 发到哪 | 代码 / 出处 |
 |---|---|---|---|---|---|
-| 1 | 复制 Pack，用户自己粘贴 | 用户 | — | 用户粘贴的地方 | `PRIVACY.md` 表格第 1 行 |
-| 2 | MCP 客户端读库 | 用户配置的客户端 | **关**（`mcpEnabled: false`） | 客户端之后发给谁由客户端决定 | `settingsStore.ts:329`；`mcp.rs:6355` |
-| 3 | CLI 引擎 | 用户点动作（或打开了自动周回顾） | 装了 CLI 且开了 MCP 读写才出现 | CLI 的厂商；**「跟进」**动作额外给 `WebSearch` / `WebFetch`，只给 Claude 和 Codex，不给 Gemini | `engine.rs:96`；`engine.rs:153-159` |
-| 4 | `spool-ai`：压缩、查过期、夜间队列 | 用户点，或到了用户设的夜间时间（app 开着时） | **关**（`apiEngineEnabled: false`），还要有 key | 用户配置的 HTTPS 端点，默认 `https://api.deepseek.com` | `settingsStore.ts:359-366`；`api_engine.rs:137`、`:1131`；`sidecar/src/main.rs:158-168` |
+| 0 | 复制 Pack，用户自己粘贴 | 用户 | — | 用户粘贴的地方 | `PRIVACY.md:38` |
+| 1 | MCP 客户端读库（v0.7.0 起也能取图片原图） | 用户配置的客户端 | **关**（`mcpEnabled: false`） | 客户端之后发给谁由客户端决定；私有项目读不到 | `settingsStore.ts:399`；`mcp.rs:8929` |
+| 2 | 本机 CLI 引擎：周回顾、跟进、起草跟进目标，**v0.7.3 起还有压缩、查过期** | 用户点动作，或用户打开的自动周回顾 / 每周跟进 / 每月检查 | 装了 CLI 且开了 MCP 读写才出现 | CLI 的厂商；**跟进**额外给联网 | `PRIVACY.md:40`；`lib.rs:151`；`api_engine.rs:207`、`:236` |
+| 3 | `spool-ai`（API key）：压缩、查过期、夜间队列、**周回顾（v0.7.0）**、**查余额（v0.7.0，只在用户按按钮或刚跑完时）**、**跟进（v0.7.3，用厂商自带的联网）** | 同上 | **关**（`apiEngineEnabled: false`），还要有 key | key 所属的那家厂商（8 家之一）或自定义 HTTPS 端点；默认端点 `https://api.deepseek.com` | `PRIVACY.md:41`；`settingsStore.ts:439 – 447`；`sidecar/src/main.rs:205 – 208` |
 
-**机制上不会出网的部分**（2026-09-23 在 v0.6.2 上核）：
-- WebView 的 CSP 只允许 `connect-src 'self' ipc: http://ipc.localhost`（`tauri.conf.json:27`）。
-- 主 crate 的 **283 个**普通依赖里，**没有任何一个**是 HTTP / TLS 库（`ureq|rustls|reqwest|hyper|native-tls|openssl|ring|curl` 精确匹配为 0）。这些库**只在** `spool-ai` 里（`ureq`、`rustls`、`ring`、`webpki-roots`）。
+**连接文件夹不加路线**：Spool 只在本机读那个文件夹，写的只有 §3.2 那四处（release notes v0.7.4 末段）。
 
-**只在 main 上（未发布）新增的 spool-ai 用法**：周回顾走 DeepSeek（`d9fb8c3`）、查余额（`5894dbc`）。要是下一版发布，§3.5 第 4 行要加这两项。
+**机制上不会出网的部分**（2026-10-29 在 v0.7.4 的 `git archive` 副本上核）：
+- WebView 的 CSP 仍只允许 `connect-src 'self' ipc: http://ipc.localhost`（`tauri.conf.json:27`）。
+- 主 crate 的 **286 个**普通依赖里，**没有任何一个**是 HTTP / TLS 库（`ureq|rustls|reqwest|hyper|native-tls|openssl|ring|curl|webpki-roots` 精确匹配为 0）。这些库**只在** `spool-ai` 里（实测命中 `ureq`、`rustls`、`ring`、`webpki-roots`）。
 
-**建议上站写法**
-- "Spool's main process links no HTTP or TLS library; the only network client is an opt-in subprocess, spool-ai."
+**建议上站写法**（v0.7.4 里都仍成立）
+- "Spool's main process links no HTTP or TLS library; the only network client in the app is an opt-in subprocess, spool-ai."
 - "External AI clients reach the library over MCP on stdio. Spool listens on no network port."
-- "An AI can write only after two switches: MCP on (off by default), then 'Let AI write'."
+- "An AI can write only after two switches: MCP on (off by default), then 'Allow AI writes'."
 - "AI-written blocks are append-only and carry the client's name; an AI cannot edit or delete user text."
+- 新增："Besides what the user pastes, content leaves the Mac only through an MCP client, their own CLI, or their own API key."（22 词；三条都要用户自己打开）
 
 ### 3.6 MCP 工具数怎么从发布件实数（本轮用过的探针）
 
 ```bash
 TMP=$(mktemp -d); mkdir -p "$TMP/data" "$TMP/mnt"
-gh release download v0.6.2 -R KIM-ocean-HZ/spool --pattern 'Spool_0.6.2_aarch64.dmg' -D "$TMP"
-hdiutil attach -nobrowse -readonly -mountpoint "$TMP/mnt" "$TMP/Spool_0.6.2_aarch64.dmg"
+gh release download v0.7.4 -R KIM-ocean-HZ/spool --pattern 'Spool_0.7.4_aarch64.dmg' -D "$TMP"
+hdiutil attach -nobrowse -readonly -mountpoint "$TMP/mnt" "$TMP/Spool_0.7.4_aarch64.dmg"
 printf '%s\n' \
  '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"probe","version":"1"}}}' \
  '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
  '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}' \
  '{"jsonrpc":"2.0","id":3,"method":"prompts/list","params":{}}' \
- | SPOOL_DATA_DIR="$TMP/data" "$TMP/mnt/Spool.app/Contents/MacOS/spool" --mcp
+ | SPOOL_DATA_DIR="$TMP/data" "$TMP/mnt/Spool.app/Contents/MacOS/spool" --mcp      # 引擎模式：末尾加 --engine-run
 hdiutil detach "$TMP/mnt"
 ```
 
-⛔ `SPOOL_DATA_DIR` 不能省：不带它，这个进程会去找真库。
+⛔ `SPOOL_DATA_DIR` 不能省：不带它，这个进程会去找真库。读写分类按每个工具的 `annotations.readOnlyHint`（28 个工具都带 annotations）。
 
-**2026-09-23 的结果（v0.6.2 发布件）**：20 个工具。
-- 读（13）：`list_threads`、`get_digest`、`get_pack`、`search_blocks`、`find_similar_blocks`、`get_blocks`、`check_library`、`weekly_review`、`thread_health`、`distill`、`get_follow_up_brief`、`get_project_overview`、`get_block_original`
-- 写（7）：`create_thread`、`add_block`、`propose_blocks`、`request_file_access`、`suggest_follow_up_item`、`close_follow_up_item`、`set_thread_summary`
-- prompt（7）：`compress_pack`、`weekly_review`、`thread_health`、`distill`、`triage_conversation`、`file_this`、`catch_up`
+**2026-10-29T16:03Z 的结果（v0.7.4 发布件）**：28 个工具。
+- 读（15）：`list_threads`、`get_digest`、`get_pack`、`search_blocks`、`find_similar_blocks`、`get_blocks`、`check_library`、`weekly_review`、`thread_health`、`distill`、`get_follow_up_brief`、`get_project_overview`、`get_folder_status`、`get_block_original`、`get_block_images`
+- 写（13）：`create_thread`、`add_block`、`propose_blocks`、`propose_supersede`、`propose_split`、`mark_folder_synced`、`request_file_access`、`propose_attach_file`、`propose_replace_file`、`suggest_follow_up_item`、`close_follow_up_item`、`set_thread_summary`、`set_block_gist`
+- prompt（7）：`compress_pack`、`weekly_review`、`thread_health`、`distill`、`triage_conversation`、`file_this`、`catch_up`（和 v0.6.2 相同）
+- **引擎模式**（`--mcp --engine-run`，再加 `--engine-follow-up` 也一样）：**26 个**，少的是 `propose_split`、`mark_folder_synced`（`mcp.rs:1402` `ENGINE_EXCLUDED_TOOLS`；`tools/list` 过滤在 `:12428 – 12430`，就算硬调也拒：`:8940`）。⚠️ 本轮第一次用循环脚本跑「两个旗标」那一格时读到 28，单独重跑是 26，和代码一致；以 26 为准，那次 28 判为脚本问题，没有深究。
 
-"v0.6.2's MCP server exposes 20 tools: 13 read-only and 7 behind a separate write switch." —— 可上站。
+与 v0.6.2 比：+8 个工具 = 读 +2（`get_folder_status`、`get_block_images`）、写 +6（`propose_supersede`、`propose_split`、`mark_folder_synced`、`propose_attach_file`、`propose_replace_file`、`set_block_gist`）。
 
-### 3.7 mermaid 草图
+"v0.7.4's MCP server exposes 28 tools: 15 read-only and 13 behind a separate write switch." —— 可上站。
+
+### 3.7 mermaid 草图（v0.7.4）
 
 ```mermaid
 flowchart LR
   subgraph MAC["This Mac"]
     subgraph BUNDLE["Spool.app (one signed, notarized bundle)"]
       GUI["spool GUI<br/>Rust core + WebView"]
-      OV["spool --overlay<br/>capture toast process"]
+      OV["spool --overlay<br/>capture card process"]
       AI["spool-ai<br/>opt-in HTTPS subprocess"]
     end
     MCPS["spool --mcp<br/>stdio MCP server (same binary)"]
-    DB[("spool.db<br/>SQLite")]
+    DB[("spool.db<br/>SQLite, pictures inside")]
     SET["settings.json<br/>mcpEnabled / mcpWriteEnabled"]
     KC["macOS Keychain<br/>API key"]
     CLI["user's CLI<br/>claude / codex / gemini"]
     CLIENT["MCP client<br/>Claude Desktop, Codex, Cursor ..."]
     CFG["client config files<br/>+ CLAUDE.md / AGENTS.md block"]
+    FOLDER["linked folder<br/>SPOOL.md (+ optional pointer lines)"]
     PASTE["clipboard / chosen folder"]
   end
   VENDOR["model vendor<br/>user's own account or key"]
@@ -327,15 +363,17 @@ flowchart LR
   GUI <-->|"JSON lines on stdin/stdout"| OV
   GUI -->|"reads key"| KC
   GUI -->|"spawn; request + key on stdin"| AI
-  AI -->|"HTTPS chat/completions"| VENDOR
-  GUI -->|"spawn with temp MCP config"| CLI
-  CLI -->|"spawns"| MCPS
+  AI -->|"HTTPS only"| VENDOR
+  GUI -->|"spawn with temp MCP config (26 tools)"| CLI
+  CLI -->|"spawns --engine-run"| MCPS
   CLI -->|"its own HTTPS"| VENDOR
   CLIENT -->|"spawns; JSON-RPC over stdio"| MCPS
   CLIENT -->|"its own HTTPS"| VENDOR
-  MCPS -->|"read-only per call; write tools only when both switches are on"| DB
+  CLIENT -. "own file tools (outside Spool's control)" .-> FOLDER
+  MCPS -->|"read-only per call, private projects hidden; writes only with both switches"| DB
   MCPS -->|"reads switches"| SET
   GUI -->|"one-click hookup (user click)"| CFG
+  GUI -->|"writes its own section only (user-approved)"| FOLDER
   GUI -->|"Pack copy / folder export"| PASTE
 ```
 
@@ -343,87 +381,57 @@ flowchart LR
 
 ## 4. 测试
 
-### 4.1 在 v0.6.2 tag 上实跑（2026-09-23）
+### 4.1 在 v0.7.4 tag 上实跑（2026-10-29）
 
-**环境**：`git worktree add --detach <scratch>/wt-v062 v0.6.2`，HEAD = `58ec01fd54c1e949f086a80ed43e33a791b675f8`。macOS（Darwin 25.5.0），Node v24.11.0，cargo / rustc 1.95.0。`node_modules` 用软链接借主工作区那一份：`package.json` 和 `package-lock.json` 在 v0.6.2 和 main 之间 `git diff` 为空，所以依赖相同。跑完已 `git worktree remove`。**没加 `--ignored`。**
+**环境**：`git archive v0.7.4 | tar -x -C /tmp/spool-v074-pf-20261029`（新目录，干净副本，不在工作区里装依赖或构建）。macOS 27.0.1（26A434，arm64），Node v24.11.0，npm 11.6.1，cargo / rustc 1.95.0。`npm ci` 装 276 个包（用的是 npm 本机缓存）；Rust 的 `target/` 都建在副本里（`CARGO_TARGET_DIR` 未设）。**没加 `--ignored`。** 机器：Hanze 的 Apple Silicon Mac。由 AI 编程代理执行。
 
-**命令**：
+**命令**（脚本照抄，按顺序）：
 ```bash
+npm ci --no-audit --no-fund
 npx tsc -b && npx vite build                          # 生成 dist/，Tauri 编译要它
 npx vitest run
 bash scripts/build-sidecar.sh                          # 生成 src-tauri/binaries/spool-ai-<triple>
 cargo test --manifest-path src-tauri/sidecar/Cargo.toml
-cargo test --manifest-path src-tauri/Cargo.toml
+cargo test --manifest-path src-tauri/Cargo.toml        # 随后又连跑 5 次
 ```
 
-**跑之前查过**：不带 `#[ignore]` 的 Rust 测试都用临时目录建库，不读真库、不碰钥匙串；engine 的进程测试只起 `/bin/sh`，不起真的 CLI。
+**跑之前查过**：不带 `#[ignore]` 的 Rust 测试用临时目录建库；唯一出现真库路径的两处，一处是路径闸测试在临时目录里造的假 home（`mcp.rs:17560` 起），一处是 `#[ignore]` 的手动验收（`folder_link.rs:3031`，且它拒绝真库）。
 
 | 套件 | 结果 | 开始时间（UTC） | 上站 |
 |---|---|---|---|
-| TypeScript 类型检查 + 构建 | `tsc -b` 干净，`vite build` 成功 | 16:25:03Z | 可上站 |
-| **Vitest** | **627 / 627 通过**，50 个文件，0 失败，0 跳过 | 16:25:11Z | 可上站 |
-| **spool-ai crate** | **13 / 13 通过**，0 跳过 | 16:25:27Z | 可上站 |
-| **主 crate**（第 1 次） | **127 通过 · 2 失败 · 4 跳过**（共 133） | 16:25:34Z | 仅内部 |
-| 主 crate（随后连跑 10 次，默认并行） | 每次都是 **129 通过 · 0 失败 · 4 跳过** | 约 16:27Z | 可上站（要连同首跑一起说） |
+| TypeScript 类型检查 + 构建 | `tsc -b` 干净，`vite build` 成功（只有「chunk 大于 500 kB」的提示） | 16:02:55Z | 可上站 |
+| **Vitest** | **1237 / 1237 通过**，125 个文件，0 失败，0 跳过 | 16:03:03Z | 可上站 |
+| **spool-ai crate（sidecar Rust）** | **31 / 31 通过**，0 跳过 | 16:03:19Z | 可上站 |
+| **主 crate Rust**（第 1 次） | **272 通过 · 0 失败 · 11 跳过**（共 283） | 16:03:24Z | 可上站 |
+| 主 crate（随后连跑 5 次，默认并行） | 每次都是 **272 通过 · 0 失败 · 11 跳过** | 16:04Z | 可上站 |
 
-**那 2 次失败**：`engine::tests::a_run_can_be_cancelled_and_takes_its_children_with_it`（`engine.rs:2287` 报「取消的运行不许报成功」）和 `engine::tests::a_run_is_read_line_by_line_while_it_is_still_going`（`engine.rs:2213` 拿到 `spool:cancelled`）。两条都用同一个全局「取消」槽。从报错看，是第一条的子进程提前结束，它的取消线程随后打到了第二条的运行上。两条单独跑、`--test-threads=1` 串行跑都通过。**判定：时序相关的偶发失败，根因没查。** 这是新发现，本轮不改代码。
+**合计**：1237 + 272 + 31 = **1,540 条通过，0 失败，11 条按设计跳过**；主 crate 6 次 0 次偶发失败。上一轮 v0.6.2 首跑那两条时序相关的偶发失败（engine 取消槽）这次没出现；HANDOFF §9.3 P9H 里写着「先抓 Rust 偶发红」，本轮没去核是哪一笔修的（缺；查 P9H 回执即可）。
 
-**4 个跳过的**（设计如此）：`api_engine.rs:795`（要联网）、`compress_sweep.rs:97`（花真钱）、`:301`（读归档的一轮）、`:427`（读真库）。
+**11 个跳过的**（设计如此，都要真钱、真 CLI、真网络或库副本）：`api_engine.rs:1061`、`:2208`（真 Codex）、`:2252`（真 OpenAI 联网）、`:2631`（真 Codex）、`:2643`（真 API）· `compress_sweep.rs:97`、`:304`、`:430` · `engine.rs:2386` · `file_follow.rs:881` · `folder_link.rs:3031`（要库副本 + 文件夹副本）。
 
 **建议上站写法**
-- "At the v0.6.2 tag, 627/627 TypeScript and 13/13 sidecar tests passed (run 2026-09-23)."
-- "Main Rust crate: 129 passed, 4 skipped by design; two timing-sensitive tests failed once in 11 runs."
+- "At the v0.7.4 tag, 1,540 tests passed — 1,237 TypeScript, 272 main-crate Rust, 31 sidecar Rust — with 11 skipped by design."（22 词）
+- "Run on 2026-10-29 from a clean copy of the tagged source; the main Rust crate passed six runs in a row."
 
-### 4.2 在本地 main HEAD 上也跑了一次（同一天；跑的时候是 `a0236a3`，改写提交信息后是 `bbf31e8`，tree 相同）
+### 4.2 （上一轮的「本地 main 跑出 spool-ai 编译失败」已解决）
 
-| 套件 | 结果 |
-|---|---|
-| Vitest | **803 / 803**，63 个文件 |
-| 主 crate | **139 通过 · 0 失败 · 4 跳过**（共 143） |
-| **spool-ai crate** | ⛔ **测试目标编译失败，0 条测试跑成**：`error[E0063]: missing field kind in initializer of Request`（`sidecar/src/main.rs:669`）和 `error[E0004]: non-exhaustive patterns: &Envelope::Balance { .. } not covered`（`:683`） |
+上一轮 §4.2 记的「spool-ai 测试目标从 `5894dbc` 起编译不过」：v0.7.4 上 sidecar **31 / 31 通过**，已不成立。修复是 `ef84e95`（2026-09-30，P1 的 A0「修 spool-ai 测试编译」，HANDOFF §9.3 P1 行，10-01 验收）。旧记录挪进 §14。本轮**没有**在 main HEAD `cbbda2e` 上另跑一遍测试（缺；main 比 v0.7.4 多 19 个代码提交，要数就照 §4.1 换成 `git archive main`）。
 
-**spool-ai 编译失败的来由**：`5894dbc`（2026-08-26，「看得见余额了」，**已推到公开 main**）给 `Envelope` 加了 `Balance` 分支、给 `Request` 加了 `kind` 字段，但测试里的 match 和构造没跟上。发布构建不受影响（只坏在测试目标）。`ee3dbda` 提交信息里的「Rust 139 全绿」**只覆盖了主 crate**。仅内部；见 §8 候选 D 和 §13。
+### 4.3 覆盖面（v0.7.4）
 
-### 4.3 覆盖面（v0.6.2，按模块分组；不是覆盖率）
+**规模**：Vitest 125 个文件 / 1237 条；主 crate 283 条 `#[test]`（11 条 `#[ignore]`）；sidecar 31 条。本轮没有按目录重新分组（缺；要的话把 `npx vitest run --reporter=verbose` 的输出按路径前缀聚一下）。v0.6.2 的分组表挪进 §14。
 
-**Vitest，按目录**（2026-09-23 实跑输出分组）：
+**最能说明问题的几个测试**（行号在 v0.7.4；「链接安全」的意思见 §11.3）：
 
-| 模块 | 文件 | 测试 |
-|---|---|---|
-| `src/lib/blocks` | 12 | 138 |
-| `src/lib/db` | 8 | 124 |
-| `src/lib/ai` | 3 | 105 |
-| `src/lib/pack` | 2 | 74 |
-| `src/lib/engine` | 4 | 40 |
-| `src/stores` | 5 | 33 |
-| `src/lib/breakReminder.test.ts` | 1 | 21 |
-| `src/lib/search` | 1 | 17 |
-| `scripts`（中文站生成） | 1 | 12 |
-| `src/lib/layout.test.ts` | 1 | 11 |
-| `src/lib/workspaces` | 1 | 10 |
-| `src/lib/capture` | 2 | 9 |
-| `src/lib/threads` | 2 | 8 |
-| `src/lib/undo` | 1 | 6 |
-| 其余 7 个（hooks、attachments、mcp、sidebar、theme、utils 等） | 6 | 13 |
-| **合计** | **50** | **627** |
-
-**Rust，按文件**（v0.6.2 源码里的 `#[test]` 数；括号里是其中 `#[ignore]` 的数）：
-`mcp.rs` 53 · `engine.rs` 33 · `api_engine.rs` 23（1）· `transfer.rs` 7 · `systime.rs` 6 · `compress_sweep.rs` 4（3）· `pack.rs` 4 · `capture.rs` 3 → 主 crate 133（4）；`sidecar/src/main.rs` 13。
-
-**最能说明问题的几个测试**（行号在 v0.6.2；「链接安全」的意思见 §11.3）：
-
-| 测试 | 它钉死了什么 | 位置 | 链接安全 |
+| 测试 | 它钉死了什么 | 位置（v0.7.4） | 链接安全 |
 |---|---|---|---|
-| **跨语言 golden** | TS 和 Rust 两个 pack 渲染器对**同一份夹具**必须逐字节相同（时间戳先归一） | `src/lib/pack/assemble.test.ts:822-826`；`src-tauri/src/mcp.rs:9097` `golden_pack_matches_fixture`；夹具 `src/lib/pack/fixtures/golden-pack.expected.txt` | assemble.test.ts 安全；夹具与 mcp.rs 不安全（夹具里有一行和申请相关的文字） |
-| ⚠️ 上面那条的限定 | 两个渲染器**喂进去的数据故意不同**（TS 侧没有跨项目的项目名），golden 对的是渲染函数 | WORKPLAN §4.1「两个 pack 渲染器故意不一致」；ledger §3.45（真实 pack 上只差 3 行） | — |
-| **迁移全程走一遍** | 用 `downgradeToV2…V23` 把库降回 v2，再一步步迁到 v24，用户数据还在 | `src/lib/db/client.test.ts:341`「walks a v2 database through every step to the current version」 | 不安全 |
-| **防清库** | 一个有数据的库遇到不认识的版本时**抛错，不重建** | `client.test.ts:935`「refuses to rebuild a populated database at an unknown version」；来由 ledger §3.1 | 不安全 |
-| TS / Rust 版本号锁 | 两边的 schema 版本常量必须相等 | `mcp.rs:9563` `schema_version_locked_to_gui` | 不安全 |
-| 每个 MCP 工具都声明读写属性 | 少声明一个，某个客户端上那个工具就调不动 | `mcp.rs:9152` | 不安全 |
-| 查过期两道闸互斥且穷尽 | 新块只要指着别的块，就一定被其中一道挡住（blocker T2 的回归测试） | `src/lib/blocks/staleGuards.test.ts`（12 条） | 不安全 |
-| 截断仍是失败 | 被输出上限掐断、但写了正文的回复，必须报失败（blocker T3） | `src-tauri/sidecar/src/main.rs:654` | 安全 |
-| 明文 http 被拒 | 在发出任何东西之前就拒 | `sidecar/src/main.rs:579` | 安全 |
-| 引擎白名单与只读沙盒 | claude 只拿到列出来的工具；codex 带 `--sandbox read-only` | `engine.rs:1714`、`:1774` | 安全 |
+| **跨语言 golden** | TS 和 Rust 两个 pack 渲染器对**同一份夹具**必须逐字节相同（时间戳先归一） | `src-tauri/src/mcp.rs:12815` `golden_pack_matches_fixture`；夹具 `src/lib/pack/fixtures/golden-pack.expected.txt` | 不安全（夹具与 mcp.rs 里有申请相关的文字） |
+| **迁移全程走一遍** | 把库降回 v2，再一步步迁到 v37，用户数据还在 | `src/lib/db/client.test.ts:646`「walks a v2 database…」 | 不安全 |
+| **防清库** | 有数据的库遇到不认识的版本时**抛错，不重建** | `client.test.ts:1903`「refuses to rebuild a populated database…」 | 不安全 |
+| TS / Rust 版本号锁 | 两边的 schema 版本常量必须相等 | `mcp.rs:13293` `schema_version_locked_to_gui` | 不安全 |
+| 每个 MCP 工具都声明读写属性 | 少声明一个，某个客户端上那个工具就调不动 | `mcp.rs:12870` | 不安全 |
+| 引擎白名单 = 全部工具减两个 | 白名单和服务器工具表差一个就红（上一轮 `d576ee3` 的修复，已随 v0.7.0 发布） | `mcp.rs:16629` `the_engine_whitelist_is_every_spool_tool` | 不安全 |
+| 截断仍是失败（blocker T3） | 被输出上限掐断、但写了正文的回复，必须报失败 | `src-tauri/sidecar/src/main.rs:1571` | **安全**（作品集 SPL-BLOCKERS 链的是 v0.6.2 上同一条测试的 `:654`，那条永久链接仍有效） |
 
 ### 4.4 历史记录（给趋势用）
 
@@ -432,18 +440,33 @@ cargo test --manifest-path src-tauri/Cargo.toml
 | 2026-08-07 | v0.4.0 收口 | 268 | 45 | — | ledger §1 |
 | 2026-08-13 | `242e751` | 361 | 72 | — | ledger §7.4 |
 | 2026-08-20 | spool-ai 刚接上 | 485 / 485 | 110 通过 · 1 跳过 | 7 / 7 | ledger §3.44 |
-| **2026-09-23** | **v0.6.2 tag** | **627 / 627** | **129 通过 · 4 跳过**（首跑 2 次偶发失败） | **13 / 13** | 本文 §4.1 |
-| 2026-09-23 | 本地 main `a0236a3`（= `bbf31e8`） | 803 / 803 | 139 通过 · 4 跳过 | **编译失败** | 本文 §4.2 |
+| 2026-09-23 | v0.6.2 tag | 627 / 627 | 129 通过 · 4 跳过（首跑 2 次偶发失败） | 13 / 13 | 上一轮 §4.1 |
+| 2026-09-23 | 当时的本地 main `bbf31e8` | 803 / 803 | 139 通过 · 4 跳过 | **编译失败** | 上一轮 §4.2 |
+| **2026-10-29** | **v0.7.4 tag** | **1237 / 1237** | **272 通过 · 11 跳过**（6 次全过） | **31 / 31** | 本文 §4.1 |
 
 ---
 
-## 5. 发布前评测（压缩那几轮实测）
+## 5. 发布前评测（压缩那几轮实测；全部在 v0.6.2 之前）
 
 **一手来源**：`docs/Deepseek-API-compress-test.md` §1–§8。**第六轮（§8，2026-08-24）是最后一轮，之后没有新一轮**（2026-09-23 查标题）。六轮全部在 v0.6.2 打 tag（2026-08-24 16:05 +0800）之前跑完，第六轮在当天 00:13–11:0x。
 
 **钱的口径**：文档里的「实付 / 计费」是**每次调用返回的 token 用量 × DeepSeek 公布的价目表**算出来的。第一轮两次曾与价目表逐位对上（ledger §3.44）。**没有和厂商的月账单整体对过账**（缺；Hanze 能在 DeepSeek 控制台核）。高峰时段价格是闲时的两倍。
 
 **谁执行的**：这几轮由 AI 编程代理用测试台（`compress_sweep.rs`，只读打开库）驱动。文档以第一人称「我」记录出题、标真值和逐条判分，而 owner 在文中被称为「Ocean / 他」。所以文中的「我」是执行该轮的代理，不是 Hanze（这是按文本推断，证据：§7.0「Ocean … 手动跑一次、点了『始终允许』」、§7.8「我逐题读完 92 条回答之后判的」、§7.12 第 3 条「真值只有我一个人标」）。Hanze 在里面做的是：裁定真值分歧（§6.1 第 2 条、§8.17）、决定在高峰跑（§6）、决定「全跑，不管价格」（§8.10）、点钥匙串授权（§7.0）、解锁屏幕（§8.16）。
+
+### 5.0 v0.6.2 之后有没有新一轮评测（2026-10-29 查）
+
+**没有。** `docs/Deepseek-API-compress-test.md` 最后一节仍是 §8 第六轮（2026-08-24）；ledger §3 最后仍是 §3.46（2026-08-21）；两份文件 v0.6.2 之后只改过清除标记，没加新一轮（`git log v0.6.2..HEAD -- <两个文件>`）。所以本节 §5.1 – §5.6、§6、§7 的数字**全部是 v0.6.2 之前的测量，保留原版本号，不继承到 v0.7.4**。v0.7.3 起压缩也能走本机 CLI、v0.7.3 起 API 换成多家 —— 这些新路径**没有**同等规模的评测。
+
+**v0.6.2 之后有的是「产品验收真跑」**，写在归档任务书里，不是评测轮（规模小、没有独立真值、目的不同）。只作内部背景，**都仅内部**：
+
+| 什么 | 日期 | 版本 | 规模 / 结果 | 出处 |
+|---|---|---|---|---|
+| P9U：本机 Codex 跑压缩、查过期；OpenAI key 跑一次 | 2026-10-24 | 进了 v0.7.3 | 库副本上各一次；压缩 21,388 → 20,049 字，界面核对全过 | `docs/archive/product-taskbooks/TASKBOOK-P9U-CLI-API-SAME-SCOPE-2026-10-24.md` §7 |
+| P10-5：周回顾两条路 | 2026-10-26 | **main，未发布** | 库副本上 9 次，事前写死的六条判定标准全过；DeepSeek 余额差 ¥0.03；OpenAI 的确切花费读不到（缺，要在 OpenAI 后台看） | `TASKBOOK-P10-STRUCTURED-WEEKLY-REVIEW-2026-10-26.md` §6.3 – §6.4；`20db7e4` |
+| P12-5：英文界面下的周回顾（DeepSeek 第二轮） | 2026-10-27 | **main，未发布** | 3 次；英文栏 119 / 119、引文 63 / 63 过闸；第一轮 3 次里 2 次整份中文，换英文 JSON 说明后重跑 | `TASKBOOK-P12-PRE-RELEASE-TWO-SWEEP-2026-10-27.md` §7；`2ca6c14` |
+
+⚠️ 这三次都跑在真库的副本上，原始数据里有真实内容；任务书里的项目名也是真的。不上站、不深链。
 
 ### 5.1 每一轮
 
@@ -553,7 +576,9 @@ cargo test --manifest-path src-tauri/Cargo.toml
 - "Four defects found in pre-release testing were fixed before v0.6.2 shipped, each re-tested against the live endpoint or a library copy."
 - "One fix covered only half the cases; the next round's offline re-check found the other 20 blocks."
 
-### 6.2 第 6 轮挖出的两条新缺陷：**都没修，已随 v0.6.2 发布**
+### 6.2 第 6 轮挖出的两条新缺陷：**都没修，已随 v0.6.2 发布；到 v0.7.4 仍没修**
+
+**2026-10-29 在 v0.7.4 源码上复核**：失败信封 `Err { ok, kind, message, status }` 仍不带 `usage`（`src-tauri/sidecar/src/main.rs:133 – 140`）；`split_cuts` 之后仍直接 `ok: true`、不看正文空不空（`src-tauri/src/api_engine.rs:565 – 568`）。下表的行号是 v0.6.2 和 09-23 本地 main 的。v0.6.2 之后也**没有新的 release blocker 记录**（ledger §3 与测试记录都没有新节，§5.0）。
 
 | 缺陷 | 证据 | v0.6.2 的代码 | 本地 main `bbf31e8` 的代码 | 影响 |
 |---|---|---|---|---|
@@ -566,6 +591,8 @@ cargo test --manifest-path src-tauri/Cargo.toml
 ---
 
 ## 7. 负结果（保留下来的全部）
+
+全部是 v0.6.2 之前的测量（§5.0）；v0.6.2 之后没有新的负结果记进 ledger 或测试记录。
 
 | # | 负结果 | 条件 | n | 出处 | 上站 |
 |---|---|---|---|---|---|
@@ -619,13 +646,13 @@ cargo test --manifest-path src-tauri/Cargo.toml
 **后来怎么处理**：7 条全修；另外补上了从没数过的两类（关系行、数字 / 日期）。ledger §3.45。
 **上站一句**："The checker had been passing for a day while matching 0 of 34 annotations; real data, not fixtures, exposed it."
 
-### 候选 D · 「全绿」只覆盖了一半（2026-09-23 本轮新发现）
+### 候选 D · 「全绿」只覆盖了一半（2026-09-23 发现；**已修**）
 
-**怎么发现的**：本轮在本地 main HEAD 上把两个 crate 都跑了一遍。
-**证据**：spool-ai 的测试目标从 `5894dbc`（2026-08-26，已公开）起编译不过（`E0063`、`E0004`，§4.2）。之后 `ee3dbda` 的提交信息写「Rust 139 全绿」，那是主 crate；sidecar 的 13 条测试在这期间一次都没跑成。发布构建不受影响。
-**它拦下了什么**：下一次发版时，blocker T3 的回归测试（`sidecar/src/main.rs:654`）其实不在跑。
-**后来怎么处理**：**还没处理**（本轮只读）。需要一个排期决定（§13）。
-**上站一句**：只有修好之后才适合上站。
+**怎么发现的**：2026-09-23 在当时的本地 main HEAD 上把两个 crate 都跑了一遍。
+**证据**：spool-ai 的测试目标从 `5894dbc`（2026-08-26）起编译不过（`E0063`、`E0004`）。之后 `ee3dbda` 的提交信息写「Rust 139 全绿」，那是主 crate；sidecar 的 13 条测试在这期间一次都没跑成。发布构建不受影响。
+**它拦下了什么**：下一次发版时，blocker T3 的回归测试其实不在跑。
+**后来怎么处理**：产品线 P1 的第一件「A0 修 spool-ai 测试编译」：`ef84e95`（2026-09-30，「测试跟上 kind 字段和余额信封，13 条重新能跑」；HANDOFF §9.3 P1 行，Hanze 10-01 验收）。v0.7.4 上 sidecar **31 / 31 通过**（§4.1），T3 那条回归测试在 `sidecar/src/main.rs:1571`。
+**上站一句**（现在可以用了）："A 'green' commit had covered only one of two Rust crates; the sidecar's tests had not compiled for five weeks, and now pass 31/31." —— 「五周」= `5894dbc`（08-26）到 `ef84e95`（09-30）。
 
 ### 候选 E · 真库被清空（2026-05-29，最早也最重的一次）
 
@@ -753,17 +780,48 @@ cargo test --manifest-path src-tauri/Cargo.toml
 | 6 | 除此之外：画面里没有真库内容、没有申请材料、没有 key；数字和演示设计对得上 | 全部 18 张 | — | 通过 |
 | 7 | 09-24 的三张同样核过：只有演示库内容，没有 key；03 的三条原因是英文；11 里有 Codex 取消那一段（见逐张表） | main-d1c972c-03 / 10 / 11 | 11：低 | 通过；11 上站前按逐张表处理那一段 |
 
-**这次实拍顺带发现的产品缺口**：CLI 引擎的工具白名单（`engine.rs:67` 起的 14 个）里**没有 `close_follow_up_item`**，v0.6.2、公开 main、本地 main 都一样。所以「跟进」查到答案之后没法自己把那条跟进标成已解决，只能如实告诉用户（main-7d1b2b7-07 最后一段就是）。`engine.rs` 的注释写着「mcp.rs 加了工具，这里也得加，不然 AI 够不着」，这一条漏了。已登记为 HANDOFF `DISCOVERED-20260923-1`。✅ **2026-09-24 已修**（`d1c972c`，本地 main，未发布）：白名单 14 → 15；演示版用 Claude Code 跑跟进，一条单次问题查到答案后被 AI 自己收掉（`status = answered`）。⚠️ 同一轮用 **Codex** 跑时仍关不掉：工具已经进了 Codex 的工具表，但 Codex 0.147.0 在无人值守（`approval_policy="never"`）下会自己取消所有非只读的 MCP 调用（报「user cancelled MCP tool call」），这是另一个问题，登记为 HANDOFF `DISCOVERED-20260924-1`。main-7d1b2b7-07 这张图保持原样。
+**这次实拍顺带发现的产品缺口**：CLI 引擎的工具白名单（`engine.rs:67` 起的 14 个）里**没有 `close_follow_up_item`**，v0.6.2、公开 main、本地 main 都一样。所以「跟进」查到答案之后没法自己把那条跟进标成已解决，只能如实告诉用户（main-7d1b2b7-07 最后一段就是）。`engine.rs` 的注释写着「mcp.rs 加了工具，这里也得加，不然 AI 够不着」，这一条漏了。已登记为 HANDOFF `DISCOVERED-20260923-1`。✅ **2026-09-24 已修**（`d1c972c`；随 **v0.7.0** 发布）：白名单 14 → 15；演示版用 Claude Code 跑跟进，一条单次问题查到答案后被 AI 自己收掉（`status = answered`）。⚠️ 同一轮用 **Codex** 跑时仍关不掉：工具已经进了 Codex 的工具表，但 Codex 0.147.0 在无人值守（`approval_policy="never"`）下会自己取消所有非只读的 MCP 调用（报「user cancelled MCP tool call」），这是另一个问题，登记为 HANDOFF `DISCOVERED-20260924-1`。main-7d1b2b7-07 这张图保持原样。
 
-### 9.3 还缺的
+### 9.3 还缺的（2026-09-24 的结论，保留）
 
-界面截图已经齐了：Desktop、捕捉、Pack、Compress（运行前与结果）、查过期（运行前与结果）、块摘要、CLI 引擎（设置与一次完整的跟进）、MCP（开关与真实写入），发布版和 main 版都有。剩下的只是可选的补拍：
+1. ~~查过期结果那张：等 `DISCOVERED-20260923-2` 修好后重拍~~ ✅ 2026-09-24 已重拍（`main-d1c972c-03`）。
+2. 其余按 Hanze 2026-09-23 的决定保持现状。
+3. 可选：一张「AI 自己收掉答上的单次问题」的图（09-24 实测成功，没截图）。
 
-1. ~~**查过期结果那张**：等 `DISCOVERED-20260923-2` 修好后重拍~~ ✅ 2026-09-24 已修、已重拍，现为 `main-d1c972c-03-out-of-date-result.png`，旧图已删。
-2. 其余都按 Hanze 2026-09-23 的决定保持现状。
-3. 可选：`main-d1c972c-11` 那张的最后一段是 Codex 的失败说明。想要一张「AI 自己收掉答上的单次问题」的图，可以用 Claude Code 在演示版上再跑一次（09-24 实测是成功的，只是没截图）。
+两个演示版当时开着：`~/Desktop/Spool/Spool-Demo-v0.6.2/Spool Demo.app`（数据 `com.oceanjin.spool.demo062`）和 `~/Desktop/Spool/Spool-Demo-main/Spool Demo main.app`（数据 `com.oceanjin.spool.demomain`）。本轮没去看它们现在还在不在。
 
-两个演示版目前都还开着：`~/Desktop/Spool/Spool-Demo-v0.6.2/Spool Demo.app`（v0.6.2，数据在 `com.oceanjin.spool.demo062`）和 `~/Desktop/Spool/Spool-Demo-main/Spool Demo main.app`（09-24 起是本地 main `d1c972c` 的构建，库 v29；数据在 `com.oceanjin.spool.demomain`）。
+### 9.4 v0.7.4 之后哪些截图过时了（2026-10-29；**本轮没有拍任何新截图**）
+
+作品集 `content/projects/spool.md` 现在用的 Spool 界面图（只读核对）：
+
+| 作品集里的位置 | 用的是 | 母版 | 在 v0.7.4 里还准吗 | 判定 |
+|---|---|---|---|---|
+| key_art 第 3 张 `v0.6.2-desktop-timeline` | `v0.6.2-01-desktop-timeline.png` | 本仓库 §9.2 A | 侧栏变了（v0.7.0 起有织布、去掉线轴计数、「最近」可展开）；正文宽度变了（v0.7.4 一直宽到 Pack 按钮）；右栏有文件列表 | **过时**（作为 "Spool v0.6.2" 的图仍然真实） |
+| figure `timeline` `v0.6.2-mcp-write` | `v0.6.2-09-mcp-write-in-timeline.png` | 同上 | 同上；另外 v0.7.1 起 AI 写入会让侧栏亮绿点 | **过时**（同上，标着 v0.6.2 不算错） |
+| figure `switches` `v0.6.2-mcp-switches` | `v0.6.2-08-settings-mcp-switches.png` | 同上 | 两道开关本身仍在、默认值没变（§3.4）；设置页的排版 v0.7.x 有没有变，本轮**没在界面上核**（缺） | **可能仍可用**，要在 v0.7.4 构建上看一眼 |
+| figure `compress` `v0.6.2-compress` | `v0.6.2-04-compress-before-run.png` | 同上 | v0.7.3 起每个动作旁边有「本机 CLI / API」切换；DeepSeek 字样不再出现；底部数字闸的说法应该还在 | **过时** |
+| figure `follow-up-review` `main-follow-up-review` | `main-7d1b2b7-08-follow-up-review.png` | 同上 §9.2 B | v0.7.0 起所有 AI 提议都进同一个待审面（卡片）；跟进结果标 "Follow up" | **过时**（构建早于 v0.7.0） |
+| figure `follow-up-nothing-new` `main-follow-up-nothing-new` | `main-d1c972c-11-follow-up-nothing-new.png` | 同上 | v0.7.1 起「联网」挪进跟进编辑器，右栏只留一行「上次查」；图里那段 Codex 取消写调用的话 v0.7.0 已修 | **过时** |
+| figure `architecture`（SVG） | 作品集自己画的 | — | 少了：v0.7.3 的 CLI 跑压缩 / 查过期、API 跑跟进；v0.7.4 的连接文件夹与 `SPOOL.md`；私有项目在 MCP 读这一侧被藏掉 | **过时**，对照 §3.7 的新 mermaid 改 |
+| 两张 AI 概念图 | `concept-*-2026-10-17` | `docs/promo/2026-10-17/` | 概念图，不是界面 | 不受影响 |
+
+**建议补拍清单（交给 Hanze 定；拍不拍、拍哪几张都由 Hanze 决定）**
+
+共同做法：用 **v0.7.4 tag 的源码**（不是本机那个 main 构建）照 §0「发版后重拍」一行建隔离版（改三处常量 + `productName`；app 别放 `/private/tmp`）；库用 v0.7.4 的 `scripts/seed-demo-library.sh` 灌**演示库**（改 `DIR`），需要「问题项目」的沿用 §9.2 B 的 Lisbon team offsite 设计；文件名前缀 `v0.7.4-`。只拍演示库，不碰真库、不拍真实 key。
+
+| # | 拍什么 | 替换 / 新增 | 用哪个构建 | 备注 |
+|---|---|---|---|---|
+| 1 | 主窗：演示项目时间线（带新侧栏、宽正文、右栏文件列表） | 替换 key_art 第 3 张、`v0.6.2-01` | v0.7.4 隔离版 | 一张就能同时说明「图片块」更好：演示项目里放一块带截图的 |
+| 2 | 一次真实 MCP 写入落进时间线（发布件 `--mcp` + 演示库，同 §9.2 A 的做法） | 替换 figure `timeline` | **公证的 v0.7.4 发布件**起 `--mcp`；界面用 v0.7.4 隔离版 | 来源标签由服务端加 |
+| 3 | 待审面：一张 AI 提议卡（取代 / 挂文件 / 拆项目任选一种） | 替换 `follow-up-review`，并给「AI proposals wait for approval」配图 | v0.7.4 隔离版 + 发布件 `--mcp` 发一次 `propose_*` | 不花钱（提议不调模型） |
+| 4 | 设置 → AI 引擎：「Local CLI」和「API key」两个等大的框 | 新增，配「两条路」 | v0.7.4 隔离版 | key 留空；CLI 那格会显示 Hanze 本机装的 CLI —— 可接受，或裁掉 |
+| 5 | Compress 页签运行前（带「本机 CLI / API」切换） | 替换 `v0.6.2-compress` | v0.7.4 隔离版 | 只拍运行前，零花费 |
+| 6 | 工作区页面 + 「连接的文件夹」（连一个演示用的空仓库），以及生成的 `SPOOL.md` | 新增，配 v0.7.4 头条功能 | v0.7.4 隔离版；文件夹用一个新建的演示仓库 | ⛔ 别连 Knote 或任何真仓库；`SPOOL.md` 会写进那个文件夹 |
+| 7 | 右键「Make private…」后侧栏的私有标记 | 新增（可选） | v0.7.4 隔离版 | |
+| 8 | 跟进：编辑器里的「每周自己查」开关 + 一次跟进结果进待审 | 替换 `follow-up-nothing-new`（可选） | v0.7.4 隔离版 | 跑一次跟进要用 Hanze 的 CLI 额度或 key，**花钱与否由 Hanze 定** |
+| 9 | MCP 设置两道开关 | 先看现在这张还准不准；不准再拍 | v0.7.4 隔离版 | 下半那几行客户端状态会写 "Path changed"（隔离版路径不同），仍只裁上半 |
+
+⚠️ 本机 `/Applications/Spool.app` 是 10-28 的 main 开发构建（含未发布的 P10 周回顾卡片），**不要**拿它拍「v0.7.4」的图（§1.4）。
 
 ---
 
@@ -771,14 +829,13 @@ cargo test --manifest-path src-tauri/Cargo.toml
 
 | 事实 | 值 | 条件 / 出处 | 上站 |
 |---|---|---|---|
-| 可核验、可公开的外部使用数据 | **没有** | Spool 按设计没有遥测、没有账号（`docs/PRIVACY.md`「我们收集什么」） | 可上站（"No telemetry by design; no usage data exists."） |
-| GitHub 各版资产下载数累计 | **44** | 2026-09-23 16:32Z，`gh api .../releases` 把所有资产的 `download_count` 相加（v0.6.2: 3 · v0.6.1: 9 · v0.6.0: 2 · v0.5.0: 3 · v0.4.0: 8 · v0.3.0: 19） | 仅内部 |
-| 其中已知是 Hanze 自测的 | 2026-08-20 那一刻的 **32 次全部是 Hanze 自己**；「真实外部下载 = 0」 | `docs/METRICS.md` 开头；WORKPLAN §4.1 最后一行、§5 第一行（Hanze 本人 2026-08-20 更正） | 仅内部 |
-| 08-20 之后多出来的 12 次 | **来源不明**。至少 1 次是发版当天的自验（ledger §1.2 v0.6.2：「re-verified on the copy downloaded back」）。另外本轮 2026-09-23 为核 sha256 下载了 2 个 v0.6.2 资产，之后的计数会多 2 | — | 仅内部 |
-| 每日看板 | `docs/metrics/downloads.csv` **只有 2026-08-20 一天的快照**（16 行），之后没有新行 | `cut -d, -f1 docs/metrics/downloads.csv \| sort \| uniq -c` | 仅内部 |
-| ChatGPT 桌面版第一次经 MCP 写入（11 块） | 那是 Hanze **自己**的使用，不是外部用户 | ledger §2.3 | 可上站（写成开发者自测） |
+| 可核验、可公开的外部使用数据 | **没有** | Spool 按设计没有遥测、没有账号（`docs/PRIVACY.md`） | 可上站（"No telemetry by design; no usage data exists."） |
+| GitHub 各版资产下载数累计 | **95**（本轮下载核验之前） | 2026-10-29T16:03:09Z，`gh api .../releases` 把所有资产的 `download_count` 相加：v0.7.4: 3 · v0.7.3: 2 · v0.7.2: 5 · v0.7.1: 3 · v0.7.0: 4 · v0.6.2: 21 · v0.6.1: 25 · v0.6.0: 2 · v0.5.0: 3 · v0.4.0: 8 · v0.3.0: 19。**本轮 16:03:20Z 为核 sha256 又下载了 1 次 v0.7.4**，之后的计数会多 1 | 仅内部 |
+| 其中已知是 Hanze 自测的 | 2026-08-20 那一刻的 **32 次全部是 Hanze 自己**；「真实外部下载 = 0」 | `docs/METRICS.md` 开头 | 仅内部 |
+| 2026-09-23 之后多出来的 51 次（44 → 95） | **来源不明**。已知至少有：每次发版后的自验下载（ledger §1.2 每列都写 "re-verified on copies downloaded back … under both names"，五个版本 × 2）、2026-09-23 本文件上一轮为核 sha256 下的 2 次。v0.6.1 从 9 涨到 25、v0.6.2 从 3 涨到 21，原因不明（Windows 按钮指向 v0.6.1 安装包是一个可能，未核） | — | 仅内部 |
+| 每日看板 | `docs/metrics/downloads.csv` 仍只有 2026-08-20 一天的快照（16 行） | 2026-10-29 `cut -d, -f1 docs/metrics/downloads.csv \| sort \| uniq -c` | 仅内部 |
 
-⛔ **下载数不上站**：44 里至少 32 是自测，其余无法归属。任何比例、平台分布都是在算 Hanze 自己。
+⛔ **下载数不上站**：至少 32 是自测，另有至少 10 次是发版自验，其余无法归属。任何比例、平台分布都是在算 Hanze 自己。
 
 ---
 
@@ -791,7 +848,7 @@ cargo test --manifest-path src-tauri/Cargo.toml
 | 仓库**没有 LICENSE 文件**（v0.6.2 的 `git ls-tree` 里没有）；GitHub `licenseInfo` 为 null；仓库 **PUBLIC** | 2026-09-23 实查 | 可上站 |
 | 立场：公开仓库不带许可证 = 保留全部权利，代码可以读、审，不能复制、改、再分发。这是决定，不是遗漏 | ledger §4 第一行 | 可上站 |
 | 建议措辞（ledger 原文）："Source-available for review; all rights reserved. Not licensed for reuse." | ledger §4 | 可上站 |
-| 其他写明的边界：不自动更新；不上 Mac App Store（沙盒和全局事件监听冲突）；手势和「点下去之后长什么样」不能自动化测试；Codex 的 shell 工具关不掉，所以用只读沙盒跑 | ledger §4 其余各行 | 可上站。⚠️ ledger §4「Platform: macOS only in practice」已过时（v0.5.0–v0.6.1 发过 Windows） |
+| 其他写明的边界：不自动更新；不上 Mac App Store（沙盒和全局事件监听冲突）；手势和「点下去之后长什么样」不能自动化测试；Codex 的 shell 工具关不掉，所以用只读沙盒跑 | ledger §4 其余各行 | 可上站。⚠️ ledger §4「Platform: macOS only in practice」已过时（v0.5.0–v0.6.1 发过 Windows；v0.6.2 – v0.7.4 又只有 macOS，Windows 在测，§1.3） |
 
 ### 11.2 开发中 AI 编程工具的实际用法（只写仓库里有证据的事实）
 
@@ -800,6 +857,7 @@ cargo test --manifest-path src-tauri/Cargo.toml
 - **本文、§4 的测试实跑、§9.2 A 部分的 8 张截图、两个演示版的构建和演示数据**：都由 AI 编程代理（Claude Code）在 2026-09-23 完成。另外 10 张截图（捕捉手势和 main 版那 9 张）由 Hanze 亲手操作、拍摄。
 - **仓库文档的第一人称**：HANDOFF、`Deepseek-API-compress-test.md`、ledger §3.44–§3.46 里的「我 / I」是执行那一窗的 AI 代理；owner 被称为「Ocean / 他」。例：ledger §3.44「RETRACTED … I misread the schema」。
 - **作为产品测试对象的 AI 客户端**：ChatGPT 桌面版 / Codex（MCP 写入，ledger §2.3）、Claude Desktop、Claude Code、Gemini CLI（引擎槽与免费档实测，ledger §2.5）。这些是被测对象，不是写代码的工具。
+- **2026-10-29 这一轮重跑**（§1 的发布件核验、§3.6 的探针、§4.1 的测试、§12 的对照）同样由 AI 编程代理（Claude Code）完成；没有拍截图、没有改作品集仓库。
 - **Codex**：仓库里没有 Codex 写产品代码的记录。唯一一份 Codex 交接文件属于研究线，不在本文范围。
 
 **哪些是 Hanze 亲手做的（有记录的）**
@@ -827,7 +885,7 @@ cargo test --manifest-path src-tauri/Cargo.toml
 | 「95 / 5」 | 已作废（§7） | 不得公开 |
 | MemTrapBench 的百分数放进讲 Spool 的句子 | WORKPLAN §5 | 不得公开 |
 | 下载数 | §10 | 仅内部 |
-| 未发布功能的数字（22 个工具、库 v28 / v29 等） | 还没发布；写就要写明 "on main, unreleased" | 仅内部 |
+| 未发布功能（v0.7.4 之后 main 上的周回顾卡片等，§2.2） | 还没发布；写就要写明 "on main, unreleased"。上一轮这里列的「22 个工具、库 v28 / v29」已随 v0.7.0 发布，不再算未发布 | 仅内部 |
 
 ### 11.4 发送申请前要清除的内容（清单，2026-09-23 建）
 
@@ -855,7 +913,11 @@ grep -rl 'PURGE-BEFORE-APPLICATION' --include='*.md' . | grep -v node_modules
 - `docs/CODEX-HANDOFF-STAGE0A-D2-REVIEW-2026-09-03.md`：出现私有实验仓库的名字（作品集列为绝不出现）。
 - `docs/PORTFOLIO_FACTS.md`（本文件）：给申请作品集用的事实表，而且本节列着哪些文件含申请内容。09-25 之前本节的两条命令里还直接写着校名，已改成读仓库外的清单文件。
 
+**2026-10-29 重算**（`git grep -l 'PURGE-BEFORE-APPLICATION' HEAD -- '*.md'`）：命中 32 份。其中 **31 份**第一行就是标记 = 上面 30 份 + `docs/HANDOFF-2026-09-04.md`（2026-09-30 标）；另 1 份 `docs/archive/product-taskbooks/TASKBOOK-P9R-RELEASE-ONE-MAC-V070-2026-10-18.md` 只是第 53 行**提到**这个标记，没有标 —— 但同一行写着真实库里的申请类项目名，按上面的判定标准应该标（本轮没改那份文件，等 Hanze 定）。本地 main = 公开 main，所以上表「挪动前的旧路径」和「只在本地提交里」两档现在**都已公开**。09-30 之后新增的任务书本轮**没有逐份**按判定标准查过（缺）。
+
 **看过、没有标记的**（原因）：`docs/archive/INVESTIGATION_WINDOWS_PORT_2026-08-13.md` 与 `docs/DESIGN_WINDOWS_PORT.md`（MSI 是安装包格式）· `docs/archive/RELEASE-0.5.0-HANDOFF.md` 与 `docs/EXECUTION_POLICY.md`（MIT 许可证；后者还是 owner 锁定文件）· `docs/DESIGN_PROJECT_MEMORY.md`（引用 Stanford 的研究）· `docs/archive/DESIGN_NEXT_STAGE.md`、`docs/archive/Spool-strategy-2026-08-19.md`（只写了「给作品集做素材」「owner 本人是申请者」这类计划和身份，没有申请内容）· `docs/archive/SITE_REVISION_LIST.md`（只有块数）· `docs/archive/essayprove-gpt-analysis.md`、`docs/archive/HANDOFF-CODEX.md`（泛泛的示例句和规则）· 各种求职、租房示例（演示数据）。
+
+**源码与测试夹具（2026-10-29 在 v0.7.4 上重算：54 个）**：比 09-23 的 45 个多 10 个、少 1 个。多的都是测试文件：`src/components/ThreadView/Composer.send.test.ts`、`src/lib/names/uniqueTitle.test.ts`、`src/stores/compressStore.boundary.test.ts`、`src/stores/compressStore.packRule.test.ts`、`src/stores/outsideWrites.test.ts`、`src/stores/projectFiles.anchor.test.ts`、`src/stores/projectFiles.lifecycle.test.ts`、`src/stores/projectFiles.revive.test.ts`、`src/stores/undoFileIdentity.test.ts`、`src/stores/undoRestoreNumber.test.ts`。少的是 `src/components/RightRail/RefReviewSection.tsx`（v0.7.1 去掉「待审引用」列表后不再命中）。下面是 09-23 的原清单，留作对照。
 
 **源码与测试夹具：没有在文件里加标记**（它们不是「文档」；而 golden 夹具多一个字节，跨语言对照测试就会失败）。工作区（main）里共 **45 个**文件的注释、测试数据或夹具出现校名、考试名、分数或申请类项目名，其中一部分是照真实内容写的测试夹具：
 
@@ -879,67 +941,104 @@ grep -rl 'PURGE-BEFORE-APPLICATION' --include='*.md' . | grep -v node_modules
 
 ---
 
-## 12. 与作品集现在口径的冲突表
+## 12. 与作品集现在口径的冲突表（2026-10-29 重做）
 
-来源：只读打开 `~/Desktop/portfolio`（HEAD `a7165d1`，2026-09-23）的 `content/facts.yaml`（`id: spool`，第 41–96 行）、`content/evidence.yaml`（`project: spool` 三行）、`docs/CONTENT-GUIDE.md` §4。
+来源：只读打开 `~/Desktop/portfolio`（HEAD `08507fb`，2026-10-24；**工作区里另有未提交的改动**，`content/evidence.yaml`、`content/projects/spool.md` 等都在其中 —— 本表按 2026-10-29 16:1x 工作区里的文字对照，SPL-REL-074 就是那批改动加的）。`content/evidence.yaml` 里 `project: spool` 共 **20 条** claim；`content/projects/spool.md` 正文与图注。没有改作品集仓库的任何文件。
 
-| # | 网站现在的说法 | 最新事实 | 判定 | 建议写法 | 出处 |
+判定只有三种：**仍然成立**（v0.7.4 里照样对）/ **v0.7.4 里变了**（写明怎么变）/ **需要新 claim**。标着 `subject_version: v0.6.2` 的测量类 claim，只要它说的是 v0.6.2 那一刻的事实，就算「仍然成立」—— 不要把 v0.6.2 的数字改标成 v0.7.4。
+
+### 12.1 evidence.yaml 的 20 条
+
+| # | claim id | 现在的说法（缩写） | 判定 | v0.7.4 里怎么样 / 建议 | 出处 |
 |---|---|---|---|---|---|
-| 1 | `status: released` | v0.6.2 已发布 | **仍成立** | — | §1.1 |
-| 2 | `period: "2025 – present"` | 仓库建于 2026-05-17，第一个 commit 同日；仓库里没有更早的记录 | **需要改** | "2026 – present" | §1.4 |
-| 3 | `role: "Independent product developer — sole author"` | 630 个提交的作者都是 Hanze 的账号；但开发中用了 AI 编程代理，有记录 | **需要改**（"sole author" 会被理解成独自写了全部代码） | "Sole developer; built with AI coding agents (see Boundaries)." | §11.2 |
-| 4 | one_line「desktop, CLI and MCP interfaces」 | CLI = 引擎槽，起用户自己的 CLI；Spool 没有自己的命令行 | **需要改**（加定义） | "…through a desktop app, an MCP server, and a CLI engine slot that runs the user's own AI CLI." | §2.1 |
-| 5 | headline：release 版本号 / 日期 TODO | **v0.6.2 · 2026-08-24** | 需要填 | "v0.6.2 · 2026-08-24" | §1.1 |
-| 6 | headline：「347 · Real API calls across five pre-release evaluation rounds」 | **六轮、557 次**（2026-08-20 → 08-24），**≥ ¥29.37** | **作废** | "557 · real API calls across six pre-release evaluation rounds (2026-08-20 to 08-24)" | §5.1 |
-| 7 | headline：测试数量 TODO | v0.6.2 tag：Vitest 627 / 627；Rust 129 + 13（首跑 2 次偶发失败）；2026-09-23 | 需要填（旁边要带 §4.1 那句偶发失败） | "769 tests run at the v0.6.2 tag on 2026-09-23: TypeScript 627/627, Rust 142 passed, 4 skipped by design." | §4.1 |
-| 8 | spec「Distribution: Developer ID signed, Apple-notarized」 | 2026-09-23 对下载回来的发布件复验通过 | **仍成立** | 可加 "re-checked 2026-09-23" | §1.1 |
-| 9 | spec「Interfaces」TODO | 同 #4 | 需要填 | "Desktop app · MCP server (20 tools) · CLI engine slot" | §2.1、§3.6 |
-| 10 | `prerelease.component: "DeepSeek compression sidecar"`（当 pre-release 写） | **随 v0.6.2 发布了**，默认关，用户自己的 key | **作废** | 挪进 Released："Opt-in AI compression (v0.6.2), off by default, using the user's own API key." | §2.1 |
-| 11 | `api_calls: 347`、`rounds: 5` | 557、6 | **作废** | 同 #6 | §5.1 |
-| 12 | `downstream_qa_checks: 92` | 92 只是第 5 轮；加上第 6 轮 120，共 212。**当前最好的证据是第 6 轮那 120 次** | **需要改** | "212 downstream QA answers across two rounds; best evidence: 120 in round six." | §5.2、§5.4 |
-| 13 | `total_cost: "CNY 25.50"` | ≥ ¥29.37（下限；token 用量 × 价目表） | **作废** | "at least ¥29.37" | §5.1 |
-| 14 | 四条 release blockers | 四条都对，而且**都在发版前修好了**；另有两条小缺陷发布时没修 | **仍成立，需要补一句** | "Four blockers found in testing were fixed before release; two minor envelope defects shipped and remain open." | §6 |
-| 15 | 负结果「46% within ±30%」 | 仍成立：第 5 轮 89 张账单，事前门槛 90% | **仍成立**（补 n） | "…46% of 89 real bills…" | §5.5 |
-| 16 | 负结果「medium ~3.5x slower, ~3.4x more」 | 仍成立：medium n=5 vs low n=10，一个项目一档 | **仍成立**（补 n） | "(n=5 vs 10, one project)" | §5.6 |
-| 17 | qualified_result「one round on FLUX samples, 35% compression preserved 12/12 … two projects only, a single model, one attempt per question」 | 12/12 只来自 **Flux 一个项目**（「两个项目」是那一阶段整体）；判分的是 AI 代理；已被第 6 轮 120 次取代 | **需要改** | 换成 §5.4 那两句 | §5.3、§5.4 |
-| 18 | evidence 行 1：日期 TODO | 2026-08-24 | 需要填 | `date: "2026-08-24"` | §1.1 |
-| 19 | evidence 行 2：「Five pre-release evaluation rounds made 347 real API calls and 92 downstream QA checks, costing CNY 25.50」，`public: false` | 见 #6、#12、#13 | **作废** | 重写；链接先别指向 `Deepseek-API-compress-test.md`（里面有真实内容，§11.3），保持 `public: false` 直到 Hanze 决定怎么处理那份文件 | §5、§11.3 |
-| 20 | evidence 行 3：「Release was blocked by four defects…」，链接 TODO | 四条都在发版前修好 | **需要改** | "Four defects found in pre-release testing were fixed before v0.6.2 (commits 584d8d1, 8c0e007)." ⚠️ `8c0e007` 的提交信息和 `staleGuards.ts` 带真实项目名；安全的证据链接是 `sidecar/src/main.rs` 的 T3 回归测试（第 654 行，v0.6.2） | §6.1、§11.3 |
-| 21 | CONTENT-GUIDE §4「Released：… Desktop / CLI / MCP 三个接口」 | 同 #4 | **需要改** | 同 #4 | §2.1 |
-| 22 | CONTENT-GUIDE §4「Pre-release（DeepSeek 压缩 sidecar，不得写成已发布）」 | 已发布 | **作废**（该页顶部 D23 已预告） | 同 #10 | §2.1 |
-| 23 | CONTENT-GUIDE §4「12/12 … 不加这串限定就不要写这个数字」 | 限定本身要改（#17），而且有更好的证据 | **需要改** | 用 §5.4 | §5.3、§5.4 |
-| 24 | CONTENT-GUIDE §4 可公开链接 / 绝不出现 | 不变 | **仍成立** | — | — |
-| 25 | CONTENT-GUIDE §4 Boundaries「我设计、验证并交付了该系统」 | 设计决定、裁定、实机验收有记录是 Hanze 做的；自动化评测由 AI 代理执行；每个提交的代码是谁写的，没有逐条记录（缺） | **需要改**（「验证」要拆开说） | 用 §11.2 那两句 | §11.2 |
+| 1 | SPL-REL-062 | v0.6.2 shipped 2026-08-24, signed + notarized | **仍然成立** | 历史事实不变 | 上一轮 §1.1（§14） |
+| 2 | SPL-REL-070 | v0.7.0 shipped 2026-10-19 … | **仍然成立** | 发布时间 2026-10-19T15:31:30Z 本轮复查一致 | §1.2 |
+| 3 | SPL-REL-074 | v0.7.4 shipped 2026-10-26, signed + notarized, Apple Silicon | **仍然成立**（本轮复核） | 2026-10-29 下载回来的 `.dmg` 与 `.app` 都 `Notarized Developer ID`，staple 有效，sha256 一致；可加 required_context "re-checked 2026-10-29" | §1.1 |
+| 4 | SPL-SURFACES | **v0.6.2** has three entry points: desktop, MCP server, CLI engine slot | **仍然成立**（对 v0.6.2）；**v0.7.4 里也成立** | 三个入口没变；CLI 引擎槽 v0.7.3 起多管压缩、查过期。若想让句子说当前版本：改 `subject_version` 为 v0.7.4、链接换成 v0.7.4 tag 上的 `engine.rs`（行号要重 grep；`engine.rs` 本身是否「链接安全」本轮没按 §11.4 词表查，**缺**，链之前跑一次 §11.4 的 `git grep`） | §2.1「CLI 是什么」 |
+| 5 | SPL-MCP-TOOLS | v0.6.2: 20 tools, 13 read / 7 write | **v0.7.4 里变了** | v0.7.4 = **28 个：15 读 / 13 写**（引擎 26）。旧句对 v0.6.2 仍真，但页面上同时写着「当前 v0.7.4」时容易被当成现状 → **需要新 claim**（见 12.3 N1） | §3.6 |
+| 6 | SPL-TESTS | 769 passed at v0.6.2 tag … | **v0.7.4 里变了** | v0.7.4 tag：**1,540 通过（1237 TS · 272 主 crate · 31 sidecar），11 跳过，0 失败，主 crate 6 次全过** → **需要新 claim**（N2）；旧的可以留作趋势或删掉 | §4.1 |
+| 7 | SPL-EVAL-CALLS | Before v0.6.2, six rounds made 557 calls | **仍然成立** | v0.6.2 之后没有新一轮评测（§5.0）；句子本身写着 "Before v0.6.2"，不用改 | §5.0、§5.1 |
+| 8 | SPL-EVAL-COST | ≥ ¥29.37 | **仍然成立** | 同上 | §5.1 |
+| 9 | SPL-QA-R6 | 39/40 vs 40/40 | **仍然成立**（v0.6.2 前的测量） | 压缩在 v0.7.3 起多了本机 CLI 这条路、API 换成多家 —— **新路径没有同等评测**。页面上如果紧挨着说「compression runs on CLI or API」，要说清这组数字只测过 DeepSeek 一个模型 | §5.0、§5.4 |
+| 10 | SPL-BLOCKERS | Four blockers fixed before v0.6.2 | **仍然成立** | 链接（v0.6.2 `sidecar/src/main.rs#L654`）仍有效；同一条测试在 v0.7.4 是 `:1571` | §6.1、§4.3 |
+| 11 | SPL-DEFECTS-OPEN | Two envelope defects shipped unfixed; context "still open as of 2026-09-23" | **v0.7.4 里仍然没修** —— 句子成立，只是限定的日期旧了 | 2026-10-29 在 v0.7.4 源码上核：失败信封 `Err { ok, kind, message, status }` 仍没有 `usage`（`sidecar/src/main.rs:133 – 140`）；`split_cuts` 之后仍直接 `ok: true`、不看正文空不空（`api_engine.rs:565 – 568`）。建议把 required_context 改成 "still open in v0.7.4, checked 2026-10-29" | §6.2 |
+| 12 | SPL-NEG-COST | 46% of 89 bills | **仍然成立** | v0.6.2 前的测量；v0.7.3 起 API 换成多家，界面仍然不显示估价（本轮没在界面上核，按 release notes v0.7.3「after an API run it shows what the run actually cost」—— 显示的是跑完的实际花费，不是事前估价） | §5.5 |
+| 13 | SPL-NEG-MEDIUM | medium 3.5× slower, 3.4× costlier | **仍然成立** | v0.6.2 前的测量 | §5.6 |
+| 14 | SPL-FOLLOWUP | follow-up runs the user's own **Claude Code** with web search, queues sourced findings | **仍然成立，但变窄了** | v0.7.4 里：Codex 也能跑并写回（v0.7.0）；能每周自己跑、默认关（v0.7.1）；也能走 API key，用 OpenAI / Claude / Gemini / Kimi / 通义自带的联网（v0.7.3）；结果仍先进待审。旧句不假，只是少说了 → 可选**新 claim**（N6）；`subject_version` 仍是 v0.6.2，链接 `v0.6.2/…/lib.rs#L129` 仍有效（v0.7.4 是 `lib.rs:151`） | §2.1 A |
+| 15 | SPL-FAIL-A | relation fix covered one of two types; 20 exposed blocks | **仍然成立** | 历史事件 | §8 候选 A |
+| 16 | SPL-NET-BOUNDARY | main process links no HTTP/TLS lib; only network client is spool-ai | **仍然成立**（v0.7.4 本轮复核） | 主 crate 286 个依赖，网络 / TLS 库精确匹配 0；只在 spool-ai 里。可把 `subject_version` / `observed` 改成 v0.7.4 / 2026-10-29；required_context 照旧（"MCP clients and the user's own CLI make their own network calls" —— v0.7.3 起压缩、查过期也可能走用户的 CLI，这句限定正好覆盖） | §3.5 |
+| 17 | SPL-WRITE-GATE | no access until MCP on; writing has a second switch (on by default once MCP is on) | **仍然成立**（v0.7.4 本轮复核） | `settingsStore.ts:399`（`mcpEnabled: false`）、`:406`（`mcpWriteEnabled: true`）；13 个写工具全在 `mcp.rs:9149 – 9153` 那道闸后面。若改指 v0.7.4，链接换成 `blob/v0.7.4/src/stores/settingsStore.ts#L399-L406`（`settingsStore.ts` 是否链接安全，本轮没按 §11.4 查，**缺**） | §3.4 |
+| 18 | SPL-APPEND-ONLY | AI-written blocks append-only, carry client's name; AI cannot edit or delete user text | **仍然成立**（v0.7.4 本轮核源码） | AI 仍没有改 / 删块的工具（`mcp.rs:8582` 原话）。**v0.7.4 多出来的事要知道**：AI 可以提议更正、取代、挂文件、拆项目（拆项目会把块**移**到子项目），但都要用户点了才生效；AI 能直接写块摘要（不覆盖用户写的）。句子本身仍真；可在 required_context 加 "changes an AI proposes take effect only after the user approves them" | §3.4 |
+| 19 | SPL-COMPRESS-GATE | draft that drops a number/date can't be saved; original stays; context "…uses the user's own API key…" | **v0.7.4 里变了**（限定那句） | 句子主体仍成立（`compressStore.ts:207`、`:801`；`blocks.ts:1048`）。required_context 里「uses the user's own API key」**不完整**：v0.7.3 起也能走本机 CLI。改成 "compression is opt-in, off by default, and runs on the user's own API key or local CLI; keeping originals can be turned off"。链接 `v0.6.2/…/compressStore.ts#L667-L695` 仍有效 | §2.1 A、§3.4 |
+| 20 | SPL-RES-STATUS | A follow-on study … is under way | **需要 Hanze 确认** | 实验线 2026-09-30 起**暂停在 GR16**，执行光标在产品线（HANDOFF 首屏）。「under way」若指「项目还在、没放弃」仍可说；若读者理解成「正在跑」就不准。建议改成 "A follow-on study … is planned, with a protocol and harness in place; it is paused while the product ships."，或保持原句 —— Hanze 定 | HANDOFF 首屏 |
+
+### 12.2 spool.md 正文与图注
+
+| # | 位置 | 现在的说法 | 判定 | 建议 | 出处 |
+|---|---|---|---|---|---|
+| 21 | Results 第一段 | ":claim{#SPL-REL-074} A Windows build is in testing." | **仍然成立** | P13 ACTIVE、只验不发（§1.3） | §1.3 |
+| 22 | Results 第二段 | "The measurements below were taken on an earlier release." 后面接 SPL-REL-062、SPL-TESTS | **仍然成立**，但若采用 N1 / N2，要把测试、工具数挪到 v0.7.4 那一段，这句只管评测数字 | — | §4.1、§5.0 |
+| 23 | Situation | "packs it into plain text any AI can read"；"not a team workspace or a sync service" | **仍然成立** | — | §2.1 A |
+| 24 | Constraints | "Every AI feature … run on the user's own key or subscription, with no Spool server, account or telemetry" | **仍然成立**（v0.7.3 起「subscription」这半句更准了：四个 AI 动作都能走本机 CLI） | — | §3.5 |
+| 25 | Process | "I kept every network call out of the main app and put AI requests in a small subprocess the user switches on." | **仍然成立** | v0.7.3 起还有一条「交给用户自己的 CLI」，句子没说「唯一」，不冲突 | §3.5 |
+| 26 | Process | "I rejected letting an AI edit blocks in place" | **仍然成立** | v0.7.0 的「AI 只能提议」正好是这条决定的延续，值得一句（N3） | §2.1 B |
+| 27 | Results | ":claim{#SPL-FOLLOWUP} The feature first shipped in that earlier release; the screenshots come from a later development build." | **v0.7.4 里变了**（图过时） | 那两张图早于 v0.7.0（§9.4）；图注 meta 写 "Build made before v0.7.0" 是真的。换图前保持；换图后这句改成 v0.7.4 | §9.4 |
+| 28 | figure `architecture` caption / meta "Spool v0.6.2 · checked against the tagged source" | 图里的进程与路线 | **v0.7.4 里变了** | 少了连接文件夹、CLI 跑压缩 / 查过期、API 跑跟进、私有项目；要么保留 "v0.6.2" 标注不动，要么照 §3.7 重画并标 v0.7.4 | §3.7 |
+| 29 | key_art 第 3 张、figure `timeline` / `switches` / `compress` meta "Spool v0.6.2 · …" | v0.6.2 界面 | **仍然真实，但不是当前界面** | 标注没错；要展示当前版本就按 §9.4 补拍 | §9.4 |
+| 30 | Role / Boundaries | "sole developer … built Spool with AI coding agents; product decisions, test adjudication and on-device acceptance were mine" | **仍然成立** | v0.7.x 的每个任务书都有 Hanze 的验收回执（HANDOFF §9.3 各行「Ocean … 验收通过」） | §11.2 |
+| 31 | Reflection | 研究线那段（"It asks whether a governed project memory helps…"） | 见 #20 | — | — |
+| 32 | 文件头注释 | 「main-* … 2026-10-20 起 7d1b2b7 与 d1c972c 都在 v0.7.0 里」 | **仍然成立** | `7d1b2b7`、`d1c972c`（还有 `d576ee3`）都是 v0.7.0 的祖先（2026-10-29 `git merge-base --is-ancestor` 复核） | §2.2 |
+
+### 12.3 需要新建（或改写）的 claim —— 候选句，给 Hanze 挑
+
+| # | 建议 id | 英文句（≤ 25 词） | subject_version / observed | 出处 | source_access 建议 |
+|---|---|---|---|---|---|
+| N1 | SPL-MCP-TOOLS-074 | "v0.7.4's MCP server exposes 28 tools: 15 read-only and 13 behind a separate write switch." | v0.7.4 / 2026-10-29 | §3.6（发布件 `tools/list`） | private（`mcp.rs` 不安全，§11.3） |
+| N2 | SPL-TESTS-074 | "At the v0.7.4 tag, 1,540 tests passed — 1,237 TypeScript, 272 main-crate Rust, 31 sidecar Rust — with 11 skipped by design." | v0.7.4 / 2026-10-29 | §4.1 | private（日志不公开，源码可重跑）；required_context "run on 2026-10-29 from a clean copy; the main crate passed six runs in a row" |
+| N3 | SPL-PROPOSALS | "Corrections, replacements, files and project splits an AI proposes wait on a review screen until the user clicks." | v0.7.0（首发）/ v0.7.4 仍成立 | §2.1 B；release notes v0.7.0 | public（release 页） |
+| N4 | SPL-PRIVATE | "A private project is hidden from AI clients connected through Spool, though they can still write into it." | v0.7.0 / v0.7.4 | §2.1 B | public（release 页）；required_context "covers the route through Spool only; nothing is encrypted" |
+| N5 | SPL-FOLDER-LINK | "A workspace can link to a local folder; a SPOOL.md there tells AI tools which Spool projects the folder belongs to." | v0.7.4 | §2.1 B；release notes v0.7.4 | public（release 页）；required_context "Spool cannot stop an AI client from reading the folder with its own file tools" |
+| N6 | SPL-ROUTES | "Weekly review, follow-up, compression and the out-of-date check each run on the user's own CLI or own API key." | v0.7.3 / v0.7.4 | §2.1 B；release notes v0.7.3 | public（release 页） |
+| N7 | SPL-PICTURES（可选） | "Screenshots and copied images become picture blocks; an AI connected over MCP can fetch them with get_block_images." | v0.7.0 / v0.7.4 | §2.1 B | public（release 页） |
+| N8 | SPL-RELEASES-07（可选） | "Five macOS releases shipped between 2026-10-19 and 10-26 (v0.7.0 – v0.7.4), each signed and notarized." | v0.7.0 – v0.7.4 | §1.2 | public（releases 页） |
+| N9 | SPL-FAIL-D（可选，新失败案例） | "A 'green' commit had covered only one of two Rust crates; the sidecar's tests had not compiled for five weeks, and now pass 31/31." | — / 2026-09-23 发现，09-30 修 | §8 候选 D | private（`5894dbc` 等提交信息是否带真实项目名本轮没查，**缺**） |
+
+**要改的旧 claim**（不新建，只改字段）：#11 SPL-DEFECTS-OPEN（限定日期）、#16 SPL-NET-BOUNDARY（可改指 v0.7.4）、#17 SPL-WRITE-GATE（可改指 v0.7.4）、#18 SPL-APPEND-ONLY（加一句提议要批准）、#19 SPL-COMPRESS-GATE（限定里加「本机 CLI」）、#20 SPL-RES-STATUS（Hanze 定）。
+**被取代、建议下线或降为趋势的**：#5 SPL-MCP-TOOLS、#6 SPL-TESTS（若采用 N1 / N2）。
 
 ---
 
-## 13. 仍缺、需要 Hanze 亲手做的事
+## 13. 仍缺、需要 Hanze 亲手做的事（2026-10-29 更新）
 
-**2026-09-23 第二轮已经处理的（Hanze 当天的五条指示）**
+**上一轮（2026-09-23 / 24 / 25）的状态**
 
-| # | 指示 | 处理结果 |
-|---|---|---|
-| 1 | Windows 下载链接 404 先当没问题 | 记成已知问题（§1.2），以后更新安装包时处理；作品集别链那个地址 |
-| 2 | 用演示环境的库拍照 | AI 代理先拍了 8 张 v0.6.2 界面（零花费）；又建了两个演示版（v0.6.2 与公开 main）和问题项目，Hanze 拍了另外 10 张；18 张已验收、改名（§9.2）。现有演示环境（`com.oceanjin.spool.verify`）没动 |
-| 3 | 三件事按实际情况说明 | AI 工具用法写进 §11.2；判分是 AI 代理做的，写进 §5；起始年份按仓库记录改成 2026（§12 第 2 条） |
-| 4 | 给含真实申请内容的文档做标记，申请时一并清除 | 28 份文档第一行已加 `PURGE-BEFORE-APPLICATION` 标记；45 个源码 / 夹具文件列了清单，没改文件（§11.4） |
-| 5 | 删掉 4 个本地提交的 AI 署名尾注 | 已删。`71217fe` → `b454a26`、`edebc43` → `4ef5849`、`aa274f3` → `6fa0022`、`a0236a3` → `bbf31e8`；作者、提交者、时间、tree 全部不变，只改了提交信息；所有 ref 上都查不到尾注了；没有推送。旧哈希只在本地 reflog 里，推送不会带出去。`docs/archive/HANDOFF-2026-09-04-FULL-PROCESS-LOG.md:222` 里仍写着旧哈希 `aa274f3`，那是历史流水，没改 |
+| 上一轮的条目 | 现在 |
+|---|---|
+| 截图验收遗留、两个产品缺陷（`DISCOVERED-20260923-1/2`） | ✅ 09-24 已修已重拍（不变） |
+| 两个演示版还开着，等 Hanze 说清理 | 本轮没去看（缺；Hanze 决定） |
+| 发送申请时按 §11.4 清除；要不要连 git 历史一起清 | 仍待 Hanze（清单本轮更新了，见 §11.4） |
+| 两处作废数字还挂着（「95 / 5」在 `docs/CASE_STUDY_PAGE.md`、ledger §2.1；「4× / 4.5×」在 ledger §3.45） | 本轮没动；ledger 第 397 行「Share written by AI clients over MCP · 5%」仍在，`docs/CASE_STUDY_PAGE.md:276` 也仍在 |
+| 要不要提交本文和 20 张截图 | ✅ 09-24 `ec5f3c9` 已提交，之后已推送 |
+| spool-ai 测试编译失败 | ✅ 已修（`ef84e95`，§8 候选 D） |
+| 两条随 v0.6.2 发布的信封缺陷 | ⛔ **v0.7.4 里仍没修**（§6.2、§12 #11） |
+| engine 的两条偶发失败测试 | v0.7.4 上 6 次都没出现；根因 / 修复提交本轮没核（缺；HANDOFF §9.3 P9H 写着「先抓 Rust 偶发红」） |
+| Codex 引擎无人值守时取消写调用（`DISCOVERED-20260924-1`） | ✅ v0.7.0 起 Codex 跑跟进能写回（release notes v0.7.0） |
+| 第 5 轮计数对不上、第 6 轮 8 次 vs 11 次、补跑 6 次 | 不变，仍要打开含真实内容的原始归档才能核 |
+| 用 `notarytool history` 复核 submission id；DeepSeek 控制台对账 | 不变；现在多了 v0.7.0 – v0.7.4 的十个 id 也可一起核 |
 
-**仍然需要 Hanze 的**
-1. ~~**截图验收的遗留**：只剩查过期那张，等语言缺陷修好后重拍（§9.3）~~ ✅ 2026-09-24 已重拍（`main-d1c972c-03`）。其余几条 Hanze 已定为保持现状或忽略。
-1b. **两个演示版还开着**（§9.3）。确定不再补拍后告诉我，我来关掉并清理数据；系统设置「输入监控」「辅助功能」里的 Spool Demo 由你删（选中后按「−」）。桌面上那批原始截图（`Screenshot 2026-09-23 at 22.xx.png`，含带「(2)」的重复件）没动，要不要删由你定。
-2. **发送申请时按 §11.4 清除**，顺带决定要不要连 git 历史和提交信息一起清。后者要改写历史、强推。
-3. **两处作废数字还挂着**：「95 / 5」在 `docs/CASE_STUDY_PAGE.md:276-277` 和 ledger §2.1；「4× / 4.5×」在 ledger §3.45。
-4. **要不要提交**：本文、`docs/screenshots/portfolio/` 的 20 张图、28 份文档的首行标记，都还是未提交的改动。其中 28 份文档里有几份本来就带着别人未提交的改动（例如 ledger、WORKPLAN），提交时要一起看。
+**这一轮新的「缺」**
 
-**仓库本身（不挡网站，但要排期）**
-5. **spool-ai 测试编译失败**（从 `5894dbc` 起，已公开）：下一版发之前必须修，否则 T3 的回归测试不在跑。
-6. **两条随 v0.6.2 发布的缺陷**（§6.2）：失败信封不带用量、`split_cuts` 之后空正文仍 ok=true。
-7. **engine 的两条偶发失败测试**（§4.1）：要不要查根因。
-7b. ~~**两个产品缺陷，Hanze 要求下一窗修**~~ ✅ 2026-09-24 已修（`d1c972c`，本地 main，未发布；§2.3），演示版实测都过了。同一天顺带把引擎白名单补齐到全部 22 个工具（`d576ee3`）。
-7c. **新登记、等 Hanze 决定**：HANDOFF `DISCOVERED-20260924-1`，Codex 引擎在无人值守时会自己取消所有写类 Spool 调用（已证实 `close_follow_up_item`；`propose_blocks` 没验证，若也被取消，用 Codex 跑跟进就永远提不回东西）。
-8. 第 5 轮问答表的计数对不上（§5.3 末尾）；第 6 轮「8 次 vs 3+5+3」和「补跑 6 次算不算进 194」（§5.1）。只有打开原始归档才能核，归档里是真实内容。
-9. 可选：用 `xcrun notarytool history` 复核 v0.6.2 的两个 submission id；在 DeepSeek 控制台看 08-20 → 08-24 的实际扣费，和 ≥ ¥29.37 对一下。
+1. **submission id 没有本轮复核**（§1.1、§1.2）：要 Hanze 的 Apple 凭据跑 `xcrun notarytool history`。本轮复核的是「Gatekeeper 认它为已公证」。
+2. **P13 Windows 结果**：回执是空的；Windows 什么时候能写成 "released"，看 P13 通过后 Hanze 的发版决定（§1.3）。
+3. **main HEAD 上没跑测试**（§4.2）：只跑了 v0.7.4 tag。
+4. **Vitest 按目录的分组表**没重做（§4.3）。
+5. **设置页两道开关那张图在 v0.7.4 里还准不准**，没在界面上看（§9.4 #9）。
+6. **要链到 v0.7.4 tag 上的新文件之前**（`engine.rs`、`settingsStore.ts` 等），先跑一次 §11.4 的 `git grep` 确认不在清单里 —— 本轮只重算了清单总数（54），没有逐个对照作品集打算链的文件。
+7. **release notes「nine providers」与代码的 8 + 自定义**不一致（§2.1 B）—— 产品文档的小问题，不挡作品集；要不要改 release 页由 Hanze 定。
+8. **发布件 `LSMinimumSystemVersion` 10.13 与文档写的 macOS 11 不一致**（§1.1）—— 同上，仅内部。
+9. **09-30 之后新增的任务书没有按 §11.4 的判定标准逐份查**（§11.4）。已知至少 `docs/archive/product-taskbooks/TASKBOOK-P9R-RELEASE-ONE-MAC-V070-2026-10-18.md` 第 53 行写着真实库里的申请类项目名，没有清除标记。
+10. **SPL-RES-STATUS 的措辞**（§12 #20）。
+11. **补拍哪几张**（§9.4 建议清单）。
 
 ---
 
@@ -969,3 +1068,23 @@ grep -rl 'PURGE-BEFORE-APPLICATION' --include='*.md' . | grep -v node_modules
 | 2026-09-24（第二轮） | §9.2 · §9.3 · §13 | 18 张；§9.3 / §13 挂着「等修好后重拍」「下一窗修」 | 20 张（加 `main-d1c972c-10`、`-11` 两张跟进图，Hanze 拍）；这几条划掉、标已完成；§13 加 7c（Codex） | 命名规则加 `main-d1c972c-` 前缀 |
 | 2026-09-25 | §11.4 | 两条命令的正则里直接写着校名；「18 个提交、17 个公开」 | 校名挪到仓库外的 `~/Desktop/Spool/purge-patterns-*.txt`，命令改读文件；19 个提交、全部早已公开 | 推送前补查时发现是本文件自己泄露了校名 |
 | 2026-09-25 | 首行 · §11.4 | 已标 28 份 | 再标 2 份：CODEX 交接文件（私有仓库名）、本文件 | Hanze 定：推送前把有问题的文件照同样做法标记，申请时一并删除 |
+| 2026-10-29 | 头部 | 生成 2026-09-23；依据 v0.6.2（`04e1386` → `58ec01f`）、公开 main `7d1b2b7`、本地 main `bbf31e8`（+40 未推送） | 重跑 2026-10-29；依据 v0.7.4（`ec18c3e` → `ba7d2a7`）、公开 main = 本地 main `cbbda2e` | Hanze 交代的一次性重跑（owner interruption，执行光标仍是 P13） |
+| 2026-10-29 | §1.1 | **v0.6.2** · 发布 2026-08-24T08:06:24Z · 资产各 10,390,759 字节 · sha256 `fc74abee8f3c1084d70a885ccdd79520cb200a266b349536c3ad3fb12d992899` · 签名时间 2026-08-24 09:01:34 · 公证 `.app` `19bba6d2-ab45-4f1e-94c1-79a3ee59f9ee` / `.dmg` `64c13142-db18-43fc-b208-0a2df177d309` · schema v23 → v24 · `serverInfo` spool 0.6.2 · 20 个工具（13 / 7）+ 7 prompt（均 2026-09-23 测） | **v0.7.4** 对应各值（§1.1） | v0.6.2 那几行整体降为 §1.5 时间线的一行；数字保留原日期 |
+| 2026-10-29 | §1.2（旧） | Windows：`latest/download/…windows…` 4 处按钮 404「已知问题，暂不处理」 | 按钮写死 v0.6.1，HTTP 200；`latest/download` 那个地址本身仍 404 | v0.7.0 发版时改（ledger §1.2 v0.7.0 列） |
+| 2026-10-29 | §1.3（旧） | 本机 app：自报 0.6.2，`ee3dbda` 开发构建，签名 2026-08-30，库 v29 | 自报 0.7.4，2026-10-28 的 main 开发构建（未公证），库 v37 | — |
+| 2026-10-29 | §1.4 | v0.6.2 时 568 个 commit，本地 main 630 个 | v0.7.4 时 887 个，main 924 个 | — |
+| 2026-10-29 | §2.1 | Released = v0.6.2 的 11 行 | Released = v0.7.4：A 组 9 行（沿用 + 标变化）、B 组 18 行（v0.7.0 – v0.7.4 新功能） | 「联网跟进」那两处限定（白名单缺 `close_follow_up_item`、Codex 取消写调用）都已在 v0.7.0 里解决 |
+| 2026-10-29 | §2.2 · §2.3 | 公开 main 上 10 个功能提交（08-25 – 08-27）；本地 main 6 个（`fa4bf47` `e37950c` `cb3c4b0` `ee3dbda` `d1c972c` `d576ee3`）；main 上 22 个工具、库 v28 / v29 | 这 16 个**全部随 v0.7.0 发布**；新的「Merged, unreleased」= `v0.7.4..main` 的 19 个代码提交；main 仍 28 个工具、库 v37 | `server.json` 也已推送、Registry 已到 0.7.4 |
+| 2026-10-29 | §2.4（旧，MCP Registry） | 登记版本 0.6.2；`server.json` 只在本地 main | 0.7.4 为 latest，0.6.2、0.7.0 – 0.7.3 仍列着；`server.json` 已公开 | 并进 §1.1 一行 |
+| 2026-10-29 | §2.5 → §2.3 | Branch / evaluating：F2 界面、F3、F4、压缩 supersedes、Windows 新版本「not planned for now」、跨生态实验 | Planned：加「发版二（Mac + Windows）」、宣发；Windows 改为「在测」；实验线标「暂停在 GR16」 | — |
+| 2026-10-29 | §3 全节 | 行号钉在 v0.6.2；20 个工具；引擎白名单 14 个；三条自动出网路线（MCP、CLI、spool-ai） | 行号钉在 v0.7.4；28 个工具，引擎 26 个；CLI 与 spool-ai 两条路各多了几种内容（§3.5）；连接文件夹写四处、不加路线 | 主进程依赖 283 → 286，网络 / TLS 库仍为 0 |
+| 2026-10-29 | §4.1 | v0.6.2 tag（`git worktree`，借主工作区 `node_modules`）：Vitest 627 / 627（50 文件）；主 crate 首跑 127 通过 · 2 失败 · 4 跳过，随后 10 次 129 · 0 · 4；sidecar 13 / 13（2026-09-23） | v0.7.4 tag（`git archive` 干净副本，自己 `npm ci`）：Vitest 1237 / 1237（125 文件）；主 crate 6 次都是 272 · 0 · 11；sidecar 31 / 31（2026-10-29） | 两条 engine 偶发失败这次没出现 |
+| 2026-10-29 | §4.2 | 本地 main `bbf31e8`：Vitest 803、主 crate 139 + 4 跳过、sidecar **编译失败** | sidecar 测试已修（`ef84e95`，2026-09-30）；本轮没在 main HEAD 上跑 | — |
+| 2026-10-29 | §4.3 | v0.6.2 的 Vitest 按目录分组表（50 文件 / 627 条：blocks 138、db 124、ai 105、pack 74、engine 40、stores 33、breakReminder 21、search 17、scripts 12、layout 11、workspaces 10、capture 9、threads 8、undo 6、其余 13）；Rust 按文件 `mcp.rs` 53 · `engine.rs` 33 · `api_engine.rs` 23（1）· `transfer.rs` 7 · `systime.rs` 6 · `compress_sweep.rs` 4（3）· `pack.rs` 4 · `capture.rs` 3；关键测试行号（v0.6.2）：golden `mcp.rs:9097`、迁移 `client.test.ts:341`、防清库 `:935`、版本锁 `mcp.rs:9563`、annotations `mcp.rs:9152`、截断 `sidecar/src/main.rs:654`、明文 http `:579`、白名单 / 沙盒 `engine.rs:1714`、`:1774` | v0.7.4 的总数与关键测试行号（§4.3）；分组表没重做（缺） | — |
+| 2026-10-29 | §5 – §7 | — | 加 §5.0：v0.6.2 之后没有新一轮评测；三次产品验收真跑只作内部背景；旧数字不继承 | §6.2 两条信封缺陷在 v0.7.4 仍没修 |
+| 2026-10-29 | §8 候选 D | 「还没处理」，上站一句「只有修好之后才适合上站」 | 已修（`ef84e95`），给了上站句 | — |
+| 2026-10-29 | §9 | §9.3 只有「还缺的」 | 加 §9.4：作品集现用的 6 张界面图 + 架构图逐张判过时与否，附 9 条补拍建议（**没拍**） | — |
+| 2026-10-29 | §10 | 下载累计 44（2026-09-23 16:32Z；v0.6.2: 3 · v0.6.1: 9 · v0.6.0: 2 · v0.5.0: 3 · v0.4.0: 8 · v0.3.0: 19）；「08-20 之后多出来的 12 次来源不明」 | 95（2026-10-29 16:03:09Z，本轮下载前）；09-23 之后多出 51 次，来源不明 | 仍不上站 |
+| 2026-10-29 | §11.4 | 28 + 2 = 30 份已标；「已公开 22 / 挪动前路径 4 / 只在本地 2」；源码 / 夹具 45 个（09-23，main） | 31 份第一行带标记（加 `docs/HANDOFF-2026-09-04.md`，09-30 标）、全部已公开；源码 / 夹具 54 个（v0.7.4） | P9R 任务书只是正文提到标记，没标；要不要标由 Hanze 定 |
+| 2026-10-29 | §12 | 对照作品集 09-23 的 `facts.yaml` / `evidence.yaml`（3 行）/ CONTENT-GUIDE，25 条 | 对照作品集 10-29 工作区的 `evidence.yaml`（20 条 claim）与 `spool.md`，32 条 + 9 条新 claim 候选 | 上一轮那 25 条已由作品集在 09-25 消化（D23、D39、D41、D42） |
+| 2026-10-29 | §13 | 上一轮的待办 | 逐条更新状态；新增 11 条「缺」 | — |
