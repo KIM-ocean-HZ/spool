@@ -790,7 +790,7 @@ cargo test --manifest-path src-tauri/Cargo.toml        # 随后又连跑 5 次
 
 两个演示版当时开着：`~/Desktop/Spool/Spool-Demo-v0.6.2/Spool Demo.app`（数据 `com.oceanjin.spool.demo062`）和 `~/Desktop/Spool/Spool-Demo-main/Spool Demo main.app`（数据 `com.oceanjin.spool.demomain`）。本轮没去看它们现在还在不在。
 
-### 9.4 v0.7.4 之后哪些截图过时了（2026-10-29；**本轮没有拍任何新截图**）
+### 9.4 v0.7.4 之后哪些截图过时了（2026-10-29 第一轮写；同日第二轮已按下面的清单补拍，见 §9.5）
 
 作品集 `content/projects/spool.md` 现在用的 Spool 界面图（只读核对）：
 
@@ -822,6 +822,46 @@ cargo test --manifest-path src-tauri/Cargo.toml        # 随后又连跑 5 次
 | 9 | MCP 设置两道开关 | 先看现在这张还准不准；不准再拍 | v0.7.4 隔离版 | 下半那几行客户端状态会写 "Path changed"（隔离版路径不同），仍只裁上半 |
 
 ⚠️ 本机 `/Applications/Spool.app` 是 10-28 的 main 开发构建（含未发布的 P10 周回顾卡片），**不要**拿它拍「v0.7.4」的图（§1.4）。
+
+### 9.5 v0.7.4 补拍：`docs/screenshots/portfolio/v0.7.4-*`（2026-10-29 第二轮，13 张，AI 编程代理拍）
+
+Hanze 2026-10-29 让代理照 §9.4 的清单补拍，用测试库的环境。**全部是演示库内容，没有真库、没有 key、没有花钱。**
+
+| 项 | 值 |
+|---|---|
+| 界面版本 | **v0.7.4 源码**（tag `ba7d2a7` 的 `git archive` 副本）构建。只改了隔离用的四处：`tauri.conf.json` 的 `productName` → "Spool Demo"、`identifier` → `com.oceanjin.spool.demo074`、`signingIdentity` → `"-"`（ad-hoc）；`mcp.rs:1352` `APP_IDENTIFIER`、`api_engine.rs:714` `KEYCHAIN_SERVICE` → `com.oceanjin.spool.demo074`。**功能代码一行没改**，所以界面就是 v0.7.4 的；但不是公证的发布件本身。构建出的二进制里已经找不到不带后缀的 `com.oceanjin.spool`（`grep -ao`） |
+| 构建时撞到的坑 | macOS 27 上 `npx tauri build`（release）在 `sqlx` 失败：release 档默认 strip，被 strip 过的过程宏 dylib 加载时报 `mis-aligned LINKEDIT string pool`（debug 不 strip，所以 §4.1 的测试没事）。解法：`CARGO_PROFILE_RELEASE_BUILD_OVERRIDE_STRIP=none`，只影响编译期用的过程宏，不影响 app 本身。和 PATH 里 Anaconda 的旧 `ld` 无关（去掉之后照样失败） |
+| app 位置 | `~/Desktop/Spool/Spool-Demo-v0.7.4/Spool Demo.app`（数据 `~/Library/Application Support/com.oceanjin.spool.demo074/`）。拍完已停掉两个进程 |
+| 数据 | v0.7.4 的 `scripts/seed-demo-library.sh`（`DIR` 改成 demo074）灌的同一份演示种子（3 个工作区、8 个项目、23 块），外加演示用的几行：Machine learning course 加一块带图的 #6（图是代理用 matplotlib 画的验证曲线，演示数据）；Job search 加 #6「Recruiter update…」和两条跟进行（一条单次、一条永久）；Apartment hunt 设为私有 |
+| 连接文件夹 | 演示仓库 `~/spool-demo-v074/portfolio-site`（新建，`git init`，README / PLAN / CLAUDE.md；放在家目录根下而不是桌面，免得 macOS 弹文件夹授权）。连接用的是产品自己的 `folder_link::connect`（ignored 测试 `folder_copy_acceptance` 的 connect 步，语言改成英文），不是界面上的四步向导 —— 向导要过系统的选文件夹对话框，合成点击做不了。之后在界面上真点了「Make main project」（`SPOOL.md` 随之改写），再在演示仓库里改 `PLAN.md` 并提交一次，让页面显示「计划变了」 |
+| 真实 MCP 调用 | 2026-10-29T17:28Z，用**公证的 v0.7.4 发布件**（下载回来的 `.dmg` 挂载，`spctl` = `Notarized Developer ID`）起 `spool --mcp`，`SPOOL_DATA_DIR` 指向演示库，客户端自报 `terminal-probe` / "Terminal probe"：`list_threads` → `propose_supersede`（Job search #6 取代 #5，排进待审，`written:false`）→ `add_block`（Machine learning course #7，引用 #6，服务端打上 "Terminal probe · MCP"）。第一次 `add_block` 带了 `ref_kind:"cites"` 被拒（只认 corrects / supersedes），去掉后成功 |
+| 花钱 | **零**。没有跑压缩、查过期、跟进、周回顾；没有填 key。「每周自动跟进」开关保持关（开了会每周用 Hanze 的 Claude Code 额度） |
+| 尺寸 | 窗口 1800 × 1130 点，2 倍屏 ⇒ 整窗图 3600 × 2260；`b` 后缀和 `10` 是从整窗图裁出来的对话框 |
+| 操作方式 | 合成鼠标点击（CGEventPost），每次点击前核对那个坐标上最前面的窗口属于演示版进程，不是就拒绝；按窗口 id 截图（`screencapture -l`）。拍摄期间 Hanze 离开电脑 |
+| 安全核对 | 演示版进程只打开了演示库（`lsof`）；真实 Spool（pid 59946，10-28 起）一直在跑、没动；真库目录的 `mcp-clients.json` 里没有 "Terminal probe"（17:29 那次改动是 Hanze 自己的 Codex）。⛔ 没点「Launch at login」（显示为关）、没点 MCP 页的「Update config」 |
+
+⚠️ 演示库里 Machine learning course 的 #5「Claude · MCP」是**种子脚本直接写进库的**，不是一次真实的 MCP 写入；真实写入是 #7「Terminal probe · MCP」。
+
+**逐张**
+
+| 文件 | 画面 | 证明什么 | 建议英文图注（可上站） | 替换作品集里的 |
+|---|---|---|---|---|
+| `v0.7.4-01-desktop-timeline.png` | Machine learning course 时间线，#2–#6，#6 是带验证曲线图的块；侧栏有织布、Recent / Focus | Desktop 主界面、图片块 | "Spool v0.7.4: a project's timeline; a block can hold pictures beside its text. Demo library." | key_art 第 3 张（`v0.6.2-01`） |
+| `v0.7.4-02-mcp-write-in-timeline.png` | 同一项目往下，#7「Terminal probe · MCP」引用 #6；#6 下面「1 blocks cite this one」 | 一次真实的 MCP 写入，来源标签由服务端加 | "A block written over MCP by a test client carries that client's name and cites the block it builds on." | figure `timeline`（`v0.6.2-09`） |
+| `v0.7.4-03-ai-proposal-review.png`、`-03b-ai-proposal-card.png` | 「Proposed by an AI, waiting for you」：Terminal probe 提议 #6 整块取代 #5，新旧两边的引文、它给的理由，Correct one point / Replace in full / Leave alone | AI 只能提议，用户点了才生效 | "An AI's proposed replacement waits, with both quotes and its reason, until the user chooses." | figure `follow-up-review`（或新配 N3） |
+| `v0.7.4-04-settings-ai-engine-two-routes.png`、`-04b-…-dialog.png` | 设置 → AI engine：Local CLI（显示连上了 Hanze 本机的 Claude Code）和 API key（空）两个框，各写着 "Can do: Weekly review · Follow up · Compress · Out-of-date check" | 两条路做同样四件事 | "Two equal routes: the user's own CLI or their own API key, each able to run all four AI actions." | 新配 N6 |
+| `v0.7.4-05-compress-before-run.png` | Compress 页签运行前：三档、本地重复度预检、夜间队列、底部数字 / 日期闸说明、右下「With Local CLI」 | 压缩先在本地判断、写回之前先核对；v0.7.3 起能走本机 CLI | "Before any request, Compress checks locally whether it is worth running; a draft that drops a number is never saved." | figure `compress`（`v0.6.2-04`） |
+| `v0.7.4-06-workspace-linked-folder.png` | Work 工作区页：Linked folder `~/spool-demo-v074/portfolio-site`，「1 state file(s) changed since」，PLAN.md changed，1 commit，SPOOL.md，Main project = Portfolio site，三个项目 | 连接文件夹、计划变了会提示 | "A workspace linked to a project folder: Spool notices the plan file changed since the last sync." | 新配 N5 |
+| `v0.7.4-07-private-project.png` | Apartment hunt：标题和侧栏带私有标记；Compress / Out-of-date check 页签带同一个标记（Spool 自己的 AI 功能在私有项目里关着） | 私有项目 | "A private project: hidden from AI clients connected through Spool, and Spool's own AI features stay off inside it." | 新配 N4 |
+| `v0.7.4-08-project-right-rail.png` | Job search + 右栏：1 waiting for you、连接的文件夹（PLAN.md changed）、Watching for 两条、Project files | 右栏把文件夹状态、跟进、文件放在一处 | "The project rail: what waits for review, the linked folder's state, what the project watches, and its files." | 可选 |
+| `v0.7.4-09-follow-up-editor.png`、`-09b-…-dialog.png` | 「What should this project watch?」：一条 One-off、一条 Permanent；Search the web · With Local CLI；「Search once a week by itself」开关（关）；Follow-up uses Claude Code | 跟进清单、每周自动（默认关） | "The user writes what to watch; weekly searching is a per-project switch, off by default." | figure `follow-up-nothing-new`（可选） |
+| `v0.7.4-10-settings-mcp-switches.png` | 设置 → MCP 上半：「MCP server」「Allow AI writes」两道开关 | 写入要两道同意 | "Two separate consents: one lets AI tools read, a second lets them write." | figure `switches`（`v0.6.2-08`） |
+
+**MCP 设置那张为什么只裁上半**：下半的客户端都显示「Path changed」—— 那些客户端配置登记的是真实 app 的路径，演示版路径不同；真实用户看到的是「Connected」。整张放出去会误导。
+
+**这次没拍的**：一次真跑的跟进 / 压缩结果（要花钱，等 Hanze 定）；捕捉浮窗（演示版没有输入监控授权，也不该去授）。
+
+**留在机器上的东西**（要不要删由 Hanze 定）：`~/Desktop/Spool/Spool-Demo-v0.7.4/`（演示版 app）、`~/Library/Application Support/com.oceanjin.spool.demo074/`（演示库）、`~/spool-demo-v074/`（演示仓库）。删之前先停演示版（托盘应用，按 pid 停）。
 
 ---
 
@@ -1032,13 +1072,13 @@ grep -rl 'PURGE-BEFORE-APPLICATION' --include='*.md' . | grep -v node_modules
 2. **P13 Windows 结果**：回执是空的；Windows 什么时候能写成 "released"，看 P13 通过后 Hanze 的发版决定（§1.3）。
 3. **main HEAD 上没跑测试**（§4.2）：只跑了 v0.7.4 tag。
 4. **Vitest 按目录的分组表**没重做（§4.3）。
-5. **设置页两道开关那张图在 v0.7.4 里还准不准**，没在界面上看（§9.4 #9）。
+5. ~~设置页两道开关那张图在 v0.7.4 里还准不准~~ ✅ 10-29 第二轮在 v0.7.4 演示版上看过、重拍（§9.5 `v0.7.4-10`）：两道开关和说明与 v0.6.2 那张基本一样。
 6. **要链到 v0.7.4 tag 上的新文件之前**（`engine.rs`、`settingsStore.ts` 等），先跑一次 §11.4 的 `git grep` 确认不在清单里 —— 本轮只重算了清单总数（54），没有逐个对照作品集打算链的文件。
 7. **release notes「nine providers」与代码的 8 + 自定义**不一致（§2.1 B）—— 产品文档的小问题，不挡作品集；要不要改 release 页由 Hanze 定。
 8. **发布件 `LSMinimumSystemVersion` 10.13 与文档写的 macOS 11 不一致**（§1.1）—— 同上，仅内部。
 9. **09-30 之后新增的任务书没有按 §11.4 的判定标准逐份查**（§11.4）。已知至少 `docs/archive/product-taskbooks/TASKBOOK-P9R-RELEASE-ONE-MAC-V070-2026-10-18.md` 第 53 行写着真实库里的申请类项目名，没有清除标记。
 10. **SPL-RES-STATUS 的措辞**（§12 #20）。
-11. **补拍哪几张**（§9.4 建议清单）。
+11. ~~补拍哪几张~~ ✅ 10-29 第二轮补拍 13 张（§9.5）；还剩「跑一次跟进 / 压缩看结果」要不要花钱，由 Hanze 定。
 
 ---
 
@@ -1088,3 +1128,4 @@ grep -rl 'PURGE-BEFORE-APPLICATION' --include='*.md' . | grep -v node_modules
 | 2026-10-29 | §11.4 | 28 + 2 = 30 份已标；「已公开 22 / 挪动前路径 4 / 只在本地 2」；源码 / 夹具 45 个（09-23，main） | 31 份第一行带标记（加 `docs/HANDOFF-2026-09-04.md`，09-30 标）、全部已公开；源码 / 夹具 54 个（v0.7.4） | P9R 任务书只是正文提到标记，没标；要不要标由 Hanze 定 |
 | 2026-10-29 | §12 | 对照作品集 09-23 的 `facts.yaml` / `evidence.yaml`（3 行）/ CONTENT-GUIDE，25 条 | 对照作品集 10-29 工作区的 `evidence.yaml`（20 条 claim）与 `spool.md`，32 条 + 9 条新 claim 候选 | 上一轮那 25 条已由作品集在 09-25 消化（D23、D39、D41、D42） |
 | 2026-10-29 | §13 | 上一轮的待办 | 逐条更新状态；新增 11 条「缺」 | — |
+| 2026-10-29（第二轮） | §9.4 · §9.5 · §13 | 「本轮没有拍任何新截图」；§13 第 5、11 条待定 | 补拍 13 张 `v0.7.4-*`（v0.7.4 源码的隔离演示版 + 演示库 + 公证发布件的真实 MCP 调用），加 §9.5 记来历和图注 | Hanze：「补拍截图你帮我做，打开测试数据库的环境」 |
