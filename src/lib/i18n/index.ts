@@ -66,10 +66,20 @@ const EN: Record<string, string> = {
   // Input Monitoring onboarding banner (2026-07-07; stale-grant recovery 2026-07-08;
   // rewritten 2026-08-02 for DESIGN_FIRST_RUN 拍板点 3/4 — the resting line names what
   // still works, and the quit-and-reopen instruction waits until the user has gone for
-  // the grant)
-  '想在别的 app 里复制就存，需要开一个权限。在那之前 Spool 照样能用——在下面写笔记，或者在 Spool 里复制后双击 ⌥。':
-    'Capturing from other apps needs one permission. Until then Spool still works — write notes below, or copy inside Spool and double-tap ⌥.',
-  '打开捕捉': 'Turn on capture',
+  // the grant; 2026-10-30 DISCOVERED-20261030-5 — both switches, one button each)
+  '在别的 app 里捕捉，要在系统设置里开两个开关：': 'Capture in other apps needs two switches:',
+  '重启 Spool': 'Restart Spool',
+  '输入监控': 'Input Monitoring',
+  '辅助功能': 'Accessibility',
+  '打开「{name}」': 'Open {name}',
+  '让 Spool 认出你在别的 app 里连按两下 ⌥。你打的字一个都不存。':
+    'Lets Spool notice a double-tap ⌥ in other apps. Nothing you type is kept.',
+  '让捕捉卡一弹出来就能直接打字，不用先点一下。':
+    'Lets the capture card take your typing the moment it appears, without a click first.',
+  '没开之前也能用：在下面写笔记，或者在 Spool 里复制后双击 ⌥。':
+    'Works without them too: write notes below, or copy inside Spool and double-tap ⌥.',
+  '两个都打开之后，重启一次 Spool 才生效。':
+    'Once both are on, restart Spool once for them to take effect.',
   // WORKPLAN-2026-08-20 §2.3 — Settings → 通用. A fresh install seeds this project itself;
   // the row is for libraries older than the feature, and for getting the sample back.
   '载入示例项目': 'Load the sample project',
@@ -83,22 +93,26 @@ const EN: Record<string, string> = {
   // ⚠️ Keep these three lines true to double_tap.rs: with the grant the tap watches
   // FlagsChanged + LeftMouseDown + KeyDown, and the KeyDown branch stores one timestamp
   // when the chord is ⌘C/⌘X. Nothing typed is retained.
-  '系统马上会问你要键盘权限': 'macOS is about to ask for keyboard access',
+  '捕捉要在系统设置里开两个开关': 'Capture needs two switches in System Settings',
   'Spool 用它分辨两件事：你有没有连按两下 ⌥，以及你按 ⌥ 之前是不是刚按了 ⌘C。':
     'Spool uses it to tell two things apart: whether you tapped ⌥ twice, and whether you had just pressed ⌘C before you did.',
   '你打的字一个都不存。按下 ⌘C 时它只记一个时间点，别的按键看完就扔。':
     'Nothing you type is kept. A ⌘C press leaves one timestamp behind; every other key is looked at and dropped.',
-  'Spool 不联网，开了这个权限也一样：没有服务器，没有账号，你存的东西只在这台电脑上。':
-    'Spool does not go online, and this permission does not change that: no server, no account, what you save stays on this computer.',
+  '捕捉卡一弹出来就能直接打字，不用先点一下；捕捉的那一下双击 ⌥ 也不会同时叫出别的 app。':
+    'The capture card takes your typing the moment it appears, without a click first — and the double-tap ⌥ that captures does not also bring up another app.',
+  'Spool 不联网，开了这两个权限也一样：没有服务器，没有账号，你存的东西只在这台电脑上。':
+    'Spool does not go online, and these two permissions do not change that: no server, no account, what you save stays on this computer.',
+  // capture.rs `wait_for_consent` (DISCOVERED-20261030-2): the Automation dialog now stays up.
+  '点「继续」会打开系统设置的那一页，把 Spool 旁边的开关打开；macOS 第一次还会自己弹一个框问你。':
+    'Continue opens that page of System Settings: turn on the switch next to Spool. The first time, macOS also asks in a dialog of its own.',
+  '之后第一次在别的 app 里捕捉时，系统会再问能不能控制「System Events」——同意它，块上才记得是从哪个 app 来的。':
+    'Later, the first time you capture from another app, macOS asks whether Spool may control “System Events” — say yes, or blocks cannot record which app they came from.',
   '先不开': 'Not now',
   '继续': 'Continue',
-  '在系统设置里勾选 Spool，然后完全退出 Spool（托盘图标 → 退出）再重新打开。没看到系统弹窗？点右边打开设置。':
-    'Tick Spool in System Settings, then fully quit Spool (tray icon → Quit) and reopen. No system dialog? Open Settings on the right.',
   '已授权 — 重启 Spool 后生效': 'Granted — takes effect after Spool restarts',
   '立即重启 Spool': 'Restart Spool now',
   '已授权却仍看到本条？旧授权可能已失效：在系统设置的列表中选中 Spool 按 − 删除，完全退出并重新打开 Spool，允许新弹窗后再退出重启一次。':
     'Granted but still seeing this? The old grant may be stale: select Spool in the System Settings list and press − to remove it, fully quit and reopen Spool, allow the new prompt, then quit and restart once more.',
-  '打开系统设置': 'Open System Settings',
 
   // Sidebar
   '进行中': 'Active',

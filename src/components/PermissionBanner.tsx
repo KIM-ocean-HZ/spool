@@ -1,8 +1,8 @@
 import { invoke } from '@tauri-apps/api/core';
-import { X } from 'lucide-react';
+import { Check, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useT } from '@/lib/i18n';
-import { usePermissionStore } from '@/stores/permissionStore';
+import { usePermissionStore, type CapturePermission } from '@/stores/permissionStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 
 // Quiet onboarding bar (2026-07-07): without the macOS Input Monitoring grant the
@@ -40,24 +40,37 @@ import { useSettingsStore } from '@/stores/settingsStore';
 // (heading written in both languages, and Settings lands there) — which is where a user who
 // cannot read the guessed language finds it. On macOS the bar still carries it while a
 // permission grant is missing, since that is the one screen a first-launch Mac user always sees.
-type Phase = 'hidden' | 'denied' | 'asked' | 'granted-later';
+// 2026-10-30 (DISCOVERED-20261030-5, Ocean:「需要在设置打开两个按钮，需要在提示中清晰指出，并且
+// 每次一键引导用户去设置打开」): capture needs TWO switches — Input Monitoring (the gesture is
+// heard outside Spool) and Accessibility (the note box takes the keyboard without a click —
+// capture.rs `AXFrontmost refused` — and a capturing double-tap is not shared with another
+// app). The bar used to check and name only the first, so it vanished once that was on. Now it
+// lists both, each with its own button straight to its pane, and stays while either is off —
+// every launch. The explainer still comes before macOS's first dialog, and only then: once TCC
+// has an answer for Input Monitoring (`asked`), a press goes straight to System Settings.
+// An Input Monitoring grant is never seen by the running process (see above), so after a trip
+// to System Settings the bar offers the restart instead of waiting for a tick that won't come.
+type Phase = 'hidden' | 'missing' | 'granted-later';
 
 export default function PermissionBanner() {
   const t = useT();
   const language = useSettingsStore((s) => s.language);
   const update = useSettingsStore((s) => s.update);
-  const granted = usePermissionStore((s) => s.inputMonitoring);
+  const inputMonitoring = usePermissionStore((s) => s.inputMonitoring);
+  const accessibility = usePermissionStore((s) => s.accessibility);
+  const asked = usePermissionStore((s) => s.asked);
   const everDenied = usePermissionStore((s) => s.everDenied);
   const requested = usePermissionStore((s) => s.requested);
   const check = usePermissionStore((s) => s.check);
-  const request = usePermissionStore((s) => s.request);
+  const open = usePermissionStore((s) => s.open);
   const [dismissed, setDismissed] = useState(false);
   // WORKPLAN-2026-08-20 §2.2: what the grant buys and what it does NOT change has to be
   // said BEFORE the system dialog, not in Settings after the fact. The dialog macOS
   // shows says "Spool wants to monitor your keyboard" and nothing else — a product whose
   // whole pitch is that it never goes online cannot let that sentence be the first thing
-  // a stranger reads about its keyboard access.
-  const [explaining, setExplaining] = useState(false);
+  // a stranger reads about its keyboard access. Holds the switch the press was for.
+  const [explaining, setExplaining] = useState<CapturePermission | null>(null);
+  const [explained, setExplained] = useState(false);
   // 任务三 #1 (2026-07-12): the stale-grant recovery walkthrough is details-on-demand
   // — the resting banner is one line, and the first screenful stays content, not
   // warnings.
@@ -73,47 +86,65 @@ export default function PermissionBanner() {
   // Granted all along → nothing to say. Granted after we had shown the banner → the
   // tap stays deaf until relaunch, so offer the restart.
   //
-  // Off macOS `input_monitoring_granted` always answers true (there is no TCC and the
+  // Off macOS both grant commands always answer true (there is no TCC and the
   // double-tap Ctrl gesture needs no grant — double_tap_win.rs), so this resolves to
   // `hidden` there with no special case: capture works on first launch, nothing to nudge.
   const phase: Phase =
-    granted === null
+    inputMonitoring === null || accessibility === null
       ? 'hidden'
-      : granted
-        ? everDenied
+      : !inputMonitoring || !accessibility
+        ? 'missing'
+        : everDenied
           ? 'granted-later'
-          : 'hidden'
-        : requested
-          ? 'asked'
-          : 'denied';
+          : 'hidden';
 
   if (dismissed || phase === 'hidden') return null;
+
+  const go = (which: CapturePermission): void => {
+    if (asked === false && !explained) {
+      setExplaining(which);
+      return;
+    }
+    void open(which);
+  };
 
   // ⚠️ Every claim on this card is checked against double_tap.rs, and has to stay that
   // way — it is read at the exact moment a stranger decides whether to trust this app
   // with their keyboard. With the grant, the tap's mask is FlagsChanged + LeftMouseDown
   // + KeyDown; the KeyDown branch reads the keycode, and when it is ⌘C/⌘X it stores one
   // timestamp (LAST_COPY_CHORD_NS) and nothing else. No keystroke is kept anywhere.
+  // The System Events line: capture.rs `wait_for_consent` (DISCOVERED-20261030-2).
   const explainer = explaining ? (
     <div className="fixed inset-0 z-50 flex justify-center bg-ink/30 px-8 pt-[14vh]">
       <div
-        className="h-fit w-[420px] rounded-lg border border-line-strong bg-paper px-5 py-4"
+        className="h-fit w-[440px] rounded-lg border border-line-strong bg-paper px-5 py-4"
         style={{ boxShadow: 'var(--shadow-toast)' }}
       >
-        <h2 className="font-serif text-lg text-ink">{t('系统马上会问你要键盘权限')}</h2>
-        <p className="mt-2 text-xs leading-relaxed text-ink-2">
+        <h2 className="font-serif text-lg text-ink">{t('捕捉要在系统设置里开两个开关')}</h2>
+        <p className="mt-3 text-xs text-ink">{t('输入监控')}</p>
+        <p className="mt-0.5 text-xs leading-relaxed text-ink-2">
           {t('Spool 用它分辨两件事：你有没有连按两下 ⌥，以及你按 ⌥ 之前是不是刚按了 ⌘C。')}
         </p>
-        <p className="mt-1.5 text-xs leading-relaxed text-ink-2">
+        <p className="mt-1 text-xs leading-relaxed text-ink-2">
           {t('你打的字一个都不存。按下 ⌘C 时它只记一个时间点，别的按键看完就扔。')}
         </p>
-        <p className="mt-1.5 text-xs leading-relaxed text-ink-2">
-          {t('Spool 不联网，开了这个权限也一样：没有服务器，没有账号，你存的东西只在这台电脑上。')}
+        <p className="mt-3 text-xs text-ink">{t('辅助功能')}</p>
+        <p className="mt-0.5 text-xs leading-relaxed text-ink-2">
+          {t('捕捉卡一弹出来就能直接打字，不用先点一下；捕捉的那一下双击 ⌥ 也不会同时叫出别的 app。')}
+        </p>
+        <p className="mt-3 text-xs leading-relaxed text-ink-2">
+          {t('Spool 不联网，开了这两个权限也一样：没有服务器，没有账号，你存的东西只在这台电脑上。')}
+        </p>
+        <p className="mt-1.5 text-xs leading-relaxed text-muted">
+          {t('点「继续」会打开系统设置的那一页，把 Spool 旁边的开关打开；macOS 第一次还会自己弹一个框问你。')}
+        </p>
+        <p className="mt-1 text-xs leading-relaxed text-muted">
+          {t('之后第一次在别的 app 里捕捉时，系统会再问能不能控制「System Events」——同意它，块上才记得是从哪个 app 来的。')}
         </p>
         <div className="mt-3 flex justify-end gap-2">
           <button
             type="button"
-            onClick={() => setExplaining(false)}
+            onClick={() => setExplaining(null)}
             className="rounded-md px-3 py-1 text-xs text-muted transition-colors hover:text-ink"
           >
             {t('先不开')}
@@ -122,8 +153,10 @@ export default function PermissionBanner() {
             type="button"
             autoFocus
             onClick={() => {
-              setExplaining(false);
-              void request();
+              const which = explaining;
+              setExplaining(null);
+              setExplained(true);
+              void open(which);
             }}
             className="rounded-md border border-line-strong bg-paper px-3 py-1 text-xs text-ink-2 transition-colors hover:border-accent hover:text-accent"
           >
@@ -134,17 +167,66 @@ export default function PermissionBanner() {
     </div>
   ) : null;
 
+  const button =
+    'flex-none rounded-md border border-line-strong bg-paper px-2.5 py-0.5 text-xs text-ink-2 transition-colors hover:border-accent hover:text-accent';
+
+  const item = (which: CapturePermission, on: boolean, name: string, why: string) =>
+    on ? (
+      <span className="flex flex-none items-center gap-1 text-muted" title={why}>
+        <Check size={12} className="flex-none" style={{ color: 'var(--status-active)' }} />
+        {name}
+      </span>
+    ) : (
+      <button type="button" onClick={() => go(which)} title={why} className={button}>
+        {t('打开「{name}」', { name })}
+      </button>
+    );
+
   return (
     <div className="flex-none border-b border-line bg-paper-2 px-4 py-1.5 text-xs text-ink-2">
       {explainer}
       <div className="flex items-center gap-3">
-        <span className="min-w-0 flex-1 truncate">
-          {phase === 'denied' &&
-            t('想在别的 app 里复制就存，需要开一个权限。在那之前 Spool 照样能用——在下面写笔记，或者在 Spool 里复制后双击 ⌥。')}
-          {phase === 'asked' &&
-            t('在系统设置里勾选 Spool，然后完全退出 Spool（托盘图标 → 退出）再重新打开。没看到系统弹窗？点右边打开设置。')}
-          {phase === 'granted-later' && t('已授权 — 重启 Spool 后生效')}
-        </span>
+        {phase === 'missing' ? (
+          <>
+            <span className="min-w-0 truncate">{t('在别的 app 里捕捉，要在系统设置里开两个开关：')}</span>
+            {item(
+              'input_monitoring',
+              inputMonitoring === true,
+              t('输入监控'),
+              t('让 Spool 认出你在别的 app 里连按两下 ⌥。你打的字一个都不存。'),
+            )}
+            {item(
+              'accessibility',
+              accessibility === true,
+              t('辅助功能'),
+              t('让捕捉卡一弹出来就能直接打字，不用先点一下。'),
+            )}
+            {/* Below lg the window is too narrow for this line to be more than a stub of it. */}
+            <span className="min-w-0 flex-1 truncate text-muted">
+              <span className="hidden lg:inline">
+                {requested
+                  ? t('两个都打开之后，重启一次 Spool 才生效。')
+                  : t('没开之前也能用：在下面写笔记，或者在 Spool 里复制后双击 ⌥。')}
+              </span>
+            </span>
+          </>
+        ) : (
+          <span className="min-w-0 flex-1 truncate">{t('已授权 — 重启 Spool 后生效')}</span>
+        )}
+        {(phase === 'granted-later' || requested) && (
+          <button
+            type="button"
+            onClick={() => {
+              void invoke('restart_app').catch((e) =>
+                console.warn('[permission] restart failed', e),
+              );
+            }}
+            title={t('两个都打开之后，重启一次 Spool 才生效。')}
+            className={button}
+          >
+            {phase === 'missing' ? t('重启 Spool') : t('立即重启 Spool')}
+          </button>
+        )}
         {/* Language escape hatch (2026-07-31, Ocean). The UI now starts in the system
             locale, so a first-launch user whose language guessed wrong needs a way back
             that does not require reading the language they can't read. This bar is the
@@ -166,43 +248,7 @@ export default function PermissionBanner() {
             </button>
           ))}
         </div>
-        {/* 拍板点 3: the two system prompts fire from here, not from app startup. */}
-        {phase === 'denied' && (
-          <button
-            type="button"
-            onClick={() => setExplaining(true)}
-            className="flex-none rounded-md border border-line-strong bg-paper px-2.5 py-0.5 text-xs text-ink-2 transition-colors hover:border-accent hover:text-accent"
-          >
-            {t('打开捕捉')}
-          </button>
-        )}
-        {phase === 'asked' && (
-          <button
-            type="button"
-            onClick={() => {
-              void invoke('open_input_monitoring_settings').catch((e) =>
-                console.warn('[permission] open settings failed', e),
-              );
-            }}
-            className="flex-none rounded-md border border-line-strong bg-paper px-2.5 py-0.5 text-xs text-ink-2 transition-colors hover:border-accent hover:text-accent"
-          >
-            {t('打开系统设置')}
-          </button>
-        )}
-        {phase === 'granted-later' && (
-          <button
-            type="button"
-            onClick={() => {
-              void invoke('restart_app').catch((e) =>
-                console.warn('[permission] restart failed', e),
-              );
-            }}
-            className="flex-none rounded-md border border-line-strong bg-paper px-2.5 py-0.5 text-xs text-ink-2 transition-colors hover:border-accent hover:text-accent"
-          >
-            {t('立即重启 Spool')}
-          </button>
-        )}
-        {(phase === 'denied' || phase === 'asked') && (
+        {phase === 'missing' && (
           <button
             type="button"
             onClick={() => setDetailsOpen((v) => !v)}
@@ -220,7 +266,7 @@ export default function PermissionBanner() {
           <X size={13} />
         </button>
       </div>
-      {(phase === 'denied' || phase === 'asked') && detailsOpen && (
+      {phase === 'missing' && detailsOpen && (
         <p className="mt-0.5 text-[11px] leading-relaxed text-muted">
           {t(
             '已授权却仍看到本条？旧授权可能已失效：在系统设置的列表中选中 Spool 按 − 删除，完全退出并重新打开 Spool，允许新弹窗后再退出重启一次。',

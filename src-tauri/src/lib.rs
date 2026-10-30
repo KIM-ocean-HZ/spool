@@ -290,15 +290,13 @@ fn accessibility_granted() -> bool {
     }
 }
 
-// DESIGN_FIRST_RUN 拍板点 3 (2026-08-02): startup no longer fires the two TCC prompts,
-// so this is the moment they happen — the user pressed "turn on capture". Returns the
-// Input Monitoring grant; false is the normal answer (macOS shows its dialog and the
-// user finishes in System Settings), which is why the banner keeps a settings route.
+// false = macOS has never asked about Input Monitoring, so its dialog is still to come and
+// the banner explains first (double_tap.rs `input_monitoring_asked`). Off macOS nothing asks.
 #[tauri::command]
-fn request_capture_access() -> bool {
+fn input_monitoring_asked() -> bool {
     #[cfg(target_os = "macos")]
     {
-        double_tap::request_capture_access()
+        double_tap::input_monitoring_asked()
     }
     #[cfg(not(target_os = "macos"))]
     {
@@ -338,20 +336,36 @@ fn restart_app(app: tauri::AppHandle) {
     app.restart();
 }
 
-// Opens System Settings directly at Privacy & Security → Input Monitoring, for the
-// banner's "open settings" button. Fixed URL, no user input — no injection surface.
+// The banner's button for one of the two switches capture needs (DISCOVERED-20261030-5, Ocean
+// 10-30:「需要在提示中清晰指出，并且每次一键引导用户去设置打开」). Asking first is what puts Spool
+// in that list — a pane without Spool in it is a dead end — and the first time ever it is also
+// macOS's own dialog (DESIGN_FIRST_RUN 拍板点 3: startup never asks, this press does). Then
+// System Settings at that pane, so every press lands on the switch whether or not a dialog
+// came up. Fixed names and URLs, no user input reaches `open` — no injection surface.
 #[tauri::command]
-fn open_input_monitoring_settings() -> Result<(), String> {
+fn open_capture_permission(which: String) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     {
+        let pane = match which.as_str() {
+            "input_monitoring" => {
+                double_tap::request_input_monitoring();
+                "Privacy_ListenEvent"
+            }
+            "accessibility" => {
+                double_tap::request_accessibility();
+                "Privacy_Accessibility"
+            }
+            other => return Err(format!("unknown permission: {other}")),
+        };
         std::process::Command::new("open")
-            .arg("x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent")
+            .arg(format!("x-apple.systempreferences:com.apple.preference.security?{pane}"))
             .spawn()
             .map(|_| ())
             .map_err(|e| e.to_string())
     }
     #[cfg(not(target_os = "macos"))]
     {
+        let _ = which;
         Err("macOS only".into())
     }
 }
@@ -485,9 +499,9 @@ pub fn run() {
             configure_mcp_client,
             open_mcp_client_page,
             input_monitoring_granted,
+            input_monitoring_asked,
             accessibility_granted,
-            request_capture_access,
-            open_input_monitoring_settings,
+            open_capture_permission,
             restart_app,
         ]);
 

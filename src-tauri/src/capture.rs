@@ -147,18 +147,57 @@ fn name_and_pid(out: &str) -> Option<(String, Option<i32>)> {
 /// None on failure or when it printed nothing.
 #[cfg(target_os = "macos")]
 fn osascript(lines: &[&str]) -> Option<String> {
-    let mut cmd = std::process::Command::new("osascript");
-    cmd.args(["-e", "with timeout of 1 seconds"]);
-    for line in lines {
-        cmd.args(["-e", line]);
-    }
-    let output = cmd.args(["-e", "end timeout"]).output().ok()?;
+    let started = Instant::now();
+    let output = osascript_within(1, lines).output().ok()?;
     if !output.status.success() {
+        // Ran out its time: errAETimeout, or — not hanging on how osascript words it — a failure
+        // that took the whole second.
+        let timed_out = String::from_utf8_lossy(&output.stderr).contains("(-1712)")
+            || started.elapsed() >= Duration::from_millis(950);
+        if timed_out {
+            wait_for_consent(lines);
+        }
         return None;
     }
     let text = String::from_utf8(output.stdout).ok()?;
     let trimmed = text.trim();
     (!trimmed.is_empty()).then(|| trimmed.to_string())
+}
+
+#[cfg(target_os = "macos")]
+fn osascript_within(secs: u32, lines: &[&str]) -> std::process::Command {
+    let mut cmd = std::process::Command::new("osascript");
+    cmd.args(["-e", &format!("with timeout of {secs} seconds")]);
+    for line in lines {
+        cmd.args(["-e", line]);
+    }
+    cmd.args(["-e", "end timeout"]);
+    cmd
+}
+
+// DISCOVERED-20261030-2: the first Apple event Spool sends to System Events (or to a browser)
+// makes macOS ask the user for Automation, and macOS takes that dialog down when the event's own
+// timeout runs out — after 1 s here, before anyone can click it (SIGSTOP on osascript changes
+// nothing; only a longer timeout in the script keeps it up, P0 dry run 10-30). So the capture
+// keeps its 1 s and goes on without a source, and the same script is sent once more in the
+// background with time to answer. One at a time: a System Events that is merely stuck costs one
+// waiting osascript, not one per capture.
+#[cfg(target_os = "macos")]
+static CONSENT_WAIT: AtomicBool = AtomicBool::new(false);
+#[cfg(target_os = "macos")]
+const CONSENT_WAIT_SECS: u32 = 120;
+
+#[cfg(target_os = "macos")]
+fn wait_for_consent(lines: &[&str]) {
+    if CONSENT_WAIT.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    let lines: Vec<String> = lines.iter().map(|l| l.to_string()).collect();
+    thread::spawn(move || {
+        let lines: Vec<&str> = lines.iter().map(String::as_str).collect();
+        let _ = osascript_within(CONSENT_WAIT_SECS, &lines).output();
+        CONSENT_WAIT.store(false, Ordering::SeqCst);
+    });
 }
 
 // Read the active tab's title for a supported browser. Returns None for any other app,
@@ -876,14 +915,15 @@ pub fn consume_close_hint<R: Runtime>(window: &tauri::Window<R>) -> bool {
 // before reaching `tell application`, so there is no command-injection surface.
 //
 // ⚠️ `(async)` for the same reason as lib.rs's `ai_engine_status` (Ocean 2026-08-18 #3): a
-// plain command runs on the main thread, and this one waits on osascript for up to two
-// seconds. On the main thread that is two seconds of frozen window — including the 「测试中」
-// spinner this button sets, which would never get a frame to render in.
+// plain command runs on the main thread, and this one waits on osascript — on the main thread
+// that is frozen window, including the 「测试中」 spinner this button sets, which would never get
+// a frame to render in. Since 2026-10-30 it waits as long as the Automation dialog is up
+// (CONSENT_WAIT_SECS, DISCOVERED-20261030-2): with 2 s macOS took the dialog down before the
+// user could answer the very prompt this button exists to bring up.
 #[tauri::command(async)]
 pub fn probe_browser_automation(name: String) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     {
-        use std::process::Command;
         // Allowlist mirrors browser_tab_title's match arms — only browsers Spool can
         // actually read source from need a test surface.
         let script = match name.as_str() {
@@ -895,8 +935,7 @@ pub fn probe_browser_automation(name: String) -> Result<(), String> {
             }
             _ => return Err("不支持的浏览器".into()),
         };
-        let output = Command::new("osascript")
-            .args(["-e", "with timeout of 2 seconds", "-e", script, "-e", "end timeout"])
+        let output = osascript_within(CONSENT_WAIT_SECS, &[script])
             .output()
             .map_err(|e| e.to_string())?;
         if output.status.success() {
@@ -914,10 +953,8 @@ pub fn probe_browser_automation(name: String) -> Result<(), String> {
 
 #[cfg(target_os = "macos")]
 fn run_browser_probe(app: &str) -> Result<(), String> {
-    use std::process::Command;
     let script = format!("tell application \"{app}\" to get title of active tab of front window");
-    let output = Command::new("osascript")
-        .args(["-e", "with timeout of 2 seconds", "-e", &script, "-e", "end timeout"])
+    let output = osascript_within(CONSENT_WAIT_SECS, &[&script])
         .output()
         .map_err(|e| e.to_string())?;
     if output.status.success() {
@@ -2022,6 +2059,25 @@ mod tests {
         assert_eq!(name_and_pid("Code"), Some(("Code".into(), None)), "no pid: the whole line is the name");
         assert_eq!(name_and_pid("A, B"), Some(("A, B".into(), None)), "a tail that is not a number stays in the name");
         assert_eq!(name_and_pid("  "), None);
+    }
+
+    // DISCOVERED-20261030-2: the timeout written into the script is what keeps macOS's
+    // Automation dialog up — the hot path's 1 s and the consent wait's 120 s differ only there.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn the_apple_event_timeout_wraps_every_line_of_the_script() {
+        let cmd = osascript_within(CONSENT_WAIT_SECS, &["tell application \"System Events\"", "end tell"]);
+        let args: Vec<_> = cmd.get_args().map(|a| a.to_string_lossy().into_owned()).collect();
+        assert_eq!(
+            args,
+            [
+                "-e", "with timeout of 120 seconds",
+                "-e", "tell application \"System Events\"",
+                "-e", "end tell",
+                "-e", "end timeout",
+            ]
+        );
+        assert_eq!(cmd.get_program(), "osascript");
     }
 
     // The source of a capture out of a browser is the window the user is in — the frontmost of

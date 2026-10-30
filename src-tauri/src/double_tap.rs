@@ -48,7 +48,7 @@
 //! Prompting (2026-08-02, DESIGN_FIRST_RUN 拍板点 3): startup only preflights — it
 //! never fires the two system prompts. A brand-new user used to meet "may we watch
 //! your keyboard?" before seeing what the app is for; now the prompts fire from
-//! `request_capture_access` below, which the banner's "turn on capture" button calls.
+//! `request_input_monitoring` / `request_accessibility` below, one per switch on the banner.
 //! Value first, permission second.
 //!
 //! Self-heal (PLAN_EN.md §19.4): when macOS delivers `TapDisabledByTimeout` or
@@ -458,10 +458,28 @@ extern "C" {
     static kAXTrustedCheckOptionPrompt: CFStringRef;
 }
 
+#[link(name = "IOKit", kind = "framework")]
+extern "C" {
+    // Input Monitoring's TCC state as three values (IOKit/hidsystem/IOHIDLib.h, macOS 10.15+):
+    // granted / denied / unknown, where unknown = macOS has never asked. The CG preflight above
+    // folds the last two into one `false`; the banner needs them apart, because only a
+    // never-asked user is about to see the system dialog (DISCOVERED-20261030-5).
+    fn IOHIDCheckAccess(request_type: u32) -> u32;
+}
+
+const K_IOHID_REQUEST_TYPE_LISTEN_EVENT: u32 = 1;
+const K_IOHID_ACCESS_TYPE_UNKNOWN: u32 = 2;
+
 // Current Input Monitoring grant — polled by the frontend via the
 // `input_monitoring_granted` command (lib.rs) to drive the onboarding banner.
 pub fn input_monitoring_granted() -> bool {
     unsafe { CGPreflightListenEventAccess() }
+}
+
+// Whether macOS has a recorded answer for Input Monitoring at all (granted or not). false =
+// the system dialog is still to come, so the banner explains first (WORKPLAN-2026-08-20 §2.2).
+pub fn input_monitoring_asked() -> bool {
+    unsafe { IOHIDCheckAccess(K_IOHID_REQUEST_TYPE_LISTEN_EVENT) != K_IOHID_ACCESS_TYPE_UNKNOWN }
 }
 
 // Current Accessibility grant — the suppression tap (active mode) needs it.
@@ -469,19 +487,22 @@ pub fn accessibility_granted() -> bool {
     unsafe { AXIsProcessTrusted() }
 }
 
-// User-initiated permission request (DESIGN_FIRST_RUN 拍板点 3). Fires both one-shot
-// system prompts — Input Monitoring first (it is what capture actually needs), then
-// Accessibility (it is what keeps the gesture exclusive to Spool). Returns the Input
-// Monitoring result: on a machine that has never been asked, macOS answers false and
-// shows its dialog, so the caller keeps pointing at System Settings either way. Once
-// TCC has a recorded answer no dialog appears at all — hence the banner also keeps an
-// "open System Settings" route after this returns false.
-pub fn request_capture_access() -> bool {
+// User-initiated permission requests (DESIGN_FIRST_RUN 拍板点 3), one per switch since
+// 2026-10-30 (DISCOVERED-20261030-5: the banner used to fire both and then name only Input
+// Monitoring, so a user who turned that one on thought they were done). Each puts Spool in
+// that list of System Settings and, the first time ever, shows macOS's own dialog; once TCC
+// has a recorded answer no dialog appears — which is why the banner opens the settings pane
+// right after either of these.
+pub fn request_input_monitoring() -> bool {
     let granted = unsafe { CGRequestListenEventAccess() };
     eprintln!("[double-tap] user-requested Input Monitoring prompt returned granted={granted}");
+    granted
+}
+
+pub fn request_accessibility() -> bool {
     let ax = request_accessibility_with_prompt();
     eprintln!("[double-tap] user-requested Accessibility prompt returned trusted={ax}");
-    granted
+    ax
 }
 
 fn request_accessibility_with_prompt() -> bool {
@@ -832,7 +853,7 @@ fn on_event(etype: u32, event_ptr: *mut c_void) -> bool {
 fn run_tap() {
     // Without the Input Monitoring grant the tap below only ever sees Spool's own
     // events (see module doc). Preflight ONLY — the prompt moved to the user-initiated
-    // `request_capture_access` (拍板点 3). The tap is installed either way, so
+    // `request_input_monitoring` (拍板点 3). The tap is installed either way, so
     // double-tap keeps working inside Spool immediately, and a fresh grant takes
     // effect on the next launch.
     let granted = unsafe { CGPreflightListenEventAccess() };
