@@ -821,7 +821,9 @@ const EN: Record<string, string> = {
   // («Stitches today: 3») rather than in front of a noun that would need one.
   '打开柜子': 'Open the cupboard',
   '今天织了 {n} 针': 'Stitches today: {n}',
-  '再织 {n} 针就多一块布': '{n} more stitches to a new patch',
+  // The left-rail card keeps each line on one line (KnitPanel `Fact`), so this has to fit
+  // ~160px of Geist 13px: «{n} more stitches to a new patch» ran past the card's border.
+  '再织 {n} 针就多一块布': 'Stitches to next patch: {n}',
   '攒了 {n} 块布': 'Patches put by: {n}',
   '下一件：{item}': 'Next: {item}',
   '柜子织满了': 'Cupboard is full',
