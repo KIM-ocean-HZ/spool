@@ -96,6 +96,11 @@
       "sha256": "93fe71314717a83c6291250563c98c545b0b2eea51eedc1490e8fc1cca1ece46"
     },
     "site_request": "assets/spool-logo-assembly.mp4?v=ec3b02fb",
-    "live": "see docs/HANDOFF-2026-09-04.md §9.8 (2026-10-31)"
+    "live": {
+      "site": "https://spoolapp.org/assets/spool-logo-assembly.mp4?v=ec3b02fb",
+      "deployed_utc": "2026-10-31T07:47Z",
+      "live_sha256_equals_adopted": true,
+      "browsers": "Google Chrome and Playwright WebKit, en and zh: playing, looping, 206 range responses; reduced motion and refused autoplay show the full poster without controls"
+    }
   }
 }

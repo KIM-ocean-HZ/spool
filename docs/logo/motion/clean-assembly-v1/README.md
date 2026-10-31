@@ -1,6 +1,6 @@
 # Spool 组装动效 · 纯净版 V1
 
-状态：**用户已采纳（2026-10-31）**。已接入仓库：`docs/logo/spool-logo-assembly.mp4` 与 `site/assets/spool-logo-assembly.mp4` 都已换成本目录的 MP4（逐字节相同），官网中英文首页按 `?v=ec3b02fb` 请求它，海报用 `poster.png`（`site/assets/spool-logo-assembly-poster.png`）。官网是否已上线以 `docs/HANDOFF-2026-09-04.md` §9.8 的 10-31 条为准。
+状态：**用户已采纳（2026-10-31）**。已接入仓库：`docs/logo/spool-logo-assembly.mp4` 与 `site/assets/spool-logo-assembly.mp4` 都已换成本目录的 MP4（逐字节相同），官网中英文首页按 `?v=ec3b02fb` 请求它，海报用 `poster.png`（`site/assets/spool-logo-assembly-poster.png`）。**已上线**：2026-10-31 07:47 UTC 部署到 spoolapp.org，线上视频与本目录 MP4 逐字节相同，中英文首页在 Chrome 与 WebKit 实测播放、循环、海报和减弱动效都正常（记录见 `docs/HANDOFF-2026-09-04.md` §9.8 的 10-31 条）。
 
 - `spool-assembly-clean-v1-1080p60.mp4`：1080 × 1080，60 fps，8.4 秒，无声；供网页和日常预览。
 - `spool-assembly-clean-v1-2160p60-master.mov`：2160 × 2160，60 fps，ProRes 4444；本机母版，纸白不透明背景。文件较大，已由本目录的 `.gitignore` 排除，不随普通 Git 提交。
