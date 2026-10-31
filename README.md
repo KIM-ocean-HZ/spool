@@ -1,11 +1,13 @@
 <p align="center">
-  <img src="docs/logo/spool-logo-sizes-preview.png" alt="Spool logo across sizes" width="560">
+  <img src="docs/logo/exports/spool-artwork-srgb-1024.png" alt="Spool app icon" width="160">
 </p>
 
 # Spool
 
 > 思簿 — a context hub for long-running projects.
 > Logo: a spool viewed from above, its thread pulling free — [watch it assemble](docs/logo/spool-logo-assembly.mp4).
+
+The app icon has an [editable Icon Composer source](docs/logo/README.md); one command exports it for macOS, Windows and the website.
 
 <p align="center">
   <b><a href="https://spoolapp.org">spoolapp.org</a></b> ·
@@ -256,7 +258,7 @@ src/
   hooks/              # React hooks
   stores/             # Zustand stores
   styles/             # design tokens + global styles
-scripts/              # one-off generators (e.g. the amber-S app icon)
+scripts/              # build utilities and native app icon export/packaging
 PLAN_EN.md            # the project blueprint and source of truth
 ```
 

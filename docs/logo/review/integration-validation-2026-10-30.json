@@ -1,0 +1,62 @@
+{
+  "date": "2026-10-30",
+  "adopted_artwork": {
+    "path": "docs/logo/exports/spool-artwork-srgb-1024.png",
+    "sha256": "e25bb39b1eb093245de8beca6bed3a0900d28579886fe56359e80012b4cb0e9f",
+    "unchanged_after_regeneration": true
+  },
+  "generator": "npm run icons:generate (scripts/generate-icon.mjs)",
+  "regeneration": {
+    "consecutive_runs_compared": 2,
+    "byte_identical_outputs": 36,
+    "not_byte_reproducible": "src-tauri/icons/Assets.car (actool stamps a time and random rendition names; recompiled from Spool.icon on every run)"
+  },
+  "macos": {
+    "icns": {
+      "sha256": "125c264d49351cfe9e0b9aa16209830bbd86a06c286ecd1fba8bb01e0a26a1ea",
+      "representations": 10,
+      "png_payloads_tagged_srgb": 8,
+      "entries_sorted": true,
+      "iconutil_decode_max_channel_difference_vs_bundle_pngs": 0,
+      "alpha_bounds_1024": [100, 100, 924, 924]
+    },
+    "assets_car": {
+      "sha256_of_built_copy": "a9e6390d7382d609afdcda3384de5fbb88dcd4261ee508a921075957dddb38a9",
+      "source": "docs/logo/Spool.icon",
+      "vector_layers": 8,
+      "material_groups": 4,
+      "appearances": ["NSAppearanceNameAqua", "NSAppearanceNameDarkAqua", "ISAppearanceTintable"]
+    },
+    "finder_grey_plate_on_macos_27_with_icns_only": "16-64pt at 1x, 24-32pt at 2x",
+    "finder_grey_plate_on_macos_27_with_assets_car": "none at 16-128pt, 1x and 2x",
+    "native_vs_static_detail_check": "axle highlight arc, both highlight dots, both offset thread shadows present; no new dark outline on the inner rings; identical alpha bounds",
+    "dark_tinted_clear_appearance": "in the catalog; not checked on screen (system icon style setting was not changed)"
+  },
+  "windows": {
+    "ico_sha256": "f6ac2baff38ddf207066c2d82adb280bc48dbfbb23f92e5b20a67f42b9f6e98c",
+    "ico_entries_in_order": [32, 16, 20, 24, 30, 36, 40, 48, 64, 128, 256],
+    "ico_payloads": "PNG, RGBA, sRGB tag, full-bleed",
+    "store_tiles_regenerated": 10,
+    "built_on_windows": false
+  },
+  "website": {
+    "assets": ["spool-icon-28.png", "spool-icon-32.png", "spool-icon-56.png", "spool-icon-84.png", "spool-icon-104.png", "spool-icon-192.png", "spool-icon-208.png", "spool-icon-312.png"],
+    "pages": ["index.html", "story.html", "privacy.html", "zh/index.html", "zh/story.html", "zh/privacy.html"],
+    "chromium_and_webkit": "every logo image loaded; 2x picks 56/208, 3x picks 84/312; rendered at 28 and 104 CSS px",
+    "zh_build_test": "scripts/build-site-zh.test.mjs 12/12 passed",
+    "deployed": false
+  },
+  "menu_bar_template": "tray.png / tray.rgba unchanged; same primitives as the mark, template-tinted on light and dark menu bars",
+  "built_products": {
+    "app": "src-tauri/target/release/bundle/macos/Spool.app (0.7.4, signed with the local Spool Dev identity, not notarized)",
+    "app_resources_equal_source": ["icon.icns", "Assets.car"],
+    "info_plist": {"CFBundleIconFile": "icon.icns", "CFBundleIconName": "Spool"},
+    "codesign_verify_deep_strict": "ok",
+    "dmg": "src-tauri/target/release/bundle/dmg/Spool_0.7.4_aarch64.dmg",
+    "dmg_sha256": "3c146b799b842b5b7a09f8cfff6f22967474bd111442374fa2840fe43cc1ebc1",
+    "dmg_volume_icon_equals_icns": true,
+    "dmg_volume_custom_icon_flag": true,
+    "installed": false
+  },
+  "screenshots": "~/Desktop/Spool/logo-v3-screenshots-20261030/"
+}

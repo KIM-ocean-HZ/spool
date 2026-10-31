@@ -126,7 +126,7 @@ export const ZH = {
   'alt-project-source-detail': '项目笔记局部：第 2 条来自第 7 讲讲义，保留用户批注和引用原文；第 3 条来自 AI 对话，两条都显示 Safari 来源',
   'alt-project-ai-detail': '项目笔记局部：用户的第 4 条复习计划之后，是署名“Claude · MCP”的 AI 笔记，并带有指向第 4 条的引用',
   'aria-keep-magnifier': '完整项目窗口，上面有两处放大的笔记区域；窄屏时可在图片内左右滑动',
-  'aria-brand-video': 'Spool 标志的绘制过程：先出现线轴的圆环，再延伸出一根线',
+  'aria-brand-video': 'Spool 图标的组装过程：先是琥珀底座、玻璃盘和绕线环，再是外侧的线和 Spool 字标',
 
   /* Mid-page download. */
   'mid-cta-p': '完整流程就是这样：安装应用，选择一个项目，然后开始保存。',

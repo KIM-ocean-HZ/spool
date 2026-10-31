@@ -1,0 +1,130 @@
+{
+  "features" : [
+    "refractivity",
+    "specular-location"
+  ],
+  "fill" : {
+    "automatic-gradient" : "extended-srgb:0.70588,0.32549,0.03529,1.00000"
+  },
+  "groups" : [
+    {
+      "layers" : [
+        {
+          "fill" : "none",
+          "glass" : false,
+          "image-name" : "06-specular.svg",
+          "name" : "06-specular"
+        },
+        {
+          "fill" : "none",
+          "glass" : false,
+          "image-name" : "05-axle-highlights.svg",
+          "name" : "05-axle-highlights"
+        }
+      ],
+      "name" : "Original highlights",
+      "shadow" : {
+        "kind" : "neutral",
+        "opacity" : 0
+      },
+      "translucency" : {
+        "enabled" : false,
+        "value" : 0
+      }
+    },
+    {
+      "blur-material" : 0.06,
+      "layers" : [
+        {
+          "fill" : "none",
+          "glass" : true,
+          "image-name" : "05-axle-body.svg",
+          "name" : "05-axle-body"
+        },
+        {
+          "fill" : "none",
+          "glass" : false,
+          "image-name" : "07-filament-satin.svg",
+          "name" : "07-filament-satin"
+        },
+        {
+          "fill" : "none",
+          "glass" : false,
+          "image-name" : "04-winding.svg",
+          "name" : "04-winding"
+        }
+      ],
+      "name" : "Glass axle and satin winding",
+      "refractivity" : {
+        "depth" : 0.12,
+        "enabled" : true,
+        "strength" : 0.36
+      },
+      "shadow" : {
+        "kind" : "neutral",
+        "opacity" : 0
+      },
+      "specular" : "inside",
+      "translucency" : {
+        "enabled" : true,
+        "value" : 0.6
+      }
+    },
+    {
+      "layers" : [
+        {
+          "fill" : "none",
+          "glass" : true,
+          "image-name" : "03-thread.svg",
+          "name" : "03-thread"
+        },
+        {
+          "fill" : "none",
+          "glass" : false,
+          "image-name" : "02-thread-shadows.svg",
+          "name" : "02-thread-shadows"
+        }
+      ],
+      "name" : "Ivory thread and original shadows",
+      "shadow" : {
+        "kind" : "neutral",
+        "opacity" : 0
+      },
+      "translucency" : {
+        "enabled" : true,
+        "value" : 0.15
+      }
+    },
+    {
+      "blur-material" : 0.1,
+      "layers" : [
+        {
+          "fill" : "none",
+          "glass" : true,
+          "image-name" : "01-glass-flange.svg",
+          "name" : "01-glass-flange"
+        }
+      ],
+      "name" : "Liquid glass flange",
+      "refractivity" : {
+        "depth" : 0.08,
+        "enabled" : true,
+        "strength" : 0.28
+      },
+      "shadow" : {
+        "kind" : "neutral",
+        "opacity" : 0
+      },
+      "specular" : "inside",
+      "translucency" : {
+        "enabled" : true,
+        "value" : 0.68
+      }
+    }
+  ],
+  "supported-platforms" : {
+    "squares" : [
+      "macOS"
+    ]
+  }
+}

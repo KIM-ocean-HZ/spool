@@ -253,7 +253,10 @@ html[lang="zh-CN"] .ab-line.muted-line { font-style: normal; }
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0.9rem 0;
+  /* top and bottom only: .wrap's side gutters must survive, or on screens narrower
+     than .wrap the logo and the Download button touch the edges */
+  padding-top: 0.9rem;
+  padding-bottom: 0.9rem;
 }
 .nav-brand {
   display: flex;
@@ -298,6 +301,13 @@ html[lang="zh-CN"] .ab-line.muted-line { font-style: normal; }
   .nav-links a:not(.nav-cta):not(.lang-toggle) { display: none; }
   /* 44px minimum touch target (the pill is 0.28rem padding on a 0.85rem line otherwise) */
   .lang-toggle { padding: 0.6rem 0.9rem; min-height: 44px; display: flex; align-items: center; }
+}
+/* .wrap's gutters leave 272px across a 320px phone. Tighten the right-hand pair; the
+   English page also drops the decorative 思簿 beside the wordmark (the Chinese page,
+   whose shorter buttons leave room, keeps it). */
+@media (max-width: 380px) {
+  .nav-links { gap: 0.75rem; }
+  html[lang="en"] .nav-brand .zh { display: none; }
 }
 
 /* ---------- hero ---------- */
@@ -1058,7 +1068,19 @@ details.fold[open] > summary::after { content: '–'; }
 
 /* ---------- brand moment / cta band ---------- */
 .brand-moment { text-align: center; }
-.brand-moment video { width: min(320px, 70vw); border-radius: var(--r-lg); box-shadow: var(--shadow-card); }
+/* The film carries its own paper-white field (#faf7f0, the page's --paper) and wordmark:
+   no card, no rounding, nothing drawn over it. Where the page's amber wash lands, the page
+   is a few levels darker than the film, so its empty margin fades out instead of ending in
+   a square edge; the mark (shadow included) ends at 70% of the radius, inside the opaque 72%. */
+.brand-moment video {
+  display: block;
+  width: min(400px, 86vw);
+  height: auto;
+  aspect-ratio: 1;
+  margin: 0 auto;
+  -webkit-mask-image: radial-gradient(closest-side, #000 72%, transparent);
+  mask-image: radial-gradient(closest-side, #000 72%, transparent);
+}
 .cta-band { text-align: center; padding: 5rem 0; }
 .cta-band h2 { font-size: clamp(1.9rem, 4.5vw, 2.6rem); }
 

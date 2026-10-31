@@ -6,13 +6,16 @@
 
   var reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-  /* the logo film is decoration — honour the same preference the CSS animations do */
+  /* the logo film is decoration — honour the same preference the CSS animations do.
+     No controls: their play button / bar would sit on top of the still mark. */
   if (reduceMotion) {
     document.querySelectorAll('video[autoplay]').forEach(function (v) {
       v.removeAttribute('autoplay');
       v.removeAttribute('loop');
-      v.setAttribute('controls', '');
       v.pause();
+      /* this script is deferred, so autoplay may already have started on the film's
+         blank opening frames; reloading puts the poster (the finished mark) back */
+      v.load();
     });
   }
 

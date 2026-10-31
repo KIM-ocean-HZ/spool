@@ -1,0 +1,21 @@
+{
+  "date": "2026-10-30",
+  "original_mark_primitives_retained": 14,
+  "material_striations_added": 17,
+  "native_material_groups": 4,
+  "native_gui_tuning_saved": true,
+  "native_exports": "Display P3 originals plus ColorSync-converted sRGB previews",
+  "bundle_pngs": "8 tagged RGBA sizes",
+  "legacy_alpha_bbox": [
+    100,
+    100,
+    924,
+    924
+  ],
+  "icns_representations_pixel_verified": 10,
+  "ico_png_payloads_verified": 6,
+  "menu_bar_template": "unchanged",
+  "independent_srgb_conversion_mean_error_255": 0.526,
+  "independent_srgb_conversion_p99_error_255": 3,
+  "runtime_icon": "static Default ICNS; .icon retains editable native optics"
+}

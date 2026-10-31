@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Spool · 动效验收</title>
+<style>
+  :root{color-scheme:light;background:#faf7f0;color:#1c1a16;font-family:system-ui,sans-serif}
+  body{margin:0;padding:28px 20px 36px}main{max-width:720px;margin:auto}
+  header{display:flex;justify-content:space-between;align-items:baseline;gap:16px}
+  h1{font-size:17px;font-weight:500;margin:0}p{font-size:12px;color:#716b60}
+  video{display:block;width:100%;aspect-ratio:1;object-fit:contain;margin:12px 0 22px}
+  nav{display:flex;flex-wrap:wrap;gap:9px}button,a{font:13px system-ui;color:inherit;border:1px solid #ded8cd;border-radius:20px;padding:8px 14px;background:transparent;text-decoration:none;cursor:pointer}
+  button:hover,a:hover{background:#efe9de}button:focus-visible,a:focus-visible{outline:2px solid #aa5014;outline-offset:3px}
+  footer{font-size:12px;line-height:1.8;color:#716b60;margin-top:18px}
+</style>
+<main>
+  <header><h1>Spool · 动效验收</h1><p>8.4 秒 / 60 fps</p></header>
+  <video id="film" controls loop playsinline preload="auto" poster="poster.png" aria-label="Spool 图标组装动效">
+    <source src="spool-assembly-clean-v1-1080p60.mp4" type="video/mp4">
+  </video>
+  <nav aria-label="验收控制">
+    <button id="replay">从头播放</button>
+    <button id="slow" aria-pressed="false">半速查看</button>
+    <button id="hold">最终停留画面</button>
+    <a href="spool-assembly-clean-v1-1080p60.mp4" download>MP4</a>
+    <a href="spool-assembly-clean-v1-2160p60-master.mov" download>2160px 母版</a>
+  </nav>
+  <footer>纯色纸白背景，沿用已采纳图标。字标使用 App 内置 Fraunces 400 与相同字距。<br>用户已于 2026-10-31 采纳；仓库与官网的旧组装视频已换成此版本。</footer>
+</main>
+<script>
+  const film=document.getElementById('film');
+  document.getElementById('replay').onclick=()=>{film.currentTime=0;film.play()};
+  document.getElementById('slow').onclick=e=>{
+    const slow=film.playbackRate===1;film.playbackRate=slow?.5:1;
+    e.currentTarget.setAttribute('aria-pressed',String(slow));
+    e.currentTarget.textContent=slow?'恢复原速':'半速查看';
+  };
+  document.getElementById('hold').onclick=()=>{film.pause();film.currentTime=5.4};
+</script>
+</html>

@@ -1,4 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!-- LEGACY (2026-10-30): the earlier flat Spool icon. No page uses it; do not use it.
+       Current site icons: assets/spool-icon-*.png. Source of truth: docs/logo/README.md. -->
   <title>Spool app icon (full detail, 512px+)</title>
   <rect id="bg-tile" width="1024" height="1024" rx="225" fill="#b45309"/>
   <g id="mark" transform="translate(-8,-10)">

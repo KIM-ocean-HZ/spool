@@ -1,0 +1,101 @@
+{
+  "status": "user_adopted",
+  "source_integrity": {
+    "adopted_artwork_sha256": "e25bb39b1eb093245de8beca6bed3a0900d28579886fe56359e80012b4cb0e9f",
+    "native_source_sha256": "209118c21746c811230189bfdcb3286fb9636accd9cf361dbcf595ccea80593b",
+    "font_sha256": "177ff6c0f14e5550a3c624247cd1189611d4eb65d000b14944c63d967958abbb"
+  },
+  "outputs": {
+    "spool-assembly-clean-v1-1080p60.mp4": {
+      "sha256": "ec3b02fb2002dbcbada3e861a95a6d7549bb0e9e82e16ea06f708825e568aa46",
+      "programs": [],
+      "stream_groups": [],
+      "streams": [
+        {
+          "codec_name": "h264",
+          "profile": "High",
+          "width": 1080,
+          "height": 1080,
+          "pix_fmt": "yuv420p",
+          "color_space": "bt709",
+          "color_transfer": "iec61966-2-1",
+          "color_primaries": "bt709",
+          "r_frame_rate": "60/1",
+          "nb_frames": "504"
+        }
+      ],
+      "format": {
+        "duration": "8.400000",
+        "size": "406813"
+      },
+      "full_decode": "passed"
+    },
+    "spool-assembly-clean-v1-2160p60-master.mov": {
+      "sha256": "fe4213b49a3c6bb31fa9e0f207a79a71d3084586c92b10c64d8774f4ce2b4be0",
+      "programs": [],
+      "stream_groups": [],
+      "streams": [
+        {
+          "codec_name": "prores",
+          "profile": "4444",
+          "width": 2160,
+          "height": 2160,
+          "pix_fmt": "yuva444p12le",
+          "color_space": "bt709",
+          "color_transfer": "iec61966-2-1",
+          "color_primaries": "bt709",
+          "r_frame_rate": "60/1",
+          "nb_frames": "504"
+        }
+      ],
+      "format": {
+        "duration": "8.400000",
+        "size": "592384367"
+      },
+      "full_decode": "passed"
+    }
+  },
+  "source_loop": {
+    "first_last_identical": true,
+    "rgb_extrema": [
+      [
+        250,
+        250
+      ],
+      [
+        247,
+        247
+      ],
+      [
+        240,
+        240
+      ]
+    ]
+  },
+  "final_icon_source_pixels": {
+    "opaque_pixels_compared": 983504,
+    "max_channel_difference": 0
+  },
+  "encoded_loop": {
+    "max_channel_difference": 5,
+    "mean_absolute_channel_difference": [
+      0.8769718792866941,
+      0.26165723593964335,
+      0.8250462962962963
+    ]
+  },
+  "prepare_stages_syntax": "passed",
+  "adopted": "2026-10-31",
+  "integration": {
+    "repo_targets_byte_identical": {
+      "docs/logo/spool-logo-assembly.mp4": "ec3b02fb2002dbcbada3e861a95a6d7549bb0e9e82e16ea06f708825e568aa46",
+      "site/assets/spool-logo-assembly.mp4": "ec3b02fb2002dbcbada3e861a95a6d7549bb0e9e82e16ea06f708825e568aa46"
+    },
+    "site_poster": {
+      "path": "site/assets/spool-logo-assembly-poster.png",
+      "sha256": "93fe71314717a83c6291250563c98c545b0b2eea51eedc1490e8fc1cca1ece46"
+    },
+    "site_request": "assets/spool-logo-assembly.mp4?v=ec3b02fb",
+    "live": "see docs/HANDOFF-2026-09-04.md §9.8 (2026-10-31)"
+  }
+}

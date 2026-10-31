@@ -1,0 +1,18 @@
+{
+  "adopted_artwork_sha256": "e25bb39b1eb093245de8beca6bed3a0900d28579886fe56359e80012b4cb0e9f",
+  "native_source_sha256": "209118c21746c811230189bfdcb3286fb9636accd9cf361dbcf595ccea80593b",
+  "font_file": "src/assets/fonts/Fraunces[SOFT,WONK,opsz,wght].ttf",
+  "font_sha256": "177ff6c0f14e5550a3c624247cd1189611d4eb65d000b14944c63d967958abbb",
+  "wordmark_reference": "src/components/Sidebar/Wordmark.tsx",
+  "background": "#faf7f0",
+  "ink": "#1c1a16",
+  "font_weight": 400,
+  "letter_spacing_em": -0.025,
+  "optical_reference_size": 30,
+  "duration_seconds": 8.4,
+  "fps": 60,
+  "master_size": [
+    2160,
+    2160
+  ]
+}
