@@ -2412,7 +2412,10 @@ mod tests {
         let path = child_path(std::path::Path::new("/u/.nvm/versions/node/v24/bin/codex"));
         let dirs: Vec<std::path::PathBuf> = std::env::split_paths(&path).collect();
         assert_eq!(dirs[0], std::path::PathBuf::from("/u/.nvm/versions/node/v24/bin"));
-        assert!(dirs.contains(&std::path::PathBuf::from("/opt/homebrew/bin")));
+        // On Windows a path without a drive letter is not absolute, so search_dirs never adds it.
+        if cfg!(not(windows)) {
+            assert!(dirs.contains(&std::path::PathBuf::from("/opt/homebrew/bin")));
+        }
         assert_eq!(dirs.iter().filter(|d| d.ends_with("v24/bin")).count(), 1);
         let env = run_env(EngineKind::Codex, std::path::Path::new("/u/.nvm/versions/node/v24/bin/codex"));
         let run_path = &env.iter().find(|(k, _)| *k == "PATH").unwrap().1;
