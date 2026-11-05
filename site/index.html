@@ -39,6 +39,14 @@
 </head>
 <body>
 
+<!-- The beta call, on every page (2026-11-05). It scrolls away with the page instead of riding
+     in the sticky nav, and it only points at the homepage block that says what the beta involves
+     and where the sign-up form lives — the form is a third party, so it is never one click away
+     from a page that has not said so. -->
+<div class="beta-banner">
+  <p class="wrap" data-i18n="beta-banner">Spool is looking for its first beta testers. <a href="./#beta">Sign up →</a></p>
+</div>
+
 <div class="nav-shell">
   <header class="wrap nav">
     <a class="nav-brand" href="./">
@@ -46,7 +54,7 @@
       Spool <span class="zh">思簿</span>
     </a>
     <nav class="nav-links">
-      <a href="#demo" data-i18n="nav-try">Try it</a>
+      <a href="#video" data-i18n="nav-video">Video</a>
       <a href="#how" data-i18n="nav-how">How it works</a>
       <a href="#mcp">MCP</a>
       <a href="#faq" data-i18n="nav-faq">FAQ</a>
@@ -61,18 +69,23 @@
 <main>
 
 <section class="wrap hero">
-  <div class="hero-mark-wrap">
-    <div class="hero-ring" aria-hidden="true"></div>
-    <img class="mark" src="assets/spool-icon-104.png" srcset="assets/spool-icon-208.png 2x, assets/spool-icon-312.png 3x" data-i18n-alt="alt-logo" alt="Spool logo — a spool of thread seen from above, its thread pulling free">
-  </div>
   <h1><span data-i18n="hero-h1">Never explain your<br>project twice.</span><span class="zh">思簿</span></h1>
+  <!-- The promo (2026-11-05) took the place of the interactive demo: it shows what Spool is for and
+       how a day with it goes, which the scripted demo could only imitate. It does not autoplay —
+       the voice carries it and browsers only autoplay muted — so it waits on its poster for a click.
+       No burned-in subtitles: the Chinese page gets the Chinese-voiced file instead (data-i18n-src). -->
+  <figure class="hero-video" id="video">
+    <video src="assets/spool-promo-en.mp4?v=45d5deab" data-i18n-src="promo-src" poster="assets/spool-promo-poster.jpg?v=700b4723"
+      width="1920" height="1080" controls preload="metadata" playsinline
+      data-i18n-aria="aria-promo" aria-label="Spool in two minutes: saving what you find while you work, handing the project to Claude and then to Codex, and coming back to it a week later. Narrated in English."></video>
+    <button class="hero-play" type="button" hidden data-i18n="promo-play">Watch the two-minute video</button>
+  </figure>
   <p class="sub" data-i18n="hero-sub">Copy anything worth keeping and tap <span class="kbd">⌥</span> twice —
   <span class="kbd">Ctrl</span> on Windows. It lands in the project you are on, along with the thought that made
   you save it. Weeks later, hand the whole thing to any AI in one paste, and you can read every word it was told.</p>
   <div class="cta-row">
     <a class="btn btn-primary" href="https://github.com/KIM-ocean-HZ/spool/releases/latest/download/Spool-macOS-arm64.dmg" data-i18n="dl-btn">Download for macOS</a>
     <a class="btn btn-primary" href="https://github.com/KIM-ocean-HZ/spool/releases/download/v0.6.1/Spool-windows-x64-setup.exe" data-i18n="dl-btn-win">Download for Windows (v0.6.1)</a>
-    <a class="btn btn-ghost" href="#demo" data-i18n="try-btn">See it work — no download needed</a>
   </div>
   <ul class="trust-chips">
     <li data-i18n="chip-free">Free</li>
@@ -80,6 +93,24 @@
     <li data-i18n="chip-notarised">Notarised by Apple on macOS</li>
     <li data-i18n="chip-offline">Works offline</li>
   </ul>
+</section>
+
+<!-- The beta call (2026-11-05). Sign-up is a hosted form, so this block says so before the button,
+     the same way the feedback survey does; email stays as the route with no third party in it. -->
+<section class="beta" id="beta">
+  <div class="wrap">
+    <div class="beta-card reveal">
+      <div class="kicker" data-i18n="beta-k">Beta testers wanted</div>
+      <h2 data-i18n="beta-h">Help me test Spool</h2>
+      <p data-i18n="beta-p">I'm looking for the first group of people to use Spool on something real — a course,
+      an application, a project — at least twice, a day or more apart, and then tell me what worked and
+      what didn't. It hasn't started yet: sign up now and I'll get in touch when it does.</p>
+      <p class="beta-cta" data-i18n="beta-cta"><a class="btn btn-primary" href="https://surveymars.com/q/TJhQU73c2" rel="noopener noreferrer" target="_blank">Sign up for the beta</a></p>
+      <p class="fineprint" data-i18n="beta-note">The sign-up form is hosted by SurveyMars, so what you enter
+      there is stored on their servers. Questions? Email
+      <a href="mailto:jinhz0531@gmail.com?subject=Spool%20beta">jinhz0531@gmail.com</a>.</p>
+    </div>
+  </div>
 </section>
 
 <svg class="hero-thread" viewBox="0 0 64 88" aria-hidden="true">
@@ -117,47 +148,6 @@
         <p data-i18n="w3-p">Different apps, different windows, and every one of them meets you as a stranger.
         Spool is the memory they do not have — and the same paste works in all of them.</p>
       </div>
-    </div>
-  </div>
-</section>
-
-<section id="demo">
-  <div class="wrap">
-    <div class="center reveal">
-      <div class="kicker" data-i18n="demo-k">Try it — no download needed</div>
-      <h2 data-i18n="demo-h">Do the whole thing right here</h2>
-      <p class="measure" style="margin-left:auto;margin-right:auto" data-i18n="demo-p">Save one note, pack it,
-      and watch a brand-new AI chat pick up the exact point without being told the background. Then the last
-      step, the one nobody believes until they do it: an AI asks to file something, and you decide.
-      The content is written in advance; the flow mirrors the real app.</p>
-    </div>
-    <div class="demo-shell reveal">
-      <div id="demo-app"></div>
-      <noscript><p class="center muted" data-i18n="demo-noscript">The demo needs JavaScript — the
-      <a href="story.html">story page</a> and the screenshots below work without it.</p></noscript>
-    </div>
-
-    <!-- WORKPLAN-2026-08-20 §2.4. A Pack is just text, so the honest demo needs no backend
-         and no account: hand over the real file and let the visitor's own AI answer from it.
-         sample-pack.md is GENERATED (scripts/build-sample-pack.ts) by the same assemble()
-         the app's ⌘⇧P runs, from the same rows a fresh install seeds — never hand-written,
-         or it would drift from the product and the first to notice would be a new user. -->
-    <div class="center reveal sample-pack">
-      <p class="measure" style="margin-left:auto;margin-right:auto" data-i18n="sample-p">Or take a real
-      one away. This is the actual output of one project's ⌘⇧P — instruction header, source labels
-      and all. Paste it into whichever AI you use and ask it something about the course.</p>
-      <div class="cta-row" style="margin-top:1rem">
-        <button class="btn btn-primary" type="button" id="copy-sample-pack"
-          data-i18n="sample-copy">Copy the whole Pack</button>
-        <!-- The confirmation lives in the DOM, not in a JS string: build-site-zh.mjs
-             translates data-i18n text nodes and nothing else, so a literal in main.js
-             would stay English on the Chinese page. -->
-        <span id="copy-sample-pack-done" hidden data-i18n="sample-copied">Copied — now paste it into your AI</span>
-        <a class="btn btn-ghost" id="open-sample-pack" href="assets/sample-pack.md"
-          data-i18n="sample-open">Read the file first</a>
-      </div>
-      <p class="fineprint" style="margin-top:0.6rem" data-i18n="sample-note">About 8,000 characters —
-      five saved notes and the thought the reader had about each.</p>
     </div>
   </div>
 </section>
@@ -759,6 +749,5 @@ the user's feelings at the cost of correctness.</span>
 
 <script src="assets/lang.js" defer></script>
 <script src="assets/main.js" defer></script>
-<script src="assets/demo.js" defer></script>
 </body>
 </html>

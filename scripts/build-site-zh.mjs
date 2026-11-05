@@ -116,6 +116,21 @@ function applyAriaStrings(html, used) {
   });
 }
 
+/* The promo is voiced in each language, so the Chinese page needs a different
+   file, not different text. Same narrow shape as the alt / aria rules:
+   one attribute, on <video> only. The value is written relative to the English
+   page (assets/…); applyPaths moves it under ../assets/ with everything else. */
+function applySrcStrings(html, used) {
+  const tagged = /<video\b[^>]*\bdata-i18n-src="([^"]+)"[^>]*>/gi;
+  return html.replace(tagged, (full, key) => {
+    if (!(key in ZH)) throw new Error(`no Chinese for data-i18n-src="${key}"`);
+    const attr = /\ssrc="[^"]*"/;
+    if (!attr.test(full)) throw new Error(`data-i18n-src="${key}" has no src attribute`);
+    used.add(key);
+    return full.replace(attr, ` src="${escapeAttribute(ZH[key])}"`);
+  });
+}
+
 function escapeAttribute(value) {
   return value
     .replaceAll('&', '&amp;')
@@ -202,6 +217,7 @@ export function renderZh(page) {
   out = applyStrings(out, used);
   out = applyAltStrings(out, used);
   out = applyAriaStrings(out, used);
+  out = applySrcStrings(out, used);
   out = applyHead(out, page);
   out = applyPaths(out);
   out = replaceOnce(out, /<a class="lang-toggle"[^>]*>[^<]*<\/a>/, TOGGLE[page], 'language toggle');

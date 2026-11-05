@@ -209,12 +209,7 @@ main, .nav-shell, footer { position: relative; z-index: 2; }
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
   .reveal, .reveal-stagger > * { opacity: 1 !important; transform: none !important; transition: none !important; }
-  .hero-ring, .hero img.mark { animation: none !important; }
 }
-
-/* §2.4 sample Pack: it sits under the interactive demo and is a second, quieter offer —
-   the gap is what keeps it from reading as part of the demo's own controls. */
-.sample-pack { margin-top: 2.6rem; }
 
 /* ---------- Chinese-mode typography ----------
    Applied when the language toggle sets <html lang="zh-CN">. The font system
@@ -310,27 +305,86 @@ html[lang="zh-CN"] .ab-line.muted-line { font-style: normal; }
   html[lang="en"] .nav-brand .zh { display: none; }
 }
 
+/* ---------- the beta call: a strip above the nav on every page, a block under the hero ---------- */
+.beta-banner { background: var(--accent-soft); border-bottom: 1px solid var(--line); }
+.beta-banner p { margin: 0; padding-top: 0.5rem; padding-bottom: 0.5rem; text-align: center; font-size: 0.9rem; color: var(--ink-2); }
+.beta-banner a { color: var(--accent-2); font-weight: 600; white-space: nowrap; }
+section.beta { padding: 0 0 3.5rem; }
+.beta-card {
+  max-width: 44rem;
+  margin: 0 auto;
+  padding: 2rem 2.2rem 1.6rem;
+  text-align: center;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-card);
+}
+.beta-card h2 { margin-bottom: 0.7rem; }
+.beta-card p { color: var(--ink-2); }
+.beta-cta { margin: 1.3rem 0 0.9rem; }
+.beta-card .fineprint { margin: 0; }
+@media (max-width: 640px) {
+  .beta-card { padding: 1.6rem 1.2rem 1.3rem; }
+}
+
 /* ---------- hero ---------- */
 .hero {
-  padding: 5rem 0 3.5rem;
+  /* top and bottom only, as .nav: the hero is also a .wrap, and its side gutters must survive —
+     with the video in the hero, a phone otherwise shows it (and the headline) edge to edge */
+  padding-top: 5rem;
+  padding-bottom: 3.5rem;
   text-align: center;
   position: relative;
   overflow: hidden;
 }
-.hero-mark-wrap { position: relative; display: inline-block; margin-bottom: 2rem; }
-.hero img.mark { width: 104px; height: 104px; position: relative; z-index: 1; animation: heroFloat 7s ease-in-out infinite; }
-@keyframes heroFloat {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-7px); }
+/* the promo, under the headline (2026-11-05: it took the floating mark's and the demo's place) */
+.hero-video { position: relative; max-width: 960px; margin: 0.6rem auto 2.2rem; }
+/* both are link targets (the nav's Video, the banner's Sign up) and sit under the sticky nav */
+#video, #beta { scroll-margin-top: 5.5rem; }
+.hero-video video {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 16 / 9;
+  border-radius: var(--r-lg);
+  background: #3b3f46;
+  box-shadow: var(--shadow-pop);
 }
-.hero-ring {
+/* the poster is a frame of the film, so the play button has to say what clicking does */
+.hero-play {
   position: absolute;
-  inset: -26px;
-  border-radius: 50%;
-  border: 1.5px dashed var(--line-strong);
-  animation: ringSpin 40s linear infinite;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.85rem 1.5rem 0.85rem 1.2rem;
+  border: none;
+  border-radius: var(--r-pill);
+  background: var(--accent);
+  color: var(--paper);
+  font-family: var(--font-ui);
+  font-size: 1.05rem;
+  font-weight: 550;
+  white-space: nowrap;
+  box-shadow: var(--shadow-pop);
+  cursor: pointer;
 }
-@keyframes ringSpin { to { transform: rotate(360deg); } }
+.hero-play::before {
+  content: '';
+  width: 0;
+  height: 0;
+  border-style: solid;
+  border-width: 0.5rem 0 0.5rem 0.8rem;
+  border-color: transparent transparent transparent currentColor;
+}
+.hero-play:hover { background: var(--accent-2); }
+@media (max-width: 640px) {
+  .hero-play { font-size: 0.88rem; padding: 0.6rem 1.05rem 0.6rem 0.85rem; gap: 0.45rem; }
+}
+.hero-play[hidden] { display: none; }
 .hero h1 {
   font-family: var(--font-serif);
   font-size: clamp(2.6rem, 6.5vw, 4rem);
@@ -1090,445 +1144,6 @@ footer .wrap { display: flex; justify-content: space-between; gap: 1rem; flex-wr
 footer a { color: var(--ink-2); }
 
 /* =====================================================================
-   INTERACTIVE DEMO
-   A scripted simulation of the capture → pack → re-brief → MCP loop.
-   No network, no AI — all data below is designed for demonstration.
-   ===================================================================== */
-
-.demo-shell { max-width: 66rem; margin: 0 auto; }
-.demo-frame {
-  position: relative;
-  background: var(--paper);
-  border: 1px solid var(--line-strong);
-  border-radius: var(--r-xl);
-  box-shadow: var(--shadow-deep);
-  overflow: hidden;
-}
-.demo-ribbon {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 1rem;
-  padding: 0.55rem 1.1rem;
-  background: var(--paper-2);
-  border-bottom: 1px solid var(--line);
-  font-family: var(--font-mono);
-  font-size: 0.72rem;
-  color: var(--muted);
-  letter-spacing: 0.06em;
-}
-.demo-ribbon .reset-link { color: var(--muted); text-decoration: underline; cursor: pointer; background: none; border: none; font: inherit; padding: 0; }
-.demo-ribbon .reset-link:hover { color: var(--accent); }
-.demo-frame [hidden] { display: none !important; }
-
-/* progress rail */
-.demo-rail { display: flex; gap: 0.4rem; padding: 0.9rem 1.1rem 0; flex-wrap: wrap; }
-.rail-step {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  font-size: 0.8rem;
-  font-family: var(--font-mono);
-  color: var(--muted);
-  border: 1px solid var(--line);
-  border-radius: var(--r-pill);
-  padding: 0.22rem 0.75rem;
-  background: #fff;
-}
-.rail-step.active { border-color: var(--accent); color: var(--accent-2); background: var(--accent-soft); }
-.rail-step.done { color: var(--ok); border-color: var(--ok); }
-.rail-step .tick { display: none; }
-.rail-step.done .tick { display: inline; }
-
-/* stage — right (mini-Spool with sidebar) gets the wider column */
-.demo-stage {
-  display: grid;
-  grid-template-columns: 0.85fr 1.3fr;
-  gap: 0;
-  min-height: 430px;
-}
-@media (max-width: 800px) { .demo-stage { grid-template-columns: 1fr; } }
-
-/* guide banner: the single "what to do now" instruction, updated per action.
-   Quiet on purpose — the amber highlight belongs to the sentence you copy,
-   not to this banner. */
-.demo-guide {
-  margin: 0.8rem 1.1rem 0.2rem;
-  padding: 0.65rem 1rem;
-  background: rgba(255, 255, 255, 0.65);
-  border: 1px solid var(--line);
-  border-left: 3px solid var(--accent);
-  border-radius: var(--r-md);
-  font-size: 0.92rem;
-  line-height: 1.5;
-  color: var(--ink);
-  min-height: 2.6em;
-}
-.demo-guide b { color: var(--accent-2); }
-.demo-guide strong { color: var(--accent-2); }
-
-/* pulsing cue on the next expected click target (one at a time) */
-.cue { animation: cueRing 1.4s ease-out infinite; }
-@keyframes cueRing {
-  0% { box-shadow: 0 0 0 0 rgba(180, 83, 9, 0.45); }
-  75% { box-shadow: 0 0 0 9px rgba(180, 83, 9, 0); }
-  100% { box-shadow: 0 0 0 0 rgba(180, 83, 9, 0); }
-}
-@media (prefers-reduced-motion: reduce) {
-  .cue { animation: none; outline: 2px solid var(--accent); outline-offset: 2px; }
-}
-
-/* left: "your screen" */
-.demo-left { border-right: 1px solid var(--line); padding: 1.2rem; display: flex; flex-direction: column; gap: 0.9rem; background: #fff; }
-@media (max-width: 800px) { .demo-left { border-right: none; border-bottom: 1px solid var(--line); } }
-
-.fake-window { border: 1px solid var(--line); border-radius: var(--r-md); overflow: hidden; flex: 1; display: flex; flex-direction: column; }
-.fake-window .fw-bar {
-  display: flex; align-items: center; gap: 0.5rem;
-  padding: 0.45rem 0.8rem;
-  background: var(--paper-2);
-  border-bottom: 1px solid var(--line);
-  font-size: 0.78rem;
-  color: var(--muted);
-}
-.fake-window .fw-bar .dots { display: flex; gap: 4px; }
-.fake-window .fw-bar .dots i { width: 8px; height: 8px; border-radius: 50%; background: var(--line-strong); }
-.fake-window .fw-body { padding: 1rem; font-size: 0.88rem; line-height: 1.6; color: var(--ink-2); overflow-y: auto; flex: 1; }
-.fake-window .fw-body h4,
-.fake-window .fw-body .fw-heading { margin: 0 0 0.5rem; font-size: 0.95rem; color: var(--ink); font-family: var(--font-ui); }
-
-.quote-target { background: var(--selection, #fef9c3); border-radius: 3px; padding: 0.05rem 0.2rem; position: relative; }
-.copy-btn {
-  display: inline-flex; align-items: center; gap: 0.35rem;
-  margin-top: 0.7rem;
-  font-family: var(--font-ui);
-  font-size: 0.82rem;
-  padding: 0.35rem 0.9rem;
-  border-radius: var(--r-pill);
-  border: 1px solid var(--accent);
-  color: var(--accent);
-  background: #fff;
-  cursor: pointer;
-  transition: background 120ms ease;
-}
-.copy-btn:hover { background: var(--accent-soft); }
-.copy-btn.copied { background: var(--accent); color: #fff; }
-.copy-btn:disabled { opacity: 0.45; cursor: default; }
-
-.keycap-row { display: flex; align-items: center; gap: 0.7rem; justify-content: center; padding: 0.4rem 0; }
-.keycap {
-  font-family: var(--font-mono);
-  font-size: 1.15rem;
-  padding: 0.5rem 1.05rem;
-  border-radius: 10px;
-  border: 1px solid var(--line-strong);
-  border-bottom-width: 3px;
-  background: #fff;
-  color: var(--ink);
-  cursor: pointer;
-  user-select: none;
-  transition: transform 80ms ease, background 80ms ease;
-}
-.keycap:active, .keycap.pressed { transform: translateY(2px); border-bottom-width: 1px; background: var(--accent-soft); }
-.keycap-hint { font-size: 0.8rem; color: var(--muted); }
-
-/* AI chat bubbles (re-brief and MCP scenes) */
-.chat { display: flex; flex-direction: column; gap: 0.7rem; }
-.bubble { max-width: 92%; border-radius: var(--r-lg); padding: 0.65rem 0.9rem; font-size: 0.85rem; line-height: 1.55; }
-.bubble.user { align-self: flex-end; background: var(--accent-soft); color: var(--ink); border-bottom-right-radius: 4px; }
-.bubble.ai { align-self: flex-start; background: var(--paper-2); border: 1px solid var(--line); border-bottom-left-radius: 4px; color: var(--ink-2); }
-.bubble.pasted { font-family: var(--font-mono); font-size: 0.78rem; color: var(--accent-2); }
-.typing-dots::after { content: '···'; letter-spacing: 0.15em; animation: pulseDim 1.1s ease-in-out infinite; }
-@keyframes pulseDim { 0%, 100% { opacity: 0.3; } 50% { opacity: 1; } }
-
-/* tool-call chip (Claude-Desktop-style, used in the demo's MCP act) */
-.tool-chip {
-  align-self: flex-start;
-  font-family: var(--font-mono);
-  font-size: 0.72rem;
-  line-height: 1.6;
-  color: var(--ink-2);
-  background: var(--paper-2);
-  border: 1px solid var(--line);
-  border-left: 3px solid var(--accent);
-  border-radius: var(--r-md);
-  padding: 0.35rem 0.7rem;
-  max-width: 96%;
-}
-.tool-chip .tool { color: var(--accent-2); }
-.tool-chip .ret { color: var(--muted); }
-.tool-chip .ok { color: var(--ok); }
-
-/* structured AI reply: each point tagged with the fragment it came from */
-.ai-brief { display: flex; flex-direction: column; gap: 0.45rem; }
-.ai-brief > * { opacity: 0; transform: translateY(6px); transition: opacity 400ms ease, transform 400ms ease; }
-.ai-brief > .on { opacity: 1; transform: none; }
-.ab-line { font-size: 0.83rem; }
-.ab-line.muted-line { color: var(--muted); font-style: italic; }
-.ab-item {
-  display: flex;
-  gap: 0.55rem;
-  align-items: flex-start;
-  background: #fff;
-  border: 1px solid var(--line);
-  border-radius: var(--r-md);
-  padding: 0.5rem 0.65rem;
-  font-size: 0.8rem;
-  line-height: 1.5;
-}
-.ab-tag {
-  font-family: var(--font-mono);
-  font-size: 0.6rem;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  border-radius: var(--r-pill);
-  padding: 0.14rem 0.55rem;
-  white-space: nowrap;
-  flex-shrink: 0;
-  margin-top: 0.1rem;
-}
-.ab-tag.ref { background: rgba(107, 124, 90, 0.14); color: var(--ok); }
-@media (prefers-reduced-motion: reduce) { .ai-brief > * { transition: none; } }
-
-/* right: mini-Spool */
-.demo-right { background: var(--paper); display: flex; flex-direction: column; position: relative; }
-.mini-body { display: flex; flex: 1; min-height: 0; }
-.mini-side {
-  width: 128px;
-  flex-shrink: 0;
-  border-right: 1px solid var(--line);
-  background: var(--paper-2);
-  padding: 0.65rem 0.45rem;
-  overflow: hidden;
-}
-.mini-side .ms-label {
-  font-family: var(--font-mono);
-  font-size: 0.6rem;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--muted);
-  padding: 0.45rem 0.5rem 0.15rem;
-}
-.mini-side .ms-item {
-  font-size: 0.74rem;
-  color: var(--ink-2);
-  padding: 0.28rem 0.5rem;
-  border-radius: 6px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.mini-side .ms-item.active { background: #fff; color: var(--ink); font-weight: 550; }
-.mini-side .ms-cap { display: block; font-family: var(--font-mono); font-size: 0.6rem; color: var(--accent-2); }
-.mini-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-@media (max-width: 560px) { .mini-side { display: none; } }
-.mini-spool-bar {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 0.6rem 1rem;
-  border-bottom: 1px solid var(--line);
-  background: var(--paper-2);
-}
-.mini-spool-bar .title { font-family: var(--font-serif); font-weight: 600; font-size: 0.95rem; }
-.mini-spool-bar .title .zh { font-weight: 400; color: var(--muted); font-size: 0.85em; margin-left: 0.3em; }
-.pack-btn {
-  font-family: var(--font-ui);
-  font-size: 0.83rem;
-  font-weight: 550;
-  padding: 0.3rem 0.95rem;
-  border-radius: var(--r-pill);
-  border: 1px solid var(--line-strong);
-  background: #fff;
-  color: var(--muted);
-  cursor: pointer;
-  transition: all 150ms ease;
-}
-.pack-btn.armed {
-  background: var(--accent-soft);
-  border-color: var(--accent);
-  color: var(--accent-2);
-  animation: packPulse 1.6s ease-in-out infinite;
-}
-@keyframes packPulse {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(180, 83, 9, 0.25); }
-  50% { box-shadow: 0 0 0 7px rgba(180, 83, 9, 0); }
-}
-.thread-meta { padding: 0.7rem 1rem 0.3rem; }
-.thread-meta .tname { font-family: var(--font-serif); font-weight: 600; font-size: 1.05rem; }
-.thread-meta .tsub { font-size: 0.75rem; color: var(--muted); }
-
-.feed { flex: 1; overflow-y: auto; padding: 0.4rem 1rem 1rem; display: flex; flex-direction: column; gap: 0.65rem; min-height: 200px; max-height: 380px; }
-.block-card {
-  border-bottom: 1px solid var(--line);
-  padding: 0.55rem 0.2rem 0.65rem;
-  font-size: 0.85rem;
-  line-height: 1.55;
-  color: var(--ink);
-  animation: blockIn 480ms cubic-bezier(0.2, 0.7, 0.3, 1.05) both;
-}
-@keyframes blockIn {
-  0% { opacity: 0; transform: translateY(14px) scale(0.985); }
-  100% { opacity: 1; transform: none; }
-}
-.block-card .bmeta { font-family: var(--font-mono); font-size: 0.7rem; color: var(--muted); margin-bottom: 0.25rem; display: flex; gap: 0.5rem; align-items: center; }
-.block-card .bmeta .src { color: var(--accent-2); }
-.block-card .bmeta .src.mcp { background: var(--accent-soft); border-radius: var(--r-pill); padding: 0.05rem 0.5rem; }
-.block-card .note { font-style: italic; color: var(--ink-2); border-left: 2px solid var(--line-strong); padding-left: 0.6rem; margin-top: 0.4rem; font-size: 0.82rem; }
-.feed-empty { color: var(--muted); font-size: 0.85rem; text-align: center; margin: auto; }
-
-/* the gate, phase 5: a proposed note waiting to be kept or thrown away. It has
-   to read as *not yet in the project* — dashed edge, and it never inherits the
-   block card's solid background. */
-.review-card {
-  border: 1.5px dashed var(--accent);
-  border-radius: var(--r-md);
-  background: var(--accent-soft);
-  padding: 0.7rem 0.85rem;
-  font-size: 0.85rem;
-  line-height: 1.55;
-  color: var(--ink);
-}
-.review-card .rc-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
-  font-family: var(--font-mono);
-  font-size: 0.68rem;
-  margin-bottom: 0.4rem;
-}
-.review-card .rc-tag { color: var(--accent-2); font-weight: 600; }
-.review-card .rc-src { color: var(--muted); }
-.review-card .rc-actions { display: flex; gap: 0.5rem; justify-content: flex-end; margin-top: 0.7rem; }
-.rc-btn {
-  border-radius: var(--r-pill);
-  padding: 0.3rem 0.85rem;
-  font-size: 0.78rem;
-  cursor: pointer;
-  border: 1px solid transparent;
-  font-family: inherit;
-}
-.rc-btn.primary { background: var(--accent); color: #fff; }
-.rc-btn.primary:hover { background: var(--accent-2); }
-.rc-btn.ghost { background: none; border-color: var(--line-strong); color: var(--ink-2); }
-.rc-btn.ghost:hover { border-color: var(--accent); color: var(--accent); }
-
-/* capture overlay chip */
-.overlay-chip {
-  position: absolute;
-  top: 0.9rem;
-  right: 0.9rem;
-  z-index: 5;
-  display: flex;
-  align-items: center;
-  gap: 0.45rem;
-  background: var(--ink);
-  color: var(--paper);
-  font-size: 0.8rem;
-  padding: 0.45rem 0.9rem;
-  border-radius: var(--r-md);
-  box-shadow: var(--shadow-toast, 0 8px 24px -8px rgba(60, 40, 10, 0.25));
-  opacity: 0;
-  transform: translateY(-8px);
-  pointer-events: none;
-  transition: opacity 220ms ease, transform 220ms ease;
-}
-.overlay-chip.show { opacity: 1; transform: none; }
-.overlay-chip .src { color: var(--highlight); font-family: var(--font-mono); font-size: 0.72rem; }
-
-/* pack modal (inside demo frame) */
-.pack-modal {
-  position: absolute;
-  inset: 8% 6%;
-  z-index: 10;
-  background: #fff;
-  border: 1px solid var(--line-strong);
-  border-radius: var(--r-lg);
-  box-shadow: var(--shadow-deep);
-  display: flex;
-  flex-direction: column;
-  opacity: 0;
-  transform: translateY(10px) scale(0.99);
-  pointer-events: none;
-  transition: opacity 240ms ease, transform 240ms ease;
-}
-.pack-modal.show { opacity: 1; transform: none; pointer-events: auto; }
-.pack-modal .pm-head { padding: 0.8rem 1.1rem 0.5rem; border-bottom: 1px solid var(--line); }
-.pack-modal .pm-head h4,
-.pack-modal .pm-head .pm-heading { margin: 0; font-family: var(--font-serif); font-size: 1.05rem; }
-.pack-modal .pm-head .pm-sub { font-size: 0.75rem; color: var(--muted); }
-.pack-modal pre {
-  flex: 1;
-  margin: 0;
-  padding: 0.9rem 1.1rem;
-  overflow: auto;
-  font-family: var(--font-mono);
-  font-size: 0.74rem;
-  line-height: 1.6;
-  color: var(--ink-2);
-  background: var(--paper);
-  white-space: pre-wrap;
-}
-.pack-modal .pm-foot {
-  display: flex; justify-content: space-between; align-items: center; gap: 0.8rem;
-  padding: 0.7rem 1.1rem;
-  border-top: 1px solid var(--line);
-  font-size: 0.78rem; color: var(--muted);
-}
-.pm-foot .pm-actions { display: flex; gap: 0.6rem; }
-.pm-btn {
-  font-family: var(--font-ui); font-size: 0.85rem; font-weight: 550;
-  padding: 0.42rem 1.1rem; border-radius: var(--r-pill); cursor: pointer; border: none;
-}
-.pm-btn.primary { background: var(--accent); color: #fff; }
-.pm-btn.primary:hover { background: var(--accent-2); }
-.pm-btn.ghost { background: none; border: 1px solid var(--line-strong); color: var(--ink-2); }
-
-/* MCP trace */
-.mcp-trace {
-  font-family: var(--font-mono);
-  font-size: 0.75rem;
-  line-height: 1.9;
-  color: var(--ink-2);
-  background: var(--paper-2);
-  border: 1px solid var(--line);
-  border-radius: var(--r-md);
-  padding: 0.7rem 0.95rem;
-}
-.mcp-trace .tl { opacity: 0; transform: translateX(-6px); transition: opacity 300ms ease, transform 300ms ease; display: block; }
-.mcp-trace .tl.on { opacity: 1; transform: none; }
-.mcp-trace .ok { color: var(--ok); }
-.mcp-trace .tool { color: var(--accent-2); }
-.mcp-trace .ret { color: var(--muted); }
-.mcp-trace.static .tl { opacity: 1; transform: none; }
-
-/* demo finale */
-.demo-finale {
-  display: none;
-  padding: 1.1rem 1.2rem;
-  border-top: 1px solid var(--line);
-  background: var(--accent-soft);
-  text-align: center;
-  font-size: 0.95rem;
-}
-.demo-finale.show { display: block; }
-.demo-finale .btn { margin-top: 0.6rem; }
-
-/* next-step nudge inside left panel */
-.next-nudge {
-  align-self: center;
-  font-size: 0.85rem;
-  color: var(--paper);
-  background: var(--accent);
-  border: none;
-  border-radius: var(--r-pill);
-  padding: 0.5rem 1.3rem;
-  cursor: pointer;
-  font-family: var(--font-ui);
-  font-weight: 550;
-}
-.next-nudge:hover { background: var(--accent-2); }
-
-/* =====================================================================
    ARTICLE PAGES (story / privacy)
    ===================================================================== */
 
@@ -1883,11 +1498,10 @@ footer a { color: var(--ink-2); }
 }
 
 @media (max-width: 640px) {
-  .hero { padding: 3.2rem 0 2.5rem; }
+  .hero { padding-top: 3.2rem; padding-bottom: 2.5rem; }
   section { padding: 2.8rem 0; }
   .nav-brand,
   .nav-links .nav-cta { min-height: 44px; display: flex; align-items: center; }
-  .demo-frame button { min-width: 44px; min-height: 44px; }
 }
 
 /* ---------- feedback: the three routes back to me ---------- */

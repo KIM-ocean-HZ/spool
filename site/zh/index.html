@@ -41,6 +41,14 @@
 </head>
 <body>
 
+<!-- The beta call, on every page (2026-11-05). It scrolls away with the page instead of riding
+     in the sticky nav, and it only points at the homepage block that says what the beta involves
+     and where the sign-up form lives — the form is a third party, so it is never one click away
+     from a page that has not said so. -->
+<div class="beta-banner">
+  <p class="wrap" data-i18n="beta-banner">Spool 正在招募第一批内测用户。<a href="./#beta">报名 →</a></p>
+</div>
+
 <div class="nav-shell">
   <header class="wrap nav">
     <a class="nav-brand" href="./">
@@ -48,7 +56,7 @@
       Spool <span class="zh">思簿</span>
     </a>
     <nav class="nav-links">
-      <a href="#demo" data-i18n="nav-try">试用演示</a>
+      <a href="#video" data-i18n="nav-video">视频</a>
       <a href="#how" data-i18n="nav-how">使用方式</a>
       <a href="#mcp">MCP</a>
       <a href="#faq" data-i18n="nav-faq">常见问题</a>
@@ -63,16 +71,21 @@
 <main>
 
 <section class="wrap hero">
-  <div class="hero-mark-wrap">
-    <div class="hero-ring" aria-hidden="true"></div>
-    <img class="mark" src="../assets/spool-icon-104.png" srcset="../assets/spool-icon-208.png 2x, ../assets/spool-icon-312.png 3x" data-i18n-alt="alt-logo" alt="Spool 标志：从上方看到的线轴，一根线从中向外延伸">
-  </div>
   <h1><span data-i18n="hero-h1">同一个项目，<br>不必解释第二遍。</span><span class="zh">思簿</span></h1>
+  <!-- The promo (2026-11-05) took the place of the interactive demo: it shows what Spool is for and
+       how a day with it goes, which the scripted demo could only imitate. It does not autoplay —
+       the voice carries it and browsers only autoplay muted — so it waits on its poster for a click.
+       No burned-in subtitles: the Chinese page gets the Chinese-voiced file instead (data-i18n-src). -->
+  <figure class="hero-video" id="video">
+    <video src="../assets/spool-promo-zh.mp4?v=ff242acc" data-i18n-src="promo-src" poster="../assets/spool-promo-poster.jpg?v=700b4723"
+      width="1920" height="1080" controls preload="metadata" playsinline
+      data-i18n-aria="aria-promo" aria-label="两分钟看懂 Spool：边做事边存下有用的东西，把项目交给 Claude、再交给 Codex，一周后回来接着做。中文配音。"></video>
+    <button class="hero-play" type="button" hidden data-i18n="promo-play">看两分钟视频</button>
+  </figure>
   <p class="sub" data-i18n="hero-sub">复制值得保留的内容，再连按两下 <span class="kbd">⌥</span>（Windows 上是 <span class="kbd">Ctrl</span>）。内容会存入当前项目，你还可以附上当时的想法。几周后，一次打包就能把完整背景交给任何 AI；交出去的每个字，你都可以先看清楚。</p>
   <div class="cta-row">
     <a class="btn btn-primary" href="https://github.com/KIM-ocean-HZ/spool/releases/latest/download/Spool-macOS-arm64.dmg" data-i18n="dl-btn">下载 macOS 版</a>
     <a class="btn btn-primary" href="https://github.com/KIM-ocean-HZ/spool/releases/download/v0.6.1/Spool-windows-x64-setup.exe" data-i18n="dl-btn-win">下载 Windows 版（v0.6.1）</a>
-    <a class="btn btn-ghost" href="#demo" data-i18n="try-btn">直接试用，无需下载</a>
   </div>
   <ul class="trust-chips">
     <li data-i18n="chip-free">免费</li>
@@ -80,6 +93,20 @@
     <li data-i18n="chip-notarised">macOS 版已由 Apple 签名并公证</li>
     <li data-i18n="chip-offline">可离线使用</li>
   </ul>
+</section>
+
+<!-- The beta call (2026-11-05). Sign-up is a hosted form, so this block says so before the button,
+     the same way the feedback survey does; email stays as the route with no third party in it. -->
+<section class="beta" id="beta">
+  <div class="wrap">
+    <div class="beta-card reveal">
+      <div class="kicker" data-i18n="beta-k">招募内测</div>
+      <h2 data-i18n="beta-h">来帮我试用 Spool</h2>
+      <p data-i18n="beta-p">我在找第一批内测用户：把 Spool 用在一件真事上——一门课、一份申请、一个项目——至少用两次、中间隔一天以上，然后告诉我哪里好用、哪里不好用。内测还没开始，现在报名，开始时我会联系你。</p>
+      <p class="beta-cta" data-i18n="beta-cta"><a class="btn btn-primary" href="https://v.wjx.cn/vm/r7aA0kE.aspx" rel="noopener noreferrer" target="_blank">报名内测</a></p>
+      <p class="fineprint" data-i18n="beta-note">报名表托管在问卷星，你填的内容存在他们的服务器上。有问题发邮件到 <a href="mailto:jinhz0531@gmail.com?subject=Spool%20%E5%86%85%E6%B5%8B">jinhz0531@gmail.com</a>。</p>
+    </div>
+  </div>
 </section>
 
 <svg class="hero-thread" viewBox="0 0 64 88" aria-hidden="true">
@@ -108,40 +135,6 @@
         <h3 data-i18n="w3-h">每天打开多个从零开始的 AI 对话</h3>
         <p data-i18n="w3-p">不同应用、不同窗口，每个新对话都不了解你的背景。Spool 保存它们缺少的项目上下文，同一份 Pack 可以交给任何一个。</p>
       </div>
-    </div>
-  </div>
-</section>
-
-<section id="demo">
-  <div class="wrap">
-    <div class="center reveal">
-      <div class="kicker" data-i18n="demo-k">无需下载，直接试用</div>
-      <h2 data-i18n="demo-h">在这里走完整个流程</h2>
-      <p class="measure" style="margin-left:auto;margin-right:auto" data-i18n="demo-p">存下一条笔记并打包，再看一个全新的 AI 对话如何只凭这份背景接上进度。最后，AI 会提议把新的内容写回项目，由你决定是否保留。演示内容已预先编写，交互流程与真实应用一致。</p>
-    </div>
-    <div class="demo-shell reveal">
-      <div id="demo-app"></div>
-      <noscript><p class="center muted" data-i18n="demo-noscript">交互演示需要 JavaScript；你仍可阅读<a href="story.html">开发故事</a>和下方截图。</p></noscript>
-    </div>
-
-    <!-- WORKPLAN-2026-08-20 §2.4. A Pack is just text, so the honest demo needs no backend
-         and no account: hand over the real file and let the visitor's own AI answer from it.
-         sample-pack.md is GENERATED (scripts/build-sample-pack.ts) by the same assemble()
-         the app's ⌘⇧P runs, from the same rows a fresh install seeds — never hand-written,
-         or it would drift from the product and the first to notice would be a new user. -->
-    <div class="center reveal sample-pack">
-      <p class="measure" style="margin-left:auto;margin-right:auto" data-i18n="sample-p">也可以直接拿走一份真的。这就是一个项目按 ⌘⇧P 打出来的东西——开头的说明、每条的来源标注，一样不少。粘进你常用的那个 AI，然后问它一个关于这门课的问题。</p>
-      <div class="cta-row" style="margin-top:1rem">
-        <button class="btn btn-primary" type="button" id="copy-sample-pack"
-          data-i18n="sample-copy">复制整份 Pack</button>
-        <!-- The confirmation lives in the DOM, not in a JS string: build-site-zh.mjs
-             translates data-i18n text nodes and nothing else, so a literal in main.js
-             would stay English on the Chinese page. -->
-        <span id="copy-sample-pack-done" hidden data-i18n="sample-copied">复制好了——粘进你的 AI 试试</span>
-        <a class="btn btn-ghost" id="open-sample-pack" href="../assets/sample-pack.md"
-          data-i18n="sample-open">先看看这个文件</a>
-      </div>
-      <p class="fineprint" style="margin-top:0.6rem" data-i18n="sample-note">大约 8,000 字——五条存下来的东西，外加当时想到的那句话。</p>
     </div>
   </div>
 </section>
@@ -609,6 +602,5 @@ the user's feelings at the cost of correctness.</span>
 
 <script src="../assets/lang.js" defer></script>
 <script src="../assets/main.js" defer></script>
-<script src="../assets/demo.js" defer></script>
 </body>
 </html>

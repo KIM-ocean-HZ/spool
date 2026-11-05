@@ -84,6 +84,33 @@ describe('site/zh is in sync with the English pages', () => {
       }
     }
     expect(html).toContain(` aria-label="${escapeAttribute(ZH['aria-brand-video'])}"`);
+    expect(html).toContain(` aria-label="${escapeAttribute(ZH['aria-promo'])}"`);
+  });
+
+  /* The beta sign-up (2026-11-05) is two hosted forms like the feedback survey: SurveyMars from the
+     English page, 问卷星 from the Chinese one. Each sits beside a note saying where the answers go,
+     and email stays as the route with no third party. Also the guard against shipping the
+     placeholder hrefs the block was built with before the forms existed. */
+  it('sends each page to its own hosted beta form, says where the answers go, and keeps email', () => {
+    const flat = (h) => h.replace(/\s+/g, ' ');
+    const english = flat(readFileSync(new URL('../site/index.html', import.meta.url), 'utf8'));
+    const chinese = flat(pages['index.html']);
+    const button = (h) => /class="beta-cta"[^>]*><a class="btn btn-primary" href="([^"]+)"/.exec(h)?.[1];
+    expect(button(english)).toMatch(/^https:\/\/([a-z0-9-]+\.)*surveymars\.com\//);
+    expect(button(chinese)).toMatch(/^https:\/\/([a-z0-9-]+\.)*wjx\.(cn|top)\//);
+    expect(english).toContain('The sign-up form is hosted by SurveyMars');
+    expect(chinese).toContain('报名表托管在问卷星');
+    expect(english).toContain('mailto:jinhz0531@gmail.com?subject=Spool%20beta');
+    expect(chinese).toContain('mailto:jinhz0531@gmail.com?subject=Spool%20%E5%86%85%E6%B5%8B');
+  });
+
+  /* The promo is voiced per language (no subtitles burned in): a Chinese page that kept the English
+     file would play an English voice under Chinese copy, and nothing in the text would show it. */
+  it('plays the Chinese-voiced promo on the Chinese page and the English one on the English page', () => {
+    const english = readFileSync(new URL('../site/index.html', import.meta.url), 'utf8');
+    expect(english).toMatch(/<video\b[^>]*\ssrc="assets\/spool-promo-en\.mp4\?v=[0-9a-f]{8}"/);
+    expect(pages['index.html']).toMatch(/<video\b[^>]*\ssrc="\.\.\/assets\/spool-promo-zh\.mp4\?v=[0-9a-f]{8}"/);
+    expect(pages['index.html']).not.toContain('spool-promo-en.mp4');
   });
 
   it('translates homepage metadata and non-body accessibility copy', () => {
@@ -94,8 +121,8 @@ describe('site/zh is in sync with the English pages', () => {
     expect(html).toContain(`<meta property="og:title" content="${escapeAttribute(head.ogTitle)}">`);
     expect(html).toContain(`<meta property="og:description" content="${escapeAttribute(head.ogDescription)}">`);
     expect(html).toContain(`<meta property="og:image:alt" content="${escapeAttribute(head.ogImageAlt)}">`);
-    expect(html).toContain(ZH['demo-noscript']);
-    expect(html).not.toContain('The demo needs JavaScript');
+    expect(html).toContain(`>${ZH['promo-play']}<`);
+    expect(html).not.toContain('Watch the two-minute video');
   });
 
   it('translates the story page, including its image descriptions', () => {
@@ -121,14 +148,14 @@ describe('site/zh is in sync with the English pages', () => {
   });
 
   it('escapes translated alt text as an HTML attribute', () => {
-    const original = ZH['alt-logo'];
+    const original = ZH['alt-project-window'];
     try {
-      ZH['alt-logo'] = '线轴 "Spool" & <线头>';
+      ZH['alt-project-window'] = '线轴 "Spool" & <线头>';
       expect(renderAll().pages['index.html']).toContain(
         'alt="线轴 &quot;Spool&quot; &amp; &lt;线头&gt;"',
       );
     } finally {
-      ZH['alt-logo'] = original;
+      ZH['alt-project-window'] = original;
     }
   });
 

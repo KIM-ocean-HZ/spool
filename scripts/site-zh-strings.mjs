@@ -29,6 +29,10 @@
    being true the second a hosted form sits beside it, and the two live in different files,
    so build-site-zh.test.mjs asserts the pairing instead of trusting whoever edits next. */
 const ZH_FORM_URL = 'https://v.wjx.cn/vm/hy3KvuB.aspx';
+/* 问卷星 — the beta sign-up on the CHINESE page (2026-11-05, Ocean: two forms like the feedback
+   survey — this one on 问卷星, the English page's on SurveyMars, hard-coded in site/index.html).
+   The questions: ~/Movies/Spool-video/review/promo-v4/23-beta-signup-form.md. */
+const ZH_BETA_FORM_URL = 'https://v.wjx.cn/vm/r7aA0kE.aspx';
 
 /* <head> per page: the English HTML's title/description/OG text has no
    data-i18n hook, so it is listed here per page instead. */
@@ -58,7 +62,7 @@ export const HEAD = {
 /* Body copy, keyed by data-i18n. */
 export const ZH = {
   /* Navigation shared by the generated pages. */
-  'nav-try': '试用演示',
+  'nav-video': '视频',
   'nav-how': '使用方式',
   'nav-faq': '常见问题',
   'nav-story': '开发故事',
@@ -70,17 +74,24 @@ export const ZH = {
   'hero-sub': '复制值得保留的内容，再连按两下 <span class="kbd">⌥</span>（Windows 上是 <span class="kbd">Ctrl</span>）。内容会存入当前项目，你还可以附上当时的想法。几周后，一次打包就能把完整背景交给任何 AI；交出去的每个字，你都可以先看清楚。',
   'dl-btn': '下载 macOS 版',
   'dl-btn-win': '下载 Windows 版（v0.6.1）',
-  'try-btn': '直接试用，无需下载',
   'chip-free': '免费',
   'chip-arch': 'Apple 芯片 Mac · Windows x64',
   'chip-notarised': 'macOS 版已由 Apple 签名并公证',
   'chip-offline': '可离线使用',
 
-  /* Interactive demo introduction. */
-  'demo-k': '无需下载，直接试用',
-  'demo-h': '在这里走完整个流程',
-  'demo-p': '存下一条笔记并打包，再看一个全新的 AI 对话如何只凭这份背景接上进度。最后，AI 会提议把新的内容写回项目，由你决定是否保留。演示内容已预先编写，交互流程与真实应用一致。',
-  'demo-noscript': '交互演示需要 JavaScript；你仍可阅读<a href="story.html">开发故事</a>和下方截图。',
+  /* The promo in the hero (2026-11-05: it replaced the interactive demo). The Chinese page plays
+     the Chinese-voiced file; build-site-zh.mjs moves it under ../assets/ like every asset. */
+  'promo-src': 'assets/spool-promo-zh.mp4?v=ff242acc',
+  'aria-promo': '两分钟看懂 Spool：边做事边存下有用的东西，把项目交给 Claude、再交给 Codex，一周后回来接着做。中文配音。',
+  'promo-play': '看两分钟视频',
+
+  /* The beta call: the banner on every page, and the block under the hero. */
+  'beta-banner': 'Spool 正在招募第一批内测用户。<a href="./#beta">报名 →</a>',
+  'beta-k': '招募内测',
+  'beta-h': '来帮我试用 Spool',
+  'beta-p': '我在找第一批内测用户：把 Spool 用在一件真事上——一门课、一份申请、一个项目——至少用两次、中间隔一天以上，然后告诉我哪里好用、哪里不好用。内测还没开始，现在报名，开始时我会联系你。',
+  'beta-cta': `<a class="btn btn-primary" href="${ZH_BETA_FORM_URL}" rel="noopener noreferrer" target="_blank">报名内测</a>`,
+  'beta-note': '报名表托管在问卷星，你填的内容存在他们的服务器上。有问题发邮件到 <a href="mailto:jinhz0531@gmail.com?subject=Spool%20%E5%86%85%E6%B5%8B">jinhz0531@gmail.com</a>。',
 
   /* The recurring problem. */
   'moment-k': '反复重写的项目背景',
@@ -118,7 +129,6 @@ export const ZH = {
   'pack-full': '查看完整的真实 Pack 示例',
 
   /* Meaningful visual descriptions translated at build time. */
-  'alt-logo': 'Spool 标志：从上方看到的线轴，一根线从中向外延伸',
   'alt-capture-page': '完整的浏览器截图：IBM 文章占据窗口，顶部可见标签页和地址，右上角叠着 Spool 保存确认浮窗',
   'alt-capture-source-detail': '同一张浏览器截图的局部：清楚显示文章的标签页标题和 ibm.com 地址',
   'alt-capture-toast': 'Spool 保存提示：显示内容开头、保存到“学习”工作区中的“机器学习课”项目、浏览器标签页来源，以及写着你刚打下那句话的批注框',
@@ -379,13 +389,6 @@ export const ZH = {
   'story-release-link': '<a href="https://github.com/KIM-ocean-HZ/spool/releases/latest">到 GitHub 查看这次发布和它的产物</a>。官网上那个固定的下载地址，指向与带版本号的产物一同发布的固定文件名副本。',
 
   'story-measurement-h': '实测改变了什么',
-  /* WORKPLAN-2026-08-20 §2.4 —— 首页「零安装试用」那一块。文件本身是渲染器生成的，
-     中文站拿的是中文那一份（main.js 按 <html lang> 挑）。 */
-  'sample-p': '也可以直接拿走一份真的。这就是一个项目按 ⌘⇧P 打出来的东西——开头的说明、每条的来源标注，一样不少。粘进你常用的那个 AI，然后问它一个关于这门课的问题。',
-  'sample-copy': '复制整份 Pack',
-  'sample-copied': '复制好了——粘进你的 AI 试试',
-  'sample-open': '先看看这个文件',
-  'sample-note': '大约 8,000 字——五条存下来的东西，外加当时想到的那句话。',
   'story-measurement-p': '案例研究台账为每一个对外公开的数字都记下了命令和证据来源。其中两次实测改变了产品的优先级，而不只是描述了做完的系统。',
   'story-m2-h': '去重是一次性的补救',
   'story-m2-p': '实测到的那一对重复内容占了 <strong>Pack 的 13%</strong>。把它标记为作废解决了眼前的体量问题，同时那条更早的块仍留在库里，也仍然搜得到。',
@@ -409,6 +412,6 @@ export const ZH = {
   'story-b4': '<strong>有两项检查仍然由人来做。</strong>已授权的捕捉手势位于合成事件的上游，打包后的 webview 也没法靠合成点击来确认；这两项都交给人，而不是宣称已经自动化了。',
   'story-b5': '<strong>Spool 不是服务器、同步服务、团队工作区，也不是文档编辑器。</strong>它保存一份本地的项目记录，并为你早就选好的那些工具准备好背景。',
 
-  'story-demo': '这里没有占位视频。<a href="./#demo">浏览器里的交互演示</a>会走完捕捉 → 项目 → Pack 的整个流程；上面那些截图来自当前的隔离桌面构建。',
+  'story-demo': '<a href="./#video">首页那段两分钟的视频</a>用演示版走了一遍同样的流程：捕捉、存进项目、交给 AI；上面那些截图来自当前的隔离桌面构建。',
   'story-colophon': 'Spool 由 Ocean（<a href="https://github.com/KIM-ocean-HZ">KIM-ocean-HZ</a>）设计并开发。源码、路线图和完整的产品准则在 <a href="https://github.com/KIM-ocean-HZ/spool">GitHub</a>；可复现的公开数字在 <a href="https://github.com/KIM-ocean-HZ/spool/blob/main/docs/CASE_STUDY_LEDGER.md">Case Study Ledger</a>。',
 };
