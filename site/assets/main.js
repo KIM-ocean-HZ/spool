@@ -228,21 +228,35 @@
   });
 })();
 
-/* The promo in the hero. It waits on its poster (no autoplay: the voice carries it, and browsers
-   only autoplay muted). The button over the poster says what a click does; once the film has
-   started, the native controls take over. Without JS the button stays hidden and the native
-   controls still play it. */
+/* The promo in the hero. It waits on its poster — the film's logo frame — with no autoplay (the
+   voice carries it, and browsers only autoplay muted). Until it starts, the native control bar is
+   held back so nothing sits on the poster but the play button in the corner, and a click anywhere
+   on the poster plays it; once it has started, the native controls take over. Without JS the
+   button stays hidden and the native controls (left in the HTML) play it as usual. */
 (function () {
   var fig = document.querySelector('.hero-video');
   if (!fig) return;
   var video = fig.querySelector('video');
   var play = fig.querySelector('.hero-play');
   if (!video || !play) return;
-  play.hidden = false;
-  play.addEventListener('click', function () {
-    var started = video.play();
-    if (started && started.catch) started.catch(function () { play.hidden = false; });
+  var started = false;
+  var wait = function () {
+    play.hidden = false;
+    fig.classList.add('waiting');
+    video.removeAttribute('controls');
+  };
+  var start = function () {
+    var p = video.play();
+    if (p && p.catch) p.catch(wait);
+  };
+  wait();
+  play.addEventListener('click', start);
+  video.addEventListener('click', function () { if (!started) start(); });
+  video.addEventListener('play', function () {
+    started = true;
+    play.hidden = true;
+    fig.classList.remove('waiting');
+    video.setAttribute('controls', '');
   });
-  video.addEventListener('play', function () { play.hidden = true; });
   video.addEventListener('ended', function () { play.hidden = false; });
 })();

@@ -83,7 +83,7 @@ export const ZH = {
      the Chinese-voiced file; build-site-zh.mjs moves it under ../assets/ like every asset. */
   'promo-src': 'assets/spool-promo-zh.mp4?v=ff242acc',
   'aria-promo': '两分钟看懂 Spool：边做事边存下有用的东西，把项目交给 Claude、再交给 Codex，一周后回来接着做。中文配音。',
-  'promo-play': '看两分钟视频',
+  'promo-play': '<span class="hero-play-label">看两分钟视频</span>',
 
   /* The beta call: the banner on every page, and the block under the hero. */
   'beta-banner': 'Spool 正在招募第一批内测用户。<a href="./#beta">报名 →</a>',
