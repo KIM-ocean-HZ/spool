@@ -395,6 +395,8 @@ describe('库的导出与导入 (DESIGN_LIBRARY_TRANSFER)', () => {
       'file_access_requests',
       'file_proposals',
       'split_proposals',
+      // P15-2：AI 提议连这台电脑上的一个文件夹 —— 同一个理由。
+      'folder_proposals',
     ]) {
       expect(MERGE_TABLES_FOR_TEST).not.toContain(table);
     }

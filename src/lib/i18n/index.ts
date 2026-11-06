@@ -993,6 +993,26 @@ const EN: Record<string, string> = {
   '{client} 提议用新版本取代〈{title}〉里的「{old}」':
     '{client} proposes a newer version to replace “{old}” in ‹{title}›',
   '它说为什么': 'Why, in its words',
+  // P15-2 — an AI proposing to link a workspace to a folder, or to swap a linked workspace's state files.
+  '{client} 提议换工作区「{ws}」的现状文件': '{client} proposes new state files for the workspace “{ws}”',
+  '{client} 提议把工作区「{ws}」连到一个文件夹': '{client} proposes linking the workspace “{ws}” to a folder',
+  '现在读：': 'Reads now: ',
+  '（没有）': '(none)',
+  '换成：': 'Change to: ',
+  '现状文件：': 'State files: ',
+  '主项目：': 'Main project: ',
+  '「{ws}」现在没连着这个文件夹了，这条提议用不上了。':
+    '“{ws}” is no longer linked to this folder, so this proposal no longer applies.',
+  '「{ws}」现在已经连着 {path} 了，这条提议用不上了。':
+    '“{ws}” is already linked to {path} now, so this proposal no longer applies.',
+  '同意之后 Spool 改读这几份，文件夹里 SPOOL.md 的 Spool 那一段跟着更新。':
+    'Approve and Spool reads these files instead; Spool’s own section of the folder’s SPOOL.md is updated to match.',
+  '点「去连接…」打开平常连文件夹的那几步：Spool 会在这个文件夹最外面放一份 SPOOL.md；git、CLAUDE.md / AGENTS.md 那两步由你选。现状文件按它说的先勾好，你可以改。走完最后一步才连上。':
+    '“Link…” opens the usual steps for linking a folder: Spool puts a SPOOL.md at the top of this folder; the git and CLAUDE.md / AGENTS.md steps are your choice. The state files start ticked as it suggested, and you can change them. Nothing is linked until the last step.',
+  '换成这几份': 'Use these',
+  '去连接…': 'Link…',
+  '「{ws}」现在没连着这个文件夹了，没有换。': '“{ws}” is no longer linked to this folder; nothing was changed.',
+  '「{ws}」的现状文件换好了。': 'The state files of “{ws}” are changed.',
   '同意之后挂进这个项目，AI 也能读到里面的文字（右栏随时能关）。':
     'Approve and it is attached to this project, and an AI can read its text too (you can turn that off in the right panel at any time).',
   '同意之后挂到第 {n} 块上，AI 也能读到里面的文字（右栏随时能关）。':

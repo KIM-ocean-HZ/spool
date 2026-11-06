@@ -4,6 +4,9 @@ import type { FileAccessRequest } from '@/lib/db/fileAccess';
 import * as fileProposals from '@/lib/db/fileProposals';
 import type { FileProposal } from '@/lib/db/fileProposals';
 import { approveFileProposal as approveFileProposalNow } from '@/lib/files/fileProposals';
+import * as folderProposals from '@/lib/db/folderProposals';
+import type { FolderProposal } from '@/lib/db/folderProposals';
+import { folderError, setFolderPrimary, setFolderStateFiles } from '@/lib/folders/api';
 import * as db from '@/lib/db/proposals';
 import type { ProposalBatch } from '@/lib/db/proposals';
 import * as followUp from '@/lib/db/followUpItems';
@@ -20,6 +23,7 @@ import {
 } from '@/lib/blocks/supersedeReview';
 import { t } from '@/lib/i18n';
 import { useBlocksStore } from './blocksStore';
+import { useFolderStore } from './folderStore';
 import { useThreadsStore } from './threadsStore';
 import { toast } from './toastStore';
 import { buildSplitUndo, useUndoStore } from './undoStore';
@@ -52,6 +56,8 @@ interface ProposalsState {
   supersedeProposals: SupersedeReviewItem[] | null;
   /** P9G-3 — an AI's 「把这个项目拆成几个子项目」, regrouped on the card before 「拆分」. */
   splitProposals: SplitReviewItem[] | null;
+  /** P15-2 — an AI's 「把工作区连到这个文件夹」 / 「换成这几份现状文件」. */
+  folderProposals: FolderProposal[] | null;
   /** Everything waiting on the user, in one number: the sidebar badge. */
   pendingCount: number;
   /** Batches past their 7 days — one line on the screen, never approvable. */
@@ -73,6 +79,10 @@ interface ProposalsState {
   decideSupersede: (id: string, choice: SupersedeChoice) => Promise<void>;
   approveSplit: (id: string, draft: SplitDraft) => Promise<void>;
   rejectSplit: (id: string) => Promise<void>;
+  /** P15-2: the connect dialog the card opened has linked the folder — finish the card. */
+  folderLinked: (id: string) => Promise<void>;
+  approveFolderStateFiles: (id: string) => Promise<void>;
+  rejectFolderProposal: (id: string) => Promise<void>;
 }
 
 // Everything the approved blocks touched has to be re-read: they landed through a path
@@ -94,10 +104,11 @@ const loadAll = async (): Promise<
     | 'fileProposals'
     | 'supersedeProposals'
     | 'splitProposals'
+    | 'folderProposals'
   >
 > => {
   const now = Date.now();
-  const [batches, fileRequests, followUpProposals, fileProposalList, supersedeProposals, splitList] =
+  const [batches, fileRequests, followUpProposals, fileProposalList, supersedeProposals, splitList, folderList] =
     await Promise.all([
       db.listPendingBatches(now),
       files.listPendingFileRequests(now),
@@ -105,6 +116,7 @@ const loadAll = async (): Promise<
       fileProposals.listPendingFileProposals(now),
       listSupersedeReview(now),
       listSplitReview(now),
+      folderProposals.listPendingFolderProposals(now),
     ]);
   return {
     batches,
@@ -113,6 +125,7 @@ const loadAll = async (): Promise<
     fileProposals: fileProposalList,
     supersedeProposals,
     splitProposals: splitList,
+    folderProposals: folderList,
   };
 };
 
@@ -132,7 +145,8 @@ const settle = async (get: () => ProposalsState, set: Setter): Promise<void> => 
     state.followUpProposals!.length === 0 &&
     state.fileProposals!.length === 0 &&
     state.supersedeProposals!.length === 0 &&
-    state.splitProposals!.length === 0;
+    state.splitProposals!.length === 0 &&
+    state.folderProposals!.length === 0;
   if (nothingLeft) get().close();
 };
 
@@ -143,6 +157,7 @@ export const useProposalsStore = create<ProposalsState>((set, get) => ({
   fileProposals: null,
   supersedeProposals: null,
   splitProposals: null,
+  folderProposals: null,
   pendingCount: 0,
   expiredBatches: 0,
   panelOpen: false,
@@ -154,7 +169,7 @@ export const useProposalsStore = create<ProposalsState>((set, get) => ({
       // P7-5: what 过期检测 used to do each time it read these — a suggestion past its 7 days
       // is a no, and leaves nothing behind.
       await purgeExpiredSupersedeProposals(now);
-      const [proposals, expiredBatches, fileRequests, followUpLines, fileProposalCount, supersede, splits] =
+      const [proposals, expiredBatches, fileRequests, followUpLines, fileProposalCount, supersede, splits, folders] =
         await Promise.all([
           db.countPending(now),
           db.countExpiredBatches(now),
@@ -165,10 +180,11 @@ export const useProposalsStore = create<ProposalsState>((set, get) => ({
           // blocks (done elsewhere already = not waiting), and that rule lives in one place.
           listSupersedeReview(now),
           splitProposals.countPendingSplitProposals(now),
+          folderProposals.countPendingFolderProposals(now),
         ]);
       set({
         pendingCount:
-          proposals + fileRequests + followUpLines + fileProposalCount + supersede.length + splits,
+          proposals + fileRequests + followUpLines + fileProposalCount + supersede.length + splits + folders,
         expiredBatches,
       });
       // Keep an open screen honest: a second client could have queued more while the
@@ -195,6 +211,7 @@ export const useProposalsStore = create<ProposalsState>((set, get) => ({
         fileProposals: [],
         supersedeProposals: [],
         splitProposals: [],
+        folderProposals: [],
       });
     }
   },
@@ -208,6 +225,7 @@ export const useProposalsStore = create<ProposalsState>((set, get) => ({
       fileProposals: null,
       supersedeProposals: null,
       splitProposals: null,
+      folderProposals: null,
     }),
 
   approve: async (batchId, keepIds) => {
@@ -430,6 +448,65 @@ export const useProposalsStore = create<ProposalsState>((set, get) => ({
     }
   },
 
+  // P15-2 — the folder is already linked (the user went through the connect dialog the card opened,
+  // which wrote everything it showed them). What is left is the AI's main project, and the card.
+  folderLinked: async (id) => {
+    if (get().busy) return;
+    set({ busy: true });
+    try {
+      const p = await folderProposals.getPendingFolderProposal(id, Date.now());
+      if (p?.primaryThreadId) await setFolderPrimary(p.workspaceId, p.primaryThreadId);
+      await folderProposals.deleteFolderProposal(id);
+      await useFolderStore.getState().reloadAll();
+    } catch (e) {
+      console.error('[folder-proposals] finish failed', e);
+      toast.error(folderError(e));
+    } finally {
+      set({ busy: false });
+      await settle(get, set);
+    }
+  },
+
+  // P15-2 — 「换成这几份」 on a workspace already linked to that same folder. Read again at the click: the
+  // link may have changed since the card was drawn.
+  approveFolderStateFiles: async (id) => {
+    if (get().busy) return;
+    set({ busy: true });
+    try {
+      const p = await folderProposals.getPendingFolderProposal(id, Date.now());
+      if (!p) {
+        toast.notice(t('这条提议说的东西已经不在了，清掉了。'));
+      } else if (p.linkedPath !== p.path) {
+        toast.error(t('「{ws}」现在没连着这个文件夹了，没有换。', { ws: p.workspaceTitle }));
+      } else {
+        await setFolderStateFiles(p.workspaceId, p.stateFiles);
+        if (p.primaryThreadId) await setFolderPrimary(p.workspaceId, p.primaryThreadId);
+        await folderProposals.deleteFolderProposal(id);
+        await useFolderStore.getState().reloadAll();
+        toast.notice(t('「{ws}」的现状文件换好了。', { ws: p.workspaceTitle }));
+      }
+    } catch (e) {
+      console.error('[folder-proposals] swap failed', e);
+      toast.error(folderError(e));
+    } finally {
+      set({ busy: false });
+      await settle(get, set);
+    }
+  },
+
+  rejectFolderProposal: async (id) => {
+    if (get().busy) return;
+    set({ busy: true });
+    try {
+      await folderProposals.deleteFolderProposal(id);
+    } catch (e) {
+      console.error('[folder-proposals] refusal failed', e);
+    } finally {
+      set({ busy: false });
+      await settle(get, set);
+    }
+  },
+
   clearExpired: async () => {
     try {
       await db.purgeExpired(Date.now());
@@ -437,6 +514,7 @@ export const useProposalsStore = create<ProposalsState>((set, get) => ({
       await fileProposals.purgeExpiredFileProposals(Date.now());
       await purgeExpiredSupersedeProposals(Date.now());
       await splitProposals.purgeExpiredSplitProposals(Date.now());
+      await folderProposals.purgeExpiredFolderProposals(Date.now());
     } catch (e) {
       console.warn('[proposals] purge failed', e);
     }

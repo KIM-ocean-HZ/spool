@@ -206,6 +206,21 @@ const V37_WORKSPACE_FOLDER_COLS = ['workspace_id', 'folder_id', 'primary_thread_
 // v37's table and its index, off a list of sqlite_master rows.
 const notV37 = (r: { name: string }): boolean => !r.name.includes('workspace_folders');
 
+const V38_FOLDER_PROPOSAL_COLS = [
+  'id',
+  'kind',
+  'client',
+  'workspace_id',
+  'path',
+  'state_files',
+  'primary_thread_id',
+  'why',
+  'created_at',
+  'expires_at',
+];
+// v38's table and its index, off a list of sqlite_master rows.
+const notV38 = (r: { name: string }): boolean => !r.name.includes('folder_proposals');
+
 const V35_SPLIT_PROPOSAL_COLS = ['id', 'thread_id', 'client', 'why', 'plan', 'created_at', 'expires_at'];
 // v35's table and its index, off a list of sqlite_master rows — every test that rewinds below
 // v35 and compares the schema across the migration walks past them.
@@ -258,7 +273,15 @@ const downgradeToV13 = (handle: Sqlite): void => {
 // Rewind past v37: a folder was linked to a project, not to a workspace.
 // ⚠️ 这一句 DROP 就是 v37 的「能回滚」——`add-workspace-folders` 只加了一张新表（和搬进去的那几行），
 // ⛔ 一个字的既有数据都没动。
+const downgradeToV37 = (handle: Sqlite): void => {
+  handle.exec(`
+    DROP TABLE IF EXISTS folder_proposals;
+    PRAGMA user_version = 37;
+  `);
+};
+
 const downgradeToV36 = (handle: Sqlite): void => {
+  downgradeToV37(handle);
   handle.exec(`
     DROP TABLE IF EXISTS workspace_folders;
     PRAGMA user_version = 36;
@@ -1678,8 +1701,7 @@ describe('migrateSchema registry (§19.3)', () => {
     const fresh = await __migrateSchemaForTest(db);
 
     expect(fresh).toBe(false);
-    expect(userVersion(handle)).toBe(37);
-    expect(CURRENT_SCHEMA_VERSION).toBe(37);
+    expect(userVersion(handle)).toBe(CURRENT_SCHEMA_VERSION);
     expect(columnNames(handle, 'workspace_folders')).toEqual(V37_WORKSPACE_FOLDER_COLS);
     // Both projects sit in w1: one link for the workspace, the primary project's, its state files.
     expect(handle.prepare('SELECT * FROM workspace_folders').all()).toEqual([
@@ -1689,9 +1711,9 @@ describe('migrateSchema registry (§19.3)', () => {
       expect(handle.prepare(`SELECT * FROM ${t} ORDER BY rowid`).all(), t).toEqual(before[t]);
     }
     expect(
-      (handle.prepare('SELECT name, sql FROM sqlite_master ORDER BY name').all() as { name: string }[]).filter(
-        notV37,
-      ),
+      (handle.prepare('SELECT name, sql FROM sqlite_master ORDER BY name').all() as { name: string }[])
+        .filter(notV37)
+        .filter(notV38),
     ).toEqual(schemaBefore);
   });
 
@@ -1706,8 +1728,66 @@ describe('migrateSchema registry (§19.3)', () => {
 
     await __migrateSchemaForTest(db);
 
-    expect(userVersion(handle)).toBe(37);
+    expect(userVersion(handle)).toBe(CURRENT_SCHEMA_VERSION);
     expect(columnNames(handle, 'workspace_folders')).toEqual(V37_WORKSPACE_FOLDER_COLS);
+  });
+
+  // P15-2（Ocean 2026-11-06 选甲）：一张新表 + 它的索引，⛔ 已有的表一行一列不动。
+  it('v37 → v38 adds folder_proposals and touches nothing else', async () => {
+    applySchema(handle);
+    downgradeToV37(handle);
+    seedUserData(handle);
+    handle.exec(
+      `INSERT INTO folders (id, path, snapshot, synced_at, created_at)
+         VALUES ('f1', '/Users/x/flux', '{}', ${NOW}, ${NOW});
+       INSERT INTO workspace_folders (workspace_id, folder_id, primary_thread_id, state_files, created_at)
+         VALUES ('w1', 'f1', 't1', '["README.md"]', ${NOW});`,
+    );
+    const tables = (
+      handle
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE '%fts%' ORDER BY name")
+        .all() as { name: string }[]
+    ).map((r) => r.name);
+    expect(tables).not.toContain('folder_proposals');
+    const before = Object.fromEntries(
+      tables.map((t) => [t, handle.prepare(`SELECT * FROM ${t} ORDER BY rowid`).all()]),
+    );
+    const schemaBefore = handle.prepare('SELECT name, sql FROM sqlite_master ORDER BY name').all();
+
+    const fresh = await __migrateSchemaForTest(db);
+
+    expect(fresh).toBe(false);
+    expect(userVersion(handle)).toBe(38);
+    expect(CURRENT_SCHEMA_VERSION).toBe(38);
+    expect(columnNames(handle, 'folder_proposals')).toEqual(V38_FOLDER_PROPOSAL_COLS);
+    expect(handle.prepare('SELECT COUNT(*) AS c FROM folder_proposals').get()).toEqual({ c: 0 });
+    for (const t of tables) {
+      expect(handle.prepare(`SELECT * FROM ${t} ORDER BY rowid`).all(), t).toEqual(before[t]);
+    }
+    expect(
+      (handle.prepare('SELECT name, sql FROM sqlite_master ORDER BY name').all() as { name: string }[]).filter(notV38),
+    ).toEqual(schemaBefore);
+  });
+
+  it('v37 → v38 is re-runnable after a half-finished pass', async () => {
+    applySchema(handle);
+    downgradeToV37(handle);
+    seedUserData(handle);
+    // Half a pass: the table went in, its index and the version stamp did not.
+    handle.exec(`CREATE TABLE folder_proposals (id TEXT PRIMARY KEY, kind TEXT NOT NULL,
+      client TEXT NOT NULL DEFAULT '', workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+      path TEXT NOT NULL, state_files TEXT NOT NULL DEFAULT '[]', primary_thread_id TEXT,
+      why TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL)`);
+
+    await __migrateSchemaForTest(db);
+
+    expect(userVersion(handle)).toBe(38);
+    expect(columnNames(handle, 'folder_proposals')).toEqual(V38_FOLDER_PROPOSAL_COLS);
+  });
+
+  it('a fresh install builds folder_proposals straight from schema.sql', () => {
+    applySchema(handle);
+    expect(columnNames(handle, 'folder_proposals')).toEqual(V38_FOLDER_PROPOSAL_COLS);
   });
 
   it('a fresh install builds workspace_folders straight from schema.sql', () => {

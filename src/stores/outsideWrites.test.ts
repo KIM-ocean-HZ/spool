@@ -214,6 +214,14 @@ describe('librarySignature —— 「库有没有被别处动过」的记号', (
                VALUES ('sp-1',?,'Codex · MCP','太长了','{"groups":[]}',?,?)`,
           )
           .run(threadId, Date.now(), 9e15)],
+      // P15-2：AI 提议连文件夹同样从 `spool --mcp` 写进来。
+      ['提议连文件夹', () =>
+        sqlite
+          .prepare(
+            `INSERT INTO folder_proposals (id, kind, client, workspace_id, path, state_files, why, created_at, expires_at)
+               VALUES ('fo-1','link','Codex · MCP',?,'/x/repo','["README.md"]','连上',?,?)`,
+          )
+          .run(workspaceId, Date.now(), 9e15)],
       ['又一批块待审', () => proposeBlocks('batch-2')],
       // ⚠️ 最新那一行还在、时间没变 —— 只有行数分得出来。
       ['早的那批过期被清掉', () => sqlite.exec("DELETE FROM proposal_batches WHERE id = 'batch-1'")],

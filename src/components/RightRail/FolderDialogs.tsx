@@ -283,18 +283,25 @@ export function ConnectDialog({
   title,
   inspect,
   onClose,
+  initialPicks,
+  onConnected,
 }: {
   workspaceId: string;
   /** The workspace's name. */
   title: string;
   inspect: FolderInspect;
   onClose: () => void;
+  /** P15-2: the state files an AI proposed (the review card opens this dialog) — ticked to start with,
+   *  and still the user's to change on that step. Default: Spool's own recommendation. */
+  initialPicks?: string[];
+  /** P15-2: called once the folder is linked, before the dialog closes. */
+  onConnected?: () => Promise<void> | void;
 }) {
   const t = useT();
   const joining = inspect.linkedTo.length > 0;
   const steps: Step[] = joining ? ['what', 'state'] : inspect.git ? ['what', 'state', 'git', 'ai'] : ['what', 'state', 'ai'];
   const [step, setStep] = useState<Step>('what');
-  const [picked, setPicked] = useState<string[]>(() => defaultPicks(inspect.candidates));
+  const [picked, setPicked] = useState<string[]>(() => initialPicks ?? defaultPicks(inspect.candidates));
   // 第 2 题：推荐「只留在这台电脑」。
   const [localOnly, setLocalOnly] = useState(true);
   // 第 4 问：默认都不勾，用户自己选。
@@ -320,6 +327,7 @@ export function ConnectDialog({
       });
       if (!joining) await applyGlobalHint(ptr.global);
       await reloadAll();
+      await onConnected?.();
       toast.notice(t('连好了：SPOOL.md 在「{name}」最外面', { name: inspect.name }));
       onClose();
     } catch (e) {

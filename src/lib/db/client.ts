@@ -38,7 +38,7 @@ export const setSeedLanguage = (lang: SeedLanguage): void => {
 // carries a database from the previous version to the new one. On startup the
 // database's PRAGMA user_version is compared against this and every applicable step
 // runs in sequence, each stamping user_version as its own checkpoint (§19.3).
-const SCHEMA_VERSION = 37;
+const SCHEMA_VERSION = 38;
 
 // Things a migration did to the user's data that the user is entitled to hear about.
 // v15 is the first migration that removes anything (the retired `url` attachments), and
@@ -1215,6 +1215,34 @@ const MIGRATIONS: Migration[] = [
         SELECT t.workspace_id, l.folder_id, l.thread_id, l.state_files, l.created_at
           FROM folder_links l JOIN threads t ON t.id = l.thread_id
          ORDER BY l.is_primary DESC, l.created_at ASC`);
+    },
+  },
+  {
+    // v38（P15-2，Ocean 2026-11-06 选甲，HANDOFF §9.2 第 254 条）：AI 提议把一个工作区连到一个文件夹（或换它的
+    // 现状文件），用户在待审里点了才连。⚠️⚠️ **只有一张新表 `CREATE TABLE IF NOT EXISTS` + 它自己的索引**，⛔ 已有的表
+    // 一列不动、没有回填、⛔ 没有 rebuild 分支（2026-05-29 抹库是**重建表**那条分支干的）。`schema.sql` 写了每一列的意思。
+    //   * 往前：老库没有这张表 = 没有待审的文件夹提议，也就是 v37 的行为。
+    //   * 往回：`DROP TABLE folder_proposals` 一句退回 v37，⛔ 不丢任何 v37 就有的数据 —— 丢的只是还没点头的提议
+    //     （它们本来 7 天后也会自己过期）。
+    // 半跑一次和跑完一次分不出来：`IF NOT EXISTS` 再跑一遍什么都不会发生。
+    from: 37,
+    to: 38,
+    name: 'add-folder-proposals',
+    run: async (db) => {
+      await db.execute(`CREATE TABLE IF NOT EXISTS folder_proposals (
+        id                TEXT PRIMARY KEY,
+        kind              TEXT NOT NULL,
+        client            TEXT NOT NULL DEFAULT '',
+        workspace_id      TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+        path              TEXT NOT NULL,
+        state_files       TEXT NOT NULL DEFAULT '[]',
+        primary_thread_id TEXT,
+        why               TEXT NOT NULL DEFAULT '',
+        created_at        INTEGER NOT NULL,
+        expires_at        INTEGER NOT NULL
+      )`);
+      await db.execute(`CREATE INDEX IF NOT EXISTS idx_folder_proposals_workspace
+        ON folder_proposals(workspace_id, created_at ASC)`);
     },
   },
 ];

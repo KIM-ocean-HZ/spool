@@ -1,4 +1,4 @@
-import { Check, FileText, Globe, Trash2, X } from 'lucide-react';
+import { Check, FileText, FolderOpen, Globe, Trash2, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import SeqBadge from '@/components/ThreadView/SeqBadge';
 import { FollowUpTag } from '@/components/ThreadView/SourceBadge';
@@ -17,6 +17,10 @@ import {
   type SplitReviewItem,
 } from '@/lib/split/projectSplit';
 import type { FileProposal } from '@/lib/db/fileProposals';
+import type { FolderProposal } from '@/lib/db/folderProposals';
+import { folderError, inspectFolder, type FolderInspect } from '@/lib/folders/api';
+import { ConnectDialog } from '@/components/RightRail/FolderDialogs';
+import { toast } from '@/stores/toastStore';
 import { passageSource, type ProposalBatch } from '@/lib/db/proposals';
 import type { FollowUpProposal } from '@/lib/db/followUpItems';
 import { useProposalsStore } from '@/stores/proposalsStore';
@@ -49,6 +53,7 @@ export default function ReviewPanel() {
   const fileProposals = useProposalsStore((s) => s.fileProposals);
   const supersedeProposals = useProposalsStore((s) => s.supersedeProposals);
   const splitProposals = useProposalsStore((s) => s.splitProposals);
+  const folderProposals = useProposalsStore((s) => s.folderProposals);
   const expiredBatches = useProposalsStore((s) => s.expiredBatches);
   const busy = useProposalsStore((s) => s.busy);
   const close = useProposalsStore((s) => s.close);
@@ -63,6 +68,9 @@ export default function ReviewPanel() {
   const decideSupersede = useProposalsStore((s) => s.decideSupersede);
   const approveSplit = useProposalsStore((s) => s.approveSplit);
   const rejectSplit = useProposalsStore((s) => s.rejectSplit);
+  const folderLinked = useProposalsStore((s) => s.folderLinked);
+  const approveFolderStateFiles = useProposalsStore((s) => s.approveFolderStateFiles);
+  const rejectFolderProposal = useProposalsStore((s) => s.rejectFolderProposal);
   const clearExpired = useProposalsStore((s) => s.clearExpired);
   // Subscribe to the stored map, then flatten here. NOT useThreadsStore(selectAllThreadsFlat):
   // that selector builds a fresh array on every call, so zustand's useSyncExternalStore sees
@@ -123,7 +131,8 @@ export default function ReviewPanel() {
               (followUpProposals?.length ?? 0) +
               (fileProposals?.length ?? 0) +
               (supersedeProposals?.length ?? 0) +
-              (splitProposals?.length ?? 0) ===
+              (splitProposals?.length ?? 0) +
+              (folderProposals?.length ?? 0) ===
             0 ? (
             <p className="py-8 text-center text-xs text-muted">{t('没有待你过目的。')}</p>
           ) : (
@@ -152,6 +161,19 @@ export default function ReviewPanel() {
                   busy={busy}
                   onApprove={() => void approveFileProposal(p.id)}
                   onReject={() => void rejectFileProposal(p.id)}
+                />
+              ))}
+              {/* P15-2 — an AI's 「把工作区连到这个文件夹」, next to the files: it is the same kind of thing,
+                  a place on the user's computer an AI wants Spool to look at. */}
+              {(folderProposals ?? []).map((p) => (
+                <FolderProposalCard
+                  key={p.id}
+                  proposal={p}
+                  daysLeft={dayCount(now, p.expiresAt)}
+                  busy={busy}
+                  onLinked={() => folderLinked(p.id)}
+                  onSwap={() => void approveFolderStateFiles(p.id)}
+                  onReject={() => void rejectFolderProposal(p.id)}
                 />
               ))}
               {/* P7-5 — an AI's 「更正 / 取代」 suggestion about two blocks already in the library. */}
@@ -552,6 +574,142 @@ function FileProposalCard({
           {t('不同意')}
         </button>
       </div>
+    </div>
+  );
+}
+
+/**
+ * P15-2 (Ocean 2026-11-06 选甲) — an AI proposing to link a workspace to a folder, or to swap a linked
+ * workspace's state files.
+ *
+ * ⛔ A link is never made from this card. 「去连接…」 opens the very dialog the workspace page uses,
+ * with the AI's state files ticked: every write into the folder (SPOOL.md, the git line, the CLAUDE.md /
+ * AGENTS.md lines) is on one of its steps, and the user can change any of it. The card goes once that
+ * dialog has linked the folder. A swap is one click, because the folder is already linked and all it
+ * changes is which files Spool reads — and Spool's own section of SPOOL.md, which the card says.
+ */
+function FolderProposalCard({
+  proposal,
+  daysLeft,
+  busy,
+  onLinked,
+  onSwap,
+  onReject,
+}: {
+  proposal: FolderProposal;
+  daysLeft: number;
+  busy: boolean;
+  onLinked: () => Promise<void>;
+  onSwap: () => void;
+  onReject: () => void;
+}) {
+  const t = useT();
+  const [inspect, setInspect] = useState<FolderInspect | null>(null);
+  const [opening, setOpening] = useState(false);
+  const client = proposal.client || 'AI';
+  const swap = proposal.kind === 'state_files';
+  const join = (xs: string[]): string => xs.join(t('、'));
+  // The link changed after the AI asked: a link card for a workspace that got linked meanwhile, or a
+  // swap for one that is no longer linked to this folder. Only 「不同意」 is left.
+  const stale = swap ? proposal.linkedPath !== proposal.path : proposal.linkedPath !== null;
+  const openConnect = async (): Promise<void> => {
+    setOpening(true);
+    try {
+      setInspect(await inspectFolder(proposal.path));
+    } catch (e) {
+      toast.error(folderError(e));
+    } finally {
+      setOpening(false);
+    }
+  };
+  return (
+    <div className="mb-3 rounded-md border border-line-strong bg-paper-2/30 p-3">
+      <div className="flex items-baseline justify-between gap-3">
+        <span className="min-w-0 break-words text-xs text-ink-2">
+          {swap
+            ? t('{client} 提议换工作区「{ws}」的现状文件', { client, ws: proposal.workspaceTitle })
+            : t('{client} 提议把工作区「{ws}」连到一个文件夹', { client, ws: proposal.workspaceTitle })}
+        </span>
+        <span className="flex-none font-mono text-[10px] text-muted">{t('{n} 天后作废', { n: daysLeft })}</span>
+      </div>
+
+      <div className="mt-2 flex items-center gap-1.5">
+        <FolderOpen size={11} className="flex-none text-muted" />
+        <span className="min-w-0 flex-1 truncate text-xs text-ink">{fileNameOf(proposal.path)}</span>
+      </div>
+      <p className="mt-1 select-text break-all font-mono text-[10px] leading-relaxed text-muted">{proposal.path}</p>
+
+      <div className="mt-2 space-y-0.5 text-[11px] leading-relaxed text-ink-2">
+        {swap && proposal.linkedStateFiles !== null && (
+          <p>
+            <span className="text-muted">{t('现在读：')}</span>
+            <span className="break-all font-mono">{join(proposal.linkedStateFiles) || t('（没有）')}</span>
+          </p>
+        )}
+        <p>
+          <span className="text-muted">{swap ? t('换成：') : t('现状文件：')}</span>
+          <span className="break-all font-mono">{join(proposal.stateFiles)}</span>
+        </p>
+        {proposal.primaryTitle !== null && (
+          <p>
+            <span className="text-muted">{t('主项目：')}</span>
+            {t('〈{title}〉', { title: proposal.primaryTitle })}
+          </p>
+        )}
+      </div>
+
+      <div className="mt-2 rounded border border-line bg-paper px-2.5 py-2">
+        <div className="text-[10px] uppercase tracking-wide text-muted">{t('它说为什么')}</div>
+        <p className="mt-1 whitespace-pre-wrap break-words text-xs leading-relaxed text-ink-2">{proposal.why}</p>
+      </div>
+
+      <p className="mt-2 text-[10px] leading-relaxed text-muted">
+        {stale
+          ? swap
+            ? t('「{ws}」现在没连着这个文件夹了，这条提议用不上了。', { ws: proposal.workspaceTitle })
+            : t('「{ws}」现在已经连着 {path} 了，这条提议用不上了。', {
+                ws: proposal.workspaceTitle,
+                path: proposal.linkedPath ?? '',
+              })
+          : swap
+            ? t('同意之后 Spool 改读这几份，文件夹里 SPOOL.md 的 Spool 那一段跟着更新。')
+            : t('点「去连接…」打开平常连文件夹的那几步：Spool 会在这个文件夹最外面放一份 SPOOL.md；git、CLAUDE.md / AGENTS.md 那两步由你选。现状文件按它说的先勾好，你可以改。走完最后一步才连上。')}
+      </p>
+
+      <div className="mt-2.5 flex items-center gap-2">
+        {!stale && (
+          <button
+            type="button"
+            disabled={busy || opening}
+            onClick={swap ? onSwap : () => void openConnect()}
+            className="flex flex-1 items-center justify-center gap-1.5 rounded-md border border-accent/60 px-3 py-1.5 text-xs font-medium text-accent transition-colors enabled:hover:border-accent enabled:hover:bg-accent/15 disabled:opacity-40"
+          >
+            {swap ? <Check size={12} /> : <FolderOpen size={12} />}
+            {swap ? t('换成这几份') : t('去连接…')}
+          </button>
+        )}
+        <button
+          type="button"
+          disabled={busy}
+          onClick={onReject}
+          title={t('直接扔掉，不留痕迹')}
+          className={`flex items-center gap-1.5 rounded-md border border-line bg-paper px-3 py-1.5 text-xs text-muted transition-colors enabled:hover:border-line-strong enabled:hover:text-ink disabled:opacity-40 ${stale ? 'flex-1 justify-center' : 'flex-none'}`}
+        >
+          <Trash2 size={12} />
+          {t('不同意')}
+        </button>
+      </div>
+
+      {inspect && (
+        <ConnectDialog
+          workspaceId={proposal.workspaceId}
+          title={proposal.workspaceTitle}
+          inspect={inspect}
+          initialPicks={proposal.stateFiles}
+          onConnected={onLinked}
+          onClose={() => setInspect(null)}
+        />
+      )}
     </div>
   );
 }

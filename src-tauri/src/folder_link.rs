@@ -1458,7 +1458,7 @@ fn regenerate(conn: &Connection, f: &FolderRow, path: &Path, mode: Mode, lang: L
     Ok(out)
 }
 
-fn check_specs(specs: &[String]) -> Result<Vec<String>, String> {
+pub(crate) fn check_specs(specs: &[String]) -> Result<Vec<String>, String> {
     let mut out: Vec<String> = Vec::new();
     for s in specs {
         let s = s.to_string();
@@ -1535,6 +1535,16 @@ fn plain(p: PathBuf) -> PathBuf {
         }
     }
     p
+}
+
+/// P15-2 (`propose_link_folder`): the folder a workspace is linked to itself — its path, its state
+/// files and its main project — or None. Read only; nothing about the link is handed further.
+pub(crate) fn own_link_summary(conn: &Connection, workspace_id: &str) -> Result<Option<(String, Vec<String>, Option<String>)>, String> {
+    match own_link(conn, workspace_id) {
+        Ok((f, l)) => Ok(Some((f.path, l.state_files, l.primary_thread_id))),
+        Err(e) if e == "no_link" => Ok(None),
+        Err(e) => Err(e),
+    }
 }
 
 /// The link a workspace itself has (not one inherited from above). "no_link" without one.

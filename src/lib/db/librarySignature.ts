@@ -25,6 +25,8 @@ const WATCHED: readonly (readonly [table: string, time: string])[] = [
   ['supersede_proposals', 'created_at'],
   ['file_proposals', 'created_at'],
   ['split_proposals', 'created_at'],
+  // P15-2：AI 提议连文件夹，同样从 `spool --mcp` 写进来。
+  ['folder_proposals', 'created_at'],
 ];
 
 const SQL =

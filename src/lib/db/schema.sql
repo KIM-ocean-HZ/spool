@@ -830,3 +830,23 @@ CREATE TABLE IF NOT EXISTS workspace_folders (
 
 CREATE INDEX IF NOT EXISTS idx_workspace_folders_folder
   ON workspace_folders(folder_id, created_at ASC);
+
+-- v38（P15-2，Ocean 2026-11-06 选甲）：AI 通过 MCP（`propose_link_folder`）提议的「把工作区连到这个文件夹」或
+-- 「把它的现状文件换成这几份」，等用户在待审里点。⛔ 这里只是一张卡：连接本身照旧走 `workspace_folders`，由用户在
+-- 「去连接…」打开的那个连接对话框里一步步点完才写（SPOOL.md、git、CLAUDE.md / AGENTS.md 每一样都看得见）。
+-- 同一个工作区只留最新的一张。7 天没处理就作废。⛔ 不跟着库搬（`transfer.ts` 不列它）。往回：`DROP TABLE folder_proposals`。
+CREATE TABLE IF NOT EXISTS folder_proposals (
+  id                TEXT PRIMARY KEY,
+  kind              TEXT NOT NULL,                -- 'link' = 连上这个文件夹；'state_files' = 已经连着它，只换现状文件
+  client            TEXT NOT NULL DEFAULT '',     -- 谁提的（`<client> · MCP`）
+  workspace_id      TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  path              TEXT NOT NULL,                -- 文件夹的完整路径（解析过的那一个）
+  state_files       TEXT NOT NULL DEFAULT '[]',   -- JSON，1 – 3 个，写法同 `workspace_folders.state_files`
+  primary_thread_id TEXT,                         -- AI 建议的主项目；NULL = 不提
+  why               TEXT NOT NULL DEFAULT '',     -- AI 给用户的一句理由，卡上原样显示
+  created_at        INTEGER NOT NULL,
+  expires_at        INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_folder_proposals_workspace
+  ON folder_proposals(workspace_id, created_at ASC);

@@ -1406,9 +1406,10 @@ thread_local! {
 pub(crate) const ENGINE_RUN_FLAG: &str = "--engine-run";
 // P9Y (task book §3.8): 「已经对过了」 is said by a person, or by the AI they are talking to — never by a
 // background run that read the folder on its own.
-// P15-1 (Ocean 2026-11-06): nor does a background run grow the user's sidebar — a new workspace is
-// asked for in a conversation.
-pub(crate) const ENGINE_EXCLUDED_TOOLS: [&str; 3] = ["propose_split", "mark_folder_synced", "create_workspace"];
+// P15-1 / P15-2 (Ocean 2026-11-06): nor does a background run grow the user's sidebar or put a folder
+// in front of them — a new workspace and a linked folder are asked for in a conversation.
+pub(crate) const ENGINE_EXCLUDED_TOOLS: [&str; 4] =
+    ["propose_split", "mark_folder_synced", "create_workspace", "propose_link_folder"];
 
 #[cfg(test)]
 thread_local! {
@@ -1934,9 +1935,9 @@ fn get_folder_status_json(conn: &Connection, thread_id: &str) -> Result<String, 
     let title = live_thread_title(conn, thread_id)?;
     let Some(v) = crate::folder_link::view(conn, thread_id, false, true)? else {
         return Err(t!(
-            "〈{title}〉所在的工作区没有连文件夹。连文件夹是用户在 Spool 里自己做的事（点左栏的工作区名字，在工作区页面里连）；这个工具只读已经连上的。",
-            "\u{2039}{title}\u{203a} is in a workspace that is not linked to a folder. Linking one is something the user does in \
-             Spool (click the workspace's name in the left rail and link it on the workspace page); this tool only reads a folder that is linked."
+            "〈{title}〉所在的工作区没有连文件夹。这个工具只读已经连上的。要连，用 propose_link_folder 提议（工作区、文件夹的完整路径、1 – 3 份现状文件），用户在 Spool 里点了才连上。",
+            "\u{2039}{title}\u{203a} is in a workspace that is not linked to a folder; this tool only reads a folder that is linked. \
+             To get one linked, propose_link_folder (the workspace, the folder's full path, 1 – 3 state files) \u{2014} it is linked once the user approves it in Spool."
         ));
     };
     if !matches!(v.location, "in_place" | "moved") {
@@ -4753,7 +4754,9 @@ fn thread_resources(conn: &Connection) -> Result<Vec<Value>, String> {
 //   写 `main.folders`。
 // ⚠️ v37 (P9Y 第二轮, 2026-10-25)：新表 `workspace_folders` —— 连到文件夹的改成工作区（项目归最近的那一层），
 //   `folder_links` 不再读。这边照旧按项目问（`thread_id`），由 folder_link.rs 找到它所在工作区的那条连接。
-const EXPECTED_SCHEMA_VERSION: i64 = 37;
+// ⚠️ v38 (P15-2, 2026-11-06)：新表 `folder_proposals`（AI 提议把工作区连到文件夹 / 换现状文件，排队等点头），
+//   这边的 `propose_link_folder` 往里写。
+const EXPECTED_SCHEMA_VERSION: i64 = 38;
 
 // Name reported by the client at initialize (clientInfo.name); feeds the source label.
 static CLIENT_NAME: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
@@ -7472,6 +7475,275 @@ fn insert_file_proposal(
     Ok(())
 }
 
+// ---------------------------------------------------------------------------------------
+// P15-2 (Ocean 2026-11-06 选甲, HANDOFF §9.2 第 254 条) —— propose_link_folder: an AI proposes
+// linking a workspace to a folder (or swapping a linked workspace's state files); the user links
+// it in Spool's own connect dialog. ⛔ This side never writes `folders` / `workspace_folders` and
+// never touches the folder: it checks, and queues one row in `folder_proposals`.
+// ---------------------------------------------------------------------------------------
+
+fn folder_gate_message(stop: GateStop, rules: &PathGateRules) -> String {
+    match stop {
+        GateStop::Hidden(seg) => t!(
+            "这个文件夹在隐藏位置(路径里「{seg}」这一段以点开头)。AI 不能提议连隐藏位置的文件夹。",
+            "This folder is in a hidden location (the \u{201c}{seg}\u{201d} part of the path starts with a dot). \
+             An AI may not propose linking a hidden folder."
+        ),
+        GateStop::System(root) => {
+            let root = plain_path(&root);
+            t!(
+                "这个文件夹在系统目录 {root} 里。AI 不能提议连系统目录。",
+                "This folder is inside the system folder {root}. An AI may not propose linking system folders."
+            )
+        }
+        GateStop::HomePrivate => {
+            let place = plain_path(&rules.home.join(rules.home_private));
+            t!(
+                "这个文件夹在 {place} 里 —— 那里放的是各个 app 自己的数据。AI 不能提议连那里的文件夹(iCloud 云盘和云盘文件夹除外)。",
+                "This folder is inside {place}, where apps keep their own data. An AI may not propose linking \
+                 a folder there (iCloud Drive and cloud-drive folders are the exception)."
+            )
+        }
+    }
+}
+
+/// The folder half of the path gate: the same rules as for a file (`gate_proposed_path`), and it
+/// must be a folder — not the home folder itself, not a disk's root.
+fn gate_proposed_folder(raw: &str, rules: &PathGateRules) -> Result<std::path::PathBuf, String> {
+    let raw = raw.trim();
+    if raw.is_empty() {
+        return Err(t!("缺少 path —— 要的是这个文件夹在这台电脑上的完整路径。", "path is missing — it is the folder's full path on this computer."));
+    }
+    let written = std::path::Path::new(raw);
+    if !written.is_absolute() {
+        return Err(t!(
+            "要完整路径(比如 /Users/…/论文)。「~」和相对路径都不认。",
+            "Give the full path (e.g. /Users/…/thesis). \u{201c}~\u{201d} and relative paths are not expanded."
+        ));
+    }
+    if let Some(stop) = path_gate_stop(written, rules) {
+        return Err(folder_gate_message(stop, rules));
+    }
+    let resolved = std::fs::canonicalize(written).map_err(|_| {
+        t!(
+            "这个路径上找不到文件夹:{raw}。核对一下有没有打错、是不是挪走了。",
+            "There is no folder at {raw}. Check the path for typos, or whether it has moved."
+        )
+    })?;
+    if !resolved.is_dir() {
+        let shown = plain_path(&resolved);
+        return Err(t!(
+            "{shown} 不是一个文件夹。要连的是整个文件夹(仓库、论文文件夹);单个文件用 propose_attach_file。",
+            "{shown} is not a folder. What gets linked is a whole folder (a repository, a thesis folder); a single \
+             file is propose_attach_file."
+        ));
+    }
+    if let Some(stop) = path_gate_stop(&resolved, rules) {
+        return Err(folder_gate_message(stop, rules));
+    }
+    if resolved == rules.home || resolved.parent().is_none() {
+        let shown = plain_path(&resolved);
+        return Err(t!(
+            "{shown} 是整个用户文件夹 / 整块磁盘,不是一个项目的文件夹。换成那个项目自己的文件夹。",
+            "{shown} is the whole home folder / a whole disk, not one project's folder. Use that project's own folder."
+        ));
+    }
+    Ok(std::path::PathBuf::from(plain_path(&resolved)))
+}
+
+/// The state files as `folder_link` stores them: relative, `/`-separated, each found in `root`.
+fn proposed_state_files(root: &std::path::Path, raw: &[String]) -> Result<Vec<String>, String> {
+    let mut specs: Vec<String> = Vec::new();
+    for r in raw {
+        let r = r.trim();
+        let rel = if std::path::Path::new(r).is_absolute() {
+            // A full path inside the folder is fine; anywhere else is not one of its files.
+            let p = std::fs::canonicalize(r).unwrap_or_else(|_| std::path::PathBuf::from(r));
+            let p = std::path::PathBuf::from(plain_path(&p));
+            match p.strip_prefix(root) {
+                Ok(rel) => rel.to_string_lossy().replace('\\', "/"),
+                Err(_) => {
+                    return Err(t!(
+                        "「{r}」不在这个文件夹里。现状文件要是这个文件夹里面的文件。",
+                        "\u{201c}{r}\u{201d} is not inside that folder. State files have to be files in the folder."
+                    ))
+                }
+            }
+        } else {
+            r.trim_start_matches("./").replace('\\', "/")
+        };
+        specs.push(rel);
+    }
+    if specs.is_empty() {
+        return Err(t!(
+            "state_files 至少要一份 —— 写着「现在在做什么、做到哪」的文件(计划、交接、README)。",
+            "state_files needs at least one file — the one that says what is being done now and how far it has got (a plan, a hand-off, a README)."
+        ));
+    }
+    let specs = crate::folder_link::check_specs(&specs).map_err(|e| {
+        if e == "too_many" {
+            t!("现状文件最多 3 份。挑最能说明现状的那几份。", "At most 3 state files. Pick the ones that say most about where things stand.")
+        } else {
+            t!(
+                "现状文件的写法不对:要相对这个文件夹的路径,用 / 分隔,不能有 .. ,最多一个 *(比如 README.md、plans/HANDOFF_*.md)。",
+                "A state file is written wrong: give a path relative to the folder, `/`-separated, no `..`, at most one `*` \
+                 (README.md, plans/HANDOFF_*.md)."
+            )
+        }
+    })?;
+    for spec in &specs {
+        // The text of a state file is handed to every AI that asks (get_folder_status). A hidden one
+        // is where a `.env` lives: the user may pick it in the connect dialog, an AI may not put it there.
+        if let Some(seg) = spec.split('/').find(|seg| seg.starts_with('.')) {
+            return Err(t!(
+                "「{spec}」在隐藏位置(「{seg}」以点开头)。AI 不能提议隐藏文件当现状文件 —— 它的正文会交给每一个来问的 AI。",
+                "\u{201c}{spec}\u{201d} is in a hidden location (\u{201c}{seg}\u{201d} starts with a dot). An AI may not propose a hidden file \
+                 as a state file \u{2014} its text is handed to every AI that asks."
+            ));
+        }
+        if crate::folder_link::resolve_spec(root, spec).is_none() {
+            return Err(t!(
+                "在这个文件夹里找不到「{spec}」。核对一下路径(相对这个文件夹),或者换一份。",
+                "There is no \u{201c}{spec}\u{201d} in that folder. Check the path (relative to the folder), or pick another file."
+            ));
+        }
+    }
+    Ok(specs)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn propose_link_folder_json(
+    conn: &Connection,
+    rules: &PathGateRules,
+    workspace_title: &str,
+    path: &str,
+    state_files: &[String],
+    main_project: Option<&str>,
+    why: &str,
+    now: i64,
+) -> Result<String, String> {
+    let why = why.trim();
+    if why.is_empty() {
+        return Err(t!(
+            "缺少 why —— 用户在待审卡片上看到的就是这一句,他靠它判断要不要连。",
+            "why is missing — it is the one sentence the user reads on the review card, and what they decide by."
+        ));
+    }
+    let why_len = why.chars().count();
+    if why_len > FILE_REQUEST_WHY_CAP {
+        return Err(t!(
+            "why 太长了({why_len} 字,上限 {FILE_REQUEST_WHY_CAP})。卡片上的一句话就够了。",
+            "why is too long ({why_len} chars, limit {FILE_REQUEST_WHY_CAP}). It is one line on a card."
+        ));
+    }
+    let (ws_id, ws_title) = resolve_workspace(conn, workspace_title)?;
+    let root = gate_proposed_folder(path, rules)?;
+    let folder = root.to_string_lossy().into_owned();
+    let specs = proposed_state_files(&root, state_files)?;
+    let current = crate::folder_link::own_link_summary(conn, &ws_id)?;
+    let kind = match &current {
+        None => "link",
+        Some((linked, _, _)) if std::path::Path::new(linked) == root.as_path() => "state_files",
+        Some((linked, _, _)) => {
+            return Err(t!(
+                "工作区「{ws_title}」已经连着另一个文件夹({linked})。一个工作区只连一个文件夹:要换,请用户先在 Spool 的工作区页面断开它。",
+                "Workspace \u{201c}{ws_title}\u{201d} is already linked to another folder ({linked}). A workspace links one \
+                 folder: to change it, the user unlinks it first on the workspace's page in Spool."
+            ))
+        }
+    };
+    // `threads` is the AI's view: a private project is not one it can name.
+    let primary: Option<(String, String)> = match main_project.map(str::trim).filter(|m| !m.is_empty()) {
+        None => None,
+        Some(mp) => {
+            use rusqlite::OptionalExtension;
+            let hit: Option<(String, String)> = conn
+                .query_row(
+                    "SELECT id, title FROM threads
+                      WHERE workspace_id = ?1 AND deleted_at IS NULL AND status != 'done'
+                        AND lower(trim(title)) = lower(?2)
+                      LIMIT 1",
+                    rusqlite::params![ws_id, mp],
+                    |r| Ok((r.get(0)?, r.get(1)?)),
+                )
+                .optional()
+                .map_err(|e| e.to_string())?;
+            match hit {
+                Some(h) => Some(h),
+                None => {
+                    let mut stmt = conn
+                        .prepare(
+                            "SELECT title FROM threads WHERE workspace_id = ?1 AND deleted_at IS NULL AND status != 'done'
+                              ORDER BY created_at ASC",
+                        )
+                        .map_err(|e| e.to_string())?;
+                    let names: Vec<String> = stmt
+                        .query_map([&ws_id], |r| r.get::<_, String>(0))
+                        .map_err(|e| e.to_string())?
+                        .collect::<Result<_, _>>()
+                        .map_err(|e| e.to_string())?;
+                    return Err(t!(
+                        "工作区「{ws_title}」里没有没完成的项目叫〈{mp}〉。这个工作区里的: {names:?}。不填 main_project 也行。",
+                        "Workspace \u{201c}{ws_title}\u{201d} has no unfinished project called \u{2039}{mp}\u{203a}. Its projects: {names:?}. \
+                         main_project may also be left out."
+                    ));
+                }
+            }
+        }
+    };
+    if let Some((_, current_specs, current_primary)) = &current {
+        let same_primary = primary.as_ref().is_none_or(|(id, _)| current_primary.as_deref() == Some(id.as_str()));
+        if *current_specs == specs && same_primary {
+            return Ok(json!({
+                "queued": false,
+                "already_linked": true,
+                "workspace": ws_title,
+                "folder": folder,
+                "state_files": specs,
+            })
+            .to_string());
+        }
+    }
+    let replaced: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM main.folder_proposals WHERE workspace_id = ?1 AND expires_at > ?2",
+            rusqlite::params![ws_id, now],
+            |r| r.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+    conn.execute("DELETE FROM main.folder_proposals WHERE workspace_id = ?1", [&ws_id])
+        .map_err(|e| t!("写入失败: {e}", "Write failed: {e}"))?;
+    conn.execute(
+        "INSERT INTO main.folder_proposals (id, kind, client, workspace_id, path, state_files,
+                                            primary_thread_id, why, created_at, expires_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+        rusqlite::params![
+            new_id()?,
+            kind,
+            mcp_source_label(),
+            ws_id,
+            folder,
+            serde_json::to_string(&specs).map_err(|e| e.to_string())?,
+            primary.as_ref().map(|(id, _)| id.as_str()),
+            why,
+            now,
+            now + PROPOSAL_TTL_MS
+        ],
+    )
+    .map_err(|e| t!("写入失败: {e}", "Write failed: {e}"))?;
+    Ok(json!({
+        "queued": true,
+        "kind": kind,
+        "workspace": ws_title,
+        "folder": folder,
+        "state_files": specs,
+        "main_project": primary.map(|(_, title)| title),
+        "replaced_earlier": replaced > 0,
+        "expires_in_days": PROPOSAL_TTL_DAYS,
+    })
+    .to_string())
+}
+
 fn propose_attach_file_json(
     conn: &Connection,
     rules: &PathGateRules,
@@ -8953,7 +9225,7 @@ fn tools_descriptor() -> Value {
         {
             // P9Y (task book §3.8). Read-only: what the folder did, not what Spool holds.
             "name": "get_folder_status",
-            "description": "For a project whose workspace is linked to a folder on the user's computer (list_threads shows `folder` on it; every unfinished project of that workspace shares the folder, and `main_project` is the one to write into by default): what changed in that folder since the project and the folder were last brought in line (`last_synced`). Returns the state files the user picked as the ones that say what is being done now — each with changed_since_sync and its text (up to 8000 characters; a docx/pdf only once Spool has read that version) —, every other file added / modified / deleted since then (paths and times only, never contents), and the titles of the commits made since. `ahead: true` means a state file changed: the folder has moved on, and what Spool holds for this project may describe a plan that no longer stands. For a linked project the folder is the authority on the current state; a block that conflicts with its state files is history. To read a file other than the state files, read this folder with your own local file tools; if you have none, ask the user to provide the file in this conversation. Spool cannot link a folder itself — that is the user's own step in Spool, on the workspace page.",
+            "description": "For a project whose workspace is linked to a folder on the user's computer (list_threads shows `folder` on it; every unfinished project of that workspace shares the folder, and `main_project` is the one to write into by default): what changed in that folder since the project and the folder were last brought in line (`last_synced`). Returns the state files the user picked as the ones that say what is being done now — each with changed_since_sync and its text (up to 8000 characters; a docx/pdf only once Spool has read that version) —, every other file added / modified / deleted since then (paths and times only, never contents), and the titles of the commits made since. `ahead: true` means a state file changed: the folder has moved on, and what Spool holds for this project may describe a plan that no longer stands. For a linked project the folder is the authority on the current state; a block that conflicts with its state files is history. To read a file other than the state files, read this folder with your own local file tools; if you have none, ask the user to provide the file in this conversation. To link a folder that is not linked yet (or change a linked workspace's state files), propose_link_folder puts it in front of the user \u{2014} it is linked only once they approve it in Spool.",
             "annotations": { "readOnlyHint": true },
             "inputSchema": {
                 "type": "object",
@@ -9044,6 +9316,31 @@ fn tools_descriptor() -> Value {
                     "why": { "type": "string", "description": "One line, in the user's language: why this file belongs in this project. Required — it is what the user judges the proposal by, shown on the card verbatim. Max 300 characters." }
                 },
                 "required": ["thread_id", "path", "why"],
+                "additionalProperties": false
+            }
+        },
+        {
+            // P15-2 (Ocean 2026-11-06 选甲, HANDOFF §9.2 第 254 条): the one way an AI gets a folder
+            // linked — in front of the user, who links it in Spool's own connect dialog.
+            "name": "propose_link_folder",
+            "description": "Propose linking one of the user's workspaces to a folder on their computer \u{2014} a code repository, a thesis folder, an application folder \u{2014} together with the one to three files in it that say what is being done now and how far it has got (a work plan, a hand-off, a README): the \u{201c}state files\u{201d}. This links NOTHING: it puts a card on Spool's review screen with the workspace, the folder's full path, those files, the main project if you name one, and your reason. The folder is linked only when the user opens that card and goes through Spool's connect dialog, which shows them every file Spool will write into the folder (a SPOOL.md at its root, and optionally one line each in .git/info/exclude, CLAUDE.md and AGENTS.md) and lets them change your choice of state files. Tell the user a folder is waiting for them in Spool; never that it is linked. Once linked, every unfinished project of that workspace shares the folder, list_threads shows `folder` on them and get_folder_status reads it. The same tool changes the state files of a workspace that is already linked to THIS folder (then the card only swaps the files); a workspace linked to a different folder is refused \u{2014} the user unlinks it in Spool first. Refused outright, before anything is queued: not a folder, anything inside a hidden folder, system folders, ~/Library (except iCloud Drive and ~/Library/CloudStorage), the home folder itself, a state file that is not in that folder. A newer proposal for the same workspace replaces the one still waiting. Unanswered proposals expire after 7 days. Requires MCP writes enabled in Spool's settings.",
+            "annotations": { "readOnlyHint": false, "destructiveHint": false, "idempotentHint": false },
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "workspace_title": { "type": "string", "description": "The workspace to link (matched by name, case-insensitive). create_workspace first if the user wants a new one." },
+                    "path": { "type": "string", "description": "Full path of the FOLDER on the user's computer, e.g. /Users/name/thesis. \"~\" and relative paths are not expanded." },
+                    "state_files": {
+                        "type": "array",
+                        "items": { "type": "string" },
+                        "minItems": 1,
+                        "maxItems": 3,
+                        "description": "One to three files inside that folder that say what is being done now, as paths relative to the folder with `/` (README.md, plans/HANDOFF.md). One `*` stands for a date in a dated series (plans/HANDOFF_*.md = always the newest of them). A full path inside the folder is accepted too."
+                    },
+                    "main_project": { "type": "string", "description": "Optional: the project in that workspace an AI working in the folder should write into by default (its title). Omit to leave it to the user." },
+                    "why": { "type": "string", "description": "One line, in the user's language: why this folder belongs to this workspace, and why these files speak for where it stands. Required — shown on the card verbatim. Max 300 characters." }
+                },
+                "required": ["workspace_title", "path", "state_files", "why"],
                 "additionalProperties": false
             }
         },
@@ -9361,7 +9658,7 @@ fn handle_tool_call(params: &Value) -> Value {
             // 项目文件, the 跟进 panel), so the switch closes nothing off to the user.
             "create_thread" | "create_workspace" | "add_block" | "set_thread_summary" | "set_block_gist"
             | "propose_blocks" | "propose_supersede" | "request_file_access"
-            | "propose_attach_file" | "propose_replace_file" | "propose_split"
+            | "propose_attach_file" | "propose_replace_file" | "propose_split" | "propose_link_folder"
             | "suggest_follow_up_item" | "close_follow_up_item" | "mark_folder_synced" => {
                 if !mcp_write_enabled(&dir) {
                     // propose_blocks stores nothing, so a caller could reasonably read the
@@ -9375,7 +9672,7 @@ fn handle_tool_call(params: &Value) -> Value {
                     let why = if matches!(
                         name,
                         "propose_blocks" | "propose_supersede" | "propose_attach_file" | "propose_replace_file"
-                            | "propose_split"
+                            | "propose_split" | "propose_link_folder"
                     ) {
                         ts!(
                             "(它本身不写入,但用户点头就会改库 —— 同一个开关管着它。)",
@@ -9402,6 +9699,29 @@ fn handle_tool_call(params: &Value) -> Value {
                             .and_then(Value::as_str)
                             .ok_or_else(|| t!("缺少 thread_id 参数。", "Missing the thread_id argument."))?,
                         args.get("note").and_then(Value::as_str).unwrap_or(""),
+                        now_ms(),
+                    );
+                }
+                if name == "propose_link_folder" {
+                    let rules = path_gate_rules().ok_or_else(|| {
+                        t!("找不到这台电脑的用户目录,没法核对路径。", "Could not locate the home folder, so the path cannot be checked.")
+                    })?;
+                    let need = |k: &str| {
+                        args.get(k).and_then(Value::as_str).ok_or_else(|| t!("缺少 {k} 参数。", "Missing the {k} argument."))
+                    };
+                    let files: Vec<String> = args
+                        .get("state_files")
+                        .and_then(Value::as_array)
+                        .map(|a| a.iter().filter_map(Value::as_str).map(str::to_string).collect())
+                        .unwrap_or_default();
+                    return propose_link_folder_json(
+                        &conn,
+                        &rules,
+                        need("workspace_title")?,
+                        need("path")?,
+                        &files,
+                        args.get("main_project").and_then(Value::as_str),
+                        args.get("why").and_then(Value::as_str).unwrap_or(""),
                         now_ms(),
                     );
                 }
@@ -9785,6 +10105,45 @@ fn human_headline(name: &str, args: &Value, result: &str) -> Option<String> {
                 )
             } else {
                 t!("在 Spool 里新建了项目〈{title}〉。", "Created the project \u{2039}{title}\u{203a} in Spool.")
+            })
+        }
+        "propose_link_folder" => {
+            let ws = v.get("workspace").and_then(Value::as_str).unwrap_or_default();
+            let folder = v.get("folder").and_then(Value::as_str).unwrap_or_default();
+            let files = v
+                .get("state_files")
+                .and_then(Value::as_array)
+                .map(|a| a.iter().filter_map(Value::as_str).collect::<Vec<_>>().join(ts!("、", ", ")))
+                .unwrap_or_default();
+            if v.get("already_linked").and_then(Value::as_bool) == Some(true) {
+                return Some(t!(
+                    "没有排队:工作区「{ws}」已经连着 {folder},现状文件也正是这几份({files})。",
+                    "Nothing queued: workspace \u{201c}{ws}\u{201d} is already linked to {folder}, with these very state files ({files})."
+                ));
+            }
+            let replaced = if v.get("replaced_earlier").and_then(Value::as_bool) == Some(true) {
+                ts!(" 这个工作区之前那张没处理的提议换成了这一张。", " The earlier proposal for this workspace, still unanswered, was replaced by this one.")
+            } else {
+                ""
+            };
+            Some(if v.get("kind").and_then(Value::as_str) == Some("state_files") {
+                t!(
+                    "还没有换:把工作区「{ws}」的现状文件换成 {files} 的提议已经排进 Spool 的待审面。跟用户说「Spool 里有一条文件夹的提议等你点头」,\
+                     别说已经换好了 —— 他点同意之后才换。{} 天内没处理就作废。{replaced}",
+                    "Nothing has changed yet: the proposal to make {files} the state files of workspace \u{201c}{ws}\u{201d} is queued on \
+                     Spool's review screen. Tell the user \u{201c}there is a folder proposal waiting for you in Spool\u{201d} \u{2014} never that \
+                     it is done; it is only once they approve. Unanswered proposals expire after {} days.{replaced}",
+                    n("expires_in_days")
+                )
+            } else {
+                t!(
+                    "还没有连上:把工作区「{ws}」连到 {folder}(现状文件 {files})的提议已经排进 Spool 的待审面。跟用户说「Spool 里有一个文件夹等你点头」,\
+                     别说已经连好了 —— 他在 Spool 里点「去连接…」、走完那几步才连上。{} 天内没处理就作废。{replaced}",
+                    "Nothing is linked yet: the proposal to link workspace \u{201c}{ws}\u{201d} to {folder} (state files {files}) is queued on \
+                     Spool's review screen. Tell the user \u{201c}there is a folder waiting for you in Spool\u{201d} \u{2014} never that it is \
+                     linked; it is only once they open the card and go through the connect steps. Unanswered proposals expire after {} days.{replaced}",
+                    n("expires_in_days")
+                )
             })
         }
         "create_workspace" => {
@@ -12783,7 +13142,7 @@ fn thread_health_report(
 // ⚠️ Lifted out of the json! literal on 2026-08-09 (DESIGN_MCP_INTENT_ROUTING §4.2 B-2)
 // so that a test can read it. Nothing about the text changed in the move; what changed
 // is that `every_tool_is_reachable_from_the_routing_text` can now see it.
-const INSTRUCTION_BODY: &str = "Spool (思簿) is the user's local context hub. HARD RULE first — naming: talk to the user in project/block titles only; raw ids (sbC2zgTo…) are tool parameters — never say them, never write them into content/annotations (add_block REFUSES such a write outright — nothing is stored; cite blocks via ref_block_id instead). APPLICABILITY BEFORE AUTHORITY: a block is usable only where its scope, time and preconditions still match the task at hand — an approach that worked earlier is not the default now, and something ruled out earlier is a historical fact, not a standing ban; 📖's weight holds only inside the scope and period it was verified for. LINKED FOLDERS: a project list_threads shows with `folder` sits in a workspace the user linked to a folder on their computer (a repository, a thesis folder). For that project the folder is the authority on what is being done now and how far it has got; a block that conflicts with the folder's state files (get_folder_status) is history, not the current plan \u{2014} do not act on it, and do not copy it back into the folder. To read a file other than the state files, read this folder with your own local file tools; if you have none, ask the user to provide the file in this conversation. AUTHORITY (each pack opens with the full rules — this is the digest-sized version): 📖 Reference (institutional sources) = ground truth; 🧩 Synthesis (AI-written essays) = framing, not facts; 🔄 Process (chat traces) = read for the user's evolving questions; 💭 Personal (sourceless entries + note: lines) = the user's own intent, highest signal; ==spans== are user-highlighted. WORKFLOW: cross-project questions (\"最近在忙什么\") → get_digest first; its 📌 anchor lines are capped at 160 chars (a shorter pin is shown whole) — full pinned text via get_blocks(pinned=true) or get_pack(range=pinned). Pick projects with list_threads (watch approx_pack_chars; title_contains resolves a title to its id; the row marked capture_target is where the user's captures go right now \u{2014} the default when they say \u{201c}this project\u{201d} without naming one, confirmed by name before any write); locate topics with search_blocks, then read around a hit with get_blocks(around_block_id=…) or filter pages (pinned / has_annotation / source_contains). find_similar_blocks only reports duplicates — merging is the user's curation. get_pack is one project's full briefing; over budget it keeps the header + pinned + newest blocks and says what it omitted; pass include_ids=true when you will cite or jump from what you read. WRITING (needs the user's consent toggles in Spool settings): you are the one who answers, not a librarian — writing back is for what this conversation produced and the library lacks, not for tidying it up. ONE finding per add_block, with an annotation saying why it matters, and a `gist` \u{2014} one line, 50\u{2013}100 characters, saying what the block is AS A WHOLE. That line is what search hits show beside a block: a long block otherwise comes back as one matching fragment with nothing about the rest of it, and across dozens of projects the hit list is the only way in. It is cheap to write while you are already there and impossible to reconstruct later. Cite the block it builds on via ref_block_id, and say WHY in ref_note \u{2014} one sentence, required on every citation that is not a correction. That sentence is the citation line the user reads; without it the line is a block number and a timestamp. It is not a description of the block you are citing (that block has its own gist) \u{2014} it is what you are pointing at it FOR: \u{201c}the professor replied, the project is back on\u{201d}. create_thread only for a genuinely new topic, into a workspace that exists (create_workspace makes one \u{2014} ask the user first); set_thread_summary refreshes the catalogue card — if refused (user-written), tell the user your suggestion instead of retrying. One case is not a write at all: when a passage the user handed you belongs in several DIFFERENT projects, propose_blocks queues the split for them to approve inside Spool, and saves nothing — pass source_text so the pieces cite the passage they came from, and tell the user \\\"N items are waiting for you in Spool\\\", never that you saved them. Splitting a few findings across projects is that same one case — two add_block calls into two projects is the wrong shape for it, however small it looks. What a project WATCHES is not a block either: it lives in that project's follow-up list, one line per thing, and a block titled 当前跟进 / current follow-up is wrong twice over — it is permanent, and nothing reads it when a follow-up actually runs. Add to that list with suggest_follow_up_item, one call per line, and it waits for the user rather than taking effect. That is also what to do with a question this conversation could not close: an open question you file is read by the NEXT conversation, whereas one you leave in the chat is gone. When a project's lines come back on a read (get_follow_up_brief, get_project_overview, or the counts on list_threads), say what is on them before going further — but not the ones marked raised_today, which the user has already heard about today. Answering one is only half of it: retire it with close_follow_up_item, naming what you found, or it is asked again in the next conversation and by every follow-up run — and say which line you retired, since nobody was asked first. The lines marked standing:true are the ones you may not close at all; they are watches that never complete, so if one looks finished to you, that is something to tell the user, not something to do. When what you are storing came from OUT THERE rather than out of this conversation, say so in the write itself: source_url is the page, retrieved_at (YYYY-MM-DD) is the day you read it, and recheck_after is the day it stops being safe to trust — a deadline, a fee, an entry requirement. Spool then prints that under the block and, once the recheck date passes, marks it as possibly out of date and counts it in get_project_overview's needs_attention.due_for_recheck. Without those dates a page you read today reads as timeless a year from now, and neither you nor the user can tell which of the two it is. When what you write overturns a block already in the library, YOU choose how, and either way it is only a suggestion: in add_block, ref_block_id naming that block plus ref_kind:\"corrects\" when ONE point inside it is wrong and the rest still holds, or ref_kind:\"supersedes\" when your block replaces it WHOLESALE (same project; when the two readings are close, choose corrects), and corrected_quote holding the sentence in it that no longer holds, copied verbatim. Your block is stored at once; the relation waits in Spool's review, where the user picks correct / replace / leave it \u{2014} so say it is waiting for them, never that you corrected or retired anything. A block whose text merely opens with 更正 / Correction does nothing at all: without ref_kind the user is never asked, and the old block keeps rendering as a live conclusion in every future briefing. (propose_blocks items may still carry ref_kind:\"corrects\"; propose_supersede asks the replace question about two blocks that already exist.) A correction the user has accepted leaves one thing behind that nothing else will fix: the old block's `gist` was written when it was created, so it now describes the version that was corrected \u{2014} and that frozen line is exactly what the next search hit shows. Once get_blocks shows the correction (the newer block carries ref_kind corrects), finish the job with set_block_gist on the corrected block: write what actually holds, or pass an empty gist to clear it, because a gist that has gone wrong is read as current and is worse than none. The same tool is how a block written before gists existed gets one at all. If it refuses, the user wrote that line themselves \u{2014} tell them what you would have written instead of retrying. And a yes covers the one thing you asked for and nothing else: being let into a file is not permission to write blocks. A file you cannot read is a request you have not made yet — never tell the user to send it another way, Spool already has it; ask for it with request_file_access(attachment_id). A path is never something you store: propose_attach_file / propose_replace_file only put a file in front of the user, who approves it inside Spool — until then nothing is attached or replaced, so say it is waiting for them. If you ever compress a pack: keep the skeleton, every note: line, sourceless entry and ==span== verbatim; dedupe only the Full Record; store via add_block, never as a replacement.";
+const INSTRUCTION_BODY: &str = "Spool (思簿) is the user's local context hub. HARD RULE first — naming: talk to the user in project/block titles only; raw ids (sbC2zgTo…) are tool parameters — never say them, never write them into content/annotations (add_block REFUSES such a write outright — nothing is stored; cite blocks via ref_block_id instead). APPLICABILITY BEFORE AUTHORITY: a block is usable only where its scope, time and preconditions still match the task at hand — an approach that worked earlier is not the default now, and something ruled out earlier is a historical fact, not a standing ban; 📖's weight holds only inside the scope and period it was verified for. LINKED FOLDERS: a project list_threads shows with `folder` sits in a workspace the user linked to a folder on their computer (a repository, a thesis folder). For that project the folder is the authority on what is being done now and how far it has got; a block that conflicts with the folder's state files (get_folder_status) is history, not the current plan \u{2014} do not act on it, and do not copy it back into the folder. To read a file other than the state files, read this folder with your own local file tools; if you have none, ask the user to provide the file in this conversation. Only the user links a folder: propose_link_folder puts one in front of them (also how to change a linked workspace's state files), and nothing is linked until they approve it in Spool. AUTHORITY (each pack opens with the full rules — this is the digest-sized version): 📖 Reference (institutional sources) = ground truth; 🧩 Synthesis (AI-written essays) = framing, not facts; 🔄 Process (chat traces) = read for the user's evolving questions; 💭 Personal (sourceless entries + note: lines) = the user's own intent, highest signal; ==spans== are user-highlighted. WORKFLOW: cross-project questions (\"最近在忙什么\") → get_digest first; its 📌 anchor lines are capped at 160 chars (a shorter pin is shown whole) — full pinned text via get_blocks(pinned=true) or get_pack(range=pinned). Pick projects with list_threads (watch approx_pack_chars; title_contains resolves a title to its id; the row marked capture_target is where the user's captures go right now \u{2014} the default when they say \u{201c}this project\u{201d} without naming one, confirmed by name before any write); locate topics with search_blocks, then read around a hit with get_blocks(around_block_id=…) or filter pages (pinned / has_annotation / source_contains). find_similar_blocks only reports duplicates — merging is the user's curation. get_pack is one project's full briefing; over budget it keeps the header + pinned + newest blocks and says what it omitted; pass include_ids=true when you will cite or jump from what you read. WRITING (needs the user's consent toggles in Spool settings): you are the one who answers, not a librarian — writing back is for what this conversation produced and the library lacks, not for tidying it up. ONE finding per add_block, with an annotation saying why it matters, and a `gist` \u{2014} one line, 50\u{2013}100 characters, saying what the block is AS A WHOLE. That line is what search hits show beside a block: a long block otherwise comes back as one matching fragment with nothing about the rest of it, and across dozens of projects the hit list is the only way in. It is cheap to write while you are already there and impossible to reconstruct later. Cite the block it builds on via ref_block_id, and say WHY in ref_note \u{2014} one sentence, required on every citation that is not a correction. That sentence is the citation line the user reads; without it the line is a block number and a timestamp. It is not a description of the block you are citing (that block has its own gist) \u{2014} it is what you are pointing at it FOR: \u{201c}the professor replied, the project is back on\u{201d}. create_thread only for a genuinely new topic, into a workspace that exists (create_workspace makes one \u{2014} ask the user first); set_thread_summary refreshes the catalogue card — if refused (user-written), tell the user your suggestion instead of retrying. One case is not a write at all: when a passage the user handed you belongs in several DIFFERENT projects, propose_blocks queues the split for them to approve inside Spool, and saves nothing — pass source_text so the pieces cite the passage they came from, and tell the user \\\"N items are waiting for you in Spool\\\", never that you saved them. Splitting a few findings across projects is that same one case — two add_block calls into two projects is the wrong shape for it, however small it looks. What a project WATCHES is not a block either: it lives in that project's follow-up list, one line per thing, and a block titled 当前跟进 / current follow-up is wrong twice over — it is permanent, and nothing reads it when a follow-up actually runs. Add to that list with suggest_follow_up_item, one call per line, and it waits for the user rather than taking effect. That is also what to do with a question this conversation could not close: an open question you file is read by the NEXT conversation, whereas one you leave in the chat is gone. When a project's lines come back on a read (get_follow_up_brief, get_project_overview, or the counts on list_threads), say what is on them before going further — but not the ones marked raised_today, which the user has already heard about today. Answering one is only half of it: retire it with close_follow_up_item, naming what you found, or it is asked again in the next conversation and by every follow-up run — and say which line you retired, since nobody was asked first. The lines marked standing:true are the ones you may not close at all; they are watches that never complete, so if one looks finished to you, that is something to tell the user, not something to do. When what you are storing came from OUT THERE rather than out of this conversation, say so in the write itself: source_url is the page, retrieved_at (YYYY-MM-DD) is the day you read it, and recheck_after is the day it stops being safe to trust — a deadline, a fee, an entry requirement. Spool then prints that under the block and, once the recheck date passes, marks it as possibly out of date and counts it in get_project_overview's needs_attention.due_for_recheck. Without those dates a page you read today reads as timeless a year from now, and neither you nor the user can tell which of the two it is. When what you write overturns a block already in the library, YOU choose how, and either way it is only a suggestion: in add_block, ref_block_id naming that block plus ref_kind:\"corrects\" when ONE point inside it is wrong and the rest still holds, or ref_kind:\"supersedes\" when your block replaces it WHOLESALE (same project; when the two readings are close, choose corrects), and corrected_quote holding the sentence in it that no longer holds, copied verbatim. Your block is stored at once; the relation waits in Spool's review, where the user picks correct / replace / leave it \u{2014} so say it is waiting for them, never that you corrected or retired anything. A block whose text merely opens with 更正 / Correction does nothing at all: without ref_kind the user is never asked, and the old block keeps rendering as a live conclusion in every future briefing. (propose_blocks items may still carry ref_kind:\"corrects\"; propose_supersede asks the replace question about two blocks that already exist.) A correction the user has accepted leaves one thing behind that nothing else will fix: the old block's `gist` was written when it was created, so it now describes the version that was corrected \u{2014} and that frozen line is exactly what the next search hit shows. Once get_blocks shows the correction (the newer block carries ref_kind corrects), finish the job with set_block_gist on the corrected block: write what actually holds, or pass an empty gist to clear it, because a gist that has gone wrong is read as current and is worse than none. The same tool is how a block written before gists existed gets one at all. If it refuses, the user wrote that line themselves \u{2014} tell them what you would have written instead of retrying. And a yes covers the one thing you asked for and nothing else: being let into a file is not permission to write blocks. A file you cannot read is a request you have not made yet — never tell the user to send it another way, Spool already has it; ask for it with request_file_access(attachment_id). A path is never something you store: propose_attach_file / propose_replace_file only put a file in front of the user, who approves it inside Spool — until then nothing is attached or replaced, so say it is waiting for them. If you ever compress a pack: keep the skeleton, every note: line, sourceless entry and ==span== verbatim; dedupe only the Full Record; store via add_block, never as a replacement.";
 
 const OPENERS: &str = "The user speaks plain language, not tool names. Typical openers, \
 and what to call:\n\
@@ -12856,6 +13215,10 @@ A project marked done is not split: remind the user to reopen it in Spool first\
 list_threads shows with `folder` and folder_changed_since_sync above 0 \u{2192} get_folder_status \
 (what changed in its linked folder since the last sync, the state files' text, commit titles) \u{2014} \
 the folder is the authority on what is being done now; Spool's blocks that conflict with it are history\n\
+\"把这个仓库 / 文件夹连到 Spool\" / \"关联到〈某个工作区〉\" / \"link this repo to my thesis workspace\" \u{2192} \
+propose_link_folder (the workspace, the folder's full path, 1 \u{2013} 3 state files that say what is being done now, why) \
+\u{2014} it waits for the user to approve in Spool, so say a folder is waiting for them there, never that it is linked. \
+\"换一下 Spool 读的现状文件\" / \"change which files Spool reads for where things stand\" \u{2192} the same tool on the linked workspace\n\
 \"把这次仓库的变化记回 Spool\" / \"sync Spool with the repo\" \u{2192} get_folder_status, then write back \
 one item per change of direction or decision (add_block with ref_kind supersedes / corrects naming the \
 block it overturns), then mark_folder_synced with one sentence on what you brought across\n\
@@ -13388,6 +13751,8 @@ mod tests {
                 "request_file_access",
                 // P6-2：两个文件提议同样只排队，但用户点头就挂上一个文件、让 AI 读得到。
                 "propose_attach_file",
+                // P15-2：只排队，但用户点头就往他的文件夹里写 SPOOL.md、让 AI 读那几份现状文件。
+                "propose_link_folder",
                 "propose_replace_file",
                 "suggest_follow_up_item",
                 "close_follow_up_item",
@@ -20025,6 +20390,110 @@ mod tests {
         let _ = std::fs::remove_dir_all(&base);
     }
 
+    // P15-2 (Ocean 2026-11-06 选甲, §9.2 第 254 条): an AI proposes a folder; nothing is linked here.
+    #[test]
+    fn propose_link_folder_queues_one_card_per_workspace_and_refuses_what_it_cannot_link() {
+        store_lang(Lang::En);
+        let dir = std::env::temp_dir().join(format!("spool-p15-link-{}", std::process::id()));
+        split_library(&dir, true, "en");
+        let home = std::fs::canonicalize(&dir).unwrap().join("home");
+        let thesis = home.join("thesis");
+        for (rel, body) in [
+            ("README.md", "readme"),
+            ("plans/HANDOFF_2026-11-01.md", "old"),
+            ("plans/HANDOFF_2026-11-05.md", "new"),
+            ("notes.txt", "notes"),
+            ("a.md", "a"),
+            (".secret/x.md", "x"),
+        ] {
+            std::fs::create_dir_all(thesis.join(rel).parent().unwrap()).unwrap();
+            std::fs::write(thesis.join(rel), body).unwrap();
+        }
+        std::fs::create_dir_all(home.join("other")).unwrap();
+        std::fs::create_dir_all(home.join(".hidden/repo")).unwrap();
+        let rules = PathGateRules { home: home.clone(), system_roots: vec![], home_private: "Library", home_private_open: &["Mobile Documents", "CloudStorage"] };
+        let conn = open_db_rw(&dir).unwrap();
+        let now = now_ms();
+        let folder = thesis.to_string_lossy().into_owned();
+        let files = |xs: &[&str]| xs.iter().map(|x| x.to_string()).collect::<Vec<_>>();
+        let rows = || -> Vec<(String, String, String, Option<String>)> {
+            let mut st = conn.prepare("SELECT kind, path, state_files, primary_thread_id FROM main.folder_proposals ORDER BY created_at").unwrap();
+            st.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))).unwrap().collect::<Result<_, _>>().unwrap()
+        };
+
+        // A link: paths normalised (./, a full path inside, a dated series), the main project by title.
+        let full_notes = thesis.join("notes.txt").to_string_lossy().into_owned();
+        let out = propose_link_folder_json(&conn, &rules, "work", &folder, &files(&["./README.md", &full_notes, "plans/HANDOFF_*.md"]), Some("long project"), "the thesis lives here", now).unwrap();
+        let v: Value = serde_json::from_str(&out).unwrap();
+        assert_eq!((v["queued"].clone(), v["kind"].clone(), v["replaced_earlier"].clone()), (json!(true), json!("link"), json!(false)), "{v}");
+        assert_eq!(v["state_files"], json!(["README.md", "notes.txt", "plans/HANDOFF_*.md"]));
+        assert_eq!(v["main_project"], json!("Long project"));
+        assert_eq!(rows(), vec![("link".into(), folder.clone(), r#"["README.md","notes.txt","plans/HANDOFF_*.md"]"#.into(), Some("thLong".into()))]);
+        let line = human_headline("propose_link_folder", &json!({}), &out).unwrap();
+        assert!(line.starts_with("Nothing is linked yet") && line.contains("never that it is linked"), "{line}");
+        // Nothing went into the folder or the link tables.
+        assert!(!thesis.join("SPOOL.md").exists());
+        let linked: i64 = conn.query_row("SELECT COUNT(*) FROM main.workspace_folders", [], |r| r.get(0)).unwrap();
+        assert_eq!(linked, 0);
+
+        // A second proposal for the same workspace replaces the first.
+        let out = propose_link_folder_json(&conn, &rules, "Work", &folder, &files(&["README.md"]), None, "just the readme", now).unwrap();
+        assert_eq!(serde_json::from_str::<Value>(&out).unwrap()["replaced_earlier"], json!(true));
+        assert_eq!(rows().len(), 1);
+        assert!(human_headline("propose_link_folder", &json!({}), &out).unwrap().contains("was replaced by this one"));
+
+        // Refused, nothing queued.
+        let refuse = |path: &str, fs: &[&str], main: Option<&str>, why: &str| -> String {
+            propose_link_folder_json(&conn, &rules, "Work", path, &files(fs), main, why, now).unwrap_err()
+        };
+        let readme = thesis.join("README.md").to_string_lossy().into_owned();
+        assert!(refuse(&readme, &["README.md"], None, "w").contains("is not a folder"));
+        assert!(refuse(&home.join(".hidden/repo").to_string_lossy(), &["x"], None, "w").contains("hidden location"));
+        assert!(refuse(&home.to_string_lossy(), &["x"], None, "w").contains("whole home folder"));
+        assert!(refuse("thesis", &["README.md"], None, "w").contains("full path"));
+        assert!(refuse(&folder, &["missing.md"], None, "w").contains("no \u{201c}missing.md\u{201d}"));
+        assert!(refuse(&folder, &[".secret/x.md"], None, "w").contains("may not propose a hidden file"));
+        assert!(refuse(&folder, &[".env"], None, "w").contains("may not propose a hidden file"));
+        assert!(refuse(&folder, &["../other/x.md"], None, "w").contains("written wrong"));
+        assert!(refuse(&folder, &["README.md", "a.md", "notes.txt", "plans/HANDOFF_*.md"], None, "w").contains("At most 3"));
+        assert!(refuse(&folder, &[], None, "w").contains("at least one"));
+        assert!(refuse(&folder, &[&home.join("other/x.md").to_string_lossy()], None, "w").contains("not inside that folder"));
+        assert!(refuse(&folder, &["README.md"], None, "  ").contains("why is missing"));
+        // The private project is not one the AI can name — nor is it listed among the others.
+        let err = refuse(&folder, &["README.md"], Some("Secret project"), "w");
+        assert!(err.contains("no unfinished project called") && err.contains("[\"Long project\", \"Other project\"]"), "{err}");
+        assert!(propose_link_folder_json(&conn, &rules, "Nowhere", &folder, &files(&["README.md"]), None, "w", now).unwrap_err().contains("create_workspace"));
+        assert_eq!(rows().len(), 1);
+
+        // Already linked to this folder: the same files are nothing to queue, other files are a swap.
+        conn.execute_batch(&format!(
+            "DELETE FROM main.folder_proposals;
+             INSERT INTO main.folders (id, path, snapshot, synced_at, created_at) VALUES ('fT', '{folder}', '{{}}', 1, 1);
+             INSERT INTO main.workspace_folders (workspace_id, folder_id, primary_thread_id, state_files, created_at)
+               VALUES ('wsWork', 'fT', 'thLong', '[\"README.md\"]', 1);"
+        ))
+        .unwrap();
+        let out = propose_link_folder_json(&conn, &rules, "Work", &folder, &files(&["README.md"]), Some("Long project"), "same", now).unwrap();
+        assert_eq!(serde_json::from_str::<Value>(&out).unwrap()["queued"], json!(false));
+        assert!(human_headline("propose_link_folder", &json!({}), &out).unwrap().starts_with("Nothing queued"));
+        assert!(rows().is_empty());
+        let out = propose_link_folder_json(&conn, &rules, "Work", &folder, &files(&["README.md", "a.md"]), None, "add the plan", now).unwrap();
+        assert_eq!(serde_json::from_str::<Value>(&out).unwrap()["kind"], json!("state_files"));
+        assert!(human_headline("propose_link_folder", &json!({}), &out).unwrap().starts_with("Nothing has changed yet"));
+        // …and a different folder for a linked workspace is the user's to unlink first.
+        let other = home.join("other").to_string_lossy().into_owned();
+        std::fs::write(home.join("other/x.md"), "x").unwrap();
+        assert!(refuse(&other, &["x.md"], None, "w").contains("already linked to another folder"));
+        drop(conn);
+
+        // The write switch covers it.
+        split_library(&dir, false, "en");
+        let out = ai_call(&dir, "tools/call", &json!({ "name": "propose_link_folder", "arguments": {
+            "workspace_title": "Work", "path": "/x", "state_files": ["a.md"], "why": "w" } }));
+        assert!(out.contains("has not allowed MCP writes"), "{out}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     // P15-3 (Ocean 2026-11-06, §9.2 第 254 条): the project captures go into is the default for
     // 「这个项目」, and the AI is told which it is — unless it is private.
     #[test]
@@ -20140,7 +20609,7 @@ mod tests {
         let dir=std::env::temp_dir().join(format!("spool-p9y-withdrawn-handoff-{}",std::process::id()));
         split_library(&dir,false,"en");
         let listed=|dir:&std::path::Path| -> Value { serde_json::from_str(&ai_call(dir,"tools/list",&json!({}))).unwrap() };
-        assert_eq!(listed(&dir)["tools"].as_array().unwrap().len(), 29);
+        assert_eq!(listed(&dir)["tools"].as_array().unwrap().len(), 30);
         TEST_ENGINE_RUN.with(|e|e.set(true));
         let engine=listed(&dir);
         TEST_ENGINE_RUN.with(|e|e.set(false));
