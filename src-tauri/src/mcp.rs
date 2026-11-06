@@ -1765,7 +1765,8 @@ fn list_threads_json(conn: &Connection, title_contains: Option<&str>) -> Result<
                     COALESCE(ac.files_locked, 0),
                     COALESCE(fu.waiting, 0),
                     COALESCE(ic.chars, 0),
-                    COALESCE(ic.pictures, 0)
+                    COALESCE(ic.pictures, 0),
+                    t.is_capture_target
              FROM threads t
              JOIN workspaces w ON w.id = t.workspace_id
              -- v22 (§8.5): two counters off one pass over the follow-up list. This call is
@@ -1814,7 +1815,8 @@ fn list_threads_json(conn: &Connection, title_contains: Option<&str>) -> Result<
             let has_summary = summary.as_deref().map(str::trim).is_some_and(|s| !s.is_empty());
             let summary_source: Option<String> = r.get(9)?;
             let last_block_at: Option<i64> = r.get(10)?;
-            Ok(json!({
+            let capture_target: bool = r.get::<_, i64>(17)? != 0;
+            let mut row = json!({
                 "thread_id": r.get::<_, String>(0)?,
                 "title": r.get::<_, String>(1)?,
                 "status": r.get::<_, String>(2)?,
@@ -1874,7 +1876,15 @@ fn list_threads_json(conn: &Connection, title_contains: Option<&str>) -> Result<
                 // request_file_access exists for. Not "files you cannot see": a file with no
                 // extractable text is nobody's to unlock.
                 "files_locked": r.get::<_, i64>(13)?,
-            }))
+            });
+            // P15-3 (Ocean 2026-11-06, §9.2 第 254 条): the project the user's captures go into
+            // right now — the one they turned 「捕捉到此」 on for, ● in the menu bar. Only on that
+            // row, like `folder`. ⚠️ `threads` is the AI's view: a private target is not in it, so
+            // it is never marked and never hinted at.
+            if capture_target {
+                row["capture_target"] = json!(true);
+            }
+            Ok(row)
         })
         .map_err(|e| e.to_string())?
         .collect::<Result<Vec<Value>, _>>()
@@ -8603,7 +8613,7 @@ fn tools_descriptor() -> Value {
     json!([
         {
             "name": "list_threads",
-            "description": "List every workspace and live project in Spool (思簿), with project ids, status, one-line summary, summary_source ('user' = a summary you may never overwrite / 'mcp' = AI-written, rewritable / null = none yet), block and pinned counts and approx_pack_chars. Two clocks per project: last_block_at is when a block was last added (null if the project has none) and is what the rows are ordered by inside each workspace; updated_at moves on any change at all — an AI-written summary, an approved change to what the project watches. Neither distinguishes your own writes from the user's. Cheap counters ride along so you need not ask project by project: following_up plus open_follow_up_lines (how many things this project is watching for on the open web — read them with get_follow_up_brief), follow_up_waiting_for_user (lines an AI proposed that nobody has ruled on yet, sitting on Spool's review screen), files (how many files the user put here) and files_locked (how many of those hold text you have not been let into — request_file_access is how you ask). approx_pack_chars estimates the WHOLE pack (block text + annotations + inlined attachment text + the fixed skeleton) — compare it straight against get_pack's max_chars. A project whose workspace is linked to a folder on the user's computer also carries `folder` (its path) and folder_changed_since_sync (how many of its state files changed since the project and the folder were last in line — above 0, read get_folder_status before trusting what Spool holds about the current plan). Call this first: both to pick a project and to budget reads. Pass title_contains to resolve a known title straight to its id. Ids are tool parameters only; when talking to the user, name projects by their titles.",
+            "description": "List every workspace and live project in Spool (思簿), with project ids, status, one-line summary, summary_source ('user' = a summary you may never overwrite / 'mcp' = AI-written, rewritable / null = none yet), block and pinned counts and approx_pack_chars. Two clocks per project: last_block_at is when a block was last added (null if the project has none) and is what the rows are ordered by inside each workspace; updated_at moves on any change at all — an AI-written summary, an approved change to what the project watches. Neither distinguishes your own writes from the user's. Cheap counters ride along so you need not ask project by project: following_up plus open_follow_up_lines (how many things this project is watching for on the open web — read them with get_follow_up_brief), follow_up_waiting_for_user (lines an AI proposed that nobody has ruled on yet, sitting on Spool's review screen), files (how many files the user put here) and files_locked (how many of those hold text you have not been let into — request_file_access is how you ask). approx_pack_chars estimates the WHOLE pack (block text + annotations + inlined attachment text + the fixed skeleton) — compare it straight against get_pack's max_chars. A project whose workspace is linked to a folder on the user's computer also carries `folder` (its path) and folder_changed_since_sync (how many of its state files changed since the project and the folder were last in line — above 0, read get_folder_status before trusting what Spool holds about the current plan). The project the user's captures currently go into carries capture_target: true (only that row has the field) \u{2014} when the user says \u{201c}this project\u{201d} / \u{201c}这个项目\u{201d} / \u{201c}save this\u{201d} without naming one, it is the one they most likely mean: read it straight away, but say its name and wait for a yes before writing into it. Call this first: both to pick a project and to budget reads. Pass title_contains to resolve a known title straight to its id. Ids are tool parameters only; when talking to the user, name projects by their titles.",
             "annotations": { "readOnlyHint": true },
             "inputSchema": {
                 "type": "object",
@@ -9614,10 +9624,23 @@ fn human_headline(name: &str, args: &Value, result: &str) -> Option<String> {
                 .iter()
                 .filter_map(|r| r.get("workspace").and_then(Value::as_str))
                 .collect();
+            // P15-3: say the capture target in words — the field is easy to miss in sixty rows.
+            let target = rows
+                .iter()
+                .find(|r| r.get("capture_target").and_then(Value::as_bool) == Some(true))
+                .map(|r| {
+                    let title = r.get("title").and_then(Value::as_str).unwrap_or_default();
+                    let ws = r.get("workspace").and_then(Value::as_str).unwrap_or_default();
+                    t!(
+                        " 用户现在的捕捉目标是〈{title}〉（工作区「{ws}」）：用户说「这个项目」「存进去」却没点名时，指的多半是它 —— 读可以直接读，写之前先说出这个名字、等用户点头。",
+                        " The user's capture target right now is \u{2039}{title}\u{203a} (workspace \u{201c}{ws}\u{201d}): when they say \u{201c}this project\u{201d} or \u{201c}save this\u{201d} without naming one, it is most likely the one they mean \u{2014} read it straight away, but before writing into it say its name and wait for a yes."
+                    )
+                })
+                .unwrap_or_default();
             // R7: under title_contains these rows are a search result, not the library.
             // "库里…0 个项目" for a miss was flatly false, and it is the kind of sentence a
             // client repeats to the user word for word.
-            match args.get("title_contains").and_then(Value::as_str) {
+            let line = match args.get("title_contains").and_then(Value::as_str) {
                 Some(q) => Some(t!(
                     "找了一遍标题带「{}」的项目:{} 个,分布在 {} 个工作区。",
                     "Looked for projects with \u{201c}{}\u{201d} in the title: {} across {} workspace(s).",
@@ -9631,7 +9654,8 @@ fn human_headline(name: &str, args: &Value, result: &str) -> Option<String> {
                     rows.len(),
                     workspaces.len()
                 )),
-            }
+            };
+            line.map(|l| l + &target)
         }
         "search_blocks" => {
             let att = n("attachment_total");
@@ -12759,13 +12783,16 @@ fn thread_health_report(
 // ⚠️ Lifted out of the json! literal on 2026-08-09 (DESIGN_MCP_INTENT_ROUTING §4.2 B-2)
 // so that a test can read it. Nothing about the text changed in the move; what changed
 // is that `every_tool_is_reachable_from_the_routing_text` can now see it.
-const INSTRUCTION_BODY: &str = "Spool (思簿) is the user's local context hub. HARD RULE first — naming: talk to the user in project/block titles only; raw ids (sbC2zgTo…) are tool parameters — never say them, never write them into content/annotations (add_block REFUSES such a write outright — nothing is stored; cite blocks via ref_block_id instead). APPLICABILITY BEFORE AUTHORITY: a block is usable only where its scope, time and preconditions still match the task at hand — an approach that worked earlier is not the default now, and something ruled out earlier is a historical fact, not a standing ban; 📖's weight holds only inside the scope and period it was verified for. LINKED FOLDERS: a project list_threads shows with `folder` sits in a workspace the user linked to a folder on their computer (a repository, a thesis folder). For that project the folder is the authority on what is being done now and how far it has got; a block that conflicts with the folder's state files (get_folder_status) is history, not the current plan \u{2014} do not act on it, and do not copy it back into the folder. To read a file other than the state files, read this folder with your own local file tools; if you have none, ask the user to provide the file in this conversation. AUTHORITY (each pack opens with the full rules — this is the digest-sized version): 📖 Reference (institutional sources) = ground truth; 🧩 Synthesis (AI-written essays) = framing, not facts; 🔄 Process (chat traces) = read for the user's evolving questions; 💭 Personal (sourceless entries + note: lines) = the user's own intent, highest signal; ==spans== are user-highlighted. WORKFLOW: cross-project questions (\"最近在忙什么\") → get_digest first; its 📌 anchor lines are capped at 160 chars (a shorter pin is shown whole) — full pinned text via get_blocks(pinned=true) or get_pack(range=pinned). Pick projects with list_threads (watch approx_pack_chars; title_contains resolves a title to its id); locate topics with search_blocks, then read around a hit with get_blocks(around_block_id=…) or filter pages (pinned / has_annotation / source_contains). find_similar_blocks only reports duplicates — merging is the user's curation. get_pack is one project's full briefing; over budget it keeps the header + pinned + newest blocks and says what it omitted; pass include_ids=true when you will cite or jump from what you read. WRITING (needs the user's consent toggles in Spool settings): you are the one who answers, not a librarian — writing back is for what this conversation produced and the library lacks, not for tidying it up. ONE finding per add_block, with an annotation saying why it matters, and a `gist` \u{2014} one line, 50\u{2013}100 characters, saying what the block is AS A WHOLE. That line is what search hits show beside a block: a long block otherwise comes back as one matching fragment with nothing about the rest of it, and across dozens of projects the hit list is the only way in. It is cheap to write while you are already there and impossible to reconstruct later. Cite the block it builds on via ref_block_id, and say WHY in ref_note \u{2014} one sentence, required on every citation that is not a correction. That sentence is the citation line the user reads; without it the line is a block number and a timestamp. It is not a description of the block you are citing (that block has its own gist) \u{2014} it is what you are pointing at it FOR: \u{201c}the professor replied, the project is back on\u{201d}. create_thread only for a genuinely new topic, into a workspace that exists (create_workspace makes one \u{2014} ask the user first); set_thread_summary refreshes the catalogue card — if refused (user-written), tell the user your suggestion instead of retrying. One case is not a write at all: when a passage the user handed you belongs in several DIFFERENT projects, propose_blocks queues the split for them to approve inside Spool, and saves nothing — pass source_text so the pieces cite the passage they came from, and tell the user \\\"N items are waiting for you in Spool\\\", never that you saved them. Splitting a few findings across projects is that same one case — two add_block calls into two projects is the wrong shape for it, however small it looks. What a project WATCHES is not a block either: it lives in that project's follow-up list, one line per thing, and a block titled 当前跟进 / current follow-up is wrong twice over — it is permanent, and nothing reads it when a follow-up actually runs. Add to that list with suggest_follow_up_item, one call per line, and it waits for the user rather than taking effect. That is also what to do with a question this conversation could not close: an open question you file is read by the NEXT conversation, whereas one you leave in the chat is gone. When a project's lines come back on a read (get_follow_up_brief, get_project_overview, or the counts on list_threads), say what is on them before going further — but not the ones marked raised_today, which the user has already heard about today. Answering one is only half of it: retire it with close_follow_up_item, naming what you found, or it is asked again in the next conversation and by every follow-up run — and say which line you retired, since nobody was asked first. The lines marked standing:true are the ones you may not close at all; they are watches that never complete, so if one looks finished to you, that is something to tell the user, not something to do. When what you are storing came from OUT THERE rather than out of this conversation, say so in the write itself: source_url is the page, retrieved_at (YYYY-MM-DD) is the day you read it, and recheck_after is the day it stops being safe to trust — a deadline, a fee, an entry requirement. Spool then prints that under the block and, once the recheck date passes, marks it as possibly out of date and counts it in get_project_overview's needs_attention.due_for_recheck. Without those dates a page you read today reads as timeless a year from now, and neither you nor the user can tell which of the two it is. When what you write overturns a block already in the library, YOU choose how, and either way it is only a suggestion: in add_block, ref_block_id naming that block plus ref_kind:\"corrects\" when ONE point inside it is wrong and the rest still holds, or ref_kind:\"supersedes\" when your block replaces it WHOLESALE (same project; when the two readings are close, choose corrects), and corrected_quote holding the sentence in it that no longer holds, copied verbatim. Your block is stored at once; the relation waits in Spool's review, where the user picks correct / replace / leave it \u{2014} so say it is waiting for them, never that you corrected or retired anything. A block whose text merely opens with 更正 / Correction does nothing at all: without ref_kind the user is never asked, and the old block keeps rendering as a live conclusion in every future briefing. (propose_blocks items may still carry ref_kind:\"corrects\"; propose_supersede asks the replace question about two blocks that already exist.) A correction the user has accepted leaves one thing behind that nothing else will fix: the old block's `gist` was written when it was created, so it now describes the version that was corrected \u{2014} and that frozen line is exactly what the next search hit shows. Once get_blocks shows the correction (the newer block carries ref_kind corrects), finish the job with set_block_gist on the corrected block: write what actually holds, or pass an empty gist to clear it, because a gist that has gone wrong is read as current and is worse than none. The same tool is how a block written before gists existed gets one at all. If it refuses, the user wrote that line themselves \u{2014} tell them what you would have written instead of retrying. And a yes covers the one thing you asked for and nothing else: being let into a file is not permission to write blocks. A file you cannot read is a request you have not made yet — never tell the user to send it another way, Spool already has it; ask for it with request_file_access(attachment_id). A path is never something you store: propose_attach_file / propose_replace_file only put a file in front of the user, who approves it inside Spool — until then nothing is attached or replaced, so say it is waiting for them. If you ever compress a pack: keep the skeleton, every note: line, sourceless entry and ==span== verbatim; dedupe only the Full Record; store via add_block, never as a replacement.";
+const INSTRUCTION_BODY: &str = "Spool (思簿) is the user's local context hub. HARD RULE first — naming: talk to the user in project/block titles only; raw ids (sbC2zgTo…) are tool parameters — never say them, never write them into content/annotations (add_block REFUSES such a write outright — nothing is stored; cite blocks via ref_block_id instead). APPLICABILITY BEFORE AUTHORITY: a block is usable only where its scope, time and preconditions still match the task at hand — an approach that worked earlier is not the default now, and something ruled out earlier is a historical fact, not a standing ban; 📖's weight holds only inside the scope and period it was verified for. LINKED FOLDERS: a project list_threads shows with `folder` sits in a workspace the user linked to a folder on their computer (a repository, a thesis folder). For that project the folder is the authority on what is being done now and how far it has got; a block that conflicts with the folder's state files (get_folder_status) is history, not the current plan \u{2014} do not act on it, and do not copy it back into the folder. To read a file other than the state files, read this folder with your own local file tools; if you have none, ask the user to provide the file in this conversation. AUTHORITY (each pack opens with the full rules — this is the digest-sized version): 📖 Reference (institutional sources) = ground truth; 🧩 Synthesis (AI-written essays) = framing, not facts; 🔄 Process (chat traces) = read for the user's evolving questions; 💭 Personal (sourceless entries + note: lines) = the user's own intent, highest signal; ==spans== are user-highlighted. WORKFLOW: cross-project questions (\"最近在忙什么\") → get_digest first; its 📌 anchor lines are capped at 160 chars (a shorter pin is shown whole) — full pinned text via get_blocks(pinned=true) or get_pack(range=pinned). Pick projects with list_threads (watch approx_pack_chars; title_contains resolves a title to its id; the row marked capture_target is where the user's captures go right now \u{2014} the default when they say \u{201c}this project\u{201d} without naming one, confirmed by name before any write); locate topics with search_blocks, then read around a hit with get_blocks(around_block_id=…) or filter pages (pinned / has_annotation / source_contains). find_similar_blocks only reports duplicates — merging is the user's curation. get_pack is one project's full briefing; over budget it keeps the header + pinned + newest blocks and says what it omitted; pass include_ids=true when you will cite or jump from what you read. WRITING (needs the user's consent toggles in Spool settings): you are the one who answers, not a librarian — writing back is for what this conversation produced and the library lacks, not for tidying it up. ONE finding per add_block, with an annotation saying why it matters, and a `gist` \u{2014} one line, 50\u{2013}100 characters, saying what the block is AS A WHOLE. That line is what search hits show beside a block: a long block otherwise comes back as one matching fragment with nothing about the rest of it, and across dozens of projects the hit list is the only way in. It is cheap to write while you are already there and impossible to reconstruct later. Cite the block it builds on via ref_block_id, and say WHY in ref_note \u{2014} one sentence, required on every citation that is not a correction. That sentence is the citation line the user reads; without it the line is a block number and a timestamp. It is not a description of the block you are citing (that block has its own gist) \u{2014} it is what you are pointing at it FOR: \u{201c}the professor replied, the project is back on\u{201d}. create_thread only for a genuinely new topic, into a workspace that exists (create_workspace makes one \u{2014} ask the user first); set_thread_summary refreshes the catalogue card — if refused (user-written), tell the user your suggestion instead of retrying. One case is not a write at all: when a passage the user handed you belongs in several DIFFERENT projects, propose_blocks queues the split for them to approve inside Spool, and saves nothing — pass source_text so the pieces cite the passage they came from, and tell the user \\\"N items are waiting for you in Spool\\\", never that you saved them. Splitting a few findings across projects is that same one case — two add_block calls into two projects is the wrong shape for it, however small it looks. What a project WATCHES is not a block either: it lives in that project's follow-up list, one line per thing, and a block titled 当前跟进 / current follow-up is wrong twice over — it is permanent, and nothing reads it when a follow-up actually runs. Add to that list with suggest_follow_up_item, one call per line, and it waits for the user rather than taking effect. That is also what to do with a question this conversation could not close: an open question you file is read by the NEXT conversation, whereas one you leave in the chat is gone. When a project's lines come back on a read (get_follow_up_brief, get_project_overview, or the counts on list_threads), say what is on them before going further — but not the ones marked raised_today, which the user has already heard about today. Answering one is only half of it: retire it with close_follow_up_item, naming what you found, or it is asked again in the next conversation and by every follow-up run — and say which line you retired, since nobody was asked first. The lines marked standing:true are the ones you may not close at all; they are watches that never complete, so if one looks finished to you, that is something to tell the user, not something to do. When what you are storing came from OUT THERE rather than out of this conversation, say so in the write itself: source_url is the page, retrieved_at (YYYY-MM-DD) is the day you read it, and recheck_after is the day it stops being safe to trust — a deadline, a fee, an entry requirement. Spool then prints that under the block and, once the recheck date passes, marks it as possibly out of date and counts it in get_project_overview's needs_attention.due_for_recheck. Without those dates a page you read today reads as timeless a year from now, and neither you nor the user can tell which of the two it is. When what you write overturns a block already in the library, YOU choose how, and either way it is only a suggestion: in add_block, ref_block_id naming that block plus ref_kind:\"corrects\" when ONE point inside it is wrong and the rest still holds, or ref_kind:\"supersedes\" when your block replaces it WHOLESALE (same project; when the two readings are close, choose corrects), and corrected_quote holding the sentence in it that no longer holds, copied verbatim. Your block is stored at once; the relation waits in Spool's review, where the user picks correct / replace / leave it \u{2014} so say it is waiting for them, never that you corrected or retired anything. A block whose text merely opens with 更正 / Correction does nothing at all: without ref_kind the user is never asked, and the old block keeps rendering as a live conclusion in every future briefing. (propose_blocks items may still carry ref_kind:\"corrects\"; propose_supersede asks the replace question about two blocks that already exist.) A correction the user has accepted leaves one thing behind that nothing else will fix: the old block's `gist` was written when it was created, so it now describes the version that was corrected \u{2014} and that frozen line is exactly what the next search hit shows. Once get_blocks shows the correction (the newer block carries ref_kind corrects), finish the job with set_block_gist on the corrected block: write what actually holds, or pass an empty gist to clear it, because a gist that has gone wrong is read as current and is worse than none. The same tool is how a block written before gists existed gets one at all. If it refuses, the user wrote that line themselves \u{2014} tell them what you would have written instead of retrying. And a yes covers the one thing you asked for and nothing else: being let into a file is not permission to write blocks. A file you cannot read is a request you have not made yet — never tell the user to send it another way, Spool already has it; ask for it with request_file_access(attachment_id). A path is never something you store: propose_attach_file / propose_replace_file only put a file in front of the user, who approves it inside Spool — until then nothing is attached or replaced, so say it is waiting for them. If you ever compress a pack: keep the skeleton, every note: line, sourceless entry and ==span== verbatim; dedupe only the Full Record; store via add_block, never as a replacement.";
 
 const OPENERS: &str = "The user speaks plain language, not tool names. Typical openers, \
 and what to call:\n\
 \"what have I been up to\" / \"最近在忙什么\" / \"sum up my week\" \u{2192} get_digest, then weekly_review\n\
 \"where am I stuck on X\" / \"我在 X 上定了什么\" \u{2192} search_blocks \u{2192} get_pack, or distill\n\
-\"save this back\" / \"记下来\" / \"存进去\" \u{2192} add_block (ask which project first)\n\
+\"save this back\" / \"记下来\" / \"存进去\" \u{2192} add_block (ask which project first \u{2014} if they named none, \
+offer the one list_threads marks capture_target, by name, and wait for a yes)\n\
+\"这个项目\" / \"this project\" / \"我在弄的这个\" with no name \u{2192} the project list_threads marks \
+capture_target: read it straight away; say its name before writing into it\n\
 \"这个项目别让别的 AI 看到\" / \"建一个私密项目\" / \"keep this project away from other AIs\" \
 \u{2192} create_thread with private=true, then add_block into it with the thread_id it returns \
 \u{2014} you can write into a private project but not read it back\n\
@@ -13348,6 +13375,8 @@ mod tests {
             writers,
             [
                 "create_thread",
+                // P15-1：建一个空工作区 —— 用户每天在侧栏里看得见，要写入同意。
+                "create_workspace",
                 "add_block",
                 "propose_blocks",
                 "propose_supersede",
@@ -19994,6 +20023,50 @@ mod tests {
         assert!(!engine.iter().any(|n| n == "mark_folder_synced"));
         assert!(err && text.contains("do not mark a folder as synced"), "{text}");
         let _ = std::fs::remove_dir_all(&base);
+    }
+
+    // P15-3 (Ocean 2026-11-06, §9.2 第 254 条): the project captures go into is the default for
+    // 「这个项目」, and the AI is told which it is — unless it is private.
+    #[test]
+    fn list_threads_names_the_capture_target_but_never_a_private_one() {
+        let dir = std::env::temp_dir().join(format!("spool-p15-target-{}", std::process::id()));
+        split_library(&dir, true, "en");
+        let raw = || Connection::open(dir.join("spool.db")).unwrap();
+        let list = |args: Value| -> (String, Vec<Value>) {
+            let out = ai_call(&dir, "tools/call", &json!({ "name": "list_threads", "arguments": args }));
+            let v: Value = serde_json::from_str(&out).unwrap();
+            let text = v["content"][0]["text"].as_str().unwrap().to_string();
+            let start = text.find('[').unwrap();
+            let rows: Vec<Value> = serde_json::from_str(&text[start..]).unwrap();
+            (text[..start].to_string(), rows)
+        };
+        let marked = |rows: &[Value]| -> Vec<String> {
+            rows.iter()
+                .filter(|r| r.get("capture_target").is_some())
+                .map(|r| r["title"].as_str().unwrap().to_string())
+                .collect()
+        };
+
+        // No target: no field anywhere, no sentence.
+        let (head, rows) = list(json!({}));
+        assert!(marked(&rows).is_empty() && !head.contains("capture target"), "{head}");
+
+        raw().execute("UPDATE threads SET is_capture_target = (id = 'thOther')", []).unwrap();
+        let (head, rows) = list(json!({}));
+        assert_eq!(marked(&rows), vec!["Other project".to_string()]);
+        assert!(rows.iter().find(|r| r["title"] == "Other project").unwrap()["capture_target"] == json!(true));
+        assert!(head.contains("capture target right now is \u{2039}Other project\u{203a} (workspace \u{201c}Work\u{201d})"), "{head}");
+        assert!(head.contains("wait for a yes"), "{head}");
+        // Searched for something else: the target is not in these rows, so not in the line either.
+        let (head, rows) = list(json!({ "title_contains": "Long" }));
+        assert!(marked(&rows).is_empty() && !head.contains("capture target"), "{head}");
+
+        // A private target: not marked, not mentioned, not hinted at.
+        raw().execute("UPDATE threads SET is_capture_target = (id = 'thSecret')", []).unwrap();
+        let (head, rows) = list(json!({}));
+        assert!(marked(&rows).is_empty(), "{rows:?}");
+        assert!(!head.contains("capture target") && !head.contains("Secret"), "{head}");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     // P15-1 (Ocean 2026-11-06, §9.2 第 254 条): an AI can make the workspace a project goes into.
