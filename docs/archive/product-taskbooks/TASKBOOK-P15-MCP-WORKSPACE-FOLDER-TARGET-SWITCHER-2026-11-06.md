@@ -1,6 +1,6 @@
 # TASKBOOK P15 —— MCP 建工作区 / 连文件夹 / 知道捕捉目标 + 切换捕捉目标（2026-11-06）
 
-> **状态：ACTIVE**（2026-11-06 下发并开始执行）
+> **状态：COMPLETE**（2026-11-06 下发、施工；同日 Ocean 在测试版上验收通过，§8.6）
 >
 > **性质：owner interruption。** Ocean 11-06 原话「我希望在 win 版验证之前评估并新加入以下功能」「我同意批准在 P13 之前把四条全部修完」。
 > `EXECUTION_POLICY.md` 没动。**返回点：P13（Parallels Desktop 里的 Windows 验证）→ 发版二。** P13 在 Windows 上要把这四条一起验掉（§6）。
@@ -207,3 +207,10 @@
 19. 跟我说「验收通过」或者哪一条不对。通过后我按 §57 的顺序清掉测试版（先清权限条目，再删 app、数据、worktree、测试文件夹），然后回到 P13。
 
 Windows 的长按 Ctrl、双击 Shift 这台 Mac 上验不了，在 P13 里验。
+
+### 8.6 验收（2026-11-06 夜）
+
+- B 部分由我用 Claude Code（haiku，只连测试版）发三句话，测试版库里核过：建了「论文写作 → 第一章」；排进一张连文件夹的提议（`README.md`、`plans/HANDOFF_*.md`，文件夹里没写东西）；「存进我现在这个项目」说出捕捉目标〈让 AI 用上你的 Spool〉、问用户、没写。
+- Ocean 原话「验收通过」（A 部分双击 ⇧ 十条 + B 部分界面三条）。
+- 收尾按 isolated-verify-workflow §57：停测试版 → `tccutil reset All com.oceanjin.spool.p15test` → 删 app、`Application Support` / `Caches` / `WebKit` / `Preferences` 里的测试版数据、测试文件夹 `~/Desktop/Spool/P15-probe-20261106` → `git worktree remove`。`find ~/Library -maxdepth 3 -iname '*p15test*'` 为空。
+- 返回点：P13（Parallels），开窗时把本任务书 §6 那几条加进 P13 验收单。
