@@ -1,5 +1,6 @@
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { createRequire } from 'node:module';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type Database from '@tauri-apps/plugin-sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -11,10 +12,15 @@ import {
   reloadOutsideWritesThrottled,
   watchOutsideWrites,
 } from './outsideWrites';
+import { useActiveBlockStore } from './activeBlockStore';
+import { useAiUpdatesStore } from './aiUpdatesStore';
 import { useBlocksStore } from './blocksStore';
 import { useCompressStore } from './compressStore';
+import { useDraftStore } from './draftStore';
 import { useProposalsStore } from './proposalsStore';
+import { useSearchStore } from './searchStore';
 import { useThreadsStore } from './threadsStore';
+import { type AiSeen, __setAiSeenPersistForTest } from '@/lib/db/aiSeen';
 import { createAttachment } from '@/lib/db/attachments';
 import { createBlock, deleteBlock, listBlocksByThread, type Block } from '@/lib/db/blocks';
 import { __setTestDb } from '@/lib/db/client';
@@ -259,20 +265,164 @@ describe('P4-2 · 窗口开着、没拿焦点 —— 隔几秒查一次记号', 
     expect(useProposalsStore.getState().pendingCount).toBe(1);
   });
 
-  it('⛔ 窗口看不见 ⇒ 连记号都不查；看得见了，下一次就补上', async () => {
-    const doc = { visibilityState: 'hidden' };
+  // ⭐ P14（H2，Ocean 2026-11-06 选甲）：这一条原来是「⛔ 窗口看不见 ⇒ 连记号都不查」。AI 用电脑操作「看」Spool 时
+  // 窗口既不变成看得见、也拿不到焦点（2026-11-04 T06），那样页面就一直是旧的 —— 所以看不见时也查。
+  it('⭐ 窗口看不见也查记号：外面写进来，下一次查就重读；记号不再变就不再读', async () => {
+    const doc = fakeDocument('hidden');
     vi.stubGlobal('document', doc);
     const stop = watchOutsideWrites();
     await proposeBlocks();
-    const before = selects.n;
 
-    await vi.advanceTimersByTimeAsync(POLL_MS * 3);
-    expect(selects.n).toBe(before);
-    expect(useProposalsStore.getState().pendingCount).toBe(0);
-
-    doc.visibilityState = 'visible';
     await vi.advanceTimersByTimeAsync(POLL_MS);
     expect(useProposalsStore.getState().pendingCount).toBe(1);
+
+    markUnread();
+    await vi.advanceTimersByTimeAsync(POLL_MS * 3);
+    expect(reloaded()).toBe(false);
+    stop();
+  });
+
+  // 切回那个桌面这一种不给焦点：不在这一刻查，就要等下一次查记号（测试版实测 2.3 秒）。
+  it('⭐ 窗口一露出来就查，不等下一次；停掉之后不再听', async () => {
+    const doc = fakeDocument('hidden');
+    vi.stubGlobal('document', doc);
+    const stop = watchOutsideWrites();
+    await proposeBlocks();
+
+    doc.show();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(useProposalsStore.getState().pendingCount).toBe(1);
+
+    stop();
+    expect(doc.listeners()).toBe(0);
+  });
+});
+
+/** 只够 `watchOutsideWrites` 用的 document：看不看得见 + visibilitychange 监听。 */
+function fakeDocument(initial: 'visible' | 'hidden') {
+  const listeners = new Set<() => void>();
+  const doc = {
+    visibilityState: initial as 'visible' | 'hidden',
+    addEventListener: (type: string, fn: () => void) => {
+      if (type === 'visibilitychange') listeners.add(fn);
+    },
+    removeEventListener: (type: string, fn: () => void) => {
+      if (type === 'visibilitychange') listeners.delete(fn);
+    },
+    show: () => {
+      doc.visibilityState = 'visible';
+      for (const fn of listeners) fn();
+    },
+    listeners: () => listeners.size,
+  };
+  return doc;
+}
+
+describe('P14 · H2 —— AI 写回之后，开着的那个项目页自己换上新块', () => {
+  let clock = 0;
+  beforeEach(() => {
+    vi.useFakeTimers();
+    clock = Date.now();
+  });
+  const later = (ms: number) => vi.setSystemTime((clock += ms));
+
+  // ⭐ 和真情况一样：块是**另一条连接**写的、在那条连接上提交（`spool --mcp` 是另一个进程，GUI 这边要靠 WAL 才看得到），
+  // 写的那一行照 mcp.rs `add_block_json` 的列；窗口看不见（AI 在前台，或者 AI 在用电脑操作看 Spool）。
+  it('⭐ 另一条连接提交一块 → 下一次查记号 → 当前项目里有它、只有一份；之后再来焦点、再查记号也不会多出一份', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'spool-p14-h2-'));
+    const path = join(dir, 'spool.db');
+    const gui = new DatabaseSync(path);
+    gui.exec('PRAGMA journal_mode = WAL');
+    gui.exec(schemaSql);
+    __setTestDb(makeAdapter(gui));
+    __resetOutsideWritesForTest();
+    let seenFile: unknown;
+    __setAiSeenPersistForTest({ read: async () => seenFile, write: async (s: AiSeen) => void (seenFile = s) });
+    useAiUpdatesStore.setState({ state: null, latest: {}, unread: new Set() });
+    try {
+      const ws = await createWorkspace('W');
+      const th = await createThread(ws.id, 'CV');
+      await createBlock({ threadId: th.id, content: '学校名单' });
+      await useThreadsStore.getState().loadAll();
+      useThreadsStore.setState({ activeId: th.id });
+      await useBlocksStore.getState().load(th.id);
+      await reloadOutsideWritesThrottled(); // 启动后那一次：记号记下了，绿点的起点也定了
+      later(10_000);
+      vi.stubGlobal('document', fakeDocument('hidden'));
+      const stop = watchOutsideWrites();
+
+      const mcp = new DatabaseSync(path);
+      mcp
+        .prepare(
+          `INSERT INTO blocks (id, thread_id, kind, content, annotation, annotation_by, source, pinned, seq, created_at)
+           VALUES ('mcp-1', ?1, 'text', '两版内容初审', '下一轮从这里接着改', 'ai', 'Codex · MCP — 初审', 0,
+                   (SELECT COALESCE(MAX(seq), 0) + 1 FROM blocks WHERE thread_id = ?1), ?2)`,
+        )
+        .run(th.id, Date.now());
+      mcp.close();
+      const ids = () => (useBlocksStore.getState().byThread[th.id] ?? []).map((b) => b.id);
+      // ⚠️ 前提：没有人告诉过 store。
+      expect(ids()).not.toContain('mcp-1');
+
+      await vi.advanceTimersByTimeAsync(POLL_MS);
+      expect(ids().filter((id) => id === 'mcp-1')).toHaveLength(1);
+      expect(ids()).toHaveLength(2);
+      // 新块不在屏幕上 ⇒ 左栏那个项目亮绿点。
+      expect(useAiUpdatesStore.getState().unread.has(th.id)).toBe(true);
+
+      // 人点回 Spool（焦点那一次），之后又查了几次记号。
+      later(5000);
+      await reloadOutsideWritesThrottled();
+      await vi.advanceTimersByTimeAsync(POLL_MS * 3);
+      expect(ids().filter((id) => id === 'mcp-1')).toHaveLength(1);
+      expect(ids()).toHaveLength(2);
+      stop();
+    } finally {
+      __setTestDb(null);
+      gui.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  // 仓库没有 DOM 测试环境（P14 §4.3 第 3 条，Ocean 选在 store 这一层钉）：BlockItem、Composer 手上的字都在 draftStore 里
+  // （P9D），所以这一层钉得住「没发出去的字」；滚动位置在测试版真窗口里量（任务书 §5）。
+  it('⛔ 看不见时的那次重读不碰没发出去的字：输入框草稿（字和图）、编辑面板草稿、多选、当前项目、当前块、搜索高亮', async () => {
+    const blockDraft = { content: '改到一半', annotation: '', baseContent: older.content, baseAnnotation: '', savedAt: 1 };
+    const image = { id: 'img-1', bytes: new Uint8Array([1, 2, 3]), previewUrl: 'data:,' };
+    useDraftStore.setState({
+      byThread: { [threadId]: '还没发出去的半句话' },
+      images: { [threadId]: [image] },
+      blockDrafts: { [older.id]: blockDraft },
+    });
+    useBlocksStore.getState().setSelection([older.id]);
+    useActiveBlockStore.setState({ activeBlockId: older.id });
+    useSearchStore.setState({ highlightBlockId: older.id });
+    await reloadOutsideWritesThrottled();
+    later(10_000);
+    vi.stubGlobal('document', fakeDocument('hidden'));
+    const stop = watchOutsideWrites();
+    const before = useBlocksStore.getState().byThread[threadId]!.map((b) => ({ ...b }));
+
+    sqlite
+      .prepare(
+        `INSERT INTO blocks (id, thread_id, kind, content, annotation_by, source, pinned, seq, created_at)
+         VALUES ('mcp-2', ?1, 'text', 'AI 写回的一块', 'ai', 'Claude · MCP', 0,
+                 (SELECT COALESCE(MAX(seq), 0) + 1 FROM blocks WHERE thread_id = ?1), ?2)`,
+      )
+      .run(threadId, Date.now());
+    await vi.advanceTimersByTimeAsync(POLL_MS);
+
+    const after = useBlocksStore.getState().byThread[threadId]!;
+    expect(after.map((b) => b.id)).toEqual([...before.map((b) => b.id), 'mcp-2']);
+    expect(after.slice(0, before.length)).toEqual(before);
+    const drafts = useDraftStore.getState();
+    expect(drafts.byThread[threadId]).toBe('还没发出去的半句话');
+    expect(drafts.images[threadId]).toEqual([image]);
+    expect(drafts.blockDrafts[older.id]).toEqual(blockDraft);
+    expect([...useBlocksStore.getState().selectedBlockIds]).toEqual([older.id]);
+    expect(useThreadsStore.getState().activeId).toBe(threadId);
+    expect(useActiveBlockStore.getState().activeBlockId).toBe(older.id);
+    expect(useSearchStore.getState().highlightBlockId).toBe(older.id);
     stop();
   });
 });

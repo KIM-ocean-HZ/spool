@@ -27,7 +27,8 @@ export async function reloadOutsideWrites(): Promise<void> {
 
 // P4-2：Spool 一直开着、窗口却没有重新拿到焦点的时候（和 AI 客户端左右并排、人在那边打字；
 // 或者让终端里的 AI 慢慢干活，自己切过来看着）—— 焦点那一次不会发生，所以隔几秒查一次记号，
-// 变了才重读。数字和页签自己变就是全部反馈：⛔ 不弹提示、不抬窗口、不切页签。
+// 变了才重读（P14 起窗口看不见时也查，见 `watchOutsideWrites`）。
+// 数字和页签自己变就是全部反馈：⛔ 不弹提示、不抬窗口、不切页签。
 export const POLL_MS = 3000;
 // 窗口焦点和查记号**共用这一个节流**：刚因为焦点重读过，记号再变也等满 3 秒。
 const THROTTLE_MS = 3000;
@@ -53,15 +54,24 @@ export async function pollOutsideWrites(): Promise<void> {
   await reloadOutsideWritesThrottled();
 }
 
-/** 窗口看得见就隔 `POLL_MS` 查一次记号；返回停掉它的函数。
- *  ⚠️ 只问「看不看得见」，⛔ 不问有没有焦点 —— 没焦点正是这一路要管的情况。
- *  看不见（最小化、被盖住、在别的桌面）就不查；回来时由焦点那一次补上，或者下一次查记号。 */
+/** 隔 `POLL_MS` 查一次记号，窗口一露出来再立刻查一次；返回停掉它的函数。
+ *  ⛔ 不问有没有焦点 —— 没焦点正是这一路要管的情况。
+ *  ⭐ P14（H2，Ocean 2026-11-06 选甲）：⛔ 也不问看不看得见。P4-2 原来是「看不见（最小化、被盖住、在别的桌面）
+ *  就不查，回来时由焦点补上」—— 可是 AI 用电脑操作去「看」Spool（读辅助功能树）时，窗口既不变成看得见、也拿不到
+ *  焦点，两条路都不触发，页面就一直是旧的（2026-11-04 实测 T06）。查记号只是一条聚合查询，变了才重读；看不见时
+ *  WebKit 自己把间隔放到 4 秒左右（测试版实测）。
+ *  一露出来立刻查：切回那个桌面这一种不给焦点，不然要等下一次查记号（实测 2.3 秒）。 */
 export function watchOutsideWrites(): () => void {
-  const id = setInterval(() => {
-    if (document.visibilityState !== 'visible') return;
-    void pollOutsideWrites().catch((e) => console.warn('[outside-writes] poll failed', e));
-  }, POLL_MS);
-  return () => clearInterval(id);
+  const check = (): void => void pollOutsideWrites().catch((e) => console.warn('[outside-writes] poll failed', e));
+  const id = setInterval(check, POLL_MS);
+  const onVisibility = (): void => {
+    if (document.visibilityState === 'visible') check();
+  };
+  document.addEventListener('visibilitychange', onVisibility);
+  return () => {
+    clearInterval(id);
+    document.removeEventListener('visibilitychange', onVisibility);
+  };
 }
 
 /** 测试用：模块里那两个变量回到刚启动的样子。 */
