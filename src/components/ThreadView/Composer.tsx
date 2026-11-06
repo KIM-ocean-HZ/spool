@@ -1,6 +1,7 @@
 import { X } from 'lucide-react';
 import { nanoid } from 'nanoid';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { clipboardMarkdown, domParse } from '@/lib/capture/htmlToMarkdown';
 import type { ClipboardEvent, KeyboardEvent } from 'react';
 import type { Block } from '@/lib/db/blocks';
 import { isImeComposing } from '@/lib/utils/ime';
@@ -103,7 +104,17 @@ export default function Composer({ threadId, onSubmitted }: Props) {
   };
   const onPaste = (e: ClipboardEvent<HTMLTextAreaElement>): void => {
     const files = picturesIn(e.clipboardData);
-    if (files.length === 0) return;
+    if (files.length === 0) {
+      // P14 插队（第 250 条）: pasting a copied AI answer or page keeps its tables, lists and formulas —
+      // the same conversion a capture does. Inserted as typing, so ⌘Z takes it back like any paste.
+      const md = clipboardMarkdown(
+        e.clipboardData.getData('text/html'),
+        e.clipboardData.getData('text/plain'),
+        domParse,
+      );
+      if (md && document.execCommand('insertText', false, md)) e.preventDefault();
+      return;
+    }
     // ⚠️ The pictures only: a copied file also carries its name as text, which is not what
     // the user meant to paste.
     e.preventDefault();

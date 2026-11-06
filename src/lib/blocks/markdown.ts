@@ -59,7 +59,8 @@ const HR = /^[ \t]*([-*_])(?:[ \t]*\1){2,}[ \t]*$/;
 const QUOTE = /^[ \t]*>[ \t]?/;
 // A GFM delimiter row: cells of `---`, `:--`, `--:`, `:-:` between pipes (outer pipes optional).
 const TABLE_DELIM = /^[ \t]*\|?[ \t]*:?-+:?[ \t]*(?:\|[ \t]*:?-+:?[ \t]*)*\|?[ \t]*$/;
-const BULLET = /^([ \t]*)([-*])[ \t]+(.*)$/;
+// P14 插队: `•` `◦` `▪` `‣` too — the bullet a web page or a document leaves in its plain text (〈修改过程〉 #13).
+const BULLET = /^([ \t]*)([-*•◦▪‣])[ \t]+(.*)$/;
 const ORDERED = /^([ \t]*)(\d{1,3}[.)])[ \t]+(.*)$/;
 const FENCE = /^[ \t]*```/;
 // ⚠️ The same pattern as imageLines.ts IMAGE_LINE_RE — one line, one picture.
@@ -249,6 +250,15 @@ export function parseMarkdown(content: string): MdDoc {
       if (next > content.length) break;
       pos = next;
       continue;
+    } else if (nl !== -1 && tabRun(content, pos, lineEnd) !== null) {
+      // Two or more tab-separated lines with the same number of cells: a table copied as plain text.
+      flushPara();
+      flushQuote();
+      const run = tabRun(content, pos, lineEnd)!;
+      blocks.push({ kind: 'table', align: run.rows[0]!.map(() => null), rows: run.rows, text: { start: pos, end: run.end } });
+      if (run.end >= content.length) break;
+      pos = run.end + 1;
+      continue;
     } else if (IMAGE.test(line)) {
       flushPara();
       const m = IMAGE.exec(line)!;
@@ -318,6 +328,22 @@ export function parseMarkdown(content: string): MdDoc {
   return { blocks, hidden, raw };
 }
 
+/** P14 插队: the cells of a tab-separated line (what a table copied out of an app becomes as plain text —
+ *  〈修改过程〉 #12, #17), or null when it is not one: no tab, fewer than two cells, or starting with
+ *  whitespace (an indented code line is not a table row). */
+const tabCells = (content: string, lineStart: number, lineEnd: number): MdSpan[] | null => {
+  const line = content.slice(lineStart, lineEnd);
+  if (!line.includes('\t') || /^\s/.test(line)) return null;
+  const cells: MdSpan[] = [];
+  let at = 0;
+  for (const part of line.split('\t')) {
+    const lead = part.length - part.trimStart().length;
+    cells.push({ start: lineStart + at + lead, end: lineStart + at + part.trimEnd().length });
+    at += part.length + 1;
+  }
+  return cells.length >= 2 ? cells : null;
+};
+
 /** A table starts when the NEXT line is a delimiter row with a pipe in it and as many cells as this
  *  line has (the GFM rule) — so a lone `---` under a line that happens to hold a `|` stays a rule. */
 const isTableStart = (content: string, lineStart: number, lineEnd: number, nextLineStart: number): boolean => {
@@ -326,6 +352,24 @@ const isTableStart = (content: string, lineStart: number, lineEnd: number, nextL
   const next = content.slice(nextLineStart, nextEnd);
   if (!next.includes('|') || !next.includes('-') || !TABLE_DELIM.test(next)) return false;
   return tableCells(content, lineStart, lineEnd, []).length === tableCells(content, nextLineStart, nextEnd, []).length;
+};
+
+/** The tab-separated rows starting at this line, when there are at least two of the same width. */
+const tabRun = (content: string, lineStart: number, lineEnd: number): { rows: MdSpan[][]; end: number } | null => {
+  const head = tabCells(content, lineStart, lineEnd);
+  if (!head) return null;
+  const rows = [head];
+  let end = lineEnd;
+  while (end < content.length) {
+    const next = end + 1;
+    const nl = content.indexOf('\n', next);
+    const nextEnd = nl === -1 ? content.length : nl;
+    const cells = tabCells(content, next, nextEnd);
+    if (!cells || cells.length !== head.length) break;
+    rows.push(cells);
+    end = nextEnd;
+  }
+  return rows.length >= 2 ? { rows, end } : null;
 };
 
 /** True when the whole block is one ordinary paragraph — the "nothing to render" fast path. */

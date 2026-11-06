@@ -443,6 +443,16 @@ pub fn clipboard_image_files() -> Vec<String> {
         .collect()
 }
 
+/// P14 插队 (Ocean 2026-11-06, HANDOFF §9.2 第 250 条): the clipboard's HTML, so a capture can keep what a
+/// copied answer looked like — its tables, lists and formulas, which its plain text has already lost
+/// (lib/capture/htmlToMarkdown.ts). Empty when there is none. arboard reads `public.html` on macOS and
+/// "HTML Format" on Windows (whose header the TS side strips).
+#[tauri::command(async)]
+pub fn clipboard_html() -> String {
+    let Ok(mut cb) = arboard::Clipboard::new() else { return String::new() };
+    cb.get().html().unwrap_or_default()
+}
+
 /// A small preview for the capture card (第 1 条: 不知道存了什么图片) — its own size, not cached.
 #[tauri::command(async)]
 pub fn block_image_thumb(app: tauri::AppHandle, id: String, edge: u32) -> Result<String, String> {

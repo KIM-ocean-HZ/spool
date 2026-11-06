@@ -129,6 +129,34 @@ describe('parseMarkdown —— 表格、引用、分隔线；公式里的行不�
   });
 });
 
+describe('已经存进库的纯文字：• 列表、Tab 分隔的表格（〈修改过程〉#12、#13、#17 那种）', () => {
+  it('• ◦ ▪ 开头的行是列表', () => {
+    const c = '• 数学公式：\\(x=1\\)\n• 化学式：H₂O\n  ◦ 子项';
+    expect(parseMarkdown(c).blocks.map((b) => (b.kind === 'item' ? `${b.indent}${b.marker}` : b.kind))).toEqual(['0•', '0•', '1•']);
+  });
+
+  it('两行以上、格数一样的 Tab 分隔行是表格；第一行是表头', () => {
+    const c = '和第一版比改了什么\n第一版\t第二版\n表头一段\t换成新表头\n—\t新增第 3 题';
+    const doc = parseMarkdown(c);
+    expect(doc.blocks.map((b) => b.kind)).toEqual(['para', 'table']);
+    const t = doc.blocks[1]!;
+    if (t.kind !== 'table') return;
+    expect(t.rows.map((r) => r.map((cell) => c.slice(cell.start, cell.end)))).toEqual([
+      ['第一版', '第二版'],
+      ['表头一段', '换成新表头'],
+      ['—', '新增第 3 题'],
+    ]);
+    expect(renderToStaticMarkup(<MarkdownContent content={c} />)).toContain('<table');
+  });
+
+  it('⛔ 以 Tab 缩进的代码行、只有一行、格数对不上：都不是表格', () => {
+    expect(parseMarkdown('\tfoo();\n\tbar();').blocks.map((b) => b.kind)).not.toContain('table');
+    expect(parseMarkdown('a\tb').blocks.map((b) => b.kind)).not.toContain('table');
+    expect(parseMarkdown('判别式\t\nΔ\n=\nb').blocks.map((b) => b.kind)).not.toContain('table');
+    expect(parseMarkdown('a\tb\nc\td\te').blocks.map((b) => b.kind)).not.toContain('table');
+  });
+});
+
 describe('MarkdownContent —— 真库里那几种样子画出来', () => {
   // The shape of a real 〈数学〉 block (ChatGPT copy): inline \( \), display \[ \] glued to the next text,
   // a list, bold.
