@@ -121,88 +121,107 @@ interface TokenizeOptions {
   hidden?: readonly MdSpan[];
 }
 
-// Tokenize content into runs. Offsets (spine end, hit ranges, == matches) all live in the
-// original content coordinate space — the same space the search layer reports hits in — so
-// they compose without remapping. == cap characters are dropped from the output.
-export function tokenizeContent(content: string, opts: TokenizeOptions = {}): ContentRun[] {
-  const hits = opts.hits ?? [];
-  const activeHitIndex = opts.activeHitIndex ?? -1;
-  const sEnd = opts.withSpine ? spineEnd(content) : 0;
-  const from = opts.from ?? 0;
-  const to = opts.to ?? content.length;
-  const isRaw = (s: number, e: number): boolean =>
-    (opts.raw ?? []).some((r) => s >= r.start && e <= r.end);
+type Interval =
+  | { kind: 'hit'; start: number; end: number; idx: number }
+  | { kind: 'highlight'; start: number; end: number }
+  | { kind: 'mark'; start: number; end: number; mark: InlineMark }
+  | { kind: 'corrected'; start: number; end: number; id?: string }
+  | { kind: 'math'; start: number; end: number; display: boolean; source: string }
+  | { kind: 'link'; start: number; end: number; href: string }
+  | { kind: 'cap'; start: number; end: number };
 
-  type Interval =
-    | { kind: 'hit'; start: number; end: number; idx: number }
-    | { kind: 'highlight'; start: number; end: number }
-    | { kind: 'mark'; start: number; end: number; mark: InlineMark }
-    | { kind: 'corrected'; start: number; end: number; id?: string }
-    | { kind: 'math'; start: number; end: number; display: boolean; source: string }
-    | { kind: 'link'; start: number; end: number; href: string }
-    | { kind: 'cap'; start: number; end: number };
+interface Formula {
+  start: number;
+  end: number;
+  innerStart: number;
+  innerEnd: number;
+  display: boolean;
+}
 
+/** Everything about `content` that does not depend on which slice is being drawn. */
+interface Analysis {
+  /** Highlights, code, bold / italic / strike, links, source marks — markers as caps. Sorted by start,
+   *  each shorter than LONG. */
+  base: Interval[];
+  /** The rest of them (LONG or longer). */
+  long: Interval[];
+  /** Formulas that cross no highlight boundary. Whether one is drawn depends on the slice. */
+  formulas: Formula[];
+}
+
+function analyse(content: string, raw: readonly MdSpan[]): Analysis {
+  const n = content.length;
+  const isRaw = (s: number, e: number): boolean => raw.some((r) => s >= r.start && e <= r.end);
   const intervals: Interval[] = [];
   // Claimed spans, marker chars included — a later inline pattern that overlaps one is
   // not a marker at all (「**a *b** c*」 is one bold span, not a tangle).
-  const claimed: MdSpan[] = [];
-  const free = (s: number, e: number): boolean =>
-    !claimed.some((c) => s < c.end && c.start < e) && !isRaw(s, e);
+  // P14 hotfix (2026-11-06): kept as one byte per character, so a check costs the candidate's own length
+  // instead of one comparison per earlier claim (quadratic on a block with thousands of marks).
+  const taken = new Uint8Array(n + 1);
+  const free = (s: number, e: number): boolean => {
+    for (let i = s; i < e; i++) if (taken[i]) return false;
+    return !isRaw(s, e);
+  };
+  const claim = (s: number, e: number): void => void taken.fill(1, s, e);
   // Persistent ==…== highlights: inner span is a highlight interval; the surrounding
   // two-char markers are caps (never rendered).
+  const highlights: MdSpan[] = [];
   for (const m of content.matchAll(HIGHLIGHT_RE)) {
     const s = m.index ?? 0;
     const e = s + m[0].length;
     if (!free(s, e)) continue;
-    claimed.push({ start: s, end: e });
+    claim(s, e);
+    highlights.push({ start: s + 2, end: e - 2 });
     intervals.push({ kind: 'cap', start: s, end: s + 2 });
     intervals.push({ kind: 'highlight', start: s + 2, end: e - 2 });
     intervals.push({ kind: 'cap', start: e - 2, end: e });
   }
   // §10.1 inline Markdown, same shape: the marker chars are caps, the inside is a mark.
   const markOne = (mark: InlineMark, s: number, e: number, cap: number): void => {
-    claimed.push({ start: s, end: e });
+    claim(s, e);
     intervals.push({ kind: 'cap', start: s, end: s + cap });
     intervals.push({ kind: 'mark', start: s + cap, end: e - cap, mark });
     intervals.push({ kind: 'cap', start: e - cap, end: e });
   };
   // Code first: backticks are the one marker whose whole job is 「what is inside me is literal」.
+  const codeSpans: MdSpan[] = [];
   for (const m of content.matchAll(CODE_MARK.re)) {
     const s = m.index ?? 0;
     const e = s + m[0].length;
-    if (free(s, e)) markOne('code', s, e, CODE_MARK.cap);
+    if (!free(s, e)) continue;
+    markOne('code', s, e, CODE_MARK.cap);
+    codeSpans.push({ start: s, end: e });
   }
   // P14 插队 — formulas, next: TeX is full of `*`, `_` and `~`, which must not turn into emphasis.
   // A formula may sit inside a ==highlight== (or, below, inside bold / a link) but nothing may cut
-  // through it, and it must lie inside the slice being drawn. It is NOT a claim: bold around it is fine.
-  const maths: { start: number; end: number }[] = [];
-  const highlights = intervals.filter((it) => it.kind === 'highlight');
-  for (const m of findMath(content, [...(opts.raw ?? []), ...claimed.filter((c) => !highlights.some((h) => h.start - 2 === c.start))])) {
-    if (m.start < from || m.end > to) continue;
-    const crossesHighlight = highlights.some(
-      (h) => m.start < h.end + 2 && h.start - 2 < m.end && !(m.start >= h.start && m.end <= h.end),
-    );
-    if (crossesHighlight) continue;
-    maths.push({ start: m.start, end: m.end });
-    intervals.push({ kind: 'cap', start: m.start, end: m.innerStart });
-    intervals.push({
-      kind: 'math', start: m.innerStart, end: m.innerEnd, display: m.display, source: content.slice(m.start, m.end),
-    });
-    intervals.push({ kind: 'cap', start: m.innerEnd, end: m.end });
-    // A display formula is its own line: the newline on either side would otherwise draw an empty one.
-    if (m.display && content[m.start - 1] === '\n' && m.start - 1 >= from) {
-      intervals.push({ kind: 'cap', start: m.start - 1, end: m.start });
-    }
-    if (m.display && content[m.end] === '\n' && m.end < to) {
-      intervals.push({ kind: 'cap', start: m.end, end: m.end + 1 });
-    }
-  }
+  // through it. It is NOT a claim: bold around it is fine.
+  // Which highlight each character is inside (-1 = none), and which are its `==` markers.
+  const inHighlight = new Int32Array(n + 1).fill(-1);
+  const highlightCap = new Uint8Array(n + 1);
+  highlights.forEach((h, k) => {
+    inHighlight.fill(k, h.start, h.end);
+    highlightCap.fill(1, h.start - 2, h.start);
+    highlightCap.fill(1, h.end, h.end + 2);
+  });
+  const crossesHighlight = (s: number, e: number): boolean => {
+    const first = inHighlight[s]!;
+    for (let i = s; i < e; i++) if (highlightCap[i] || inHighlight[i] !== first) return true;
+    return false;
+  };
+  const formulas: Formula[] = findMath(content, [...raw, ...codeSpans]).filter((m) => !crossesHighlight(m.start, m.end));
+  // Which formula each character belongs to (-1 = none).
+  const inFormula = new Int32Array(n + 1).fill(-1);
+  formulas.forEach((m, k) => inFormula.fill(k, m.start, m.end));
   /** A marker pair may hold whole formulas, but neither marker may sit inside one. */
-  const clearOfMath = (s: number, e: number, capL: number, capR: number): boolean =>
-    maths.every(
-      (m) =>
-        e <= m.start || m.end <= s || (m.start >= s + capL && m.end <= e - capR),
-    );
+  const clearOfMath = (s: number, e: number, capL: number, capR: number): boolean => {
+    for (let i = s; i < e; i++) {
+      const k = inFormula[i]!;
+      if (k < 0) continue;
+      const m = formulas[k]!;
+      if (m.start < s + capL || m.end > e - capR) return false;
+    }
+    return true;
+  };
   for (const { mark, re, cap } of INLINE_MARKS) {
     for (const m of content.matchAll(re)) {
       const s = m.index ?? 0;
@@ -215,7 +234,7 @@ export function tokenizeContent(content: string, opts: TokenizeOptions = {}): Co
     const e = s + m[0].length;
     const textEnd = s + 1 + m[1]!.length;
     if (!free(s, e) || !clearOfMath(s, e, 1, e - textEnd)) continue;
-    claimed.push({ start: s, end: e });
+    claim(s, e);
     intervals.push({ kind: 'cap', start: s, end: s + 1 });
     intervals.push({ kind: 'mark', start: s + 1, end: textEnd, mark: 'link' });
     intervals.push({ kind: 'link', start: s + 1, end: textEnd, href: m[2]! });
@@ -229,7 +248,7 @@ export function tokenizeContent(content: string, opts: TokenizeOptions = {}): Co
     const s = m.index ?? 0;
     const e = s + m[0].length;
     if (!free(s, e)) continue;
-    claimed.push({ start: s, end: e });
+    claim(s, e);
     // The `]` — the label cannot contain one, so it sits right after the label.
     const close = s + SOURCE_OPEN.length + m[1]!.length;
     intervals.push({ kind: 'cap', start: s, end: s + SOURCE_OPEN.length });
@@ -238,11 +257,102 @@ export function tokenizeContent(content: string, opts: TokenizeOptions = {}): Co
     // 刻度条的悬浮预览都用它）拿到的是「chatgpt 第二段」而不是「chatgpt第二段」。
     intervals.push({ kind: 'cap', start: close, end: close + 1 });
   }
+  // Sorted by start, the long ones (a highlight over many lines) kept apart: a slice then finds what
+  // touches it by binary search (`tokenizeContent`).
+  const short: Interval[] = [];
+  const long: Interval[] = [];
+  for (const it of intervals) (it.end - it.start > LONG ? long : short).push(it);
+  short.sort((a, b) => a.start - b.start);
+  return { base: short, long, formulas };
+}
+
+/** An interval this long or longer is checked against every slice; shorter ones are found by position. */
+const LONG = 4096;
+
+/** First index in `xs` (sorted by start) whose start is ≥ `at`. */
+const firstAtOrAfter = (xs: readonly { start: number }[], at: number): number => {
+  let lo = 0;
+  let hi = xs.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (xs[mid]!.start < at) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
+};
+
+// P14 hotfix (Ocean 2026-11-06: 「spool现在明显特别卡顿，刷新不出来，新项目也打不开」). MarkdownContent draws a
+// block one structural piece at a time — and since P14 every table CELL is a piece — each calling this
+// tokenizer over the WHOLE block. A 161,830-character table captured from Notes (664 cells, two copies of
+// it in one project) meant 664 full scans per draw: the main window's web process sat at 99% CPU. The
+// scan depends only on the text, so it is done once per text and kept; each piece then looks only at
+// what falls inside it. Keyed by the text itself (then by `raw`), a few dozen texts at most.
+const ANALYSES_MAX = 64;
+const analyses = new Map<string, Map<string, Analysis>>();
+
+function analysed(content: string, raw: readonly MdSpan[]): Analysis {
+  const rawKey = raw.map((r) => `${r.start}-${r.end}`).join(',');
+  let byRaw = analyses.get(content);
+  const hit = byRaw?.get(rawKey);
+  if (hit) {
+    // Most recently used goes to the back, so the oldest is the one dropped.
+    analyses.delete(content);
+    analyses.set(content, byRaw!);
+    return hit;
+  }
+  const result = analyse(content, raw);
+  if (!byRaw) {
+    byRaw = new Map();
+    analyses.set(content, byRaw);
+    if (analyses.size > ANALYSES_MAX) analyses.delete(analyses.keys().next().value!);
+  }
+  byRaw.set(rawKey, result);
+  return result;
+}
+
+// Tokenize content into runs. Offsets (spine end, hit ranges, == matches) all live in the
+// original content coordinate space — the same space the search layer reports hits in — so
+// they compose without remapping. == cap characters are dropped from the output.
+export function tokenizeContent(content: string, opts: TokenizeOptions = {}): ContentRun[] {
+  const hits = opts.hits ?? [];
+  const activeHitIndex = opts.activeHitIndex ?? -1;
+  const sEnd = opts.withSpine ? spineEnd(content) : 0;
+  const from = opts.from ?? 0;
+  const to = opts.to ?? content.length;
+  const inSlice = (it: { start: number; end: number }): boolean => it.start < to && it.end > from;
+
+  const { base, long, formulas } = analysed(content, opts.raw ?? []);
+  // Only what touches this slice — the rest cannot change a run inside it. Found by position, so a slice
+  // (one table cell of thousands) costs what is in it, not what is in the whole block.
+  const intervals: Interval[] = long.filter(inSlice);
+  for (let i = firstAtOrAfter(base, from - LONG); i < base.length && base[i]!.start < to; i++) {
+    if (inSlice(base[i]!)) intervals.push(base[i]!);
+  }
+  // A formula is drawn only when it lies wholly inside the slice being drawn.
+  for (let i = firstAtOrAfter(formulas, from); i < formulas.length && formulas[i]!.start < to; i++) {
+    const m = formulas[i]!;
+    if (m.end > to) continue;
+    intervals.push({ kind: 'cap', start: m.start, end: m.innerStart });
+    intervals.push({
+      kind: 'math', start: m.innerStart, end: m.innerEnd, display: m.display, source: content.slice(m.start, m.end),
+    });
+    intervals.push({ kind: 'cap', start: m.innerEnd, end: m.end });
+    // A display formula is its own line: the newline on either side would otherwise draw an empty one.
+    if (m.display && content[m.start - 1] === '\n' && m.start - 1 >= from) {
+      intervals.push({ kind: 'cap', start: m.start - 1, end: m.start });
+    }
+    if (m.display && content[m.end] === '\n' && m.end < to) {
+      intervals.push({ kind: 'cap', start: m.end, end: m.end + 1 });
+    }
+  }
   // Structural markers (`## `, `- `, the fences) are hidden exactly like a == cap.
-  for (const h of opts.hidden ?? []) intervals.push({ kind: 'cap', start: h.start, end: h.end });
-  for (const h of hits) intervals.push({ kind: 'hit', start: h.start, end: h.end, idx: h.idx });
+  const hidden = opts.hidden ?? [];
+  for (let i = firstAtOrAfter(hidden, from - LONG); i < hidden.length && hidden[i]!.start < to; i++) {
+    if (inSlice(hidden[i]!)) intervals.push({ kind: 'cap', start: hidden[i]!.start, end: hidden[i]!.end });
+  }
+  for (const h of hits) if (inSlice(h)) intervals.push({ kind: 'hit', start: h.start, end: h.end, idx: h.idx });
   for (const c of opts.corrected ?? []) {
-    intervals.push({ kind: 'corrected', start: c.start, end: c.end, id: c.id });
+    if (inSlice(c)) intervals.push({ kind: 'corrected', start: c.start, end: c.end, id: c.id });
   }
 
   const breakpoints = new Set<number>([from, to]);
@@ -253,48 +363,92 @@ export function tokenizeContent(content: string, opts: TokenizeOptions = {}): Co
   }
   // A formula is drawn whole or not at all: nothing breaks inside its TeX.
   const formulaRuns = intervals.filter((it): it is Extract<Interval, { kind: 'math' }> => it.kind === 'math');
-  const sorted = [...breakpoints]
-    .filter((b) => !formulaRuns.some((f) => b > f.start && b < f.end))
-    .sort((a, b) => a - b);
+  const formulaAt = (b: number): boolean => {
+    const k = firstAtOrAfter(formulaRuns, b) - 1;
+    return k >= 0 && b > formulaRuns[k]!.start && b < formulaRuns[k]!.end;
+  };
+  formulaRuns.sort((a, b) => a.start - b.start);
+  const sorted = [...breakpoints].filter((b) => !formulaAt(b)).sort((a, b) => a - b);
+
+  // P14 hotfix (2026-11-06): each interval is written onto the segments it covers — found by binary search —
+  // instead of every segment asking every interval (segments × intervals, quadratic on a big paragraph).
+  // The first interval to claim a segment keeps it, the same answer `find` gave in this same order.
+  const segs = sorted.length - 1;
+  const segIndex = (at: number): number => {
+    let lo = 0;
+    let hi = sorted.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (sorted[mid]! < at) lo = mid + 1;
+      else hi = mid;
+    }
+    return lo;
+  };
+  const capped = new Uint8Array(Math.max(segs, 0));
+  const highlightOn = new Uint8Array(Math.max(segs, 0));
+  const hitOf: (Extract<Interval, { kind: 'hit' }> | undefined)[] = new Array(Math.max(segs, 0));
+  const markOf: (InlineMark | undefined)[] = new Array(Math.max(segs, 0));
+  const corrOf: (Extract<Interval, { kind: 'corrected' }> | undefined)[] = new Array(Math.max(segs, 0));
+  const linkOf: (Extract<Interval, { kind: 'link' }> | undefined)[] = new Array(Math.max(segs, 0));
+  const formulaOf: (Extract<Interval, { kind: 'math' }> | undefined)[] = new Array(Math.max(segs, 0));
+  /** Segments wholly inside [a, b). */
+  const within = (a: number, b: number, f: (i: number) => void): void => {
+    for (let i = segIndex(a); i < segs && sorted[i + 1]! <= b; i++) f(i);
+  };
+  /** Segments that overlap [a, b). */
+  const touching = (a: number, b: number, f: (i: number) => void): void => {
+    for (let i = Math.max(0, segIndex(a) - 1); i < segs && sorted[i]! < b; i++) if (sorted[i + 1]! > a) f(i);
+  };
+  for (const f of formulaRuns) within(f.start, f.end, (i) => void (formulaOf[i] ??= f));
+  for (const it of intervals) {
+    switch (it.kind) {
+      case 'cap':
+        within(it.start, it.end, (i) => void (capped[i] = 1));
+        break;
+      case 'highlight':
+        within(it.start, it.end, (i) => void (highlightOn[i] = 1));
+        break;
+      case 'mark':
+        within(it.start, it.end, (i) => void (markOf[i] ??= it.mark));
+        break;
+      case 'link':
+        within(it.start, it.end, (i) => void (linkOf[i] ??= it));
+        break;
+      // Inside a formula, anything that TOUCHES it covers all of it (a hit on 「x」 marks the formula).
+      case 'hit':
+        within(it.start, it.end, (i) => void (hitOf[i] ??= it));
+        touching(it.start, it.end, (i) => void (formulaOf[i] && (hitOf[i] ??= it)));
+        break;
+      case 'corrected':
+        within(it.start, it.end, (i) => void (corrOf[i] ??= it));
+        touching(it.start, it.end, (i) => void (formulaOf[i] && (corrOf[i] ??= it)));
+        break;
+      default:
+        break;
+    }
+  }
 
   const runs: ContentRun[] = [];
-  for (let i = 0; i < sorted.length - 1; i++) {
+  for (let i = 0; i < segs; i++) {
     const segStart = sorted[i]!;
     const segEnd = sorted[i + 1]!;
     if (segStart >= segEnd) continue;
     // Marker chars (== caps, ** caps, `## `): never render visibly.
-    if (intervals.some((it) => it.kind === 'cap' && segStart >= it.start && segEnd <= it.end)) {
-      continue;
-    }
-    const formula = formulaRuns.find((f) => segStart >= f.start && segEnd <= f.end);
-    // Inside a formula, anything that TOUCHES it covers all of it (a hit on 「x」 marks the formula).
-    const covers = (it: { start: number; end: number }): boolean =>
-      formula ? it.start < segEnd && segStart < it.end : segStart >= it.start && segEnd <= it.end;
-    const hit = intervals.find(
-      (it): it is Extract<Interval, { kind: 'hit' }> => it.kind === 'hit' && covers(it),
-    );
-    const highlight = intervals.some(
-      (it) => it.kind === 'highlight' && segStart >= it.start && segEnd <= it.end,
-    );
-    const mark = intervals.find(
-      (it): it is Extract<Interval, { kind: 'mark' }> =>
-        it.kind === 'mark' && segStart >= it.start && segEnd <= it.end,
-    )?.mark;
-    const correction = intervals.find((it) => it.kind === 'corrected' && covers(it));
-    const link = intervals.find(
-      (it): it is Extract<Interval, { kind: 'link' }> =>
-        it.kind === 'link' && segStart >= it.start && segEnd <= it.end,
-    );
+    if (capped[i]) continue;
+    const formula = formulaOf[i];
+    const hit = hitOf[i];
+    const correction = corrOf[i];
+    const link = linkOf[i];
     runs.push({
       text: content.slice(segStart, segEnd),
       start: segStart,
       end: segEnd,
       spine: sEnd > 0 && segStart < sEnd,
-      highlight,
+      highlight: !!highlightOn[i],
       hit: hit ? { idx: hit.idx, active: hit.idx === activeHitIndex } : null,
-      mark,
+      mark: markOf[i],
       corrected: !!correction || undefined,
-      correctionId: correction?.kind === 'corrected' ? correction.id : undefined,
+      correctionId: correction?.id,
       ...(formula ? { math: { display: formula.display, source: formula.source } } : {}),
       ...(link ? { href: link.href } : {}),
     });

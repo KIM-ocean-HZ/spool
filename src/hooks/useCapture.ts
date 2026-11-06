@@ -40,6 +40,7 @@ import { buildCaptureUndo, useUndoStore } from '@/stores/undoStore';
 import { useWorkspacesStore } from '@/stores/workspacesStore';
 import { runRedo, runUndo } from '@/hooks/useUndo';
 import { t } from '@/lib/i18n';
+import { MAX_CAPTURE_CHARS } from '@/lib/capture/limits';
 
 // Max wait in the *hot path* for the parallel foreground-app query. If osascript hasn't
 // answered by then, we skip focus restoration this round — better to show the toast
@@ -80,6 +81,12 @@ const tlog = (label: string, t0: number, extra?: string): void => {
   const dt = Math.round(performance.now() - t0);
   console.info(`[capture] ${label} +${dt}ms${extra ? ` ${extra}` : ''}`);
 };
+
+const tooMuchText = (n: number): string =>
+  t('这次复制的文字太多（{n} 字），超过一次能捕的上限（{max} 字），没有存。请分几段复制再捕。', {
+    n: n.toLocaleString(),
+    max: MAX_CAPTURE_CHARS.toLocaleString(),
+  });
 
 const showNoticeInOverlay = (payload: OverlayNotice): void => {
   void invoke(SHOW_OVERLAY_NOTICE_COMMAND, { payload }).catch((e) => {
@@ -335,6 +342,12 @@ export function useCapture(): void {
             showNoticeInOverlay({ kind: 'empty' });
             return;
           }
+          // P14 hotfix (Ocean 2026-11-06): too much text is refused, and said so — never stored as a block
+          // that could choke the window (lib/capture/limits.ts).
+          if (!image && text.length > MAX_CAPTURE_CHARS) {
+            showNoticeInOverlay({ kind: 'error', msg: tooMuchText(text.length) });
+            return;
+          }
 
           let images: BlockImage[] = [];
           let result: Awaited<ReturnType<typeof ingestCapture>>;
@@ -516,6 +529,10 @@ export function useCapture(): void {
             .workspaces.find((w) => w.id === target.workspaceId);
           // ⭐ P3-4：刚复制过 ⇒ 正文框先填好那段字（和双击同一个读法）。剪贴板空着 ⇒ 照旧空框。
           const copiedText = copied ? await readClipboardWithRetry() : '';
+          if (copiedText.length > MAX_CAPTURE_CHARS) {
+            showNoticeInOverlay({ kind: 'error', msg: tooMuchText(copiedText.length) });
+            return;
+          }
           let copyId: string | undefined;
           if (copiedText) {
             copyId = String(++copySeq);

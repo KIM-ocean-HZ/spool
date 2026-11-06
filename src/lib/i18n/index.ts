@@ -451,6 +451,9 @@ const EN: Record<string, string> = {
   '{name}：只带了前 {n} 字': '{name}: only the first {n} characters are in',
   '{name}：读不出文字': "{name}: Spool couldn't read its text",
   '{name}：Spool 没有它的文字': '{name}: Spool has no text for it',
+  // P14 hotfix: a capture over MAX_CAPTURE_CHARS is refused.
+  '这次复制的文字太多（{n} 字），超过一次能捕的上限（{max} 字），没有存。请分几段复制再捕。':
+    'Too much text this time ({n} characters) — over the {max}-character limit for one capture. Nothing was saved; copy it in parts and capture each.',
 
   // Search
   '搜索所有工作区与项目的内容…': 'Search all workspaces and projects…',

@@ -143,7 +143,26 @@ const indentOf = (ws: string): number =>
  * becomes margin). A block with no structure at all comes back as a single `para` covering
  * everything, and the renderer short-circuits that to exactly the old output.
  */
+// P14 hotfix (2026-11-06, the 161,830-character block): the same text is parsed by every surface that
+// draws or names it, on every draw. Parsed once per text and kept — a few dozen texts at most. ⛔ The
+// returned doc is shared: read it, never change it.
+const PARSED_MAX = 64;
+const parsed = new Map<string, MdDoc>();
+
 export function parseMarkdown(content: string): MdDoc {
+  const hit = parsed.get(content);
+  if (hit) {
+    parsed.delete(content);
+    parsed.set(content, hit);
+    return hit;
+  }
+  const doc = parse(content);
+  parsed.set(content, doc);
+  if (parsed.size > PARSED_MAX) parsed.delete(parsed.keys().next().value!);
+  return doc;
+}
+
+function parse(content: string): MdDoc {
   const blocks: MdBlock[] = [];
   const hidden: MdSpan[] = [];
   const raw: MdSpan[] = [];
@@ -325,6 +344,8 @@ export function parseMarkdown(content: string): MdDoc {
   }
   flushPara();
   flushQuote();
+  // In order of position: the tokenizer finds a slice's markers by binary search (P14 hotfix).
+  hidden.sort((a, b) => a.start - b.start);
   return { blocks, hidden, raw };
 }
 

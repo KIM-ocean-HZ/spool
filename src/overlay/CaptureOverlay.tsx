@@ -8,6 +8,7 @@ import type { Block } from '@/lib/db/blocks';
 // These proxy to the main window's one connection; see src/overlay/db.ts.
 import { imageLinesAsText, withImageCaption } from '@/lib/blocks/imageLines';
 import { MarkdownContent } from '@/lib/blocks/MarkdownContent';
+import { cardPreview } from '@/lib/capture/limits';
 import {
   carryImages,
   setImageCaption,
@@ -1126,7 +1127,7 @@ export default function CaptureOverlay() {
             {/* A picture line never shows as its raw code here, whatever reached the card.
                 P14 插队（Ocean 2026-11-06）: drawn by the same renderer as a block — a formula, a table or
                 **bold** copied from an AI chat looks here the way it will look in the project. */}
-            <MarkdownContent content={imageLinesAsText(toast.fullContent, tr('图片'))} />
+            <MarkdownContent content={cardPreview(imageLinesAsText(toast.fullContent, tr('图片')))} />
           </div>
         )}
         <div

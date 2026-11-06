@@ -38,14 +38,21 @@ const PATTERNS: { re: RegExp; open: number; close: number; display: boolean }[] 
  *  literal text (code spans and fences); a formula touching one is not a formula. */
 export function findMath(content: string, skip: readonly { start: number; end: number }[] = []): MathSpan[] {
   if (!content.includes('$') && !content.includes('\\')) return [];
+  // P14 hotfix (2026-11-06): which characters are already taken, one byte each — checking a candidate costs
+  // its own length, not the number of formulas found so far (that was quadratic on a big block).
+  const taken = new Uint8Array(content.length + 1);
+  for (const r of skip) taken.fill(1, Math.max(0, r.start), Math.min(content.length, r.end));
+  const free = (s: number, e: number): boolean => {
+    for (let i = s; i < e; i++) if (taken[i]) return false;
+    return true;
+  };
   const out: MathSpan[] = [];
-  const taken = (s: number, e: number): boolean =>
-    out.some((m) => s < m.end && m.start < e) || skip.some((r) => s < r.end && r.start < e);
   for (const { re, open, close, display } of PATTERNS) {
     for (const m of content.matchAll(re)) {
       const start = m.index ?? 0;
       const end = start + m[0].length;
-      if (!m[1]!.trim() || taken(start, end)) continue;
+      if (!m[1]!.trim() || !free(start, end)) continue;
+      taken.fill(1, start, end);
       out.push({ start, end, innerStart: start + open, innerEnd: end - close, display });
     }
   }
