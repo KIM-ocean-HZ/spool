@@ -1,6 +1,7 @@
 # 产品任务书 P13 —— 发版二之前：Windows 真机验证（只验，不发）
 
-> **状态：ACTIVE（2026-10-28 下发）—— 下一窗执行，在 Ocean 自己的 Windows 电脑上，用 Windows 上的 Claude Code。**
+> **状态：暂停（2026-11-05 夜，HANDOFF §9.2 第 248 条）—— 排在 P14（H2 + H3）之后；Ocean 改用 Mac 上的 Parallels Desktop 来验，开工前先按虚拟机改 §0（见 HANDOFF §9.8 最上面 11-05 夜那段）。**
+> ~~状态：ACTIVE（2026-10-28 下发）—— 下一窗执行，在 Ocean 自己的 Windows 电脑上，用 Windows 上的 Claude Code。~~
 > 开工先做 §0（环境），再问 Ocean §4 的几件，答完再动手。
 >
 > **唯一交付：** 用 `main`（代码 = Mac 上 10-28 14:51 装的那一版，`33a2390`）在 Windows 上编译、跑全套测试、打不签名的 NSIS 安装包、
