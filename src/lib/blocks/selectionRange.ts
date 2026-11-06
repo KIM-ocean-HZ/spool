@@ -50,8 +50,15 @@ const textOffsetWithin = (el: HTMLElement, node: Node, offset: number): number =
 };
 
 /** Raw offset for one endpoint, or null when it cannot be placed inside a run. */
+/** Where a run ends in `content`. A formula's carrier says so itself (`data-o-end`): its drawn text is
+ *  KaTeX's, not the TeX's, so its length says nothing. */
+const runEnd = (el: HTMLElement): number =>
+  el.dataset.oEnd != null ? Number(el.dataset.oEnd) : Number(el.dataset.o) + (el.textContent?.length ?? 0);
+
 const rawOffset = (root: HTMLElement, node: Node, offset: number, end: boolean): number | null => {
   const el = runAncestor(node, root);
+  // P14 插队: an endpoint inside a formula takes the whole formula — a start its beginning, an end its end.
+  if (el && el.dataset.oEnd != null) return end ? runEnd(el) : Number(el.dataset.o);
   if (el) return Number(el.dataset.o) + textOffsetWithin(el, node, offset);
   // Endpoint outside any run — e.g. the selection starts on a drawn bullet, or on the gap
   // between two paragraphs. Snap outward to the nearest run so the user's intent survives:
@@ -62,7 +69,7 @@ const rawOffset = (root: HTMLElement, node: Node, offset: number, end: boolean):
     node.compareDocumentPosition(r) & Node.DOCUMENT_POSITION_FOLLOWING ? 1 : -1;
   if (end) {
     const before = runs.filter((r) => pos(r) < 0).pop();
-    return before ? Number(before.dataset.o) + (before.textContent?.length ?? 0) : null;
+    return before ? runEnd(before) : null;
   }
   const after = runs.find((r) => pos(r) > 0);
   return after ? Number(after.dataset.o) : null;

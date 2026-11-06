@@ -57,6 +57,7 @@ import { useBreakStore } from '@/stores/breakStore';
 import { useCaptureStore } from '@/stores/captureStore';
 import { useEngineStore } from '@/stores/engineStore';
 import { reloadOutsideWritesThrottled, watchOutsideWrites } from '@/stores/outsideWrites';
+import { installCopyTex } from '@/lib/blocks/copyTex';
 import { useProposalsStore } from '@/stores/proposalsStore';
 import { useSearchStore } from '@/stores/searchStore';
 import { useSettingsStore } from '@/stores/settingsStore';
@@ -301,6 +302,9 @@ export default function App() {
   // the user typing over there), a cheap "did anything change" check every few seconds —
   // same reload, same throttle as the focus one.
   useEffect(() => watchOutsideWrites(), []);
+
+  // P14 插队: a copy that covers a drawn formula carries its TeX, not KaTeX's glyphs.
+  useEffect(() => installCopyTex(), []);
 
   // P9Y 第二轮: the sidebar marks the workspaces linked to a folder. Once the library is up (the
   // migration that makes the table runs before the projects load), and again whenever Spool comes

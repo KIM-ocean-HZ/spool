@@ -95,7 +95,7 @@ export function MarkdownContent({
   // heading, the heading IS the emphasis — doubling them makes a title look shouted.
   const spine = withSpine && doc.blocks[0]?.kind === 'para';
 
-  const runsFor = (b: MdBlock): ReactNode => (
+  const runsIn = (span: { start: number; end: number }): ReactNode => (
     <ContentRuns
       content={content}
       hits={hits}
@@ -104,12 +104,13 @@ export function MarkdownContent({
       corrected={corrected}
       onCorrectedClick={onCorrectedClick}
       withOffsets={withOffsets}
-      from={b.text.start}
-      to={b.text.end}
+      from={span.start}
+      to={span.end}
       raw={doc.raw}
       hidden={doc.hidden}
     />
   );
+  const runsFor = (b: MdBlock): ReactNode => runsIn(b.text);
 
   // 一段结构块画成什么。⚠️ `key` 在外面那个 Fragment 上 —— Fragment 不产生 DOM。
   const nodeFor = (b: MdBlock, gap: string): ReactNode => {
@@ -136,6 +137,44 @@ export function MarkdownContent({
         </div>
       );
     }
+    // P14 插队（Ocean 2026-11-06）: tables, quotes and rules from AI answers. Each table cell goes through
+    // the same tokenizer as everything else, sliced by its own offsets — search, highlights and selection
+    // keep working inside a cell without anything being remapped.
+    if (b.kind === 'table') {
+      return (
+        <div className={`overflow-x-auto ${gap}`}>
+          <table className="border-collapse text-[0.93em] leading-[1.5]">
+            <tbody>
+              {b.rows.map((row, r) => (
+                <tr key={r} className={r === 0 ? 'bg-paper-2/60' : ''}>
+                  {row.map((cell, c) => {
+                    const Cell = r === 0 ? 'th' : 'td';
+                    const align = b.align[c] ?? (r === 0 ? 'left' : null);
+                    return (
+                      <Cell
+                        key={c}
+                        style={align ? { textAlign: align } : undefined}
+                        className={`border border-line px-2 py-1 align-top ${r === 0 ? 'font-medium text-ink' : ''}`}
+                      >
+                        {runsIn(cell)}
+                      </Cell>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      );
+    }
+    if (b.kind === 'quote') {
+      return (
+        <div className={`whitespace-pre-wrap break-words border-l-2 border-line pl-3 text-ink-2 ${gap}`}>
+          {runsFor(b)}
+        </div>
+      );
+    }
+    if (b.kind === 'hr') return <hr className={`border-0 border-t border-line ${gap || 'my-[0.6em]'}`} />;
     if (b.kind === 'code') {
       return (
         <pre

@@ -10,9 +10,11 @@
 // run flag, so consistent ==…== rendering in read mode (collapsed + expanded) needs no
 // further structural change.
 
+import { invoke } from '@tauri-apps/api/core';
 import { Fragment, type ReactNode } from 'react';
 import { HIGHLIGHT_RE } from './highlight';
 import { parseMarkdown, type MdSpan } from './markdown';
+import { findMath, renderTex } from './math';
 
 export interface HitRange {
   start: number;
@@ -25,7 +27,7 @@ export interface HitRange {
 // independent attributes is what lets both render without nesting wrappers.
 /** ⭐ `'source'` 不是 Markdown：它是合并留下的 `[from chatgpt] ` 记号（segments.ts）。
  *  和另外三个走同一条路,是因为它要的正是同一件事 —— 记号本身藏掉,里面那几个字换个样子画。 */
-export type InlineMark = 'strong' | 'em' | 'code' | 'source';
+export type InlineMark = 'strong' | 'em' | 'code' | 'source' | 'strike' | 'link';
 
 export interface ContentRun {
   text: string;
@@ -53,6 +55,12 @@ export interface ContentRun {
   // two different blocks, and 「点击它会出现修正后的信息」 means the one belonging to the
   // sentence clicked — not every correction the block happens to carry.
   correctionId?: string;
+  // P14 插队（Ocean 2026-11-06）：a formula. Its run is the TeX between the delimiters, always ONE run
+  // (no breakpoint falls inside it), drawn by KaTeX; `source` is the whole thing, delimiters included,
+  // for copying it back out. A run can be bold, highlighted, a hit or corrected AND a formula.
+  math?: { display: boolean; source: string };
+  // `[text](https://…)` — the run is the text; only http(s) ever becomes a link.
+  href?: string;
 }
 
 // Inline markers, in precedence order — first claim wins, and a later pattern overlapping
@@ -68,11 +76,15 @@ export interface ContentRun {
 const SOURCE_MARK_RE = /^\[from ([^\]\n]+)\](?: |$)/gm;
 const SOURCE_OPEN = '[from ';
 
+const CODE_MARK = { mark: 'code' as const, re: /`([^`\n]+)`/g, cap: 1 };
 const INLINE_MARKS: { mark: InlineMark; re: RegExp; cap: number }[] = [
-  { mark: 'code', re: /`([^`\n]+)`/g, cap: 1 },
   { mark: 'strong', re: /\*\*([^\n]+?)\*\*/g, cap: 2 },
   { mark: 'em', re: /(?<![*\w])\*(?!\s)([^*\n]*[^*\s\n])\*(?![*\w])/g, cap: 1 },
+  // P14 插队: GFM strikethrough.
+  { mark: 'strike', re: /~~(?!\s)([^~\n]*[^~\s\n])~~/g, cap: 2 },
 ];
+// P14 插队: `[text](https://…)`. Anything but http(s) stays text — a `javascript:` or a path is not a link.
+const LINK_RE = /\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/g;
 
 // End offset of the "spine" — the slightly-heavier opening of a text block. Rule:
 //   - content has a blank line ("\n\n"): spine = everything before the first blank line
@@ -126,6 +138,8 @@ export function tokenizeContent(content: string, opts: TokenizeOptions = {}): Co
     | { kind: 'highlight'; start: number; end: number }
     | { kind: 'mark'; start: number; end: number; mark: InlineMark }
     | { kind: 'corrected'; start: number; end: number; id?: string }
+    | { kind: 'math'; start: number; end: number; display: boolean; source: string }
+    | { kind: 'link'; start: number; end: number; href: string }
     | { kind: 'cap'; start: number; end: number };
 
   const intervals: Interval[] = [];
@@ -146,16 +160,66 @@ export function tokenizeContent(content: string, opts: TokenizeOptions = {}): Co
     intervals.push({ kind: 'cap', start: e - 2, end: e });
   }
   // §10.1 inline Markdown, same shape: the marker chars are caps, the inside is a mark.
+  const markOne = (mark: InlineMark, s: number, e: number, cap: number): void => {
+    claimed.push({ start: s, end: e });
+    intervals.push({ kind: 'cap', start: s, end: s + cap });
+    intervals.push({ kind: 'mark', start: s + cap, end: e - cap, mark });
+    intervals.push({ kind: 'cap', start: e - cap, end: e });
+  };
+  // Code first: backticks are the one marker whose whole job is 「what is inside me is literal」.
+  for (const m of content.matchAll(CODE_MARK.re)) {
+    const s = m.index ?? 0;
+    const e = s + m[0].length;
+    if (free(s, e)) markOne('code', s, e, CODE_MARK.cap);
+  }
+  // P14 插队 — formulas, next: TeX is full of `*`, `_` and `~`, which must not turn into emphasis.
+  // A formula may sit inside a ==highlight== (or, below, inside bold / a link) but nothing may cut
+  // through it, and it must lie inside the slice being drawn. It is NOT a claim: bold around it is fine.
+  const maths: { start: number; end: number }[] = [];
+  const highlights = intervals.filter((it) => it.kind === 'highlight');
+  for (const m of findMath(content, [...(opts.raw ?? []), ...claimed.filter((c) => !highlights.some((h) => h.start - 2 === c.start))])) {
+    if (m.start < from || m.end > to) continue;
+    const crossesHighlight = highlights.some(
+      (h) => m.start < h.end + 2 && h.start - 2 < m.end && !(m.start >= h.start && m.end <= h.end),
+    );
+    if (crossesHighlight) continue;
+    maths.push({ start: m.start, end: m.end });
+    intervals.push({ kind: 'cap', start: m.start, end: m.innerStart });
+    intervals.push({
+      kind: 'math', start: m.innerStart, end: m.innerEnd, display: m.display, source: content.slice(m.start, m.end),
+    });
+    intervals.push({ kind: 'cap', start: m.innerEnd, end: m.end });
+    // A display formula is its own line: the newline on either side would otherwise draw an empty one.
+    if (m.display && content[m.start - 1] === '\n' && m.start - 1 >= from) {
+      intervals.push({ kind: 'cap', start: m.start - 1, end: m.start });
+    }
+    if (m.display && content[m.end] === '\n' && m.end < to) {
+      intervals.push({ kind: 'cap', start: m.end, end: m.end + 1 });
+    }
+  }
+  /** A marker pair may hold whole formulas, but neither marker may sit inside one. */
+  const clearOfMath = (s: number, e: number, capL: number, capR: number): boolean =>
+    maths.every(
+      (m) =>
+        e <= m.start || m.end <= s || (m.start >= s + capL && m.end <= e - capR),
+    );
   for (const { mark, re, cap } of INLINE_MARKS) {
     for (const m of content.matchAll(re)) {
       const s = m.index ?? 0;
       const e = s + m[0].length;
-      if (!free(s, e)) continue;
-      claimed.push({ start: s, end: e });
-      intervals.push({ kind: 'cap', start: s, end: s + cap });
-      intervals.push({ kind: 'mark', start: s + cap, end: e - cap, mark });
-      intervals.push({ kind: 'cap', start: e - cap, end: e });
+      if (free(s, e) && clearOfMath(s, e, cap, cap)) markOne(mark, s, e, cap);
     }
+  }
+  for (const m of content.matchAll(LINK_RE)) {
+    const s = m.index ?? 0;
+    const e = s + m[0].length;
+    const textEnd = s + 1 + m[1]!.length;
+    if (!free(s, e) || !clearOfMath(s, e, 1, e - textEnd)) continue;
+    claimed.push({ start: s, end: e });
+    intervals.push({ kind: 'cap', start: s, end: s + 1 });
+    intervals.push({ kind: 'mark', start: s + 1, end: textEnd, mark: 'link' });
+    intervals.push({ kind: 'link', start: s + 1, end: textEnd, href: m[2]! });
+    intervals.push({ kind: 'cap', start: textEnd, end: e });
   }
   // ⭐ 2026-08-25 —— 合并留下的来源记号。`[from ` 和 `] ` 当 cap 藏掉,中间那几个字画成一枚
   // 小标签（Ocean:「来源的文字特别大,和正文混在一起」—— 它以前就是 15px 的正文）。
@@ -187,7 +251,11 @@ export function tokenizeContent(content: string, opts: TokenizeOptions = {}): Co
     if (it.start > from && it.start < to) breakpoints.add(it.start);
     if (it.end > from && it.end < to) breakpoints.add(it.end);
   }
-  const sorted = [...breakpoints].sort((a, b) => a - b);
+  // A formula is drawn whole or not at all: nothing breaks inside its TeX.
+  const formulaRuns = intervals.filter((it): it is Extract<Interval, { kind: 'math' }> => it.kind === 'math');
+  const sorted = [...breakpoints]
+    .filter((b) => !formulaRuns.some((f) => b > f.start && b < f.end))
+    .sort((a, b) => a - b);
 
   const runs: ContentRun[] = [];
   for (let i = 0; i < sorted.length - 1; i++) {
@@ -198,9 +266,12 @@ export function tokenizeContent(content: string, opts: TokenizeOptions = {}): Co
     if (intervals.some((it) => it.kind === 'cap' && segStart >= it.start && segEnd <= it.end)) {
       continue;
     }
+    const formula = formulaRuns.find((f) => segStart >= f.start && segEnd <= f.end);
+    // Inside a formula, anything that TOUCHES it covers all of it (a hit on 「x」 marks the formula).
+    const covers = (it: { start: number; end: number }): boolean =>
+      formula ? it.start < segEnd && segStart < it.end : segStart >= it.start && segEnd <= it.end;
     const hit = intervals.find(
-      (it): it is Extract<Interval, { kind: 'hit' }> =>
-        it.kind === 'hit' && segStart >= it.start && segEnd <= it.end,
+      (it): it is Extract<Interval, { kind: 'hit' }> => it.kind === 'hit' && covers(it),
     );
     const highlight = intervals.some(
       (it) => it.kind === 'highlight' && segStart >= it.start && segEnd <= it.end,
@@ -209,8 +280,10 @@ export function tokenizeContent(content: string, opts: TokenizeOptions = {}): Co
       (it): it is Extract<Interval, { kind: 'mark' }> =>
         it.kind === 'mark' && segStart >= it.start && segEnd <= it.end,
     )?.mark;
-    const correction = intervals.find(
-      (it) => it.kind === 'corrected' && segStart >= it.start && segEnd <= it.end,
+    const correction = intervals.find((it) => it.kind === 'corrected' && covers(it));
+    const link = intervals.find(
+      (it): it is Extract<Interval, { kind: 'link' }> =>
+        it.kind === 'link' && segStart >= it.start && segEnd <= it.end,
     );
     runs.push({
       text: content.slice(segStart, segEnd),
@@ -222,6 +295,8 @@ export function tokenizeContent(content: string, opts: TokenizeOptions = {}): Co
       mark,
       corrected: !!correction || undefined,
       correctionId: correction?.kind === 'corrected' ? correction.id : undefined,
+      ...(formula ? { math: { display: formula.display, source: formula.source } } : {}),
+      ...(link ? { href: link.href } : {}),
     });
   }
   return runs;
@@ -278,9 +353,11 @@ export function ContentRuns({
 }: ContentRunsProps): ReactNode {
   const runs = tokenizeContent(content, opts);
   // One wrapper, one attribute, no styling — it must not change a single pixel.
+  // P14 插队: a formula's rendered text has nothing to do with its TeX, so its carrier also says where it
+  // ENDS — selectionRange snaps an endpoint inside it to one of the two (the whole formula, never half).
   const located = (node: ReactNode, key: number, run: ContentRun): ReactNode =>
     withOffsets ? (
-      <span key={key} data-o={run.start}>
+      <span key={key} data-o={run.start} data-o-end={run.math ? run.end : undefined}>
         {node}
       </span>
     ) : (
@@ -335,7 +412,11 @@ export function ContentRuns({
               : 'font-medium'
             : run.mark === 'em'
               ? 'italic'
-              : run.mark === 'code'
+              : run.mark === 'strike'
+                ? 'text-muted line-through'
+                : run.mark === 'link'
+                  ? 'text-accent underline underline-offset-2'
+                  : run.mark === 'code'
                 ? 'rounded-sm bg-paper-2 px-1 font-mono text-[0.9em] text-ink'
                 : run.mark === 'source'
                   ? // 合并留下的来源记号：一枚小灰标签,和块头上那个来源徽章一个意思、一个音量。
@@ -362,6 +443,39 @@ export function ContentRuns({
         // and keeps its own key, so non-corrected blocks render node-for-node as before.
         const wrap = (n: ReactNode, key: number): ReactNode =>
           located(run.corrected ? clickable(n, key, run.correctionId) : n, key, run);
+        // P14 插队 — the formula itself, or (KaTeX gave nothing back) its TeX as it is, so nothing is lost.
+        // `data-tex` is what a copy puts back on the clipboard in its place (copyTex.ts).
+        const body = (text: ReactNode): ReactNode => {
+          if (!run.math) return text;
+          const html = renderTex(run.text, run.math.display);
+          if (!html) return <span className="font-mono text-[0.9em]">{text}</span>;
+          return (
+            <span
+              data-tex={run.math.source}
+              className={run.math.display ? 'block overflow-x-auto overflow-y-hidden py-[0.15em]' : ''}
+              dangerouslySetInnerHTML={{ __html: html }}
+            />
+          );
+        };
+        if (run.href && !run.math) {
+          return wrap(
+            <a
+              key={i}
+              href={run.href}
+              rel="noreferrer"
+              title={run.href}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                void invoke('open_target', { target: run.href }).catch(() => {});
+              }}
+              className={`${markCls} ${run.hit || run.highlight ? 'rounded-sm bg-[var(--selection)]' : ''} ${correctedCls}`.trim()}
+            >
+              {run.text}
+            </a>,
+            i,
+          );
+        }
         if (run.hit) {
           return wrap(
             <mark
@@ -373,7 +487,7 @@ export function ContentRuns({
                   : 'bg-[var(--selection)]'
               } ${spineCls}`}
             >
-              {run.text}
+              {body(run.text)}
             </mark>,
             i,
           );
@@ -384,7 +498,7 @@ export function ContentRuns({
               key={i}
               className={`rounded-sm bg-[var(--selection)] px-0.5 text-ink ${spineCls}`}
             >
-              {run.text}
+              {body(run.text)}
             </mark>,
             i,
           );
@@ -397,10 +511,10 @@ export function ContentRuns({
             i,
           );
         }
-        if (spineCls) {
+        if (spineCls || run.math) {
           return wrap(
-            <span key={i} className={spineCls}>
-              {run.text}
+            <span key={i} className={spineCls || undefined}>
+              {body(run.text)}
             </span>,
             i,
           );

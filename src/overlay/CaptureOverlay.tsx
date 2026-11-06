@@ -7,6 +7,7 @@ import type { Block } from '@/lib/db/blocks';
 // 🚨 Not @/lib/db — this process never opens SQLite (DESIGN_CAPTURE_HELPER_PROCESS §3.3).
 // These proxy to the main window's one connection; see src/overlay/db.ts.
 import { imageLinesAsText, withImageCaption } from '@/lib/blocks/imageLines';
+import { MarkdownContent } from '@/lib/blocks/MarkdownContent';
 import {
   carryImages,
   setImageCaption,
@@ -1122,8 +1123,10 @@ export default function CaptureOverlay() {
           </div>
         ) : (
           <div className="line-clamp-2 whitespace-pre-wrap break-words font-ui text-[14px] leading-snug text-ink">
-            {/* A picture line never shows as its raw code here, whatever reached the card. */}
-            {imageLinesAsText(toast.fullContent, tr('图片'))}
+            {/* A picture line never shows as its raw code here, whatever reached the card.
+                P14 插队（Ocean 2026-11-06）: drawn by the same renderer as a block — a formula, a table or
+                **bold** copied from an AI chat looks here the way it will look in the project. */}
+            <MarkdownContent content={imageLinesAsText(toast.fullContent, tr('图片'))} />
           </div>
         )}
         <div

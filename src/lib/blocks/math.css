@@ -1,0 +1,9 @@
+/* P14 插队（Ocean 2026-11-06）: KaTeX's own 1.21em is sized for Latin body text; beside Chinese it reads a
+   size too big, and its 1em display margins open a gap above and below every displayed formula.
+   Loaded after katex.min.css (math.ts), so the same-specificity rules here win. */
+.katex {
+  font-size: 1.08em;
+}
+.katex-display {
+  margin: 0.35em 0;
+}
