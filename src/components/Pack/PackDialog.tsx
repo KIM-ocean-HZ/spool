@@ -16,6 +16,7 @@ import {
   type PackRange,
 } from '@/lib/pack/assemble';
 import { exportErrorMessage, isFound, pickedFiles } from '@/lib/pack/exportList';
+import { type FileGap, packFileGaps } from '@/lib/pack/fileGaps';
 import {
   buildProjectExport,
   carriesAnything,
@@ -23,7 +24,7 @@ import {
   packedPictures,
   sanitizeFolderName,
 } from '@/lib/pack/folder';
-import { INSTRUCTION_HEADER } from '@/lib/pack/templates';
+import { EXTRACT_CHAR_CAP, INSTRUCTION_HEADER } from '@/lib/pack/templates';
 import { useSettingsStore } from '@/stores/settingsStore';
 import type { Attachment } from '@/lib/db/attachments';
 import type { Block } from '@/lib/db/blocks';
@@ -152,6 +153,15 @@ export default function PackDialog({
     [thread, blocks, attachments, range, refTitles, refBlocks, images, picked, picturesOn, instructions, language],
   );
   const toFolder = carriesAnything(exportPlan);
+  const gaps = useMemo(() => packFileGaps(attachments), [attachments]);
+  const gapLine = (g: FileGap): string =>
+    g.reason === 'notInPack'
+      ? t('{name}：没开「打包可读」', { name: g.name })
+      : g.reason === 'cut'
+        ? t('{name}：只带了前 {n} 字', { name: g.name, n: EXTRACT_CHAR_CAP })
+        : g.reason === 'failed'
+          ? t('{name}：读不出文字', { name: g.name })
+          : t('{name}：Spool 没有它的文字', { name: g.name });
   // P8 验收第一轮 (Ocean 2026-10-10: 「打包项目不能给项目文件夹命名，只能选择默认名字」) — the same box the
   // workspace export has. null = 「还没改过」: the box shows the suggested name, and an emptied box
   // falls back to it rather than exporting a folder called nothing.
@@ -347,6 +357,19 @@ export default function PackDialog({
               spellCheck={false}
               className="min-w-0 flex-1 rounded-md border border-line bg-paper px-2 py-0.5 text-ink outline-none transition-colors focus:border-accent"
             />
+          </div>
+        )}
+
+        {/* P14 (H3): 「复制」 carries the text only of the files ticked 「打包可读」, cut at 8000 — say it, or the
+            user pastes this thinking every file went along (2026-11-04 T03). Hover for which and why. */}
+        {gaps.length > 0 && (
+          <div
+            title={gaps.map(gapLine).join('\n')}
+            className="flex-none border-t border-line bg-paper-2/30 px-5 py-2 text-[11px] text-muted"
+          >
+            {t('有 {n} 个文件的文字没全在这份里 —— 复制给别的 AI 时把文件本身也发过去，或者用「导出文件夹」', {
+              n: gaps.length,
+            })}
           </div>
         )}
 

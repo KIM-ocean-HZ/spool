@@ -33,6 +33,8 @@ import {
   REF_BLOCK_SUPERSEDES,
   REF_NOTE_PREFIX,
   REF_MARKER,
+  EXPORTED_FILES_NOTE,
+  EXTRACT_FAILED_MARKER,
   SECTION_FILES,
   SECTION_LOG,
   SECTION_PINNED,
@@ -210,7 +212,7 @@ export const baseName = (target: string): string => {
 const packTarget = (a: Attachment): string => baseName(a.target);
 
 // An attachment's display text falls back to its target when the label is empty.
-const attachmentLabel = (a: Attachment): string => a.label.trim() || packTarget(a);
+export const attachmentLabel = (a: Attachment): string => a.label.trim() || packTarget(a);
 
 // Extracted file text, indented under its block and capped so one large PDF can't dominate
 // the pack. Every line — including the truncation marker — carries the 6-space indent.
@@ -257,6 +259,8 @@ const renderProjectFile = (a: Attachment, seq: number | undefined, link: string 
     }
     return [`- ${label}${shown}  [extracted: yes, not inlined]${on}`];
   }
+  // P14 (H3): tried and got nothing — not the same as a file Spool never read. Mirrors mcp.rs.
+  if (a.kind === 'file' && a.extractionKind === 'failed') return [`- ${label}${shown}  ${EXTRACT_FAILED_MARKER}${on}`];
   return [`- ${label}${shown}${on}`];
 };
 
@@ -647,6 +651,12 @@ export function assemble({
     out.push('');
     out.push(SECTION_FILES);
     out.push('');
+    // P14 (H3): in an exported folder the original sits beside this file — say so once, or a row that
+    // reads `not inlined` sends the reader off to ask for a file it already has.
+    if (files.some((a) => exportedFiles?.has(a.id))) {
+      out.push(EXPORTED_FILES_NOTE);
+      out.push('');
+    }
     for (const a of files) {
       const seq = a.anchorBlockId == null ? undefined : seqs.get(a.anchorBlockId);
       out.push(...renderProjectFile(a, seq, exportedFiles?.get(a.id)));

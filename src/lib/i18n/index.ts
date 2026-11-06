@@ -444,6 +444,13 @@ const EN: Record<string, string> = {
   '读不出项目内容，导出取消了': 'Could not read the projects — export cancelled',
   '已复制': 'Copied',
   '{packed} / {total} 块 · {chars} 字符': '{packed} / {total} blocks · {chars} chars',
+  // P14 (H3): the Pack dialog's line about files whose text the copy does not carry in full (+ hover list).
+  '有 {n} 个文件的文字没全在这份里 —— 复制给别的 AI 时把文件本身也发过去，或者用「导出文件夹」':
+    "Files whose text isn't all in this pack: {n} — send them along when you copy it, or use Export folder",
+  '{name}：没开「打包可读」': '{name}: “In packs” is off',
+  '{name}：只带了前 {n} 字': '{name}: only the first {n} characters are in',
+  '{name}：读不出文字': "{name}: Spool couldn't read its text",
+  '{name}：Spool 没有它的文字': '{name}: Spool has no text for it',
 
   // Search
   '搜索所有工作区与项目的内容…': 'Search all workspaces and projects…',

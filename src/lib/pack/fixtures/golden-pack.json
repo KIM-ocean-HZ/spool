@@ -274,6 +274,19 @@
       "createdAt": 1749996401000
     },
     {
+      "id": "a6",
+      "threadId": "t1",
+      "kind": "file",
+      "target": "/Users/x/papers/scan.pdf",
+      "label": "scan.pdf",
+      "extractedText": null,
+      "extractedAt": 1749996402000,
+      "extractionKind": "failed",
+      "includeInPack": false,
+      "aiAccess": false,
+      "createdAt": 1749996402000
+    },
+    {
       "id": "a5",
       "threadId": "t1",
       "kind": "file",

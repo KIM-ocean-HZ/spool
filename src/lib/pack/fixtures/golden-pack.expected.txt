@@ -118,9 +118,9 @@ Indented under a block:
   the older block. Read #N before using this one. When #N said which sentence it was
   correcting, that sentence is quoted after it — the rest of this block is unaffected.
 Files are NOT listed under a block. They belong to the project and are listed once, at the
-end, under "Related Files & Links". A file whose text Spool extracted is printed there only
-when the user opted in; otherwise its row is marked `[extracted: yes, not inlined]`, which
-means the text exists and you may ask the user for it.
+end, under "Related Files & Links". A file's extracted text is printed there only when the
+user opted in; otherwise its row says `[extracted: yes, not inlined]`. To read it, follow
+the section after the pack if there is one; else ask the user.
 
 Any line wrapped in `[... ...]` is Spool speaking, not content: it states what was left
 out of this pack and how to get it. Nothing Spool leaves out has been deleted. If what it
@@ -189,6 +189,7 @@ stands, what is still open, what changed most recently — and then stop and wai
       第二行
 - rubric.docx  [extracted: yes, not inlined] · on #2
 - baseline · on project
+- scan.pdf  [text could not be extracted] · on project
 
 ---
 

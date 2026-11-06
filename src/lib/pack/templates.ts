@@ -10,6 +10,12 @@ export const NOTE_INDENT = '    '; // 4 spaces — annotation + attachment marke
 export const EXTRACT_INDENT = '      '; // 6 spaces — extracted file-text body
 export const PINNED_PREFIX = '📌 '; // prepended to a pinned block's time bracket
 export const EXTRACT_CHAR_CAP = 8000; // max extracted chars inlined per attachment
+// P14 (H3): a file Spool tried to read and got no text out of (`extraction_kind = 'failed'`). Without it
+// that row looked exactly like a file Spool never read. Mirrored in mcp.rs (golden).
+export const EXTRACT_FAILED_MARKER = '[text could not be extracted]';
+// P14 (H3), export only: under the files heading of an exported folder, when names link to the copies
+// beside the .md. ⛔ Not in the shared header — the MCP pack never has links.
+export const EXPORTED_FILES_NOTE = 'A file name that is a link opens the original file, copied into this folder beside this pack.';
 
 // --- Inline markers ---------------------------------------------------------------------
 export const SOURCE_MARKER = ' · from ';
@@ -308,9 +314,9 @@ Indented under a block:
   the older block. Read #N before using this one. When #N said which sentence it was
   correcting, that sentence is quoted after it — the rest of this block is unaffected.
 Files are NOT listed under a block. They belong to the project and are listed once, at the
-end, under "Related Files & Links". A file whose text Spool extracted is printed there only
-when the user opted in; otherwise its row is marked \`[extracted: yes, not inlined]\`, which
-means the text exists and you may ask the user for it.
+end, under "Related Files & Links". A file's extracted text is printed there only when the
+user opted in; otherwise its row says \`[extracted: yes, not inlined]\`. To read it, follow
+the section after the pack if there is one; else ask the user.
 
 Any line wrapped in \`[... ...]\` is Spool speaking, not content: it states what was left
 out of this pack and how to get it. Nothing Spool leaves out has been deleted. If what it

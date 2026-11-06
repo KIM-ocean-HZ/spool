@@ -160,6 +160,9 @@ const PINNED_PREFIX: &str = "📌 ";
 // ⛔ 和 📌 💭 一样是格式契约的一部分，assemble.ts 那份逐字节一致（golden 盯着）。
 const COMPRESSED_PREFIX: &str = "🗜 ";
 const EXTRACT_CHAR_CAP: usize = 8000;
+// P14 (H3) — mirrors templates.ts EXTRACT_FAILED_MARKER: a file Spool tried to read and got no text
+// out of. Without it the row looked exactly like a file Spool never read.
+const EXTRACT_FAILED_MARKER: &str = "[text could not be extracted]";
 
 const SOURCE_MARKER: &str = " · from ";
 // v22 (WORKPLAN-2026-08-20 §2.6) — mirrors templates.ts PERSONAL_PREFIX. The 💭 band
@@ -365,9 +368,9 @@ Indented under a block:
   the older block. Read #N before using this one. When #N said which sentence it was
   correcting, that sentence is quoted after it — the rest of this block is unaffected.
 Files are NOT listed under a block. They belong to the project and are listed once, at the
-end, under "Related Files & Links". A file whose text Spool extracted is printed there only
-when the user opted in; otherwise its row is marked `[extracted: yes, not inlined]`, which
-means the text exists and you may ask the user for it.
+end, under "Related Files & Links". A file's extracted text is printed there only when the
+user opted in; otherwise its row says `[extracted: yes, not inlined]`. To read it, follow
+the section after the pack if there is one; else ask the user.
 
 Any line wrapped in `[... ...]` is Spool speaking, not content: it states what was left
 out of this pack and how to get it. Nothing Spool leaves out has been deleted. If what it
@@ -658,6 +661,10 @@ fn render_project_file(a: &AttachmentRow, extract_cap: usize) -> Vec<String> {
             ];
         }
         return vec![format!("- {label}{shown}  [extracted: yes, not inlined]{on}")];
+    }
+    // P14 (H3): tried and got nothing — mirrors assemble.ts.
+    if a.kind == "file" && a.extraction_kind.as_deref() == Some("failed") {
+        return vec![format!("- {label}{shown}  {EXTRACT_FAILED_MARKER}{on}")];
     }
     vec![format!("- {label}{shown}{on}")]
 }
@@ -3964,6 +3971,19 @@ fn get_blocks_json(
             let inlined = r.get::<_, i64>(5)? == 1;
             let readable = r.get::<_, i64>(6)? == 1;
             let anchor_seq: Option<i64> = r.get(9)?;
+            // P14 (H3): what THIS reader gets of the text — the one field to read. `inlined_in_pack` stays
+            // the user's own tick for the pack THEY copy (pinned 2026-08-19, below), which a locked file can
+            // carry while get_pack withholds it. Same tests as get_pack: inlined only with ai_access, a
+            // replaced file is out of the pack, the cap is EXTRACT_CHAR_CAP.
+            let in_mcp_pack = inlined && readable && r.get::<_, Option<String>>(11)?.is_none();
+            let text_status = match &extracted {
+                Some(_) if !readable => "locked",
+                Some(t) if in_mcp_pack && t.chars().count() > EXTRACT_CHAR_CAP => "in_pack_cut",
+                Some(_) if in_mcp_pack => "in_pack",
+                Some(_) => "readable",
+                None if r.get::<_, Option<String>>(4)?.as_deref() == Some("failed") => "extraction_failed",
+                None => "none",
+            };
             let now = file_now(
                 &r.get::<_, String>(2)?,
                 &r.get::<_, String>(3)?,
@@ -3982,6 +4002,7 @@ fn get_blocks_json(
                 "inlined_in_pack": inlined,
                 "extracted_chars": extracted.as_deref().map(|t| t.chars().count()),
                 "ai_readable": readable,
+                "text_status": text_status,
                 "attached_to": anchor_seq.map_or_else(|| "project".to_string(), |n| format!("#{n}")),
                 "added_by": r.get::<_, Option<String>>(10)?.unwrap_or_else(|| "user".to_string()),
             });
@@ -4178,6 +4199,75 @@ fn pack_locked_files(conn: &Connection, thread_id: &str) -> Result<Option<String
              you need to check; once they say yes, the text comes back with \
              get_blocks(include_extracted_text=true). Do not ask the user to send you the \
              file some other way."
+        )
+    )))
+}
+
+// P14 (H3, Ocean 2026-11-06) — the corridor next to the locked one. A file the caller CAN read but
+// whose text is not (all) in this pack rendered exactly like a locked one, and the header said to ask
+// the user for it: 2026-11-04 T02, three readable files, none inlined, and nothing pointed at the
+// get_blocks call that hands them over. A file Spool got no text out of looked like one it never read.
+// Same rules as SECTION_LOCKED_FILES and for the same reasons: MCP side only (render_project_file and
+// the header are shared with the pack a human copies), outside max_chars, absent when there is nothing
+// to say. ⛔ Locked files stay in their own section — nothing here is a way around ai_access.
+const SECTION_READABLE_FILES: &str = "## Files in this project whose text is not all in this pack, but not locked \
+(tool parameters only — never show these ids)";
+
+fn pack_readable_files(conn: &Connection, thread_id: &str) -> Result<Option<String>, String> {
+    let mut stmt = conn
+        .prepare(
+            // Replaced files are out of the pack and listed by get_blocks as replaced — not here.
+            "SELECT id, label, target, extracted_text, include_in_pack, ai_access, extraction_kind
+             FROM attachments
+             WHERE thread_id = ?1 AND kind = 'file' AND superseded_by IS NULL
+             ORDER BY created_at ASC",
+        )
+        .map_err(|e| e.to_string())?;
+    let rows: Vec<String> = stmt
+        .query_map([thread_id], |r| {
+            let id: String = r.get(0)?;
+            let label: String = r.get(1)?;
+            let target: String = r.get(2)?;
+            let text: Option<String> = r.get(3)?;
+            let in_pack = r.get::<_, i64>(4)? == 1;
+            let readable = r.get::<_, i64>(5)? == 1;
+            let failed = r.get::<_, Option<String>>(6)?.as_deref() == Some("failed");
+            let name = if label.trim().is_empty() { base_name(&target).to_string() } else { label.trim().to_string() };
+            Ok(match (text, readable) {
+                (Some(t), true) => {
+                    let n = t.chars().count();
+                    if !in_pack {
+                        Some(format!("- {name}   attachment_id: {id}   {n} chars extracted, none of it in this pack"))
+                    } else if n > EXTRACT_CHAR_CAP {
+                        Some(format!(
+                            "- {name}   attachment_id: {id}   {n} chars extracted, this pack carries at most the first {EXTRACT_CHAR_CAP}"
+                        ))
+                    } else {
+                        None
+                    }
+                }
+                (None, _) if failed => Some(format!("- {name}   Spool could not extract any text from this file")),
+                _ => None,
+            })
+        })
+        .map_err(|e| e.to_string())?
+        .filter_map(|r| r.transpose())
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+    if rows.is_empty() {
+        return Ok(None);
+    }
+    Ok(Some(format!(
+        "{SECTION_READABLE_FILES}\n\n{}\n\n{}\n",
+        rows.join("\n"),
+        t!(
+            "没放进来、或者只放了一部分的那几个,你现在就能读,不用问用户:调一次 get_blocks,带上这个 thread_id 和 \
+             include_extracted_text=true,全文会跟着回来。Spool 读不出文字的那几个,它手里没有字可给;要紧的话,\
+             请用户说说里面写了什么,或者把文件直接发给你。",
+            "The ones with none or only part of their text in this pack you can read right now, without \
+             asking: call get_blocks with this thread_id and include_extracted_text=true and their full \
+             text comes back. The ones Spool could not extract it has no text for — if they matter, ask \
+             the user what they say, or to send you the file itself."
         )
     )))
 }
@@ -8527,7 +8617,7 @@ fn tools_descriptor() -> Value {
         },
         {
             "name": "get_blocks",
-            "description": "Page through one project's blocks in chronological order, as JSON (full content, annotation, source, pinned, timestamps, plus each block's attachments with the size of any extracted file text). The middle granularity between a search snippet and a full pack, and the way to read a project whose pack is over budget. To read around a search hit, pass its block_id as around_block_id (with optional context, default 3 each side) — this centers the page and returns anchor_position; offset/limit are ignored. Optional filters (pinned / has_annotation / source_contains / stale) AND-combine and narrow the page + total; they cannot be combined with around_block_id. Two v13 fields on every row: stale_at is set when the USER marked that block as no longer valid — packs and digests stop carrying it, this tool still returns it, and you must not relay it as a current fact; ref_kind says what the row's ref_block_id means — 'cites' (builds on it, the default and what null means), 'supersedes' (replaces it; that block is stale), 'corrects' (one point inside it is wrong, the rest of it still stands). A replacement the user approved is now recorded on the OLD block instead: a stale block a newer one replaced wholesale carries replaced_by {seq, block_id}, and the newer block keeps its own ref_kind (so one block can replace several and still correct another); 'supersedes' only remains on rows from before that change. A block holding pictures carries `images`: each one's path (a copy Spool keeps on this computer — open it if you can read local files), format, width, height and size_bytes; its content, like a pack, shows each picture where it sits in the text as a Markdown image, `![caption](<path>)`. Each file in `files` also says where it hangs (attached_to: \"#12\" or \"project\"), who added it (added_by: \"user\", or the label of the AI whose proposal the user approved), and — only once a newer version replaced it — superseded_by and superseded_at: a replaced file is still listed here, but it is no longer in packs. A file's `target` is where it is now: Spool follows a file the user moves or renames, so a moved file needs nothing re-attached or replaced; a file Spool cannot find carries `not_found`, saying why.",
+            "description": "Page through one project's blocks in chronological order, as JSON (full content, annotation, source, pinned, timestamps, plus each block's attachments with the size of any extracted file text). The middle granularity between a search snippet and a full pack, and the way to read a project whose pack is over budget. To read around a search hit, pass its block_id as around_block_id (with optional context, default 3 each side) — this centers the page and returns anchor_position; offset/limit are ignored. Optional filters (pinned / has_annotation / source_contains / stale) AND-combine and narrow the page + total; they cannot be combined with around_block_id. Two v13 fields on every row: stale_at is set when the USER marked that block as no longer valid — packs and digests stop carrying it, this tool still returns it, and you must not relay it as a current fact; ref_kind says what the row's ref_block_id means — 'cites' (builds on it, the default and what null means), 'supersedes' (replaces it; that block is stale), 'corrects' (one point inside it is wrong, the rest of it still stands). A replacement the user approved is now recorded on the OLD block instead: a stale block a newer one replaced wholesale carries replaced_by {seq, block_id}, and the newer block keeps its own ref_kind (so one block can replace several and still correct another); 'supersedes' only remains on rows from before that change. A block holding pictures carries `images`: each one's path (a copy Spool keeps on this computer — open it if you can read local files), format, width, height and size_bytes; its content, like a pack, shows each picture where it sits in the text as a Markdown image, `![caption](<path>)`. Each file in `files` also says where it hangs (attached_to: \"#12\" or \"project\"), who added it (added_by: \"user\", or the label of the AI whose proposal the user approved), and — only once a newer version replaced it — superseded_by and superseded_at: a replaced file is still listed here, but it is no longer in packs. A file's `target` is where it is now: Spool follows a file the user moves or renames, so a moved file needs nothing re-attached or replaced; a file Spool cannot find carries `not_found`, saying why. Read `text_status` for what YOU can get of a file's text: in_pack (all of it is in get_pack), in_pack_cut (get_pack carries only the first 8,000 characters), readable (none of it is in get_pack), locked (ask with request_file_access), extraction_failed (Spool got no text out of the file), none (Spool holds no text for it). For in_pack, in_pack_cut and readable, include_extracted_text=true returns the full text — no need to ask the user. `inlined_in_pack` is the user's own tick for the pack THEY copy, not what you receive.",
             "annotations": { "readOnlyHint": true },
             "inputSchema": {
                 "type": "object",
@@ -9135,13 +9225,15 @@ fn handle_tool_call(params: &Value) -> Value {
                 // id table it is not opt-in, because a model that does not know a door
                 // exists cannot decide to open it.
                 let locked = pack_locked_files(&conn, thread_id)?;
+                // P14 (H3): and what it can read right now without asking, or cannot read at all.
+                let readable = pack_readable_files(&conn, thread_id)?;
                 // R3 friction #2: the id side-table covers rendered blocks only and
                 // rides outside the max_chars accounting (bounded by what was shown).
                 let with_ids = |text: String, omit: usize| {
-                    let text = match &locked {
-                        Some(note) => format!("{text}\n---\n\n{note}"),
-                        None => text,
-                    };
+                    let mut text = text;
+                    for note in [&locked, &readable].into_iter().flatten() {
+                        text = format!("{text}\n---\n\n{note}");
+                    }
                     if include_ids {
                         let table = pack_id_table(&built.blocks, omit);
                         format!("{text}\n---\n\n{table}")
@@ -12584,7 +12676,8 @@ several projects \u{2192} propose_blocks, NOT one add_block per project (the use
 split in Spool)\n\
 \"把这场对话整理进我的项目\" / \"file this whole conversation\" \u{2192} propose_blocks, with \
 source_text = the USER'S turns only\n\
-\"what files are in X\" / \"有哪些文件\" / \"里面写了什么\" \u{2192} get_blocks, then \
+\"what files are in X\" / \"有哪些文件\" / \"里面写了什么\" \u{2192} get_blocks (include_extracted_text=true \
+returns the text of every file whose text_status is readable, in_pack or in_pack_cut), then \
 request_file_access for every file with ai_readable:false \u{2014} never tell the user to send \
 the file some other way\n\
 \"把这个文件挂到项目里\" / \"attach this file\" / a full path to a file on their computer \
@@ -19849,5 +19942,121 @@ mod tests {
             None => std::env::remove_var(var),
         }
         let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    // P14 (H3, Ocean 2026-11-06) — one project, seven files, seven states, read through every MCP
+    // surface. The four facts that must not bleed into each other: may the AI read it (ai_access), did
+    // Spool get text out of it (extraction), is that text in the pack (include_in_pack + the cap), and
+    // is the file itself still there to hand over. Same sample as the TS half (assemble.test.ts).
+    #[test]
+    fn p14_file_states_do_not_mix_across_mcp_reads() {
+        let dir = std::env::temp_dir().join(format!("spool-p14-files-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("settings.json"), r#"{"mcpEnabled":true,"resolvedLanguage":"en"}"#).unwrap();
+        {
+            let conn = Connection::open(dir.join("spool.db")).unwrap();
+            conn.execute_batch(include_str!("../../src/lib/db/schema.sql")).unwrap();
+            conn.execute_batch(&format!("PRAGMA user_version = {EXPECTED_SCHEMA_VERSION};")).unwrap();
+            conn.execute_batch(
+                "INSERT INTO workspaces (id, title, sort_order, created_at, updated_at) VALUES ('ws1', 'Apply', 0, 1, 1);
+                 INSERT INTO threads (id, workspace_id, title, created_at, updated_at) VALUES ('th1', 'ws1', 'CV', 1, 1);
+                 INSERT INTO blocks (id, thread_id, kind, content, seq, created_at) VALUES ('b1', 'th1', 'text', 'Compare the two CVs.', 1, 1);",
+            )
+            .unwrap();
+            let body = |tag: &str, n: usize| tag.repeat(n / tag.len() + 1).chars().take(n).collect::<String>();
+            let rows: [(&str, &str, i64, i64, Option<&str>, Option<String>); 7] = [
+                ("a1", "notes.pdf", 1, 1, Some("pdf"), Some(body("CANARY-A1 ", 1200))),
+                ("a2", "cv-teacher.docx", 0, 1, Some("docx"), Some(body("CANARY-A2 ", 3600))),
+                ("a3", "reference.docx", 1, 0, Some("docx"), Some(body("CANARY-A3 ", 2000))),
+                ("a4", "transcript.pdf", 0, 0, Some("pdf"), Some(body("CANARY-A4 ", 900))),
+                ("a5", "scan.pdf", 0, 1, Some("failed"), None),
+                ("a6", "slides.key", 0, 0, None, None),
+                ("a7", "report.pdf", 1, 1, Some("pdf"), Some(body("CANARY-A7 ", 12000))),
+            ];
+            for (i, (id, label, in_pack, ai, kind, text)) in rows.iter().enumerate() {
+                conn.execute(
+                    "INSERT INTO attachments (id, thread_id, kind, target, label, extracted_text, extracted_at,
+                                              extraction_kind, include_in_pack, ai_access, created_at)
+                     VALUES (?1, 'th1', 'file', ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                    rusqlite::params![
+                        id, format!("/x/{label}"), label, text, kind.map(|_| 5i64), kind, in_pack, ai, 10 + i as i64
+                    ],
+                )
+                .unwrap();
+            }
+        }
+        let call = |name: &str, args: Value| -> String {
+            let out = ai_call(&dir, "tools/call", &json!({ "name": name, "arguments": args }));
+            let v: Value = serde_json::from_str(&out).unwrap_or_else(|_| panic!("{out}"));
+            v["content"][0]["text"].as_str().unwrap().to_string()
+        };
+        let pack = call("get_pack", json!({ "thread_id": "th1" }));
+        let plain = call("get_blocks", json!({ "thread_id": "th1" }));
+        let full = call("get_blocks", json!({ "thread_id": "th1", "include_extracted_text": true }));
+
+        // ── permission: a locked file's text is nowhere, whatever the user ticked for their own copy.
+        for out in [&pack, &plain, &full] {
+            assert!(!out.contains("CANARY-A3") && !out.contains("CANARY-A4"), "locked text leaked: {out}");
+        }
+        // ── the pack's own rows: facts only, the same ones the clipboard pack prints (golden).
+        assert!(pack.contains("- notes.pdf (pdf) · on project"), "{pack}");
+        assert!(pack.contains("- cv-teacher.docx  [extracted: yes, not inlined] · on project"));
+        assert!(pack.contains("- reference.docx  [extracted: yes, not inlined] · on project"));
+        assert!(pack.contains("- scan.pdf  [text could not be extracted] · on project"));
+        assert!(pack.contains("- slides.key · on project"));
+        assert!(pack.contains("[... truncated, 4000 more chars not shown ...]"));
+        // ── the two ways out, each listing only its own files.
+        let section = |title: &str| {
+            let at = pack.find(title).unwrap_or_else(|| panic!("no {title} in {pack}"));
+            pack[at..].split("\n---\n").next().unwrap().to_string()
+        };
+        let locked = section(SECTION_LOCKED_FILES);
+        assert!(locked.contains("reference.docx") && locked.contains("transcript.pdf"), "{locked}");
+        for other in ["notes.pdf", "cv-teacher.docx", "scan.pdf", "slides.key", "report.pdf"] {
+            assert!(!locked.contains(other), "{other} listed as locked: {locked}");
+        }
+        let readable = section(SECTION_READABLE_FILES);
+        assert!(readable.contains("cv-teacher.docx   attachment_id: a2   3600 chars extracted, none of it in this pack"), "{readable}");
+        assert!(readable.contains("report.pdf   attachment_id: a7   12000 chars extracted, this pack carries at most the first 8000"));
+        assert!(readable.contains("scan.pdf   Spool could not extract any text"));
+        assert!(readable.contains("include_extracted_text=true"));
+        for other in ["notes.pdf", "reference.docx", "transcript.pdf", "slides.key"] {
+            assert!(!readable.contains(other), "{other} listed as readable: {readable}");
+        }
+        // ── get_blocks says, per file, what THIS reader gets — and the user's own tick stays the tick.
+        let files = |text: &str| -> Vec<Value> {
+            let j: Value = serde_json::from_str(&text[text.find('{').unwrap()..]).unwrap();
+            j["files"].as_array().unwrap().clone()
+        };
+        let want = [
+            ("a1", "in_pack", true), ("a2", "readable", true), ("a3", "locked", false), ("a4", "locked", false),
+            ("a5", "extraction_failed", false), ("a6", "none", false), ("a7", "in_pack_cut", true),
+        ];
+        let plain_files = files(&plain);
+        let full_files = files(&full);
+        for (id, status, gives_text) in want {
+            let f = plain_files.iter().find(|f| f["attachment_id"] == id).unwrap();
+            assert_eq!(f["text_status"], status, "{id}: {f}");
+            assert!(f.get("extracted_text").is_none(), "{id}: text without the switch");
+            let g = full_files.iter().find(|f| f["attachment_id"] == id).unwrap();
+            assert_eq!(g["extracted_text"].is_string(), gives_text, "{id}: {g}");
+        }
+        let a7 = full_files.iter().find(|f| f["attachment_id"] == "a7").unwrap();
+        assert_eq!(a7["extracted_text"].as_str().unwrap().chars().count(), 12000, "the cut is the pack's, not get_blocks'");
+        let a3 = plain_files.iter().find(|f| f["attachment_id"] == "a3").unwrap();
+        assert_eq!(a3["inlined_in_pack"], true, "the user's own tick (2026-08-19) was lost");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn p14_the_file_reading_hint_rides_the_routing_text_and_the_description() {
+        assert!(OPENERS.contains("include_extracted_text=true"), "{OPENERS}");
+        let tools = tools_descriptor();
+        let gb = tools.as_array().unwrap().iter().find(|t| t["name"] == "get_blocks").unwrap();
+        let d = gb["description"].as_str().unwrap();
+        for status in ["in_pack", "in_pack_cut", "readable", "locked", "extraction_failed", "none"] {
+            assert!(d.contains(status), "{status} not explained: {d}");
+        }
     }
 }
