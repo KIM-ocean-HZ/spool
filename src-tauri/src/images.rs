@@ -429,11 +429,25 @@ fn now_ms() -> i64 {
         .unwrap_or(0)
 }
 
+/// P14 hotfix (Ocean 2026-11-06: Spool quit after a long-press ⌥). The system clipboard's objects are not
+/// safe to touch from two threads at once: the crash report has `EXC_BAD_ACCESS` inside arboard's autorelease
+/// pool, on a worker thread reading the clipboard's HTML while the clipboard plugin read its text on another
+/// (a capture asked for both at once). A stand-alone check (6 threads, read-only) aborted 2 runs in 3 without
+/// a lock and 0 in 3 with one. So EVERY clipboard read Spool does itself takes this one lock — including the
+/// fingerprint the ⌥ listener's helper thread takes after a screenshot chord, which could always collide.
+/// ⛔ Never call one of these from inside another (the lock is not re-entrant).
+static PASTEBOARD: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+pub(crate) fn pasteboard() -> std::sync::MutexGuard<'static, ()> {
+    PASTEBOARD.lock().unwrap_or_else(|e| e.into_inner())
+}
+
 /// P7 验收第一轮 (Ocean 2026-10-08 第 2 条): image files copied in Finder (⌘C on the file). The
 /// clipboard then holds a link to the file and its NAME as text — capturing the text saved only
 /// the name. Only image files count; anything else falls through to the text as before.
 #[tauri::command(async)]
 pub fn clipboard_image_files() -> Vec<String> {
+    let _one_at_a_time = pasteboard();
     let Ok(mut cb) = arboard::Clipboard::new() else { return Vec::new() };
     let Ok(files) = cb.get().file_list() else { return Vec::new() };
     files
@@ -443,14 +457,28 @@ pub fn clipboard_image_files() -> Vec<String> {
         .collect()
 }
 
-/// P14 插队 (Ocean 2026-11-06, HANDOFF §9.2 第 250 条): the clipboard's HTML, so a capture can keep what a
-/// copied answer looked like — its tables, lists and formulas, which its plain text has already lost
-/// (lib/capture/htmlToMarkdown.ts). Empty when there is none. arboard reads `public.html` on macOS and
-/// "HTML Format" on Windows (whose header the TS side strips).
+/// What a capture reads off the clipboard: its plain text, and its HTML.
+#[derive(serde::Serialize)]
+pub struct ClipboardText {
+    text: String,
+    html: String,
+}
+
+/// P14 插队 (Ocean 2026-11-06, HANDOFF §9.2 第 250 条): the clipboard's plain text AND its HTML, so a capture
+/// can keep what a copied answer looked like — its tables, lists and formulas, which the plain text has
+/// already lost (lib/capture/htmlToMarkdown.ts). Either is empty when absent. arboard reads `public.html` on
+/// macOS and "HTML Format" on Windows (whose header the TS side strips).
+/// ⚠️ ONE command, one clipboard handle, the two reads one after the other, under the lock — the first
+/// version read them as two commands at the same time, and that is what crashed (see PASTEBOARD).
 #[tauri::command(async)]
-pub fn clipboard_html() -> String {
-    let Ok(mut cb) = arboard::Clipboard::new() else { return String::new() };
-    cb.get().html().unwrap_or_default()
+pub fn clipboard_text_html() -> ClipboardText {
+    let _one_at_a_time = pasteboard();
+    let Ok(mut cb) = arboard::Clipboard::new() else {
+        return ClipboardText { text: String::new(), html: String::new() };
+    };
+    let text = cb.get_text().unwrap_or_default();
+    let html = cb.get().html().unwrap_or_default();
+    ClipboardText { text, html }
 }
 
 /// A small preview for the capture card (第 1 条: 不知道存了什么图片) — its own size, not cached.
@@ -652,6 +680,7 @@ fn user_temp_dir() -> Option<std::path::PathBuf> {
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub fn clipboard_fingerprint() -> Option<u64> {
     use std::hash::{Hash, Hasher};
+    let _one_at_a_time = pasteboard();
     let mut cb = arboard::Clipboard::new().ok()?;
     let text = cb.get_text().ok().filter(|t| !t.is_empty());
     let files = cb.get().file_list().ok().filter(|f| !f.is_empty());
@@ -828,7 +857,10 @@ pub fn add_block_images_from_paths(
 /// The clipboard's picture as PNG bytes, if it holds one.
 fn clipboard_png(app: &tauri::AppHandle) -> Option<Vec<u8>> {
     use tauri_plugin_clipboard_manager::ClipboardExt;
-    let img = app.clipboard().read_image().ok()?;
+    let img = {
+        let _one_at_a_time = pasteboard();
+        app.clipboard().read_image().ok()?
+    };
     let rgba = image::RgbaImage::from_raw(img.width(), img.height(), img.rgba().to_vec())?;
     let mut png = Vec::new();
     image::DynamicImage::ImageRgba8(rgba)
@@ -842,6 +874,7 @@ fn clipboard_png(app: &tauri::AppHandle) -> Option<Vec<u8>> {
 #[tauri::command(async)]
 pub fn clipboard_image_size(app: tauri::AppHandle) -> Option<[u32; 2]> {
     use tauri_plugin_clipboard_manager::ClipboardExt;
+    let _one_at_a_time = pasteboard();
     let img = app.clipboard().read_image().ok()?;
     (img.width() > 0 && img.height() > 0).then(|| [img.width(), img.height()])
 }
@@ -858,6 +891,30 @@ pub fn add_block_image_from_clipboard(app: tauri::AppHandle, block_id: String) -
 
 #[cfg(test)]
 mod tests {
+    // P14 hotfix (2026-11-06 crash). Touches the real system clipboard, read-only — so it is not in the
+    // default run (CI machines may have no clipboard). `cargo test clipboard_reads_survive -- --ignored`.
+    // Without PASTEBOARD the same shape aborted 2 runs in 3 (scratch check, 6 threads × 400 reads).
+    #[test]
+    #[ignore]
+    fn clipboard_reads_survive_many_threads_at_once() {
+        let threads: Vec<_> = (0..6)
+            .map(|t| {
+                std::thread::spawn(move || {
+                    for _ in 0..300 {
+                        match t % 3 {
+                            0 => drop(clipboard_text_html()),
+                            1 => drop(clipboard_image_files()),
+                            _ => drop(clipboard_fingerprint()),
+                        }
+                    }
+                })
+            })
+            .collect();
+        for h in threads {
+            h.join().unwrap();
+        }
+    }
+
     use super::*;
 
     fn encode(img: &image::DynamicImage, fmt: ImageFormat) -> Vec<u8> {

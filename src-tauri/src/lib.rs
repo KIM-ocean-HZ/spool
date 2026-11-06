@@ -471,7 +471,7 @@ pub fn run() {
             images::screenshot_goes_to_clipboard,
             images::cached_block_images,
             images::clipboard_image_files,
-            images::clipboard_html,
+            images::clipboard_text_html,
             images::block_image_thumb,
             api_engine::compress_pack_via_api,
             api_engine::compress_pack_via_cli,

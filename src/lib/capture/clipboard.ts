@@ -1,4 +1,3 @@
-import { readText } from '@tauri-apps/plugin-clipboard-manager';
 import { invoke } from '@tauri-apps/api/core';
 import { clipboardMarkdown, domParse } from './htmlToMarkdown';
 
@@ -19,14 +18,25 @@ const timeout = <T>(p: Promise<T>, ms: number, fallback: T): Promise<T> =>
 // its tables, lists and formulas; the HTML beside it on the clipboard has not. When that HTML adds
 // something (and has not lost the text on the way), what is stored is its markdown — formulas as TeX.
 // Otherwise the plain text, exactly as before. Same cap on the read, same answer when it fails.
-const readClipboardHtml = (): Promise<string> =>
-  timeout(invoke<string>('clipboard_html').catch(() => ''), CLIPBOARD_READ_TIMEOUT_MS, '');
+//
+// ⛔ Both come from ONE command (`clipboard_text_html`), read one after the other on one thread. The first
+// version asked the clipboard plugin for the text and a second command for the HTML at the same time, and
+// two threads touching the macOS clipboard at once crashed Spool (2026-11-06, images.rs `PASTEBOARD`).
+interface ClipboardText {
+  text: string;
+  html: string;
+}
+const NOTHING: ClipboardText = { text: '', html: '' };
 
 export const readClipboardText = async (): Promise<string> => {
   try {
-    const [t, html] = await Promise.all([timeout(readText(), CLIPBOARD_READ_TIMEOUT_MS, null), readClipboardHtml()]);
-    const plain = (t ?? '').replace(/^\s+|\s+$/g, '');
-    return (html ? clipboardMarkdown(html, plain, domParse) : null) ?? plain;
+    const got = await timeout(
+      invoke<ClipboardText>('clipboard_text_html').catch(() => NOTHING),
+      CLIPBOARD_READ_TIMEOUT_MS,
+      NOTHING,
+    );
+    const plain = got.text.replace(/^\s+|\s+$/g, '');
+    return (got.html ? clipboardMarkdown(got.html, plain, domParse) : null) ?? plain;
   } catch {
     return '';
   }
