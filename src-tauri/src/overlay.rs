@@ -192,6 +192,11 @@ fn on_message<R: Runtime>(app: &AppHandle<R>, msg: &serde_json::Value) {
             let payload = msg.get("payload").cloned().unwrap_or(serde_json::Value::Null);
             let _ = app.emit_to("main", ACTION_EVENT, payload);
         }
+        // P15-4: the switcher closed; `picked` is the project to capture into from now on.
+        "switcher-closed" => crate::switcher::on_closed(
+            app,
+            msg.get("picked").and_then(serde_json::Value::as_str).map(str::to_owned),
+        ),
         // §3.3: the overlay's DB work, executed by the main window's single connection.
         "db" => {
             let _ = app.emit_to("main", DB_REQUEST_EVENT, msg.clone());
@@ -240,6 +245,7 @@ pub fn run_helper(mut ctx: tauri::Context<tauri::Wry>) {
             disarm_capture_dismiss,
             set_capture_card_fixed,
             overlay_db_request,
+            close_target_switcher,
         ])
         .setup(|app| {
             // No Dock icon and no menu bar — the user must not see a second Spool in the
@@ -260,6 +266,27 @@ pub fn run_helper(mut ctx: tauri::Context<tauri::Wry>) {
                 crate::capture::OVERLAY_WIDTH as f64,
                 crate::capture::OVERLAY_HEIGHT_COLLAPSED as f64,
             )
+            .decorations(false)
+            .transparent(true)
+            .always_on_top(true)
+            .skip_taskbar(true)
+            .resizable(false)
+            .focused(false)
+            .visible(false)
+            .shadow(false)
+            .accept_first_mouse(true)
+            .build()?;
+
+            // P15-4: the capture-target switcher (switcher.rs) — a second window, same shape as the
+            // card, built now and kept hidden so 双击 ⇧ never waits on a webview cold start. It is never
+            // given the keyboard: the wheel reaches a window under the pointer without it.
+            tauri::WebviewWindowBuilder::new(
+                app,
+                crate::switcher::WINDOW_LABEL,
+                tauri::WebviewUrl::App("overlay.html".into()),
+            )
+            .title("Spool Capture Target")
+            .inner_size(crate::switcher::PANEL_WIDTH, crate::switcher::PANEL_HEIGHT)
             .decorations(false)
             .transparent(true)
             .always_on_top(true)
@@ -439,6 +466,36 @@ fn on_main_message(app: &AppHandle, msg: &serde_json::Value) {
         "dismiss" => {
             let _ = app.emit_to(WINDOW_LABEL, "overlay:dismiss", ());
         }
+        // P15-4: put the switcher up at the frame the main process worked out (it also watches
+        // clicks against that frame). ⛔ No focus, on either platform.
+        "switcher" => {
+            let Some(win) = app.get_webview_window(crate::switcher::WINDOW_LABEL) else {
+                return;
+            };
+            let num = |k: &str| msg.get(k).and_then(serde_json::Value::as_f64).unwrap_or(0.0);
+            let _ = win.set_size(tauri::LogicalSize::new(num("w"), num("h")));
+            let _ = win.set_position(tauri::LogicalPosition::new(num("x"), num("y")));
+            #[cfg(target_os = "macos")]
+            if APP_HIDDEN.swap(false, Ordering::SeqCst) {
+                let _ = app.show();
+            }
+            // Same order as the card: language, theme and scheme before the content.
+            if let Some(lang) = ui_language(app) {
+                let _ = app.emit_to(crate::switcher::WINDOW_LABEL, LANGUAGE_EVENT, lang);
+            }
+            if let Some(theme) = ui_theme(app) {
+                let _ = app.emit_to(crate::switcher::WINDOW_LABEL, THEME_EVENT, theme);
+            }
+            if let Some(scheme) = ui_color_scheme(app) {
+                let _ = app.emit_to(crate::switcher::WINDOW_LABEL, SCHEME_EVENT, scheme);
+            }
+            let payload = msg.get("payload").cloned().unwrap_or(serde_json::Value::Null);
+            let _ = app.emit_to(crate::switcher::WINDOW_LABEL, "switcher:show", payload);
+            let _ = win.show();
+        }
+        "switcher-dismiss" => {
+            let _ = app.emit_to(crate::switcher::WINDOW_LABEL, "switcher:dismiss", ());
+        }
         "source-update" => {
             let payload = msg.get("payload").cloned().unwrap_or(serde_json::Value::Null);
             let _ = app.emit_to(WINDOW_LABEL, "overlay:source-update", payload);
@@ -512,6 +569,28 @@ fn disarm_capture_dismiss() {
 #[tauri::command(async)]
 fn set_capture_card_fixed(fixed: bool) {
     out(&serde_json::json!({ "t": "fixed", "on": fixed }));
+}
+
+// P15-4: the switcher closed — by a click on a row, a click outside (main → "switcher-dismiss"), the
+// gesture again, or its idle timeout. `picked` only when the user moved to another project.
+#[tauri::command]
+fn close_target_switcher(app: AppHandle, picked: Option<String>) {
+    if let Some(win) = app.get_webview_window(crate::switcher::WINDOW_LABEL) {
+        let _ = win.hide();
+    }
+    // A click on a row activated this process. Hand the foreground back the way the card's
+    // "hide-now" does — unless the capture card is still up, which would go with it.
+    #[cfg(target_os = "macos")]
+    {
+        let card_up = app
+            .get_webview_window(WINDOW_LABEL)
+            .and_then(|w| w.is_visible().ok())
+            .unwrap_or(false);
+        if !card_up && app.hide().is_ok() {
+            APP_HIDDEN.store(true, Ordering::SeqCst);
+        }
+    }
+    out(&serde_json::json!({ "t": "switcher-closed", "picked": picked }));
 }
 
 // §3.3: the overlay never touches SQLite. Each DB call becomes a request the main

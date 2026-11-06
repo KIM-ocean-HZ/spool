@@ -15,6 +15,10 @@ mod file_identity;
 // P9Y: a project linked to a folder on disk, and the SPOOL.md it keeps there.
 mod folder_link;
 mod images;
+// P15-4: the gesture decisions, platform-free so the Mac's `cargo test` covers the Windows ones too.
+mod modifier_gestures;
+// P15-4: the capture-target switcher (双击 ⇧), main-process half.
+mod switcher;
 // Windows peer of double_tap: the same double-tap-modifier gesture (Ctrl there, ⌥ on
 // macOS), built on Raw Input instead of a CGEventTap. Cfg'd out everywhere else.
 #[cfg(target_os = "windows")]
@@ -417,6 +421,8 @@ pub fn run() {
             capture::set_shortcuts,
             capture::set_shortcut_recording,
             capture::set_capture_disabled,
+            switcher::set_switcher_gesture,
+            switcher::show_target_switcher,
             capture::set_close_hint_pending,
             capture::hide_main_window,
             capture::probe_browser_automation,
@@ -659,6 +665,7 @@ pub fn run() {
                 // 一两秒才起得来。图标和菜单的两份说明搬进了 capture.rs(tray_image /
                 // build_tray_menu),因为暂停开关一变还要照同样的规则再画一次。
                 let capture_off = capture::load_capture_disabled();
+                switcher::load_gesture_setting();
                 let initial_menu =
                     capture::build_tray_menu(app.handle(), "", &[], &Default::default())?;
                 let icon = capture::tray_image(app.handle(), capture_off);

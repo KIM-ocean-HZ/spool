@@ -123,6 +123,13 @@ fn click_outside_overlay(px: f64, py: f64) -> bool {
 // Hardware key codes for the left/right ⌥ (Option) keys — layout-independent.
 const KEYCODE_OPT_LEFT: i64 = 58;
 const KEYCODE_OPT_RIGHT: i64 = 61;
+// …and ⇧. P15-4 (Ocean 2026-11-06 第 256 条): 双击 ⇧ opens the capture-target switcher (switcher.rs).
+// The decision is `modifier_gestures::ShiftTaps`, shared with Windows. ⛔ Observed only: no ⇧ event is
+// ever deleted, whatever the tap is allowed to do.
+const KEYCODE_SHIFT_LEFT: i64 = 56;
+const KEYCODE_SHIFT_RIGHT: i64 = 60;
+static SHIFT_TAPS: Mutex<crate::modifier_gestures::ShiftTaps> =
+    Mutex::new(crate::modifier_gestures::ShiftTaps::new_const());
 
 // kVK_ANSI_C / kVK_ANSI_X — positional virtual key codes for the copy/cut chords.
 // Positional, so a non-QWERTY layout that relocates the letter C is not covered —
@@ -390,6 +397,8 @@ struct Emitters {
     note_trigger: Box<dyn Fn(bool) + Send + Sync>,
     capture_disabled: Box<dyn Fn(&'static str) + Send + Sync>,
     overlay_dismiss: Box<dyn Fn() + Send + Sync>,
+    /// P15-4: 双击 ⇧.
+    switcher_trigger: Box<dyn Fn() + Send + Sync>,
 }
 static EMITTERS: OnceLock<Emitters> = OnceLock::new();
 
@@ -517,6 +526,7 @@ pub fn install<R: Runtime>(app: AppHandle<R>) {
     // Emitters for the extern "C" callback and its timer threads. install() runs once.
     let a1 = app.clone();
     let a3 = app.clone();
+    let a4 = app.clone();
     let a2 = app;
     let _ = EMITTERS.set(Emitters {
         capture_trigger: Box::new(move |shot| match shot {
@@ -537,6 +547,7 @@ pub fn install<R: Runtime>(app: AppHandle<R>) {
             crate::capture::forget_restore_focus();
             crate::overlay::send(&serde_json::json!({ "t": "dismiss" }));
         }),
+        switcher_trigger: Box::new(move || crate::switcher::on_gesture(&a4)),
     });
     thread::spawn(run_tap);
 }
@@ -601,11 +612,17 @@ fn on_event(etype: u32, event_ptr: *mut c_void) -> bool {
             if OPT_HELD.load(Ordering::Relaxed) {
                 cancel_long_press();
             }
+            // P15-4: ⇧-click is a chord, and a click between two ⇧ taps breaks the pair.
+            SHIFT_TAPS.lock().unwrap().other_input();
             // §9.13: dismiss the capture toast when the user clicks anywhere outside
             // it (resuming work). Disarmed = the watch returns false, so this is a
             // cheap no-op for every normal click when no toast is up.
             let event = ManuallyDrop::new(unsafe { CGEvent::from_ptr(event_ptr as *mut _) });
             let loc = event.location();
+            // P15-4: a click outside the switcher closes it, keeping the project in the middle.
+            if crate::switcher::click_is_outside(loc.x, loc.y) {
+                crate::switcher::dismiss();
+            }
             if click_outside_overlay(loc.x, loc.y) {
                 if OVERLAY_DISMISS_HELD.load(Ordering::SeqCst) {
                     // P3-3：卡片固定着 —— 不收起。但这一下点出去 = 人自己挑了去处，
@@ -623,6 +640,8 @@ fn on_event(etype: u32, event_ptr: *mut c_void) -> bool {
             if OPT_HELD.load(Ordering::Relaxed) {
                 cancel_long_press();
             }
+            // P15-4: ⇧+A is a capital, not a tap.
+            SHIFT_TAPS.lock().unwrap().other_input();
             // Copy-gate bookkeeping: remember when a ⌘C/⌘X chord was last pressed.
             // Repeats (key held) refresh the stamp harmlessly.
             let event = ManuallyDrop::new(unsafe { CGEvent::from_ptr(event_ptr as *mut _) });
@@ -672,6 +691,7 @@ fn on_event(etype: u32, event_ptr: *mut c_void) -> bool {
                 // 也一并作废。
                 OPT_HELD.store(false, Ordering::Relaxed);
                 cancel_long_press();
+                SHIFT_TAPS.lock().unwrap().reset();
                 return true;
             }
             // Any clean event passing through means the tap is healthy again —
@@ -681,6 +701,25 @@ fn on_event(etype: u32, event_ptr: *mut c_void) -> bool {
             let event = ManuallyDrop::new(unsafe { CGEvent::from_ptr(event_ptr as *mut _) });
             // FlagsChanged carries the key code of the modifier that changed.
             let keycode = event.get_integer_value_field(EventField::KEYBOARD_EVENT_KEYCODE);
+            // P15-4: ⇧ goes to the switcher's taps and nowhere else; any other modifier joining in
+            // makes a held ⇧ a chord (⌘⇧…) and breaks a pending pair.
+            if keycode == KEYCODE_SHIFT_LEFT || keycode == KEYCODE_SHIFT_RIGHT {
+                let flags = event.get_flags();
+                let now_ms = (unsafe { CGEventGetTimestamp(event_ptr as *const c_void) } / NANOS_PER_MS) as i64;
+                let mut taps = SHIFT_TAPS.lock().unwrap();
+                if flags.contains(CGEventFlags::CGEventFlagShift) {
+                    let combo = flags.contains(CGEventFlags::CGEventFlagCommand)
+                        || flags.contains(CGEventFlags::CGEventFlagControl)
+                        || flags.contains(CGEventFlags::CGEventFlagAlternate);
+                    taps.press(now_ms, combo);
+                } else if taps.release(now_ms) && crate::switcher::gesture_enabled() {
+                    drop(taps);
+                    eprintln!("[double-tap] DOUBLE-TAP ⇧ — capture-target switcher");
+                    (emitters.switcher_trigger)();
+                }
+                return true;
+            }
+            SHIFT_TAPS.lock().unwrap().other_input();
             if keycode != KEYCODE_OPT_LEFT && keycode != KEYCODE_OPT_RIGHT {
                 return true;
             }

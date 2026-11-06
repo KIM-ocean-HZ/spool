@@ -993,6 +993,16 @@ const EN: Record<string, string> = {
   '{client} 提议用新版本取代〈{title}〉里的「{old}」':
     '{client} proposes a newer version to replace “{old}” in ‹{title}›',
   '它说为什么': 'Why, in its words',
+  // P15-4 — the capture-target switcher (double-tap ⇧ / Shift).
+  '双击 ⇧ 切换捕捉目标': 'Double-tap ⇧ to switch the capture target',
+  '双击 Shift 切换捕捉目标': 'Double-tap Shift to switch the capture target',
+  '在哪个软件里都行：鼠标指针那儿弹出项目列表，滚轮换，点一行或点外面就定了。PyCharm 这类软件也用双击 Shift 开搜索，撞了就关掉它。':
+    'Works in any app: a list of your projects opens at the mouse pointer — scroll to change, click one or click anywhere outside to settle. Apps like PyCharm also open search on a double Shift; if they clash, turn this off.',
+  '捕捉到哪个项目': 'Capture into',
+  '还没有没完成的项目': 'No unfinished projects yet',
+  '私密': 'Private',
+  '现在': 'now',
+  '滚轮换项目 · 点一行，或点外面完成': 'Scroll to change · click one, or click outside to finish',
   // P15-2 — an AI proposing to link a workspace to a folder, or to swap a linked workspace's state files.
   '{client} 提议换工作区「{ws}」的现状文件': '{client} proposes new state files for the workspace “{ws}”',
   '{client} 提议把工作区「{ws}」连到一个文件夹': '{client} proposes linking the workspace “{ws}” to a folder',

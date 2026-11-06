@@ -44,6 +44,7 @@ import { useAutoStale } from '@/hooks/useAutoStale';
 import { useAutoMaintain } from '@/hooks/useAutoMaintain';
 import { useBreakReminder } from '@/hooks/useBreakReminder';
 import { useCapture } from '@/hooks/useCapture';
+import { useTargetSwitcher } from '@/hooks/useTargetSwitcher';
 import { useAppliedTheme } from '@/hooks/useTheme';
 import { useAppliedColorScheme } from '@/hooks/useColorScheme';
 import { useAppliedBlockFont } from '@/hooks/useBlockFont';
@@ -123,6 +124,7 @@ export default function App() {
   });
 
   useCapture();
+  useTargetSwitcher();
   useOverlayDbHost();
   useTrayMenu();
   useSearch();

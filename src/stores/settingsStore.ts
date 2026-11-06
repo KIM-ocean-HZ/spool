@@ -21,6 +21,7 @@ import { scheduleProtocolRefresh } from '@/lib/folders/refresh';
 type PersistableKey =
   | 'captureShortcut'
   | 'captureDisabled'
+  | 'switcherGesture'
   | 'searchShortcut'
   | 'autoExtractAttachments'
   | 'mcpEnabled'
@@ -78,6 +79,9 @@ interface SettingsState {
    *  ⚠️ 真正在起作用的那份状态在 Rust（capture.rs 的 CAPTURE_DISABLED）——
    *  这里是存进 settings.json 的那一份，Rust 启动时自己读它，用不着等 webview。 */
   captureDisabled: boolean;
+  /** P15-4（Ocean 2026-11-06 第 256 条）：双击 ⇧ 弹出「切换捕捉目标」面板。默认开；关掉就只剩菜单栏那一项。
+   *  ⚠️ 起作用的那份在 Rust（switcher.rs 的 GESTURE_ON），启动时自己读 settings.json。「暂停捕捉手势」开着时它也停。 */
+  switcherGesture: boolean;
   searchShortcut: string;
   // v2.7: auto-extract text from file attachments on attach (§9.6). When false, the
   // three extraction columns stay NULL and pack output treats files as pointers only.
@@ -284,6 +288,7 @@ interface SettingsState {
   loadAutostart: () => Promise<void>;
   setLaunchAtLogin: (enabled: boolean) => Promise<void>;
   setCaptureDisabled: (disabled: boolean) => Promise<void>;
+  setSwitcherGesture: (on: boolean) => Promise<void>;
   openPanel: () => void;
   closePanel: () => void;
 }
@@ -336,6 +341,7 @@ let legacyScrubDone = false;
 const KEYS: PersistableKey[] = [
   'captureShortcut',
   'captureDisabled',
+  'switcherGesture',
   'searchShortcut',
   'autoExtractAttachments',
   'mcpEnabled',
@@ -394,6 +400,7 @@ const LEGACY_AI_KEYS = [
 export const useSettingsStore = create<SettingsState>((set) => ({
   captureShortcut: DEFAULT_CAPTURE_ACCEL,
   captureDisabled: false,
+  switcherGesture: true,
   searchShortcut: DEFAULT_SEARCH_ACCEL,
   autoExtractAttachments: true,
   mcpEnabled: false,
@@ -575,6 +582,17 @@ export const useSettingsStore = create<SettingsState>((set) => ({
       return;
     }
     await useSettingsStore.getState().update({ captureDisabled: disabled });
+  },
+
+  // P15-4: same order as the pause switch — Rust takes it first, then it is stored.
+  setSwitcherGesture: async (on) => {
+    try {
+      await invoke('set_switcher_gesture', { on });
+    } catch (e) {
+      console.warn('set_switcher_gesture failed', e);
+      return;
+    }
+    await useSettingsStore.getState().update({ switcherGesture: on });
   },
 
   openPanel: () => set({ panelOpen: true }),

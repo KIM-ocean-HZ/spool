@@ -1,6 +1,12 @@
 //! Double-tap Ctrl capture trigger (Windows only) — the peer of `double_tap.rs`'s
 //! double-tap ⌥ on macOS. Same product gesture, different OS plumbing.
 //!
+//! P15-4 (Ocean 2026-11-06): the same stream also gives long-press Ctrl (write a note — the peer of
+//! long-press ⌥, decided at the release: 0.8 – 3 s with nothing else pressed, no click, no wheel) and
+//! double-tap ⇧ (the capture-target switcher). The decisions are `modifier_gestures::WinKeys`; this
+//! file reads Raw Input — the keyboard and, since P15-4, the mouse (buttons and wheel only, to cancel
+//! a long press and to close the switcher on a click outside it).
+//!
 //! Why Raw Input, not a keyboard hook: a bare modifier key cannot be a `RegisterHotKey`
 //! accelerator (that API needs a non-modifier key), so — exactly as on macOS — the only
 //! way to see a modifier double-tap is to observe the key stream. The obvious way to do
@@ -37,7 +43,7 @@
 //! other modifier involved. We decide on the release edge (unlike the macOS press-edge
 //! test) precisely because that is when we know the hold was clean — so Ctrl+C, Ctrl+V,
 //! Ctrl+Shift+…, a held Ctrl used as a chord, none of them count. Two clean taps whose
-//! gap is within the window are a capture.
+//! gap is within the window are a capture. A hold of 0.8 s or more is never half of a double-tap.
 //!
 //! ⚠️ Like everything Windows in this crate, not one line here has run on the development
 //! machine (a Mac with one Rust target). It is compiled by CI and proved by Ocean's install
@@ -51,28 +57,21 @@ use std::ffi::c_void;
 use std::mem::{size_of, zeroed};
 use tauri::{AppHandle, Emitter, Runtime};
 
-use windows_sys::Win32::Foundation::GetLastError;
+use windows_sys::Win32::Foundation::{GetLastError, POINT};
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows_sys::Win32::UI::Input::{
     GetRawInputData, RegisterRawInputDevices, HRAWINPUT, RAWINPUT, RAWINPUTDEVICE, RAWINPUTHEADER,
 };
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW, DefWindowProcW, DispatchMessageW, GetMessageTime, GetMessageW, RegisterClassW,
-    HWND_MESSAGE, MSG, WM_INPUT, WNDCLASSW,
+    CreateWindowExW, DefWindowProcW, DispatchMessageW, GetCursorPos, GetMessageTime, GetMessageW,
+    RegisterClassW, HWND_MESSAGE, MSG, WM_INPUT, WNDCLASSW,
 };
 
-// Two Ctrl taps within this many ms are a double-tap. Matches the macOS module's 250ms
-// (double_tap.rs — read the reasoning there, it is the same gesture on the other platform).
-//
-// ⚠️ 2026-08-25 (WORKPLAN §2.V4, Ocean): 500 → 250, changed in lockstep with the macOS
-// module. This used to say it matched the Windows system double-click default too — it no
-// longer does, on purpose: ⌥/Ctrl is a key the user also presses for its normal job, so the
-// window is tuned against false positives rather than against a mouse-calibrated default.
-//
-// ⚠️ ⛔ These two constants must not drift apart. The value was changed on Ocean's report
-// from the macOS build, and this file's path never runs on the development machine — a
-// one-sided edit here is invisible to every local test AND leaves this comment lying.
-const DOUBLE_TAP_WINDOW_MS: i32 = 250;
+// P15-4 (Ocean 2026-11-06 第 255 – 256 条): every decision — double-tap Ctrl (capture), long-press Ctrl
+// (write a note, decided at the release, 0.8 – 3 s), double-tap ⇧ (the capture-target switcher),
+// Win+PrtScn — now lives in `modifier_gestures::WinKeys`, which the Mac's `cargo test` runs. This file
+// only reads Raw Input and hands each event over with its `GetMessageTime`.
+use crate::modifier_gestures::{WinKeyOutcome, WinKeys};
 
 // Raw Input constants. Defined locally rather than imported so the module depends on the
 // windows-sys FUNCTIONS and STRUCTS only, not on the exact path of every flag constant —
@@ -80,151 +79,35 @@ const DOUBLE_TAP_WINDOW_MS: i32 = 250;
 // uses for its CG tap constants.
 const RIDEV_INPUTSINK: u32 = 0x0000_0100; // deliver input even when not foreground
 const RID_INPUT: u32 = 0x1000_0003; // GetRawInputData: give me the event data
+const RIM_TYPEMOUSE: u32 = 0; // RAWINPUTHEADER.dwType for a mouse event
 const RIM_TYPEKEYBOARD: u32 = 1; // RAWINPUTHEADER.dwType for a keyboard event
 const RI_KEY_BREAK: u16 = 0x01; // RAWKEYBOARD.Flags bit: this is a key-up
 const HID_USAGE_PAGE_GENERIC: u16 = 0x01;
+const HID_USAGE_GENERIC_MOUSE: u16 = 0x02;
 const HID_USAGE_GENERIC_KEYBOARD: u16 = 0x06;
-
-// Virtual-key codes (winuser.h), also defined locally for the same reason. Raw Input reports
-// the generic VK_CONTROL for either Ctrl; the L/R specifics are accepted too in case a
-// layout/driver reports them, so "either Ctrl key" is honoured the way "either ⌥" is on macOS.
-const VK_CONTROL: u16 = 0x11;
-const VK_LCONTROL: u16 = 0xA2;
-const VK_RCONTROL: u16 = 0xA3;
-const VK_SHIFT: u16 = 0x10;
-const VK_LSHIFT: u16 = 0xA0;
-const VK_RSHIFT: u16 = 0xA1;
-const VK_MENU: u16 = 0x12; // Alt
-const VK_LMENU: u16 = 0xA4;
-const VK_RMENU: u16 = 0xA5;
-const VK_LWIN: u16 = 0x5B;
-const VK_RWIN: u16 = 0x5C;
-const VK_SNAPSHOT: u16 = 0x2C; // PrtScn
+// RAWMOUSE.usButtonFlags: any button going down (left, right, middle, 4, 5) …
+const RI_MOUSE_ANY_DOWN: u16 = 0x0001 | 0x0004 | 0x0010 | 0x0040 | 0x0100;
+// … and the two wheels (Ctrl+wheel is zoom: it must cancel a long press).
+const RI_MOUSE_ANY_WHEEL: u16 = 0x0400 | 0x0800;
 
 // P9H-7 ③ (DISCOVERED-20261008-3, Ocean 10-16 第 152 条): how long after Win+PrtScn a double-tap
 // Ctrl still takes that screenshot's FILE — the macOS module's COPY_GATE_WINDOW_MS, the same
 // window its screenshot chords get.
 const SHOT_WINDOW_MS: i32 = 10_000;
 
-fn is_ctrl(vk: u16) -> bool {
-    vk == VK_CONTROL || vk == VK_LCONTROL || vk == VK_RCONTROL
-}
-fn is_shift(vk: u16) -> bool {
-    vk == VK_SHIFT || vk == VK_LSHIFT || vk == VK_RSHIFT
-}
-fn is_alt(vk: u16) -> bool {
-    vk == VK_MENU || vk == VK_LMENU || vk == VK_RMENU
-}
-fn is_win(vk: u16) -> bool {
-    vk == VK_LWIN || vk == VK_RWIN
+/// P15-4: the switcher's frame is in logical points; GetCursorPos answers in physical pixels (the
+/// process is per-monitor DPI aware). The scale of the screen the panel opened on, as f64 bits.
+static SWITCHER_SCALE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0x3FF0_0000_0000_0000); // 1.0
+
+pub fn set_switcher_scale(scale: f64) {
+    SWITCHER_SCALE.store(scale.to_bits(), std::sync::atomic::Ordering::Relaxed);
 }
 
-// The whole double-tap decision, kept as plain fields on the single message-loop thread —
-// no atomics or statics, because DispatchMessage runs the handling inline on that one thread
-// (this is the payoff of reading Raw Input in the loop instead of an extern "C" WndProc).
-struct TapState {
-    // GetMessageTime of the last clean Ctrl tap; paired with `have_first` because a real
-    // message time can legitimately be 0.
-    last_tap_ms: i32,
-    have_first: bool,
-    // Whether Ctrl is currently held — dedupes key-repeat makes into one press.
-    ctrl_down: bool,
-    // Set if a non-Ctrl key went down while Ctrl was held: this Ctrl is a chord, not a tap.
-    other_key_since_ctrl_down: bool,
-    // Set if another modifier was already held when Ctrl went down (⇧+Ctrl, Alt+Ctrl …).
-    combo_at_press: bool,
-    shift_down: bool,
-    alt_down: bool,
-    win_down: bool,
-    // P9H-7 ③: the last Win+PrtScn — GetMessageTime (for the window) and the wall clock (the file
-    // it writes is dated by it). Win+PrtScn writes into the Screenshots folder; PrtScn and
-    // Win+Shift+S go to the clipboard and are read from there, as before.
-    last_shot: Option<(i32, u64)>,
-}
-
-impl TapState {
-    fn new() -> Self {
-        TapState {
-            last_tap_ms: 0,
-            have_first: false,
-            ctrl_down: false,
-            other_key_since_ctrl_down: false,
-            combo_at_press: false,
-            shift_down: false,
-            alt_down: false,
-            win_down: false,
-            last_shot: None,
-        }
-    }
-
-    // Feed one keyboard event. Returns true exactly when this event completes a clean
-    // double-tap of Ctrl (i.e. the caller should fire the capture trigger).
-    fn on_key(&mut self, vk: u16, is_break: bool) -> bool {
-        if is_ctrl(vk) {
-            if !is_break {
-                // Press. Ignore auto-repeat (Ctrl already down).
-                if !self.ctrl_down {
-                    self.ctrl_down = true;
-                    self.other_key_since_ctrl_down = false;
-                    self.combo_at_press = self.shift_down || self.alt_down || self.win_down;
-                }
-                return false;
-            }
-            // Release.
-            if !self.ctrl_down {
-                return false;
-            }
-            self.ctrl_down = false;
-            let clean = !self.other_key_since_ctrl_down && !self.combo_at_press;
-            if !clean {
-                // A chord released — cannot pair with a later tap.
-                self.have_first = false;
-                return false;
-            }
-            let now = unsafe { GetMessageTime() };
-            if self.have_first {
-                // wrapping_sub handles the ~49-day GetMessageTime rollover; a negative or
-                // over-window gap just restarts the pairing with this tap as the new first.
-                let gap = now.wrapping_sub(self.last_tap_ms);
-                if (0..=DOUBLE_TAP_WINDOW_MS).contains(&gap) {
-                    // Reset so a third quick tap doesn't chain off this one's timestamp.
-                    self.have_first = false;
-                    return true;
-                }
-                self.last_tap_ms = now;
-            } else {
-                self.last_tap_ms = now;
-                self.have_first = true;
-            }
-            return false;
-        }
-
-        // A non-Ctrl key.
-        if vk == VK_SNAPSHOT && self.win_down {
-            let wall = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_millis() as u64)
-                .unwrap_or(0);
-            self.last_shot = Some((unsafe { GetMessageTime() }, wall));
-        }
-        if !is_break {
-            if self.ctrl_down {
-                self.other_key_since_ctrl_down = true;
-            }
-            // Any real keypress between the two Ctrl taps means this was not a bare
-            // double-tap — drop a pending first tap.
-            self.have_first = false;
-        }
-        // Track the other modifiers so `combo_at_press` can be judged on the next Ctrl press.
-        if is_shift(vk) {
-            self.shift_down = !is_break;
-        } else if is_alt(vk) {
-            self.alt_down = !is_break;
-        } else if is_win(vk) {
-            self.win_down = !is_break;
-        }
-        false
-    }
+fn wall_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
 }
 
 pub fn install<R: Runtime>(app: AppHandle<R>) {
@@ -239,14 +122,25 @@ fn run<R: Runtime>(app: AppHandle<R>) {
         None => return, // create_message_window already logged the OS error
     };
 
-    // Register for background keyboard raw input targeted at our message-only window.
-    let rid = RAWINPUTDEVICE {
-        usUsagePage: HID_USAGE_PAGE_GENERIC,
-        usUsage: HID_USAGE_GENERIC_KEYBOARD,
-        dwFlags: RIDEV_INPUTSINK,
-        hwndTarget: hwnd,
-    };
-    let ok = unsafe { RegisterRawInputDevices(&rid, 1, size_of::<RAWINPUTDEVICE>() as u32) };
+    // Register for background keyboard AND mouse raw input targeted at our message-only window.
+    // P15-4: the mouse is new — a click or the wheel while Ctrl is held makes it Ctrl+click /
+    // Ctrl+wheel (never a long press), and a click outside the switcher closes it. Same API, same
+    // INPUTSINK, still only copies: nothing is intercepted, swallowed or altered.
+    let rids = [
+        RAWINPUTDEVICE {
+            usUsagePage: HID_USAGE_PAGE_GENERIC,
+            usUsage: HID_USAGE_GENERIC_KEYBOARD,
+            dwFlags: RIDEV_INPUTSINK,
+            hwndTarget: hwnd,
+        },
+        RAWINPUTDEVICE {
+            usUsagePage: HID_USAGE_PAGE_GENERIC,
+            usUsage: HID_USAGE_GENERIC_MOUSE,
+            dwFlags: RIDEV_INPUTSINK,
+            hwndTarget: hwnd,
+        },
+    ];
+    let ok = unsafe { RegisterRawInputDevices(rids.as_ptr(), rids.len() as u32, size_of::<RAWINPUTDEVICE>() as u32) };
     if ok == 0 {
         let err = unsafe { GetLastError() };
         eprintln!(
@@ -255,9 +149,9 @@ fn run<R: Runtime>(app: AppHandle<R>) {
         );
         return;
     }
-    eprintln!("[double-tap-win] Raw Input registered — double-tap Ctrl armed");
+    eprintln!("[double-tap-win] Raw Input registered — double-tap Ctrl, long-press Ctrl and double-tap ⇧ armed");
 
-    let mut state = TapState::new();
+    let mut state = WinKeys::default();
     let mut msg: MSG = unsafe { zeroed() };
     loop {
         // hWnd null → all messages for this thread, which includes the WM_INPUT posted to our
@@ -268,34 +162,78 @@ fn run<R: Runtime>(app: AppHandle<R>) {
             break;
         }
         if msg.message == WM_INPUT {
-            if let Some((vk, is_break)) = read_keyboard_event(msg.lParam as HRAWINPUT) {
-                // 状态照喂(否则重新打开时手上是半截状态),只是不发出去。这边的 Raw Input 是
-                // INPUTSINK,本来就只看不删,所以「暂停」在 Windows 上是纯粹的不触发。
-                if state.on_key(vk, is_break) && !crate::capture::capture_disabled() {
-                    // P9H-7 ③: right after Win+PrtScn the capture takes that file — the payload the
-                    // macOS module sends for ⌘⇧3 (useCapture.ts `shot`, kind 'file').
+            match read_raw_event(msg.lParam as HRAWINPUT) {
+                Some(Raw::Key(vk, is_break)) => {
                     let now = unsafe { GetMessageTime() };
-                    match state.last_shot.filter(|&(at, _)| crate::images::win_shot_still_fresh(at, now, SHOT_WINDOW_MS)) {
-                        Some((_, wall)) => {
-                            eprintln!("[double-tap-win] TRIGGER (clean double-tap Ctrl, after Win+PrtScn)");
-                            let _ = app.emit("capture-trigger", serde_json::json!({ "shot": { "atMs": wall, "kind": "file" } }));
+                    // 状态照喂(否则重新打开时手上是半截状态),只是不发出去。这边的 Raw Input 是
+                    // INPUTSINK,本来就只看不删,所以「暂停」在 Windows 上是纯粹的不触发。
+                    let outcome = state.on_key(vk, is_break, now, wall_ms());
+                    if crate::capture::capture_disabled() {
+                        continue_after(&msg);
+                        continue;
+                    }
+                    match outcome {
+                        WinKeyOutcome::Nothing => {}
+                        WinKeyOutcome::CtrlDoubleTap => {
+                            // P9H-7 ③: right after Win+PrtScn the capture takes that file — the payload the
+                            // macOS module sends for ⌘⇧3 (useCapture.ts `shot`, kind 'file').
+                            match state.last_shot.filter(|&(at, _)| crate::images::win_shot_still_fresh(at, now, SHOT_WINDOW_MS)) {
+                                Some((_, wall)) => {
+                                    eprintln!("[double-tap-win] TRIGGER (clean double-tap Ctrl, after Win+PrtScn)");
+                                    let _ = app.emit("capture-trigger", serde_json::json!({ "shot": { "atMs": wall, "kind": "file" } }));
+                                }
+                                None => {
+                                    eprintln!("[double-tap-win] TRIGGER (clean double-tap Ctrl)");
+                                    let _ = app.emit("capture-trigger", ());
+                                }
+                            }
                         }
-                        None => {
-                            eprintln!("[double-tap-win] TRIGGER (clean double-tap Ctrl)");
-                            let _ = app.emit("capture-trigger", ());
+                        // The same event the macOS long-press ⌥ sends (useCapture.ts `note-trigger`).
+                        WinKeyOutcome::CtrlLongPress { copied } => {
+                            eprintln!("[double-tap-win] LONG-PRESS Ctrl — 直接写笔记 (unused Ctrl+C within 2s before: {copied})");
+                            let _ = app.emit("note-trigger", serde_json::json!({ "copied": copied }));
+                        }
+                        WinKeyOutcome::ShiftDoubleTap => {
+                            eprintln!("[double-tap-win] DOUBLE-TAP ⇧ — capture-target switcher");
+                            crate::switcher::on_gesture(&app);
                         }
                     }
                 }
+                Some(Raw::Mouse(flags)) => {
+                    if flags & (RI_MOUSE_ANY_DOWN | RI_MOUSE_ANY_WHEEL) != 0 {
+                        state.on_mouse();
+                    }
+                    if flags & RI_MOUSE_ANY_DOWN != 0 {
+                        let mut pt = POINT { x: 0, y: 0 };
+                        if unsafe { GetCursorPos(&mut pt) } != 0 {
+                            let scale = f64::from_bits(SWITCHER_SCALE.load(std::sync::atomic::Ordering::Relaxed));
+                            if crate::switcher::click_is_outside(pt.x as f64 / scale, pt.y as f64 / scale) {
+                                crate::switcher::dismiss();
+                            }
+                        }
+                    }
+                }
+                None => {}
             }
         }
-        // Let the default proc do its WM_INPUT cleanup (and handle anything else).
-        unsafe { DispatchMessageW(&msg) };
+        continue_after(&msg);
     }
 }
 
-// Decode a WM_INPUT into (virtual key, is_break) for a keyboard event; None for anything
-// that is not a keyboard event or that fails to read.
-fn read_keyboard_event(hrawinput: HRAWINPUT) -> Option<(u16, bool)> {
+// Let the default proc do its WM_INPUT cleanup (and handle anything else).
+fn continue_after(msg: &MSG) {
+    unsafe { DispatchMessageW(msg) };
+}
+
+enum Raw {
+    Key(u16, bool),
+    /// RAWMOUSE.usButtonFlags.
+    Mouse(u16),
+}
+
+// Decode a WM_INPUT into a keyboard event (virtual key, is_break) or a mouse event (its button
+// flags); None for anything else, or that fails to read.
+fn read_raw_event(hrawinput: HRAWINPUT) -> Option<Raw> {
     let mut raw: RAWINPUT = unsafe { zeroed() };
     let mut size = size_of::<RAWINPUT>() as u32;
     let res = unsafe {
@@ -309,7 +247,16 @@ fn read_keyboard_event(hrawinput: HRAWINPUT) -> Option<(u16, bool)> {
     };
     // (u32)-1 signals an error; a keyboard record is fixed-size so a short read cannot happen
     // silently — either the whole record arrived or we treat it as nothing.
-    if res == u32::MAX || raw.header.dwType != RIM_TYPEKEYBOARD {
+    if res == u32::MAX {
+        return None;
+    }
+    if raw.header.dwType == RIM_TYPEMOUSE {
+        // SAFETY: dwType == RIM_TYPEMOUSE guarantees the mouse arm of the union is active. The low
+        // word of ulButtons is usButtonFlags (the RAWMOUSE_0 union's two views of one u32).
+        let buttons = unsafe { raw.data.mouse.Anonymous.ulButtons };
+        return Some(Raw::Mouse((buttons & 0xFFFF) as u16));
+    }
+    if raw.header.dwType != RIM_TYPEKEYBOARD {
         return None;
     }
     // SAFETY: dwType == RIM_TYPEKEYBOARD guarantees the keyboard arm of the union is active.
@@ -318,7 +265,7 @@ fn read_keyboard_event(hrawinput: HRAWINPUT) -> Option<(u16, bool)> {
     if kb.VKey == 0xFF {
         return None;
     }
-    Some((kb.VKey, kb.Flags & RI_KEY_BREAK != 0))
+    Some(Raw::Key(kb.VKey, kb.Flags & RI_KEY_BREAK != 0))
 }
 
 // A message-only window whose sole job is to be the RIDEV_INPUTSINK target. Its window proc

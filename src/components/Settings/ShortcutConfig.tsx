@@ -22,6 +22,8 @@ export default function ShortcutConfig() {
   const captureShortcut = useSettingsStore((s) => s.captureShortcut);
   const searchShortcut = useSettingsStore((s) => s.searchShortcut);
   const captureDisabled = useSettingsStore((s) => s.captureDisabled);
+  const switcherGesture = useSettingsStore((s) => s.switcherGesture);
+  const setSwitcherGesture = useSettingsStore((s) => s.setSwitcherGesture);
   const setCaptureDisabled = useSettingsStore((s) => s.setCaptureDisabled);
   const update = useSettingsStore((s) => s.update);
 
@@ -191,6 +193,20 @@ export default function ShortcutConfig() {
           </div>
         </div>
         <Toggle checked={captureDisabled} onChange={(v) => void setCaptureDisabled(v)} />
+      </div>
+      <div className="border-t border-line" />
+      {/* P15-4（Ocean 2026-11-06 第 256 条）：双击 ⇧ 弹「切换捕捉目标」面板。和 JetBrains 的双击 Shift 撞，所以单独一个
+          开关；上面那个总开关开着时它也停。 */}
+      <div className="flex items-center justify-between gap-4 py-2.5">
+        <div className="min-w-0">
+          <div className="text-sm text-ink">{IS_MAC ? t('双击 ⇧ 切换捕捉目标') : t('双击 Shift 切换捕捉目标')}</div>
+          <div className="mt-0.5 text-xs leading-relaxed text-muted">
+            {captureDisabled
+              ? t('已随上面的开关一起暂停')
+              : t('在哪个软件里都行：鼠标指针那儿弹出项目列表，滚轮换，点一行或点外面就定了。PyCharm 这类软件也用双击 Shift 开搜索，撞了就关掉它。')}
+          </div>
+        </div>
+        <Toggle checked={switcherGesture} onChange={(v) => void setSwitcherGesture(v)} />
       </div>
       <div className="border-t border-line" />
       {row(

@@ -95,6 +95,19 @@ const showNoticeInOverlay = (payload: OverlayNotice): void => {
 };
 
 const applyOverlayAction = (action: OverlayAction): void => {
+  // P15-4: the capture-target switcher (双击 ⇧) closed on another project. The same store call as the
+  // tray menu's 「切换捕捉目标」 — and like it, ⛔ the main window stays where it is.
+  if (action.kind === 'switch-target') {
+    const th = Object.values(useThreadsStore.getState().threadsByWorkspace)
+      .flat()
+      .find((x) => x.id === action.id);
+    if (!th || th.status === 'done') return;
+    void useThreadsStore
+      .getState()
+      .setCaptureTarget(action.id)
+      .catch((e) => console.error('[switcher] set target failed', e));
+    return;
+  }
   // 休息提醒 (Ocean 2026-08-22): the user clicked the break card floating over whatever they
   // were in. Two steps, in this order — the window first, the lock second, so the five
   // minutes begin on a screen the user is already looking at rather than behind it.

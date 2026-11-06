@@ -1539,7 +1539,10 @@ fn plain(p: PathBuf) -> PathBuf {
 
 /// P15-2 (`propose_link_folder`): the folder a workspace is linked to itself — its path, its state
 /// files and its main project — or None. Read only; nothing about the link is handed further.
-pub(crate) fn own_link_summary(conn: &Connection, workspace_id: &str) -> Result<Option<(String, Vec<String>, Option<String>)>, String> {
+/// (folder path, state files, main project id).
+pub(crate) type LinkSummary = (String, Vec<String>, Option<String>);
+
+pub(crate) fn own_link_summary(conn: &Connection, workspace_id: &str) -> Result<Option<LinkSummary>, String> {
     match own_link(conn, workspace_id) {
         Ok((f, l)) => Ok(Some((f.path, l.state_files, l.primary_thread_id))),
         Err(e) if e == "no_link" => Ok(None),

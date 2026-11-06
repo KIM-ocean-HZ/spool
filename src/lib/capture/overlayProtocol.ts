@@ -236,4 +236,39 @@ export type OverlayAction =
   | { kind: 'break-skip' }
   // P10-4: the user clicked the 「周回顾更新了」 card — main brings its window up and opens the
   // weekly review. (✕ and the timeout just put the card away; there is nothing to tell main.)
-  | { kind: 'review-open' };
+  | { kind: 'review-open' }
+  // P15-4: the capture-target switcher closed on another project (switcher.rs relays it). Main sets
+  // the target the way the tray menu does — ⛔ without raising its window.
+  | { kind: 'switch-target'; id: string };
+
+// ---------------------------------------------------------------------------------------------
+// P15-4 (Ocean 2026-11-06 第 255 – 256 条) — the capture-target switcher (双击 ⇧). Its window is the
+// overlay process's second one (`switcher`, overlay.rs); the geometry is switcher.rs's.
+// ---------------------------------------------------------------------------------------------
+
+/** Rust → main window: 双击 ⇧ and no panel is up — build the list and show it. */
+export const SWITCHER_TRIGGER_EVENT = 'switcher-trigger';
+/** main window → Rust: put the panel up at the pointer. */
+export const SHOW_SWITCHER_COMMAND = 'show_target_switcher';
+/** main window → Rust: the setting 「双击 ⇧ 切换捕捉目标」. */
+export const SET_SWITCHER_GESTURE_COMMAND = 'set_switcher_gesture';
+/** overlay process → its switcher window. */
+export const SWITCHER_SHOW_EVENT = 'switcher:show';
+/** …a click outside it, or the gesture again: close, keeping the one in the middle. */
+export const SWITCHER_DISMISS_EVENT = 'switcher:dismiss';
+/** switcher window → its process: hide, and tell main what was picked (if anything changed). */
+export const CLOSE_SWITCHER_COMMAND = 'close_target_switcher';
+
+export interface SwitcherItem {
+  id: string;
+  title: string;
+  workspaceTitle: string;
+  private: boolean;
+}
+
+export interface SwitcherPayload {
+  /** The current target first (when there is one), then the most recently changed. */
+  items: SwitcherItem[];
+  /** The capture target now; null = none. */
+  currentId: string | null;
+}
