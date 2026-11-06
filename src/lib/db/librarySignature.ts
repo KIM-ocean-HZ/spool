@@ -13,7 +13,10 @@ import { getDb } from './client';
 //
 // ⛔ 别换成 `PRAGMA data_version`：它是**按连接**算的，而 tauri-plugin-sql 底下是 sqlx 的连接池
 // （`Pool::connect`，默认最多 10 条连接），两次查询落不落在同一条连接上没法保证，两个数不能比。
+// P15-1（Ocean 2026-11-06）：AI 也能建工作区了（`create_workspace`）—— 一个还没有项目的工作区不会让上面任何一张
+// 表变，所以单独盯。
 const WATCHED: readonly (readonly [table: string, time: string])[] = [
+  ['workspaces', 'updated_at'],
   ['threads', 'updated_at'],
   ['blocks', 'created_at'],
   ['proposal_batches', 'created_at'],

@@ -20,6 +20,7 @@ import { useDraftStore } from './draftStore';
 import { useProposalsStore } from './proposalsStore';
 import { useSearchStore } from './searchStore';
 import { useThreadsStore } from './threadsStore';
+import { useWorkspacesStore } from './workspacesStore';
 import { type AiSeen, __setAiSeenPersistForTest } from '@/lib/db/aiSeen';
 import { createAttachment } from '@/lib/db/attachments';
 import { createBlock, deleteBlock, listBlocksByThread, type Block } from '@/lib/db/blocks';
@@ -129,6 +130,23 @@ describe('reloadOutsideWrites —— AI 从外面写进来的，一次重读全�
     expect(useProposalsStore.getState().pendingCount).toBe(1);
   });
 
+  // P15-1（Ocean 2026-11-06）：`create_workspace` 从 `spool --mcp` 写进来，侧栏要自己冒出来。
+  it('⭐ AI 建了一个工作区、又往里建了项目 —— 重读一次：工作区和项目都在', async () => {
+    await useWorkspacesStore.getState().load();
+    sqlite
+      .prepare(`INSERT INTO workspaces (id, title, sort_order, created_at, updated_at) VALUES ('ws-ai','论文',9,?,?)`)
+      .run(Date.now(), Date.now());
+    sqlite
+      .prepare(`INSERT INTO threads (id, workspace_id, title, created_at, updated_at) VALUES ('th-ai','ws-ai','第一章',?,?)`)
+      .run(Date.now(), Date.now());
+    expect(useWorkspacesStore.getState().workspaces.map((w) => w.title)).toEqual(['W']);
+
+    await reloadOutsideWrites();
+
+    expect(useWorkspacesStore.getState().workspaces.map((w) => w.title)).toEqual(['W', '论文']);
+    expect(useThreadsStore.getState().threadsByWorkspace['ws-ai']?.map((t) => t.title)).toEqual(['第一章']);
+  });
+
   it('外面什么都没写 —— 重读一次，单子不会凭空长出东西', async () => {
     await reloadOutsideWrites();
 
@@ -159,6 +177,8 @@ describe('librarySignature —— 「库有没有被别处动过」的记号', (
     let clock = Date.now();
     const steps: [string, () => Promise<unknown> | unknown][] = [
       ['AI 写了一块', () => createBlock({ threadId, content: '新的一块' })],
+      // P15-1：一个空工作区不会让项目、块那几张表变。
+      ['AI 建了一个空工作区', () => createWorkspace('论文')],
       ['AI 建了一个项目', () => createThread(workspaceId, '新项目')],
       ['一批块待审', () => proposeBlocks()],
       ['申请读文件', async () => {

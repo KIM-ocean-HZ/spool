@@ -3,6 +3,7 @@ import { useAiUpdatesStore } from './aiUpdatesStore';
 import { useBlocksStore } from './blocksStore';
 import { useProposalsStore } from './proposalsStore';
 import { useThreadsStore } from './threadsStore';
+import { useWorkspacesStore } from './workspacesStore';
 
 // 别的进程写进库的东西，重读一遍。
 //
@@ -16,6 +17,8 @@ import { useThreadsStore } from './threadsStore';
 export async function reloadOutsideWrites(): Promise<void> {
   // 刷新安全：选中的项目保留，行整份替换。正在编辑的块不受影响 —— 草稿在 BlockItem 自己的
   // state 里，`!editingContent` 才会被新读到的正文覆盖（任务书 P4-2 那一条查过）。
+  // P15-1：工作区先读 —— AI 建的工作区（`create_workspace`），连同建进去的项目，一次出来。
+  await useWorkspacesStore.getState().load();
   await useThreadsStore.getState().loadAll();
   const active = useThreadsStore.getState().activeId;
   if (active) await useBlocksStore.getState().load(active);
