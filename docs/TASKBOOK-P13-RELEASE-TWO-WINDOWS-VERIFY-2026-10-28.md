@@ -38,7 +38,7 @@
 | 已经装了的 | 只有 winget。没有 Git、Node、Rust、VS Build Tools；**没装过 Spool**（`%APPDATA%\com.oceanjin.spool` 不存在） |
 | 和 Mac 共用的 | Windows 的**桌面、文档、下载就是 Mac 的 `~/Desktop`、`~/Documents`、`~/Downloads`**（Parallels「共享配置文件」开着，桌面 = `C:\Mac\Home\Desktop`，Knote 仓库和 `~/Desktop/Spool/` 的备份都在里面）；剪贴板两边同步；Windows 里的文件和链接可能交给 Mac 的程序打开（「共享应用程序」两个方向都开着） |
 | 磁盘 | 虚拟机的硬盘是随用随涨的文件，涨在 Mac 的硬盘上。**Mac 现在只剩约 21 GB**，虚拟机里看到的「剩余空间」就是这个数（§4 第 1 条） |
-| 我从 Mac 能做什么 | `prlctl exec "Windows 11" --current-user …` 在虚拟机里跑命令（实测和资源管理器在同一个会话里，所以起的窗口应该出现在 Ocean 的屏幕上、收得到键盘 —— W-3 第一次起 Spool 时核）；`prlctl capture` 截虚拟机屏幕；`prlctl send-key-event` 往虚拟机的虚拟键盘发按下 / 松开（能控制时间，测长按、双击的边界）；`prlctl snapshot` 做快照（虚拟机开着时快照连内存一起存，一次约 9 GB，磁盘不够时不用）。⇒ 不用在 Windows 里装 Claude Code，也不用 Parallels 的 MCP 或 VS Code 插件。点鼠标、拖文件、看界面是 Ocean 的手 |
+| 我从 Mac 能做什么 | `prlctl exec "Windows 11" --current-user …` 在虚拟机里跑命令（实测和资源管理器在同一个会话里，所以起的窗口应该出现在 Ocean 的屏幕上、收得到键盘 —— W-3 第一次起 Spool 时核）；`prlctl capture` 截虚拟机屏幕；`prlctl send-key-event` 往虚拟机的虚拟键盘发按下 / 松开（能控制时间，测长按、双击的边界）；`prlctl snapshot` 做快照（虚拟机开着时快照连内存一起存，一次约 9 GB，磁盘不够时不用）。⇒ 执行这一窗不用在 Windows 里另装一套执行环境，也不用 Parallels 的 MCP 或 VS Code 插件。点鼠标、拖文件、看界面是 Ocean 的手 |
 | 交换文件夹 | Mac `~/Desktop/Spool/P13-vm-20261106/` = 虚拟机 `C:\Mac\Home\Desktop\Spool\P13-vm-20261106\`：只用来传安装包、日志、库的副本。⛔ Windows 版 Spool 不碰它（不挂文件、不连文件夹、不导出到这里） |
 
 ### 0.2 开工前的四件事（顺序别换）
@@ -65,6 +65,7 @@
 - 核代码：`git log -1` 是 `cb85413` 或更新；`git diff --stat 87c9261 HEAD -- src src-tauri package.json package-lock.json` 是空的。不空就停下问。
 - 工具（winget 装；除了 Rust，ARM 原生的就行）：Git for Windows、Node 22（`node:sqlite` 要 22.5+，和 CI 一样用 22）、Visual Studio 2022 Build Tools 的「使用 C++ 的桌面开发」，**勾上 x64/x86 的 MSVC 生成工具**和 Windows 11 SDK。NSIS 不用装，打包时 Tauri 自己下。
 - **Rust 要用 x64 的工具链**：`rustup` 装好后 `rustup default stable-x86_64-pc-windows-msvc`，核 `rustc -vV` 里是 `host: x86_64-pc-windows-msvc`。原因：`scripts/build-sidecar.sh` 按 rustc 的 host 给 `spool-ai` 起名，Tauri 也按它决定打什么包 —— 用 ARM 原生的 Rust 会**不声不响地打出一个 ARM64 的包**，不是要发的 x64。代价：rustc 自己也在转译下跑，第一次从头编会慢。
+- **打包要写明目标**：`npx tauri build --bundles nsis --target x86_64-pc-windows-msvc`。Tauri 的命令行工具是 ARM 原生的，不写 `--target` 时它按**自己的**平台定包的架构（日志 `Target: arm64`），去找 `spool-ai-aarch64-…exe`、找不到就失败（11-06 实测）。写了之后产物在 `src-tauri\target\x86_64-pc-windows-msvc\release\bundle\nsis\`。GitHub 的 x64 机器上不用写。
 - `bash` 要在 PATH 里，而且是 Git 带的那个（`where bash` 第一行在 `C:\Program Files\Git\` 下面）：`npm run build:sidecar` 用它。
 - 打出来的包核一下是 x64：`spool.exe` 的 PE 头 Machine = `0x8664`（交换文件夹里拷一份，Mac 上几行 Python 读）。
 
@@ -130,6 +131,7 @@
 - 甲：`npx tauri build --bundles nsis`（`beforeBuildCommand` 会顺带把 `spool-ai` 编成 `spool-ai-x86_64-pc-windows-msvc.exe` 打进去）。⛔ 不设任何签名环境变量。产物 `src-tauri\target\release\bundle\nsis\Spool_0.7.4_x64-setup.exe`。
 - 乙：`gh run download <id> --name spool-windows-nsis`，下到交换文件夹。
 - 记大小、`sha256`、`spool.exe` 是 x64（§0.4 最后一条；乙的话从安装包里拆，见记忆 `windows-ci-verify-from-mac` 末尾的拆法）。拷进 `C:\Users\hzjin\spool-p13\`，装之前不动它。
+- 核 `spool.exe`、`spool-ai.exe` 的导入表（Mac 上 `objdump -p <exe> | grep "DLL Name"`）：有 `VCRUNTIME140.dll` / `MSVCP140.dll` 就记一条 DISCOVERED —— 没装 Visual C++ 运行库的电脑上会打不开，而这台虚拟机装了 Build Tools 之后测不出来（§7.2）。
 
 ### W-2 · 升级验证（虚拟机里没装过 Spool ⇒ 走老用户真实会走的路）
 
@@ -322,7 +324,99 @@
 5. **验首启。**
 6. **AI 客户端装 GPT 那一侧**（ChatGPT / Codex 在 Windows 上哪个能连本地 MCP，装的时候核）。
 
-（§0 实测的键位、W-0 基线数字（Mac + Windows）、W-1 安装包大小 / 哈希 / 是不是 x64、W-2 迁移前后条数、W-5 MCP 数字和路径闸原话、§6 每一条「过 / 不过 / 没测」和哪些是「虚拟机」、新发现编号、提交号。）
+### 7.2 W-0 进度（11-06 夜）
+
+- **Mac**（`51ed272`，代码 = `87c9261`）：`tsc -b` 干净；vitest **141 个文件 / 1332 条**全过；`i18n-check` 和 `--dead` 都是 `(none missing)`；`cargo tree … --target x86_64-pc-windows-msvc` 那条 grep 空（整棵树 1073 行）；`npm run build:sidecar` 过；`cargo test --lib` **309 过 · 15 ignored**；sidecar **31 过**（从清空的 `target` 从头编）。
+- **磁盘**：Ocean「能不能直接删除快照，我不在乎这次的备份」⇒ 停掉 22:20 开始的那次 Time Machine 备份（`tmutil stopbackup`），删掉本机全部 18 个本地快照（`tmutil deletelocalsnapshots /`）；Mac 剩余空间 16 GB → 76 GB → 135 GB。OWC Backup 还接着，之后的自动备份照常。
+- **虚拟机工具（不用管理员）**：`C:\Users\hzjin\spool-p13\tools\` 里 Node **v22.23.4**（官方 win-arm64 zip，sha256 对上）、PortableGit **2.56.0.4 arm64**、`rustup-init`（arm64）；`core.autocrlf=false`；用户 PATH 加了 node、git 的 `cmd` 和 `usr\bin`、`~\.cargo\bin`。脚本 `~/Desktop/Spool/P13-vm-20261106/scripts/prep-tools.ps1`。
+- **Rust**：`rustup-init -y --default-host x86_64-pc-windows-msvc --profile minimal` ⇒ stable **1.99.1**（2026-10-13），默认 `stable-x86_64-pc-windows-msvc`（转译下跑，第一次读版本超时是正常的）。
+- **VS 2022 Build Tools**：`winget` 从 `prlctl exec` 里起，管理员提示一出来连接就断（`PRL_ERR_IO_STOPPED`），winget 跟着没了；改成下官方 `vs_BuildTools.exe`（签名 Microsoft，Valid）、`Start-Process -Verb RunAs` 脱离会话起：`--passive --wait --norestart --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended --add Microsoft.VisualStudio.Component.VC.Tools.x86.x64`。⇒ 以后在虚拟机里跑久的命令都用 `scripts/start-detached.ps1` 脱离会话起、写完成记号，别让 `prlctl exec` 一直挂着。
+- **代码进虚拟机**：`git clone C:\Mac\Home\Desktop\Knote C:\src\Knote`（共享文件夹的属主是 Everyone，git 要先 `safe.directory` 放行那一个路径）；HEAD `51ed272`，`git diff --stat 87c9261 HEAD -- src src-tauri package.json package-lock.json` 空，工作区干净，`src/lib/pack` 全是 `w/lf`。
+- **虚拟机前端那一半**（`scripts/w0-frontend.cmd`，日志在交换文件夹 `logs/w0-*.log`）：`npm ci` 过（npm 10.9.9）；`tsc -b` 干净；`i18n-check` 两条都 `(none missing)`；**vitest 没起来**：`@rollup/rollup-win32-arm64-msvc` 的 `.node` 加载失败（`ERR_DLOPEN_FAILED`），提示缺 Visual C++ 运行库（ARM64）—— 这台虚拟机是全新系统、没装运行库，是开发工具那一侧的事，不是 Spool。装 VS Build Tools 时会一起装上，之后重跑。
+- **VS 2022 Build Tools** 23:17 装完（`vswhere` 找到带 `VC.Tools.x86.x64` 的 `…\2022\BuildTools`）。
+- **虚拟机 W-0 第二段**（`scripts/w0-rust.cmd`，23:20 – 23:27；rustc 1.99.1 `host: x86_64-pc-windows-msvc`，`bash` = PortableGit 的）：vitest **重跑过了**（装了 Build Tools 之后运行库有了）；`npm run build:sidecar` 过，出 `spool-ai-x86_64-pc-windows-msvc.exe`；sidecar 测试过；`SPOOL_TEST_CC6_MANIFEST=1 cargo test` **库测试 282 过 · 2 红 · 14 ignored**（cargo 在第一个红的测试程序就停，后面的测试程序没跑 ⇒ 又用 `--no-fail-fast` 跑一遍，见下）。
+  - 红 1 `mcp::tests::on_windows_a_path_into_appdata_or_a_system_folder_stops_with_or_without_the_prefix`（mcp.rs:18572，`stops(format!(r"{system}\System32\a.dll"))`）：这台机器 `SystemRoot` = **`C:\WINDOWS`（大写）**，规则里是磁盘上的真写法 `C:\Windows`，`Path::starts_with` 分大小写 ⇒ 测试用环境变量拼出来的路径不算在里面。**产品不漏**：`propose_attach_file` / `propose_link_folder` 都是先按 AI 写的判一次、`canonicalize`（得到磁盘上的真写法）之后再判一次；跟着挪动找文件那条拿到的也是系统给的真写法。GitHub 的 Windows 机器上 `SystemRoot` 多半是 `C:\Windows`，所以 CI 一直绿。⇒ 测试的写法问题（`DISCOVERED-20261106-3`）。
+  - 红 2 `mcp::tests::propose_link_folder_queues_one_card_per_workspace_and_refuses_what_it_cannot_link`（mcp.rs:20431，P15-2 加的）：库里存的是 `C:\Users\…\thesis`（产品对：给人 / 给 AI 的路径都去掉 `\\?\`），测试拿 `canonicalize` 出来的 `\\?\C:\…\thesis` 去比。P15 这条测试只在 Mac 上跑过。⇒ 同上，测试的写法问题。
+  - `cargo test --no-fail-fast`（`scripts/w0b-w1.cmd`）：库测试同样 282 / 2 / 14；`src\main.rs` 和文档测试 0 条。⇒ **Windows 上全部测试 = 282 过 · 2 红（都是测试写法）· 14 ignored。**
+  - release 编译 6 分 20 秒（转译下），Windows 上多 10 条「没用到」警告（`screenshot_landed_since`、`spawn_sidecar`、`read_api_key`、`legacy_file_key`、`ThreadMeta.updated_at`、`ShiftTaps::reset`、`WinKeys::reset_gestures`、三个 import）。后两个看过：Windows 上暂停期间是照喂状态、只是不发（`double_tap_win.rs` 那段注释写明了），重新打开要点鼠标，鼠标本身就清掉半截手势 ⇒ 不是漏了复位，只是没用到的代码。
+- **W-1 第一次打包失败**：`Target: arm64` → `binaries\spool-ai-aarch64-pc-windows-msvc.exe doesn't exist`（ARM 主机上的 Tauri 命令行按自己的平台定目标）。改用 `--target x86_64-pc-windows-msvc` 重打（`scripts/w1b.cmd`，§0.4 已补）。
+- **W-1 安装包**（23:38 – 23:42，release 4 分 26 秒，`Target: x64`）：`Spool_0.7.4_x64-setup.exe` **10,042,083 字节**，sha256 `d563672518b1ed409afec98342edef4fced8e079a51f05a5a776195d51332414`；`spool.exe` 28,192,256 字节 `6855037853f1…2557`、`spool-ai-x86_64-pc-windows-msvc.exe` 1,428,992 字节 `03cbdfd116cc…0bad6`；两个都是 PE、Machine **0x8664（x64）**。拷在 `~/Desktop/Spool/P13-vm-20261106/build/`。
+- **导入表**（Mac 上 `objdump -p`）：`spool.exe` **不要** VC++ 运行库（只要系统自带的 `api-ms-win-crt-*`，Windows 10 起都有）；**`spool-ai.exe` 要 `VCRUNTIME140.dll`** ⇒ 没装 Visual C++ 运行库的电脑上，所有走 API 的 AI 功能（周回顾、过期检测、压缩、跟进、认 key / 拉模型列表）都起不来（主程序里没有联网的库，这些全走 spool-ai；`api_engine.rs` 六处 `spawn_sidecar_with`）。v0.6.1 没有 sidecar（装好的文件夹里只有 `spool.exe`）⇒ 发版二是 Windows 上第一次带它。这台虚拟机装 Build Tools 时运行库（x64 / arm64 14.44）已经装上了，⛔ 测不出来，只有静态证据。⇒ `DISCOVERED-20261106-4`。
+
+### 7.3 W-2 进度（11-06 夜，Ocean 睡前让我把能自己做的都做完）
+
+- **v0.6.1 安装包**：`Spool-windows-x64-setup.exe` 6,982,762 字节，sha256 `8814690c…db350a`，没签名（预期）；`/S` 静默装，退出码 0，装在 `%LOCALAPPDATA%\Spool\`（`spool.exe` 21,223,424 字节），「已安装的应用」里 Spool 0.6.1。
+- **第一次打开**（从 `prlctl exec` 起，窗口出现在 Ocean 的虚拟机屏幕上 —— §0.1 那一条核过了）：英文界面（跟系统）、英文教程，教程说「double-tap Ctrl」；日志 `Raw Input registered`；库旁边有 v0.6.1 自己留的空 `pre-migration-v0`（老问题，P9X `-5` 修的是新版）。截图 `logs/v061-first-run.png`。
+- **往老库里放东西**（`scripts/seed-v061.mjs`，走 v0.6.1 自己的 `--mcp`，`serverInfo` 0.6.1）：两个项目（〈迁移测试（Windows）〉、〈Migration test (EN)〉），7 块（中英文、带 `source_url` / `retrieved_at`、列表 + 表格、约 6000 字的长块、一块用 `ref_kind: corrects` + `corrected_quote` 更正另一块、一块引用另一块）、一条待审的跟进、一句摘要；再照 v0.6.1 的存法插一个挂着的文件（`spool-p13\files\迁移说明.txt`，AI 可读）。之后库 v23、`integrity_check` ok：项目 5、块 19、文件 1、跟进 1、工作区 1。种子用的客户端记录（`mcp-clients.json`，原来没有）已删。
+- **副本上跑真迁移**（Mac 上，附录 A 的 `mig.test.ts`，库是从虚拟机拷出来的 `db/v061-seeded-v23.db` 的副本）：v23 → **v38**，`__migrateSchemaForTest` 回 `false`（没走空库重建）；老的 **20 张表、138 列**条数和每列 `SUM(LENGTH)` 一个不差；新的 9 张表（`supersede_proposals` `read_positions` `file_proposals` `block_images` `split_proposals` `folders` `folder_links` `workspace_folders` `folder_proposals`）都空；`integrity_check` ok。
+- **为明天备好的**：Codex CLI **0.167.0**（`npm i -g @openai/codex`，`%USERPROFILE%\.codex` 已出现 ⇒ Spool 设置里应显示「已安装」）；`spool-p13\link-test`（README.md + `.env` + `git init`）、隐藏的 `spool-p13\.hidden-dir`、`spool-p13\中文 测试`。
+- ⇒ W-1 多核一条：**`spool.exe` 和 `spool-ai.exe` 的导入表里有没有 `VCRUNTIME140.dll` / `MSVCP140.dll`**（Mac 上 `objdump -p` 读）。有的话，没装运行库的 Windows 电脑上 Spool 打不开；装了 Build Tools 之后这台虚拟机就测不出这一点了，只能静态看。
+
+### 7.4 W-2 升级 + W-3 起来（11-06 23:44）
+
+- 升级前在虚拟机上拍了快照 **「P13 before upgrade」**（`{13116fcd-…}`：v0.6.1 + 种好的库 v23 + 新安装包在 `spool-p13\downloads`，工具链和 `C:\src\Knote` 都在）。要重走一遍升级就切回它（`prlctl snapshot-switch "Windows 11" --id {13116fcd-188f-4aee-9d8b-418b28eb4a5e}`）。
+- 新包 `/S` 覆盖装：退出码 0，「已安装的应用」里 Spool **0.7.4**，装好的文件夹里 `spool.exe` + **`spool-ai.exe`** + `uninstall.exe`；装完、第一次打开之前库没动。
+- 第一次打开（`scripts/run-spool.cmd`，stdout / stderr 进 `spool-p13\logs\run-<时间>.*.log`）：自己迁移，库旁边多了 `spool.pre-migration-v23-2026-11-06T23-44-31-106Z.db`；日志 `Raw Input registered — double-tap Ctrl, long-press Ctrl and double-tap ⇧ armed`、`[overlay] helper started`。
+- **升级前后对比**（`scripts/compare_dbs.py`，Mac 上读两份副本）：v23 ok → **v38 ok**；老的 **20 张表、138 列**条数和每列 `SUM(LENGTH)` **0 处不一样**；新的 9 张表都空；项目 5、块 19、文件 1、工作区 1、跟进 1。界面截图 `logs/after-upgrade.png`：两个测试项目在、待审 1。
+- ⚠️ 同一秒（23:44:31）`%LOCALAPPDATA%\com.oceanjin.spool\` 里多出一个 **0 字节的 `spool.db`** ⇒ `DISCOVERED-20261106-7`。
+
+### 7.5 W-5 MCP（库的副本，`scripts/probe-w5.mjs`，日志 `logs/w5-probe-*.log`）
+
+- `serverInfo.version` **0.7.4**；普通连接 **30**（只读 15、写 15，全部有 annotations）；`--engine-run` **26**（只读 15、写 11）。
+- 没升级的 v23 副本：`list_threads` 被拒 ——「Spool's database is still the older v23; this MCP server is v38. The upgrade happens inside the app — launch Spool once and try again. Nothing is at risk.」
+- 路径闸原话（P12-1）：「This file is inside **C:\Users\hzjin\AppData**, where apps keep their own data — Spool's own database included. An AI may not propose files from there.」「This file is inside the system folder **C:\Windows**. An AI may not propose files from system folders.」—— 都没有 `\\?\`。
+- `create_workspace`：顶层「Win 探针」、它下面「子工作区」都建成；「win 探针」（大小写不同）被拒、回现有的名字。
+- `propose_link_folder`：`C:\Users\hzjin\spool-p13\link-test` 排进待审；同一个文件夹写成 `C:/Users/hzjin/spool-p13/link-test` ⇒ 存成反斜杠写法、换掉前一张；`C:\Windows`、`…\AppData\Local`、整个 `C:\Users\hzjin`、隐藏文件夹、`.env` 当现状文件都被拒，各有一句原因。**Parallels 共享文件夹**（`C:\Mac\Home\…`）被收下、存成 `\\?\UNC\psf\Home\…` ⇒ `DISCOVERED-20261106-5`（只记，没批准）。
+- `list_threads` 开头：「The user's capture target right now is ‹Unsorted› …」。
+- `get_block_images`：库里存不进图片（`-7`），**没测到**。
+
+### 7.6 不用 Ocean 的手先验了一遍（11-06 23:45 – 11-07 00:40；Ocean 明天的手指才算验收）
+
+按键用 `prlctl send-key-event` 从 Mac 发（`-j` 从标准输入读 `[{"scancode":29,"event":"press"},…]`，一次发完间隔够短；Ctrl = 29，⇧ = 42），走的是虚拟机的虚拟键盘、和人手打字同一条路，**Mac 上的 Spool 收不到**。剪贴板测试期间关了 Parallels 的剪贴板共享（结束已开回）。截图在本窗 scratchpad，关键的几张拷到 `~/Desktop/Spool/P13-vm-20261106/logs/`。
+
+| §6 | 结果 | 怎么验的 / 看到什么 |
+|---|---|---|
+| 2、3 | 过 | 不白屏；英文界面（跟系统）。版本 0.7.4 见 7.4 |
+| 5 | 过 | 7.4 对比 0 处不一样 |
+| 6 | 过（虚拟机） | 记事本在前台双击 Ctrl ⇒ 来源「p13-source.txt - Notepad」；Edge 里复制再捕 ⇒ 来源是 Edge 窗口标题（带尾巴，`-8`） |
+| **7** | **不过** | 卡片弹出来**拿不到键盘**：日志「the toast did not get the foreground — note box needs a click」，前台一直是记事本 ⇒ `-6` |
+| 8 – 11、13 – 15 | **不过（被 `-7` 挡住）** | 剪贴板放一张图双击 Ctrl ⇒ 卡片「The image could not be stored: no such table: blocks」 |
+| 25 | 过（待 Ocean 看标题栏） | 改注册表切 Windows 深色 ⇒ 主窗整体变深、标题栏看着也深；已切回浅色 |
+| 34 | 部分 | AI 建的私密项目左栏带标记（右键设私密那条路要 Ocean） |
+| 36 | 过 | Codex 往 Unsorted 写了之后左栏 Unsorted 亮绿点 |
+| 39 | 过 | Codex「我 Spool 里有哪些项目」⇒ 5 个，**不含**私密的〈私密测试〉 |
+| 40 | 过 | Codex 先 `dry_run` 再 `add_block`，存进 Unsorted |
+| 42 | 卡已排好、待 Ocean 点 | Codex `propose_supersede`（〈Migration test (EN)〉第 2 块取代第 3 块） |
+| 52 | 过 | 库临时改名后首启：新库 v38、三个教程项目（6 / 6 / 5 块）、教程说 Ctrl、**没有** `pre-migration-v0`、没有 ⌥ / 输入监控的说法；看完已改回、原库所有文件在 |
+| 53 | 过 | Spool 半露在记事本后面、不点它 ⇒ 字数 400,389 → 400,545，自己读到了 |
+| 54 | 过 | Spool 最小化时 Codex 写一块，10 秒后**不激活**地还原 ⇒ 字数 400,545 → 400,578 |
+| 55 | 过 | Spool 最小化 **33 分钟**、期间 Codex 建工作区 / 排两张卡 ⇒ 不激活地还原 2.5 秒时左栏已有〈第一章〉、待审数字 3 |
+| 58 | 前半过 | Codex `list_threads` → `get_blocks(include_extracted_text)`，把〈迁移说明.txt〉全文念出来；关掉「AI 可读」那半要 Ocean 在右栏点 |
+| 60 | 过 | 手工造的 HTML Format 和**真 Edge 复制**（Ctrl+A / Ctrl+C）两种都存成 `**粗体**` + `\(a^2+b^2=c^2\)` + 表格（格里 `\(\frac{1}{2}\)`、`` `sqrt(x)` ``）+ 列表，没有 `Version:0.9` 头 |
+| 61 | 过 | 连着 10 次换剪贴板 + 双击，夹 3 次长按 ⇒ 10 块都在，两个进程一直没换、日志没有 panic |
+| 62 | 过 | 60 万字 ⇒ 卡片「Too much text this time (600,000 characters) — over the 500,000-character limit for one capture. Nothing was saved; copy it in parts and capture each.」，库没变；40 万字 ⇒ 存进去（400,000 字），主窗照常画出来 |
+| **63** | **不过** | 长按 1.2 秒弹笔记卡（截图），接着打 `abc` ⇒ 字进了**记事本** ⇒ `-6` |
+| 64 | 键盘那三种过 | 按 0.45 秒、3.4 秒、按着 Ctrl 再按 A ⇒ 都不弹；按着点鼠标 / 转滚轮要 Ocean |
+| 65 | 过 | 记事本里 Ctrl+A、Ctrl+C，0.3 秒后长按 ⇒ `copied: true`、卡片里是那段字；接着再长按 ⇒ `false`（只带一次） |
+| 66 | 过 | 长按 1 秒松开马上短按一下 ⇒ 只一条 LONG-PRESS、没有 TRIGGER |
+| 69 | 过（截图） | 双击 ⇧ ⇒ 鼠标处弹「Capture into」面板，当前 Unsorted「now」在中间，下面三个项目，底下提示「Scroll to change · click one, or click outside to finish」 |
+| 70 | 部分过 | 约 6 秒不动自己收；面板开着时前台一直是记事本（不抢键盘）；滚轮、点一行、点外面要 Ocean |
+| 71 | 部分过 | ⇧ 按住 0.4 秒再点一下、⇧+A 打两次大写 ⇒ 都不弹；设置开关、托盘暂停要 Ocean |
+| 73 | 过 | Codex `create_workspace`「Win 论文」+ `create_thread`「第一章」，Spool 最小化着也自己出现 |
+| 74 | 卡已排好、待 Ocean 点「去连接…」 | Codex `propose_link_folder`（`C:\Users\hzjin\spool-p13\link-test`、README.md） |
+| 75 | 过 | 「把这句话存进我现在这个项目」⇒ Codex 只 `dry_run`、说出〈Unsorted〉、问要不要存，**没写** |
+
+Codex：CLI 0.167.0，Ocean 11-06 23:27 登录（ChatGPT 账号）；`scripts/codex-run.mjs` 用 `-c mcp_servers.spool.*` 临时挂 Spool（`default_tools_approval_mode="approve"`），**`~/.codex/config.toml` 没动** ⇒ 明天第 37 / 38 条照旧从「未配置」开始。九次对话（c0 – c8）每次 10 – 30 秒，记录在 `logs/codex-runs.log`、`logs/codex-c5..c8.log`。
+
+### 7.7 这一夜的新发现（HANDOFF §9.9）
+
+`DISCOVERED-20261106-3`（2 条测试红，测试写法）· **`-4`（spool-ai 要 VC++ 运行库，P1）** · `-5`（UNC 路径带 `\\?\UNC\`）· **`-6`（双击 / 长按 Ctrl 的卡片拿不到键盘，P1）** · **`-7`（Windows 数据目录不一致：图片存不进、导出库会导出空文件，P0）** · `-8`（来源带浏览器尾巴）。
+
+### 7.8 明天给 Ocean 的（只剩要手指、要他定的）
+
+见 HANDOFF §9.8 最上面那段的清单。
+
+（§0 实测的键位、W-0 基线数字（Mac + Windows）、W-1 安装包大小 / 哈希 / 是不是 x64、W-2 迁移前后条数、W-5 MCP 数字和路径闸原话、§6 每一条「过 / 不过 / 没测」和哪些是「虚拟机」、新发现编号、提交号 —— 上面 7.1 – 7.7；没走完的在 HANDOFF §9.8。）
 
 ---
 
