@@ -21,7 +21,7 @@
 > - ⛔ 不加 LICENSE、README 不写许可一节；不引 95/5 那个数；MemTrapBench 的百分数不进讲 Spool 的句子。
 > - **提交照 `CLAUDE.md` §5：任何地方都不写 AI 署名**（没有 `Co-Authored-By`、没有「Generated with」）—— 默认模板会建议加，**不许加**；提交说明里也别写「用什么工具执行的」（写「在 Parallels 虚拟机里」）。
 >   每次提交后跑 `CLAUDE.md` §5 那条自查 grep；命中的若只是产品内容（来源识别里的 claude、`CLAUDE.md` 这个文件名、引擎名），用窄一点的 grep（`co-authored|🤖|generated with|anthropic`）复核，别为了让它变绿改代码。
-> - **推送先问 Ocean。** 仓库是公开的。本地 `main` 比 `origin/main` 多 9 笔（`19923fd` + P15 那 8 笔），推的时候一起带上。
+> - **推送先问 Ocean。** 仓库是公开的。本地 `main` 比 `origin/main` 多 8 笔（`19923fd` + P15 那 7 笔；11-06 夜开窗时），推的时候连同 P13 的文档一起带上。
 > - ⛔ **虚拟机里 Windows 的「桌面 / 文档 / 下载」就是 Mac 上的那三个真文件夹**（§0.1）。测试用的文件、文件夹一律放 `C:\Users\hzjin\spool-p13\`。
 
 ---
