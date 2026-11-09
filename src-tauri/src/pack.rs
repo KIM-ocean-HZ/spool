@@ -240,6 +240,7 @@ fn open_library_read_only(data_dir: &Path) -> Result<Connection, String> {
     let conn = Connection::open_with_flags(data_dir.join("spool.db"), OpenFlags::SQLITE_OPEN_READ_ONLY)
         .map_err(|e| format!("打开库失败：{e}"))?;
     conn.busy_timeout(std::time::Duration::from_secs(5)).map_err(|e| e.to_string())?;
+    crate::transfer::check_library(&conn)?;
     Ok(conn)
 }
 

@@ -16,7 +16,7 @@ use std::io::Cursor;
 
 use base64::Engine as _;
 use image::{GenericImageView, ImageFormat, ImageReader, Limits};
-use rusqlite::{Connection, OptionalExtension};
+use rusqlite::{Connection, OpenFlags, OptionalExtension};
 use serde::Serialize;
 
 /// One image, at most this many bytes (as stored). A full-screen Retina screenshot is a few
@@ -414,11 +414,23 @@ pub fn cached_block_images(app: tauri::AppHandle, block_ids: Vec<String>) -> Res
 }
 
 pub(crate) fn open_library(app: &tauri::AppHandle) -> Result<Connection, String> {
-    let path = crate::transfer::data_dir(app)?.join("spool.db");
-    let conn = Connection::open(path).map_err(|e| e.to_string())?;
+    open_library_at(&crate::transfer::data_dir(app)?)
+}
+
+/// ⛔ Never creates the file: the GUI's migrations own creating the library. The flags are
+/// rusqlite's defaults minus CREATE, so a wrong folder is an error rather than a fresh empty
+/// library that every later query fails on with "no such table" (P13, DISCOVERED-20261106-7).
+fn open_library_at(dir: &std::path::Path) -> Result<Connection, String> {
+    let path = dir.join("spool.db");
+    let conn = Connection::open_with_flags(
+        &path,
+        OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_URI | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    )
+    .map_err(|e| format!("打不开 Spool 的库 / Cannot open Spool's library ({}): {e}", path.display()))?;
     // The webview holds its own connection to the same file (WAL); wait for it rather than
     // fail when both write at once.
     conn.busy_timeout(std::time::Duration::from_secs(5)).map_err(|e| e.to_string())?;
+    crate::transfer::check_library(&conn)?;
     Ok(conn)
 }
 
@@ -891,6 +903,35 @@ pub fn add_block_image_from_clipboard(app: tauri::AppHandle, block_id: String) -
 
 #[cfg(test)]
 mod tests {
+    /// P13 (DISCOVERED-20261106-7): on Windows this connection pointed at the wrong folder, and
+    /// `Connection::open` quietly made an empty `spool.db` there — every image, folder link and
+    /// file follow then failed with "no such table". It may never create a library, and an empty
+    /// one is not a library.
+    #[test]
+    fn the_rust_side_never_creates_or_accepts_an_empty_library() {
+        let dir = std::env::temp_dir().join(format!("spool-open-library-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let db = dir.join("spool.db");
+
+        assert!(open_library_at(&dir).is_err());
+        assert!(!db.exists(), "opening created a library");
+
+        std::fs::write(&db, b"").unwrap();
+        let err = open_library_at(&dir).err().expect("an empty file was accepted");
+        assert!(err.contains("not Spool's library"), "{err}");
+        assert_eq!(std::fs::metadata(&db).unwrap().len(), 0);
+
+        std::fs::remove_file(&db).unwrap();
+        Connection::open(&db)
+            .unwrap()
+            .execute_batch("PRAGMA user_version = 38; CREATE TABLE blocks (id TEXT PRIMARY KEY);")
+            .unwrap();
+        open_library_at(&dir).expect("a real library opens");
+
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
     // P14 hotfix (2026-11-06 crash). Touches the real system clipboard, read-only — so it is not in the
     // default run (CI machines may have no clipboard). `cargo test clipboard_reads_survive -- --ignored`.
     // Without PASTEBOARD the same shape aborted 2 runs in 3 (scratch check, 6 threads × 400 reads).

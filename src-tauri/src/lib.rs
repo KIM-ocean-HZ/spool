@@ -637,18 +637,13 @@ pub fn run() {
             // auto-create the parent dir on first launch and the frontend hangs forever
             // on `Database.load(...)`.
             //
-            // ⚠️ BOTH, because on macOS these are the same path and on Windows they are
-            // not: config dir is Roaming AppData, local data dir is Local AppData. The
-            // plugin resolves a relative sqlite URL against the CONFIG dir, so on Windows
-            // the line below was creating a directory nothing would ever open — and the
-            // failure mode is the worst one available: a first launch that hangs on a
-            // blank window, on the platform where nobody has a terminal open to see why.
-            // Creating a second empty directory is the whole cost of not finding that out
-            // from Ocean.
-            for dir in [app.path().app_config_dir(), app.path().app_local_data_dir()]
-                .into_iter()
-                .flatten()
-            {
+            // ⚠️ The plugin resolves a relative sqlite URL against the CONFIG dir — Roaming
+            // AppData on Windows, not Local (on macOS the two are one folder) — and
+            // `transfer::data_dir` IS that directory, the one every Rust-side connection opens
+            // too. One definition, so the plugin and the Rust side can never again look in two
+            // different folders (P13, DISCOVERED-20261106-7: on Windows they did, and every
+            // image, folder link and library export went to an empty `spool.db` under Local).
+            if let Ok(dir) = transfer::data_dir(app.handle()) {
                 let _ = std::fs::create_dir_all(&dir);
             }
 
