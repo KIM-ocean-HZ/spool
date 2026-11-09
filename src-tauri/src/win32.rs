@@ -182,19 +182,21 @@ pub fn focus_window(hwnd: isize) -> bool {
 
 /// The capture / note card (a window of THIS process, the helper) takes the foreground after a
 /// double-tap or long-press Ctrl — a Raw Input gesture, so nobody holds a foreground right to hand
-/// over (P13, DISCOVERED-20261106-6).
+/// over (P13, DISCOVERED-20261106-6). ⚠️ Call it on the window's own (main) thread: from another
+/// thread SetForegroundWindow answered TRUE while the card never came to the front (P13: 0/3 – 1/6).
 ///
-/// Plain SetForegroundWindow first. When Windows refuses it, the Alt key is what lifts the lock —
-/// tao's `set_focus` does that too, but with a bare Alt press + release, which the app still in
-/// front takes as "show the menu keys": P13 measured Notepad eating the next letter after the card
-/// was closed with Esc (a run with no Alt, same steps: clean). Here a key goes down and up between
-/// Alt's press and release — 0xE8, unassigned, the mask AutoHotkey uses to keep menus from
-/// activating — so it is an Alt chord, which activates nothing. Left Alt, not right: on AltGr
-/// layouts Windows adds a fake Ctrl to a right Alt. Measured in the P13 VM, not a documented
-/// guarantee: the answer is what the OS says afterwards (`holds_foreground`), never this return.
+/// Plain SetForegroundWindow first. When Windows refuses it, the helper becomes "the process that
+/// sent the last input" — with a mouse move of zero, which touches no key and so cannot put any app
+/// into a menu or IME state — and asks again; resent each time, in case real input landed between.
+/// What this replaces: tao's `set_focus` lifts the lock with a bare Alt press + release, and the app
+/// still in front took that as "show the menu keys" — measured 6 / 6 times, Notepad then ate the
+/// next letter after the card was closed with Esc. With the zero move: 9 / 9 cards got the keyboard,
+/// 9 / 9 next letters reached Notepad (an Alt-plus-unassigned-key chord did the same; this one
+/// touches no key). Measured in the P13 VM, not a documented guarantee: the answer is what the OS
+/// says afterwards (`holds_foreground`), never this return.
 pub fn take_foreground(hwnd: isize) -> bool {
     use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
-        SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP, VK_MENU,
+        SendInput, INPUT, INPUT_0, INPUT_MOUSE, MOUSEEVENTF_MOVE, MOUSEINPUT,
     };
     let hwnd = hwnd as windows_sys::Win32::Foundation::HWND;
     if hwnd.is_null() || unsafe { IsWindow(hwnd) } == 0 {
@@ -203,16 +205,20 @@ pub fn take_foreground(hwnd: isize) -> bool {
     if unsafe { SetForegroundWindow(hwnd) } != 0 {
         return true;
     }
-    const VK_MASK: u16 = 0xE8;
-    let key = |vk: u16, scan: u16, up: bool| INPUT {
-        r#type: INPUT_KEYBOARD,
+    let still = INPUT {
+        r#type: INPUT_MOUSE,
         Anonymous: INPUT_0 {
-            ki: KEYBDINPUT { wVk: vk, wScan: scan, dwFlags: if up { KEYEVENTF_KEYUP } else { 0 }, time: 0, dwExtraInfo: 0 },
+            mi: MOUSEINPUT { dx: 0, dy: 0, mouseData: 0, dwFlags: MOUSEEVENTF_MOVE, time: 0, dwExtraInfo: 0 },
         },
     };
-    let keys = [key(VK_MENU, 0x38, false), key(VK_MASK, 0, false), key(VK_MASK, 0, true), key(VK_MENU, 0x38, true)];
-    unsafe { SendInput(keys.len() as u32, keys.as_ptr(), std::mem::size_of::<INPUT>() as i32) };
-    unsafe { SetForegroundWindow(hwnd) != 0 }
+    for _ in 0..5 {
+        unsafe { SendInput(1, &still, std::mem::size_of::<INPUT>() as i32) };
+        if unsafe { SetForegroundWindow(hwnd) } != 0 {
+            return true;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    false
 }
 
 /// Does this process own the foreground window right now?

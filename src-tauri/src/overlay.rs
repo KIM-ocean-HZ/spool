@@ -430,18 +430,20 @@ fn on_main_message(app: &AppHandle, msg: &serde_json::Value) {
                 let focused = if msg.get("focus").and_then(serde_json::Value::as_bool)
                     == Some(true)
                 {
-                    // P13: this runs on the stdin reader thread. `hwnd()` is a getter the event
-                    // loop answers, so the show() above has run by the time it returns; the card
-                    // then takes the foreground itself (win32::take_foreground — not tao's
-                    // set_focus, whose bare Alt left the user's app in its menu-key mode), and
-                    // what goes back is what the OS says afterwards.
-                    match win.hwnd() {
-                        Ok(h) => {
-                            crate::win32::take_foreground(h.0 as isize);
-                            crate::win32::holds_foreground()
-                        }
-                        Err(_) => false,
-                    }
+                    // P13: this runs on the stdin reader thread, and from there SetForegroundWindow
+                    // said TRUE while the card stayed behind — so the card takes the foreground on
+                    // its own (main) thread, queued after the show() above (win32::take_foreground —
+                    // not tao's set_focus, whose bare Alt left the user's app in its menu-key mode).
+                    // This thread waits for that, then sends what the OS says afterwards.
+                    let (tx, rx) = std::sync::mpsc::channel();
+                    let card = win.clone();
+                    let queued = app.run_on_main_thread(move || {
+                        let took = card.hwnd().is_ok_and(|h| crate::win32::take_foreground(h.0 as isize));
+                        let _ = tx.send(took);
+                    });
+                    queued.is_ok()
+                        && rx.recv_timeout(std::time::Duration::from_secs(2)).is_ok()
+                        && crate::win32::holds_foreground()
                 } else {
                     false
                 };
