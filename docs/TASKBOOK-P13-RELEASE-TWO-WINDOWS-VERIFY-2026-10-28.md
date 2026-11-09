@@ -1,6 +1,6 @@
 # 产品任务书 P13 —— 发版二之前：Windows 验证（在 Mac 上的 Parallels Desktop 里做；只验，不发）
 
-> **状态：ACTIVE（2026-11-06 夜重新开始）** —— 10-28 下发（HANDOFF §9.2 第 241 条），11-05 夜暂停、改在 Parallels 里做（第 248 条）；P14、P15 插在前面，都已验收（第 252、257 条），Windows 那一半带进本任务书 §6 K、L。**11-07 – 11-09 修复轮**（Ocean：`-3` – `-8` 发版前全修 + 两条现场反馈）做完，修复包 `adee9a9` 装在虚拟机里，**等 Ocean 手指验收**，回执在 §7.9。
+> **状态：ACTIVE（2026-11-06 夜重新开始）** —— 10-28 下发（HANDOFF §9.2 第 241 条），11-05 夜暂停、改在 Parallels 里做（第 248 条）；P14、P15 插在前面，都已验收（第 252、257 条），Windows 那一半带进本任务书 §6 K、L。**11-07 – 11-09 修复轮**（Ocean：`-3` – `-8` 发版前全修 + 两条现场反馈）做完，修复包 `adee9a9` 装在虚拟机里。**11-09 晚 Ocean 手指验收做完：§6 全部做了，除第 18 条里「Parallels 共享文件夹 / 网络盘上挪走的文件跟不上」外全过；这一种 Ocean 选记为已知限制、不改代码**。回执在 §7.9、§7.10；下一步 = 发版二（另开一窗）。
 > 这一窗在 **Mac 上**执行，Windows 是 Parallels 里的虚拟机，命令从 Mac 用 `prlctl` 发进去（§0.1）。
 > 开工先做 §0（环境），再问 Ocean §4 的几件，答完再动手。
 >
@@ -418,7 +418,7 @@ Codex：CLI 0.167.0，Ocean 11-06 23:27 登录（ChatGPT 账号）；`scripts/co
 
 （§0 实测的键位、W-0 基线数字（Mac + Windows）、W-1 安装包大小 / 哈希 / 是不是 x64、W-2 迁移前后条数、W-5 MCP 数字和路径闸原话、§6 每一条「过 / 不过 / 没测」和哪些是「虚拟机」、新发现编号、提交号 —— 上面 7.1 – 7.7；没走完的在 HANDOFF §9.8。）
 
-### 7.9 修复轮（11-07 下发，11-09 做完；还没给 Ocean 手指验收）
+### 7.9 修复轮（11-07 下发，11-09 做完；Ocean 手指验收见 §7.10）
 
 **Ocean 的话（11-07）**：`DISCOVERED-20261106-3` – `-8` 六项发版前全修，连同两条现场反馈 ——「Win 论文」连 `link-test` 报 `Not changed: no such table: workspaces`；**真手长按 Ctrl 完全不弹**。先交最小 diff 审，批准后实现 / 测试 / 重打包 / 装机验证 / 交待验收。不推送、不发版、不改版本号、不换装 Mac 的 Spool。审阅稿在 `~/Desktop/Spool/P13-vm-20261106/research-20261107/03-fix-diff-for-review.md`；11-09「同意，开始任务」（两个待定项按推荐：B0 先量、-4 建干净虚拟机）。中途 Ocean 叫停一次（「先暂停」），之后「continue」。
 
@@ -521,3 +521,35 @@ Codex：CLI 0.167.0，Ocean 11-06 23:27 登录（ChatGPT 账号）；`scripts/co
 - 最终包是 `adee9a9`；它之后只改文档。
 
 附录：读库 / 在副本上跑真迁移、MCP 探针 —— 照 `docs/archive/product-taskbooks/TASKBOOK-P9W-WINDOWS-V070-VERIFY-2026-10-20.md` 的附录 A、B；那里写的库版本 35、工具数 26 / 25 换成这里 §2 的 **38、30 / 26**。附录 A 的迁移测试在 Mac 上跑（库副本经交换文件夹拷过来）；附录 B 的探针在虚拟机里跑（要 Node 22）。
+
+### 7.10 Ocean 手指验收（11-09 晚）
+
+**Ocean 的话**：「桌面的文件移动到一个文件夹，spool无法自动找回文件，只能手动定位；其他验收都通过了」。追问后：「§6 全部都做了」；本地盘挪动那一行「写着『已跟到新位置』」；第 18 条「记为已知限制，不改代码」；整库导入「现在做，没有未完成的编辑」。
+
+**§6 结论**（取代 §7.9 那张表里的 NOT RUN / 部分）：§7.9 表里凡是 NOT RUN、「部分」里要手做的那半，按 Ocean 口头确认改记 **PASS（手）**，第 18 条见下；已经 PASS（自）的不变；标「虚」的照旧只在虚拟机里成立（63 / 64 的真手结论只在键盘「为游戏优化」下成立）。加的三条 —— 整库往返、UNC 界面连接、干净机器跑 API —— 也 PASS，前两条的证据在下面。
+
+**第 18 条**
+
+| 情形 | 结论 | 证据 |
+|---|---|---|
+| 本地盘：`spool-p13` 里挪进同一个盘上的子文件夹 | PASS（自 + 手） | 我把 `files\迁移说明.txt` 挪进 `files\挪动测试-1109\`；装好的包读库副本（MCP `get_blocks`）报的是新路径；Ocean 在右栏看到「已跟到新位置」 |
+| 虚拟机的桌面（= Parallels 共享过来的 Mac 桌面）里挪 | **已知限制**（Ocean 选，不改代码） | 那条记录的 `target_identity` 是空的。`GetFileInformationByHandleEx(FileIdInfo)` 在 `C:\Mac\Home\…`、`Z:\…`（真路径 `\\psf\Home\…`、`\\Mac\Home\…`）上回错误 87；`spool-p13` 里 16 个文件全拿得到（卷序列号 `642EF522…`）。没有身份就只能显示「不知道挪到哪了」，给「打开最近的文件夹 / 重新选位置」—— 设计好的退路，和 v33 之前挂的文件一样。`DISCOVERED-20261109-3` |
+
+顺带：那个 PDF 是 Ocean Mac 桌面上的真文件。手动定位到 `feiyue\` 之后又挪回了桌面，所以库里那条现在又是「不知道挪到哪了」；Spool 只读不改。
+
+**整库往返（装好的包上）**
+- 导出：Ocean 21:37 导到 `spool-p13\exports\lib-1109.db`（SHA-256 `a912fac74147e9170b80ca889582bfa121ff28884024c0cbd940b9e0791f702f`，7,340,032 字节，v38，integrity ok）。和 21:43 的真库副本比（`deep_compare.py import`）：8 张合并表里导出的每一行都在、逐字段一样；多出来的只有 21:41 Ocean 真手捕捉的 4 块和那个项目的 `updated_at` ⇒ 导出就是导出那一刻的库。
+- 隔离导入：停掉 GUI（Ocean 确认没有没点完成的编辑）→ `%APPDATA%\com.oceanjin.spool` 改名 `…keep-1109` → 起一个空的（v38，自带教程 4 个项目 17 块）→ Ocean「导入一个库」选 `lib-1109.db`，没报错。导入后的副本：workspaces 4 / threads 8 / blocks 99 / block_images 4（图片字节按 SHA-256 一样）/ attachments 2 / follow_up_items 1 全在。逐字段的差异只有设计好的三种：同名工作区「Default workspace」→「Default workspace 2」；捕捉目标让给新库（`is_capture_target` 1 → 0）；文件的本机字段（`target_identity` / `extracted_size` / `extracted_mtime`）留在原来那台。
+- 连接的文件夹（`folders` 2 条、`workspace_folders` 2 条）不跟着走：P9Y 定的「导入导出不搬本机连接」，`transfer.ts` 的 `MERGE_TABLES` 里没有它们。Ocean 导完问「工作区连接的文件夹好像没了，还是说本来就没有链接」⇒ 导入完成时没说一声，记 `DISCOVERED-20261109-4`（候选，没做）。
+- 换回：停掉 → 测试库改名 `…import-test-1109`（留着，可删）→ 原库改回 → 重启。换回后的库和导入前的副本 `deep_compare.py same`：29 张表全一样（470 个二进制字段按哈希比过）。
+
+**连接文件夹 / UNC**：库里 `folders` 两条 —— `C:\Users\hzjin\spool-p13\link-test` 和 `\\localhost\C$\Users\hzjin\spool-p13\unc-test`，两个文件夹里都有 `SPOOL.md`；UNC 那条也记下了文件夹身份（`W1`，26 字节）。`spool-test` 里没有 `SPOOL.md`，49 – 51 应是在这两条连接上验的。
+
+**剩下的限制**（前两句发版说明要写）：
+- 在 Parallels 里长按 Ctrl 要开「为游戏优化修饰键」（`DISCOVERED-20261107-2`）。
+- Parallels 共享文件夹（虚拟机默认的桌面 / 文档 / 下载）和网络盘上的文件，挪走后 Spool 跟不上，要手动「重新选位置」（`DISCOVERED-20261109-3`）。
+- 抢前台靠实测（零位移鼠标），不是官方保证。
+- 物理 x64 电脑、真 PC 键盘、多屏混合缩放、Windows 10、中文用户名：照 §0.5 没测。
+- 界面上「导出到数据目录被拒」没手测，只有单元测试（`DISCOVERED-20261109-1`）。
+
+证据文件在 `~/Desktop/Spool/P13-vm-20261106/fix-20261109/`：`db/`（`export-lib-1109.db`、`move1109.db`、`pre-import1109.db`、`fresh1109.db`、`imported1109.db`、`restored1109.db`）、`move-probe/`（身份探针、挪动、MCP 探针和日志）。
