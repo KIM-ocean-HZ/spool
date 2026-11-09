@@ -420,8 +420,9 @@ fn on_main_message(app: &AppHandle, msg: &serde_json::Value) {
                 // Only the capture toast takes the foreground; a notice and an undo card
                 // have nothing to type into, so they must not disturb the user's app.
                 //
-                // Windows: the main process has already spent its hotkey-earned right on
-                // this process (win32.rs), so `set_focus` is allowed here and nowhere else.
+                // Windows: the main process has tried to hand this process the foreground
+                // (win32.rs) — refused after a Raw Input gesture (P13) — and `set_focus` is tried
+                // either way: tao falls back on its own when SetForegroundWindow is refused.
                 // What goes back is what the OS says afterwards, not what the call returned:
                 // if the grant had already lapsed the window comes up unfocused, and the
                 // main process needs to know that to claim the undo key globally instead.
@@ -430,6 +431,10 @@ fn on_main_message(app: &AppHandle, msg: &serde_json::Value) {
                     == Some(true)
                 {
                     let _ = win.set_focus();
+                    // P13: this runs on the stdin reader thread, where set_focus is only queued to
+                    // the event loop. A getter waits for the loop, so once it answers the attempt
+                    // has run — and the foreground read below is the one after it, not before.
+                    let _ = win.is_visible();
                     crate::win32::holds_foreground()
                 } else {
                     false

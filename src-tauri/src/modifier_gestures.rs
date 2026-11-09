@@ -153,6 +153,10 @@ fn is_alt(vk: u16) -> bool {
 fn is_win(vk: u16) -> bool {
     vk == VK_LWIN || vk == VK_RWIN
 }
+/// The four keys the P13 gesture trace may write down — never an ordinary key.
+pub(crate) fn is_modifier(vk: u16) -> bool {
+    is_ctrl(vk) || is_shift(vk) || is_alt(vk) || is_win(vk)
+}
 
 /// What one event completed.
 #[derive(Debug, PartialEq, Eq)]
@@ -316,6 +320,24 @@ impl WinKeys {
         }
         self.have_first = false;
         self.shift.other_input();
+    }
+
+    pub(crate) fn ctrl_held(&self) -> bool {
+        self.ctrl_down
+    }
+
+    /// P13 (real-hand long-press Ctrl never fired in the VM): the state the next decision reads.
+    pub(crate) fn trace(&self) -> String {
+        format!(
+            "ctrl_down={} since={} other={} combo={} shift={} alt={} win={}",
+            self.ctrl_down,
+            self.ctrl_down_at,
+            self.other_input_since_ctrl_down,
+            self.combo_at_press,
+            self.shift_down,
+            self.alt_down,
+            self.win_down
+        )
     }
 
     /// The pause switch: drop whatever half-gesture is pending.

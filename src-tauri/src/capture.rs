@@ -98,12 +98,58 @@ pub fn get_foreground_app() -> Option<ForegroundApp> {
     // pretend otherwise (INVESTIGATION_WINDOWS_PORT §4.1 #5).
     #[cfg(target_os = "windows")]
     {
-        let (app, source) = crate::win32::foreground_app()?;
+        let (app, caption) = crate::win32::foreground_app()?;
+        let source = browser_caption(&app, &caption);
         Some(ForegroundApp { app, source })
     }
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
         None
+    }
+}
+
+/// Windows: a browser's window caption is the page title plus the browser's own tail
+/// (P13, DISCOVERED-20261106-8: 「P13 Edge 复制测试 and 2 more pages - Profile 1 - Microsoft​ Edge」).
+/// Cut only the tails seen on real captions, and only for those browsers; anything else — another
+/// program, a caption that does not end in the brand, a title that would come out empty — comes
+/// back untouched. Edge writes `Microsoft\u{200B} Edge` (a zero-width space in its own name): that
+/// character is matched only there, never stripped from a page title.
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+fn browser_caption(exe: &str, caption: &str) -> String {
+    let edge = exe.eq_ignore_ascii_case("msedge");
+    let brands: &[&str] = if edge {
+        &[" - Microsoft\u{200B} Edge", " - Microsoft Edge"]
+    } else if exe.eq_ignore_ascii_case("chrome") {
+        &[" - Google Chrome"]
+    } else if exe.eq_ignore_ascii_case("firefox") {
+        &[" \u{2014} Mozilla Firefox", " - Mozilla Firefox"]
+    } else {
+        return caption.to_string();
+    };
+    let Some(mut rest) = brands.iter().find_map(|b| caption.strip_suffix(b)) else {
+        return caption.to_string();
+    };
+    let number = |n: &str| !n.is_empty() && n.bytes().all(|c| c.is_ascii_digit());
+    if edge {
+        // `… - Profile 2`: Edge's name for a profile nobody named. A profile the user named stays —
+        // it cannot be told apart from the end of a page title.
+        if let Some((head, tail)) = rest.rsplit_once(" - ") {
+            if tail.strip_prefix("Profile ").is_some_and(number) {
+                rest = head;
+            }
+        }
+        // `… and 2 more pages` / `… and 1 more page`: the window's other tabs.
+        if let Some((head, tail)) = rest.rsplit_once(" and ") {
+            if tail.strip_suffix(" more pages").or_else(|| tail.strip_suffix(" more page")).is_some_and(number) {
+                rest = head;
+            }
+        }
+    }
+    let rest = rest.trim();
+    if rest.is_empty() {
+        caption.to_string()
+    } else {
+        rest.to_string()
     }
 }
 
@@ -1189,9 +1235,9 @@ fn send_overlay_show<R: Runtime>(
     app: &AppHandle<R>,
     kind: &str,
     payload: serde_json::Value,
-    // Windows only, and only ever true for the capture toast: the helper spends the
-    // foreground right this process just handed it (win32.rs). A notice and an undo card
-    // have nothing to type into, so they must not disturb the user's app.
+    // Windows only, and only ever true for the capture / note card: the helper tries to take
+    // the foreground (with whatever right this process managed to hand it, win32.rs). A notice
+    // and an undo card have nothing to type into, so they must not disturb the user's app.
     focus: bool,
 ) -> Result<(f64, f64), String> {
     let (x, y) = overlay_origin(app)?;
@@ -1565,10 +1611,18 @@ pub fn show_capture_overlay<R: Runtime>(
         let source = crate::win32::foreground_window()
             .filter(|(_, pid)| helper.map(|h| h as u32) != Some(*pid));
         RESTORE_FOCUS_HWND.store(source.map_or(0, |(hwnd, _)| hwnd), SeqCst);
-        match helper {
-            Some(pid) => crate::win32::allow_foreground(pid as u32),
-            None => false,
-        }
+        // The card is up to be typed into whether or not this grant is honoured. Windows only lets
+        // a process that received the last input pass the foreground on, and a Raw Input sink does
+        // not count (P13, DISCOVERED-20261106-6): after a double-tap or a long-press Ctrl the grant
+        // always failed, and the helper — told focus:false — never even tried. The grant stays (it
+        // is what lets the helper's own attempt succeed outright when Spool is in front); what the
+        // helper actually got comes back in its "shown" reply (on_overlay_shown).
+        let granted = helper.is_some_and(|pid| crate::win32::allow_foreground(pid as u32));
+        eprintln!(
+            "[capture] card up ({}), foreground grant: {granted}",
+            if payload.note_mode { "note" } else { "capture" }
+        );
+        helper.is_some()
     };
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     let will_activate = false;
@@ -1619,10 +1673,16 @@ pub fn on_overlay_shown<R: Runtime>(app: &AppHandle<R>, focused: bool) {
     // globally or an undo from the source app has no route at all.
     #[cfg(target_os = "windows")]
     {
+        // P13: the answer is written down either way — for the note card too, which never
+        // claims the undo key and so used to leave no trace of a card nobody could type into.
+        if focused {
+            eprintln!("[capture] the card has the keyboard");
+        } else {
+            eprintln!("[capture] the toast did not get the foreground — note box needs a click");
+        }
         // ⚠️ P9F F4: the long-press card skips the claim (card_claims_undo); the double-tap
         // card takes it exactly as before.
         if !focused && card_claims_undo(false, NOTE_CARD.load(std::sync::atomic::Ordering::SeqCst)) {
-            eprintln!("[capture] the toast did not get the foreground — note box needs a click");
             CARD_CLAIMS_UNDO.store(true, std::sync::atomic::Ordering::SeqCst);
             register_undo_shortcut(app);
         }
@@ -1978,6 +2038,35 @@ pub fn system_idle_ms() -> Option<u64> {
 #[cfg(all(test, desktop))]
 mod tests {
     use super::*;
+
+    // P13 (DISCOVERED-20261106-8): the browser's tail goes, the page title stays whole.
+    #[test]
+    fn a_browser_caption_loses_only_the_browsers_own_tail() {
+        let zw = "Microsoft\u{200B} Edge";
+        // The caption Edge really wrote in the VM (copied from the back one of two windows).
+        assert_eq!(
+            browser_caption("msedge", &format!("P13 Edge 复制测试 and 2 more pages - Profile 1 - {zw}")),
+            "P13 Edge 复制测试"
+        );
+        assert_eq!(browser_caption("msedge", &format!("Notes and 1 more page - {zw}")), "Notes");
+        // A " - " inside the page title is the title's own.
+        assert_eq!(browser_caption("msedge", &format!("Rust - Wikipedia - {zw}")), "Rust - Wikipedia");
+        // A profile the user named cannot be told from the title: kept.
+        assert_eq!(browser_caption("msedge", &format!("Plan - Work - {zw}")), "Plan - Work");
+        assert_eq!(browser_caption("MSEDGE", "Plan - Microsoft Edge"), "Plan");
+        assert_eq!(browser_caption("chrome", "Plan - Google Chrome"), "Plan");
+        assert_eq!(browser_caption("firefox", "Plan \u{2014} Mozilla Firefox"), "Plan");
+        // No brand at the end ⇒ untouched, even when the words look like Edge's.
+        for raw in ["Plans and 2 more pages", "Trip - Profile 1", "Profile 1 - Microsoft Edgy"] {
+            assert_eq!(browser_caption("msedge", raw), raw);
+        }
+        // Nothing left but the brand ⇒ the caption as it was; other programs never touched.
+        assert_eq!(browser_caption("msedge", &format!(" - {zw}")), format!(" - {zw}"));
+        assert_eq!(browser_caption("notepad", "a.txt - Notepad"), "a.txt - Notepad");
+        assert_eq!(browser_caption("WINWORD", "Plan - Google Chrome"), "Plan - Google Chrome");
+        // A zero-width character in the page title itself stays.
+        assert_eq!(browser_caption("msedge", &format!("a\u{200B}b - {zw}")), "a\u{200B}b");
+    }
 
     // P9F F4 (Ocean 2026-10-11 #81 甲): the long-press card never takes the global ⌘Z; the
     // double-tap card takes it exactly when it will not hold the keyboard (08-15 丙, unchanged).

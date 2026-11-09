@@ -151,6 +151,15 @@ fn run<R: Runtime>(app: AppHandle<R>) {
     }
     eprintln!("[double-tap-win] Raw Input registered — double-tap Ctrl, long-press Ctrl and double-tap ⇧ armed");
 
+    // P13 (Ocean 2026-11-07: a real long-press Ctrl in the VM never brought a card up, while keys
+    // injected through the VM's virtual keyboard did): with SPOOL_GESTURE_TRACE set, every Ctrl /
+    // ⇧ / Alt / Win event is written down with its codes, its time and the state the decision read.
+    // ⛔ Never an ordinary key, never the clipboard — and off unless the variable is set.
+    let trace = std::env::var_os("SPOOL_GESTURE_TRACE").is_some();
+    if trace {
+        eprintln!("[gesture-trace] on — modifier keys only");
+    }
+
     let mut state = WinKeys::default();
     let mut msg: MSG = unsafe { zeroed() };
     loop {
@@ -163,11 +172,18 @@ fn run<R: Runtime>(app: AppHandle<R>) {
         }
         if msg.message == WM_INPUT {
             match read_raw_event(msg.lParam as HRAWINPUT) {
-                Some(Raw::Key(vk, is_break)) => {
+                Some(Raw::Key(vk, is_break, make, flags)) => {
                     let now = unsafe { GetMessageTime() };
                     // 状态照喂(否则重新打开时手上是半截状态),只是不发出去。这边的 Raw Input 是
                     // INPUTSINK,本来就只看不删,所以「暂停」在 Windows 上是纯粹的不触发。
                     let outcome = state.on_key(vk, is_break, now, wall_ms());
+                    if trace && crate::modifier_gestures::is_modifier(vk) {
+                        eprintln!(
+                            "[gesture-trace] vk={vk:#04x} make={make:#04x} flags={flags:#x} t={now} paused={} -> {outcome:?} | {}",
+                            crate::capture::capture_disabled(),
+                            state.trace()
+                        );
+                    }
                     if crate::capture::capture_disabled() {
                         continue_after(&msg);
                         continue;
@@ -180,18 +196,24 @@ fn run<R: Runtime>(app: AppHandle<R>) {
                             match state.last_shot.filter(|&(at, _)| crate::images::win_shot_still_fresh(at, now, SHOT_WINDOW_MS)) {
                                 Some((_, wall)) => {
                                     eprintln!("[double-tap-win] TRIGGER (clean double-tap Ctrl, after Win+PrtScn)");
-                                    let _ = app.emit("capture-trigger", serde_json::json!({ "shot": { "atMs": wall, "kind": "file" } }));
+                                    if let Err(e) = app.emit("capture-trigger", serde_json::json!({ "shot": { "atMs": wall, "kind": "file" } })) {
+                                        eprintln!("[double-tap-win] capture-trigger not delivered: {e}");
+                                    }
                                 }
                                 None => {
                                     eprintln!("[double-tap-win] TRIGGER (clean double-tap Ctrl)");
-                                    let _ = app.emit("capture-trigger", ());
+                                    if let Err(e) = app.emit("capture-trigger", ()) {
+                                        eprintln!("[double-tap-win] capture-trigger not delivered: {e}");
+                                    }
                                 }
                             }
                         }
                         // The same event the macOS long-press ⌥ sends (useCapture.ts `note-trigger`).
                         WinKeyOutcome::CtrlLongPress { copied } => {
                             eprintln!("[double-tap-win] LONG-PRESS Ctrl — 直接写笔记 (unused Ctrl+C within 2s before: {copied})");
-                            let _ = app.emit("note-trigger", serde_json::json!({ "copied": copied }));
+                            if let Err(e) = app.emit("note-trigger", serde_json::json!({ "copied": copied })) {
+                                eprintln!("[double-tap-win] note-trigger not delivered: {e}");
+                            }
                         }
                         WinKeyOutcome::ShiftDoubleTap => {
                             eprintln!("[double-tap-win] DOUBLE-TAP ⇧ — capture-target switcher");
@@ -201,6 +223,9 @@ fn run<R: Runtime>(app: AppHandle<R>) {
                 }
                 Some(Raw::Mouse(flags)) => {
                     if flags & (RI_MOUSE_ANY_DOWN | RI_MOUSE_ANY_WHEEL) != 0 {
+                        if trace && state.ctrl_held() {
+                            eprintln!("[gesture-trace] mouse flags={flags:#x} while Ctrl held - not a long press");
+                        }
                         state.on_mouse();
                     }
                     if flags & RI_MOUSE_ANY_DOWN != 0 {
@@ -226,7 +251,8 @@ fn continue_after(msg: &MSG) {
 }
 
 enum Raw {
-    Key(u16, bool),
+    /// Virtual key, is_break, MakeCode, Flags (the last two only ever reach the P13 trace).
+    Key(u16, bool, u16, u16),
     /// RAWMOUSE.usButtonFlags.
     Mouse(u16),
 }
@@ -265,7 +291,7 @@ fn read_raw_event(hrawinput: HRAWINPUT) -> Option<Raw> {
     if kb.VKey == 0xFF {
         return None;
     }
-    Some(Raw::Key(kb.VKey, kb.Flags & RI_KEY_BREAK != 0))
+    Some(Raw::Key(kb.VKey, kb.Flags & RI_KEY_BREAK != 0, kb.MakeCode, kb.Flags))
 }
 
 // A message-only window whose sole job is to be the RIDEV_INPUTSINK target. Its window proc
