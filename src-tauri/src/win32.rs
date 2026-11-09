@@ -180,6 +180,41 @@ pub fn focus_window(hwnd: isize) -> bool {
     unsafe { SetForegroundWindow(hwnd) != 0 }
 }
 
+/// The capture / note card (a window of THIS process, the helper) takes the foreground after a
+/// double-tap or long-press Ctrl — a Raw Input gesture, so nobody holds a foreground right to hand
+/// over (P13, DISCOVERED-20261106-6).
+///
+/// Plain SetForegroundWindow first. When Windows refuses it, the Alt key is what lifts the lock —
+/// tao's `set_focus` does that too, but with a bare Alt press + release, which the app still in
+/// front takes as "show the menu keys": P13 measured Notepad eating the next letter after the card
+/// was closed with Esc (a run with no Alt, same steps: clean). Here a key goes down and up between
+/// Alt's press and release — 0xE8, unassigned, the mask AutoHotkey uses to keep menus from
+/// activating — so it is an Alt chord, which activates nothing. Left Alt, not right: on AltGr
+/// layouts Windows adds a fake Ctrl to a right Alt. Measured in the P13 VM, not a documented
+/// guarantee: the answer is what the OS says afterwards (`holds_foreground`), never this return.
+pub fn take_foreground(hwnd: isize) -> bool {
+    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
+        SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP, VK_MENU,
+    };
+    let hwnd = hwnd as windows_sys::Win32::Foundation::HWND;
+    if hwnd.is_null() || unsafe { IsWindow(hwnd) } == 0 {
+        return false;
+    }
+    if unsafe { SetForegroundWindow(hwnd) } != 0 {
+        return true;
+    }
+    const VK_MASK: u16 = 0xE8;
+    let key = |vk: u16, scan: u16, up: bool| INPUT {
+        r#type: INPUT_KEYBOARD,
+        Anonymous: INPUT_0 {
+            ki: KEYBDINPUT { wVk: vk, wScan: scan, dwFlags: if up { KEYEVENTF_KEYUP } else { 0 }, time: 0, dwExtraInfo: 0 },
+        },
+    };
+    let keys = [key(VK_MENU, 0x38, false), key(VK_MASK, 0, false), key(VK_MASK, 0, true), key(VK_MENU, 0x38, true)];
+    unsafe { SendInput(keys.len() as u32, keys.as_ptr(), std::mem::size_of::<INPUT>() as i32) };
+    unsafe { SetForegroundWindow(hwnd) != 0 }
+}
+
 /// Does this process own the foreground window right now?
 ///
 /// The honest answer to "did the toast actually get the keyboard", asked after the fact
