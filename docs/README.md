@@ -14,13 +14,13 @@
 | 文件 | 干什么用 | 谁在改 |
 |---|---|---|
 | `EXECUTION_POLICY.md` | **长期顺序的唯一权威**，LOCKED。产品 / 记忆研究 / 营销的主次、交替节奏、任务准入 | 只有 Ocean 明确同意才能改，其他一律禁止 |
-| `HANDOFF-2026-09-04.md` | **Knote 这边仍然生效的约束 + 还没做完的事**（2026-09-05 已精简到 190 行）。⛔ 不含执行光标 | 每窗结束时补未完成项 |
+| `HANDOFF-2026-11-09.md` | **唯一 active HANDOFF**：产品线的现状和唯一下一步（P16 → 发版二）、发版二之后的全部待办、一直生效的规矩；实验线在 Knote 这边的约束在它的附录 A（实验线的光标仍只看 Codex handoff）。2026-11-09 取代 `archive/HANDOFF-2026-09-04.md` | 每窗结束时更新 |
 | `CODEX-HANDOFF-STAGE0A-D2-REVIEW-2026-09-03.md` | **实验线（Stage 0-a）的唯一滚动入口**；GR15R3 已 `Redo`，当前光标为 ACTIVE GR15R4。文件名里的日期和 D2 只是历史，内容是最新的 | Codex |
 | `TASKBOOK-STAGE0A-GR15R4-DEVELOPMENT-TRACE-CALLS-MADE-PRE-PRODUCT-READ-CLOSURE-CORRECTION-2026-09-24.md` | **当前唯一 ACTIVE 实验任务书**；只纠正实际 product read / rebuild 顺序自保护，保留既有语义绑定与科学结果，完成即归档 | Codex 下发；Claude Code 执行 |
-| `TASKBOOK-P<n>-*.md` | **下一份：`TASKBOOK-P13-RELEASE-TWO-WINDOWS-VERIFY-2026-10-28.md`**（暂停中，下一窗恢复：发版二之前的 Windows 验证，改在 Mac 上的 Parallels Desktop 里做，开工先按虚拟机改 §0；只验不发；通过后 Mac + Windows 统一发版），见 HANDOFF §9.8。P15（MCP 建工作区 / 提议连文件夹 / 知道捕捉目标 + Windows 长按 Ctrl + 双击 ⇧ 切换捕捉目标，库 v38）11-06 验收通过，任务书和回执在 `archive/product-taskbooks/TASKBOOK-P15-MCP-WORKSPACE-FOLDER-TARGET-SWITCHER-2026-11-06.md`。P14（H2 + H3 + 插队的公式 / 排版、捕捉读剪贴板 HTML，以及验收时修好的崩溃和大块文字卡死）11-06 验收通过，任务书和回执在 `archive/product-taskbooks/TASKBOOK-P14-H2-H3-2026-11-05.md`。P12（发版二之前的扫尾）10-28 验收第一轮改完，任务书和回执在 `archive/product-taskbooks/TASKBOOK-P12-PRE-RELEASE-TWO-SWEEP-2026-10-27.md`。P10（结构化周回顾 + 建议动作按钮 + 更新时弹浮窗小卡，API 和本机 CLI 两条一起）**Ocean 10-27 验收通过**，任务书和回执在 `archive/product-taskbooks/TASKBOOK-P10-STRUCTURED-WEEKLY-REVIEW-2026-10-26.md`；本机装的是含 P10 + P12（10-28 14:51 换装）的 0.7.4 本机构建；10-28 推了 main，没发版。P9Y（整个工作区连接文件夹 + 项目汇总页 + SPOOL.md 协议）2026-10-26 验收通过，第六轮去掉 `request_folder_file`、工作区「连接的文件夹」重新排版，15:09 换装（仍为 v37）；任务书、回执和验收报告在 `archive/product-taskbooks/TASKBOOK-P9Y-FOLDER-LINK-SPOOL-PROTOCOL-2026-10-25.md`、`archive/product-taskbooks/ACCEPTANCE-P9Y-2026-10-26.md`；**v0.7.4（Mac）10-26 发布**。P9U（本机 CLI 和 API 范围一致）+ P9V（过期检测查整个工作区）2026-10-25 验收通过，**v0.7.3（Mac）当天发布**；任务书和回执在 `archive/product-taskbooks/TASKBOOK-P9U-CLI-API-SAME-SCOPE-2026-10-24.md`、`archive/product-taskbooks/TASKBOOK-P9V-WORKSPACE-STALE-CHECK-2026-10-24.md`。P9T（本机 AI 引擎找得到 + 一键连上）2026-10-24 已完成，**v0.7.2（Mac）当天发布**、待 Ocean 在另一台 Mac 上验收；任务书和回执在 `archive/product-taskbooks/TASKBOOK-P9T-ENGINE-AUTO-CONNECT-2026-10-24.md`。P9S（Ocean 10-23 的七条建议）2026-10-23 已完成、验收通过，**v0.7.1（Mac）当天发布**；任务书和回执在 `archive/product-taskbooks/TASKBOOK-P9S-SEVEN-SUGGESTIONS-V071-2026-10-23.md`。P9X（修 P9W 在 Windows 上记下的问题：测试、图片路径、空快照、路径闸、CI 缺 sidecar）2026-10-20 已完成、待 Ocean 验收，GitHub 的 Windows 机器上全绿；任务书和回执在 `archive/product-taskbooks/TASKBOOK-P9X-WINDOWS-TEST-FIXES-2026-10-20.md`。P9W（在 Windows 上验 v0.7.0）2026-10-20 部分完成：界面那一半被那台学校电脑的安全软件拦住、没测，Windows 包没发；任务书和回执在 `archive/product-taskbooks/TASKBOOK-P9W-WINDOWS-V070-VERIFY-2026-10-20.md`。发版一（P9R，Mac 版 v0.7.0）2026-10-19 已发布，等 Ocean 验收，任务书和回执在 `archive/product-taskbooks/TASKBOOK-P9R-RELEASE-ONE-MAC-V070-2026-10-18.md`；下一件 P10 等下发（正文在 `HANDOFF-2026-09-04.md` §9.7）。P9H（发版一之前的扫尾 + 插队的专注时间、织布）已验收通过，在 `archive/product-taskbooks/TASKBOOK-P9H-PRE-RELEASE-SWEEP-2026-10-16.md`。P9G（拆项目）已验收通过，在 `archive/product-taskbooks/TASKBOOK-P9G-PROJECT-SPLIT-2026-10-16.md`；P9E（私密项目）已验收通过，在 `archive/product-taskbooks/TASKBOOK-P9E-PRIVATE-PROJECTS-2026-10-15.md`；P9D（丢字修复）已验收通过，在 `archive/product-taskbooks/TASKBOOK-P9D-DRAFTS-SURVIVE-QUIT-2026-10-15.md`；P9C（AI 入口统一）已验收通过，在 `archive/product-taskbooks/TASKBOOK-P9C-AI-ENTRY-LOCKS-2026-10-14.md`；P9B 已验收通过，在 `archive/product-taskbooks/`；修补 P9F 已验收通过，在 `archive/product-taskbooks/TASKBOOK-P9F-PRE-RELEASE-FIXES-2026-10-11.md`；P9A 的核对和裁定在 `archive/product-taskbooks/TASKBOOK-P9A-AUDIT-KNOWN-ISSUES-DESIGN-DEBTS-2026-10-10.md`；P1、P1B、P2 – P9 都已验收，都在 `archive/product-taskbooks/`）；这一窗做什么、按什么顺序、怎么验。做完移进 `archive/product-taskbooks/`。产品线的任务库与红线已并进 `HANDOFF-2026-09-04.md` §10（原 `WORKPLAN-2026-08-22.md` 2026-09-30 归档） | 下发窗写；执行窗执行 |
+| `TASKBOOK-P<n>-*.md` | **当前 ACTIVE：`TASKBOOK-P16-PRE-RELEASE-TWO-AI-LOOP-REPO-CHECK-2026-11-09.md`**（发版二之前：C-b 安全面复核 + AI 只读新加的块 + 交活时提议挂文件 / 写回 + 跟进收尾 + 对照仓库；做完 Mac 换装验收、Windows 在虚拟机里重验，之后发版二），见 HANDOFF §2。P1 – P15 的任务书和回执都在 `archive/product-taskbooks/`（P13 Windows 验证 11-09 验收通过、当天移进去）；这一窗做什么、按什么顺序、怎么验。做完移进 `archive/product-taskbooks/`。产品线的任务库与红线在 `HANDOFF-2026-11-09.md` §5 和附录 B – G | 下发窗写；执行窗执行 |
 
-两份 handoff 的分工，别搞混：**执行光标只在 Codex 那一份**（它的 §8 列了所有不许恢复的旧光标）；
-`HANDOFF-2026-09-04.md` 只管「仍然生效的约束」和「还没做完的事」，里面不许再出现「下一步 = …」。
+两份 handoff 的分工，别搞混：**实验线的执行光标只在 Codex 那一份**（它的 §8 列了所有不许恢复的旧光标）；
+**产品线的光标和唯一下一步只在 `HANDOFF-2026-11-09.md` §2**（2026-09-30 起产品线就在 HANDOFF 里），那里不写实验线的「下一步」。
 
 **文档管理规则写在 Codex handoff 的 §10**：三条硬规矩（一件事只待一个地方、首屏自报状态、
 做完就搬走）、每轮任务的固定文档动作、以及每份现存文件的作用表。docs 由 Codex 统一管理，
@@ -44,7 +44,7 @@
 | 文件 | 还欠什么 |
 |---|---|
 | `DESIGN_WINDOWS_PORT.md` | 首版随 v0.6.0 / v0.6.1 发过；不签名是 Ocean 定的（红线，不再问）；下一次 Windows 包在发版二（第 73 条） |
-| `WINDOWS-CHECK.md` | 第三、四轮还没装机验；发版二前先从 `main` 手动跑一次 `windows-build`，再照这份装机验（P1 – P9 的 Windows 部分还没在 Windows 上跑过，见 HANDOFF `DISCOVERED-20261010-9`） |
+| `WINDOWS-CHECK.md` | 第三、四轮从没照单装机验过。P13（11-09 验收通过）在 Parallels 虚拟机里做了 Windows 全套验证（75 条），但没逐条对过这份 —— 发版二那一窗对一遍，没覆盖的补验（HANDOFF-2026-11-09 §3 第 5 条） |
 | `DESIGN_CASE_STUDY.md` | 申请用 case-study 的计划与维护规矩；后面几期还在等 |
 
 ---
@@ -78,7 +78,7 @@
 
 2026-09-05 这次清理移进去的：
 
-- 已 SUPERSEDED 的开工面：`HANDOFF-2026-08-22.md`、`HANDOFF-2026-08-30.md`、`NEXT-WINDOW-PROMPT-2026-08-27.md`
+- 已 SUPERSEDED 的开工面：`HANDOFF-2026-08-22.md`、`HANDOFF-2026-08-30.md`、`NEXT-WINDOW-PROMPT-2026-08-27.md`、`HANDOFF-2026-09-04.md`（2026-11-09 起，被 `HANDOFF-2026-11-09.md` 取代；旧 §9.2 第 1 – 265 条拍板、P1 – P15 路线图、§9.9 全部 DISCOVERED 原文都在里面）
 - 跑完就作废的一次性清单：`OVERNIGHT-TEST-PLAN-2026-08-23.md`、`OVERNIGHT-TEST-PLAN-2026-08-24.md`、`QA_SITE_2026-08-13.md`
 - 已经全做完的那几摊：`TEN-ITEMS-2026-08-27.md`、`FIND-UX-2026-08-27.md`、`COMPRESS-UX-2026-08-22.md`、`CHECK-DISPLAY-2026-08-21.md`、`FIX_TAILWIND_ALPHA-2026-08-19.md`
 - 已落地的设计稿：`DESIGN_CAPTURE_FOCUS.md`、`DESIGN_FIRST_DAY_VALUE.md`、`DESIGN_LIBRARY_TRANSFER.md`、`DESIGN_VALENTINE_EDITION.md`；2026-10-13 又移进 10 份（P9A 核过早已全部落地，Ocean 10-11 第 84 条）：`DESIGN_AI_ENGINE.md`、`DESIGN_CONTEXT_HYGIENE.md`、`DESIGN_FOLLOW_UP.md`、`DESIGN_MCP_INTENT_ROUTING.md`、`DESIGN_MCP_WRITE_ROLE.md`、`DESIGN_PROJECT_FILES.md`、`DESIGN_WORKBENCH.md`、`DESIGN_WORKSPACE_PACK.md`、`COMPRESS-UX-R2-2026-08-22.md`、`FEEDBACK-FORM-2026-08-22.md`
