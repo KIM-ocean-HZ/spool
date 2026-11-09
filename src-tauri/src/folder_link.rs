@@ -1525,16 +1525,10 @@ fn real_folder(path: &str) -> Result<PathBuf, String> {
 }
 
 /// `C:\…` rather than the `\\?\C:\…` canonicalize gives on Windows — the form a path is shown and
-/// stored in everywhere else (`file_identity`, P9X).
+/// stored in everywhere else (`file_identity`, P9X). One rule with `mcp::plain_path`: a network
+/// folder comes out `\\server\share\…`, never the relative `UNC\server\share\…` (P13).
 fn plain(p: PathBuf) -> PathBuf {
-    #[cfg(windows)]
-    {
-        let s = p.to_string_lossy();
-        if let Some(rest) = s.strip_prefix(r"\\?\") {
-            return PathBuf::from(rest);
-        }
-    }
-    p
+    PathBuf::from(crate::mcp::plain_path(&p))
 }
 
 /// P15-2 (`propose_link_folder`): the folder a workspace is linked to itself — its path, its state

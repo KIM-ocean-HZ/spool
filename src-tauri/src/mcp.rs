@@ -7289,13 +7289,23 @@ fn gate_stop_message(stop: GateStop, rules: &PathGateRules) -> String {
     }
 }
 
-/// Windows hands back `\\?\C:\…` from canonicalize; the user should read `C:\…`.
-fn plain_path(p: &std::path::Path) -> String {
+/// Windows hands back `\\?\C:\…` and `\\?\UNC\server\share\…` from canonicalize; the user (and
+/// git, and every other program a path is handed to) should get `C:\…` and `\\server\share\…`.
+/// Anything else after `\\?\` (`Volume{…}`, `GLOBALROOT` …) has no shorter spelling and is left as
+/// it is — cutting the prefix off those leaves a relative path. The one rule for every place that
+/// strips it (file_identity, folder_link too — P13, DISCOVERED-20261106-5: folder_link turned a
+/// network folder into the relative `UNC\server\share\…`).
+pub(crate) fn plain_path(p: &std::path::Path) -> String {
     let s = p.to_string_lossy();
-    match s.strip_prefix(r"\\?\") {
-        Some(rest) if !rest.starts_with(r"UNC\") => rest.to_string(),
-        _ => s.into_owned(),
+    let Some(rest) = s.strip_prefix(r"\\?\") else { return s.into_owned() };
+    if let Some(unc) = rest.strip_prefix(r"UNC\") {
+        return format!(r"\\{unc}");
     }
+    let b = rest.as_bytes();
+    if b.len() >= 3 && b[0].is_ascii_alphabetic() && b[1] == b':' && b[2] == b'\\' {
+        return rest.to_string();
+    }
+    s.into_owned()
 }
 
 /// The path gate (P6-2): resolve, follow symlinks, then judge. Returns the resolved path —
@@ -18565,13 +18575,62 @@ mod tests {
     #[test]
     fn on_windows_a_path_into_appdata_or_a_system_folder_stops_with_or_without_the_prefix() {
         let rules = path_gate_rules().unwrap();
-        let home = std::env::var("USERPROFILE").unwrap();
-        let system = std::env::var("SystemRoot").unwrap();
+        // The rules hold the folders as they are on disk (canonicalize); the environment may spell
+        // them otherwise — `SystemRoot` is `C:\WINDOWS` on the P13 VM (DISCOVERED-20261106-3). The
+        // files below need not exist, so the real folder is resolved first and the file joined on.
+        let real = |k: &str| plain_path(&std::fs::canonicalize(std::env::var(k).unwrap()).unwrap());
+        let home = real("USERPROFILE");
+        let system = real("SystemRoot");
         let stops = |p: String| path_gate_stop(std::path::Path::new(&p), &rules).is_some();
         assert!(stops(format!(r"{home}\AppData\Local\Spool\a.pdf")));
         assert!(stops(format!(r"{system}\System32\a.dll")));
         assert!(stops(format!(r"\\?\{home}\AppData\Local\Spool\a.pdf")));
         assert!(!stops(format!(r"{home}\Documents\a.pdf")));
+    }
+
+    // P13 (DISCOVERED-20261106-3): the AI may spell a real system / AppData file in any case. The
+    // first check (on the path as written) compares case-sensitively and lets it through; the one
+    // after canonicalize — the on-disk spelling — must stop it, for both tools.
+    #[cfg(windows)]
+    #[test]
+    fn on_windows_a_real_system_or_appdata_path_is_refused_however_it_is_cased() {
+        store_lang(Lang::En);
+        let rules = path_gate_rules().unwrap();
+        let system = plain_path(&std::fs::canonicalize(std::env::var("SystemRoot").unwrap()).unwrap());
+        let dll = format!(r"{system}\System32\kernel32.dll");
+        // std::env::temp_dir() is %LOCALAPPDATA%\Temp — inside AppData.
+        let private = std::env::temp_dir().join(format!("spool-gate-case-{}.txt", std::process::id()));
+        std::fs::write(&private, b"x").unwrap();
+        let private = plain_path(&std::fs::canonicalize(&private).unwrap());
+        for (path, why) in [(dll.as_str(), "system folder"), (private.as_str(), "where apps keep their own data")] {
+            for spelled in [path.to_string(), path.to_lowercase(), path.to_uppercase()] {
+                let err = gate_proposed_path(&spelled, &rules).expect_err(&spelled);
+                assert!(err.contains(why), "{spelled}: {err}");
+            }
+        }
+        let local = plain_path(&std::fs::canonicalize(std::env::var("LOCALAPPDATA").unwrap()).unwrap()).to_lowercase();
+        let err = gate_proposed_folder(&local, &rules).expect_err(&local);
+        assert!(err.contains("where apps keep their own data"), "{local}: {err}");
+        std::fs::remove_file(&private).unwrap();
+    }
+
+    // P13 (DISCOVERED-20261106-5): one rule for every place that strips canonicalize's prefix.
+    #[test]
+    fn a_windows_long_path_prefix_comes_off_only_where_a_shorter_spelling_exists() {
+        let p = |s: &str| plain_path(std::path::Path::new(s));
+        assert_eq!(p(r"\\?\C:\Users\海 洋\a.pdf"), r"C:\Users\海 洋\a.pdf");
+        assert_eq!(p(r"\\?\UNC\psf\Home\Desktop\x"), r"\\psf\Home\Desktop\x");
+        assert_eq!(p(r"\\?\UNC\server\share"), r"\\server\share");
+        for kept in [
+            r"\\?\Volume{0f2c1a52-0000-0000-0000-100000000000}\x",
+            r"\\?\GLOBALROOT\Device\x",
+            r"\\.\COM1",
+            r"\\server\share\x",
+            r"C:\x",
+            "/Users/ocean/x",
+        ] {
+            assert_eq!(p(kept), kept);
+        }
     }
 
     // P12-1（DISCOVERED-20261020-9）：Windows 上规则里的目录是 canonicalize 出来的 `\\?\C:\…`，拒绝消息
@@ -20428,7 +20487,9 @@ mod tests {
         assert_eq!((v["queued"].clone(), v["kind"].clone(), v["replaced_earlier"].clone()), (json!(true), json!("link"), json!(false)), "{v}");
         assert_eq!(v["state_files"], json!(["README.md", "notes.txt", "plans/HANDOFF_*.md"]));
         assert_eq!(v["main_project"], json!("Long project"));
-        assert_eq!(rows(), vec![("link".into(), folder.clone(), r#"["README.md","notes.txt","plans/HANDOFF_*.md"]"#.into(), Some("thLong".into()))]);
+        // Stored the way it is shown: `C:\…`, not canonicalize's `\\?\C:\…` (a Mac path is unchanged).
+        // P13 (DISCOVERED-20261106-3): this compared against the prefixed spelling and was red on Windows.
+        assert_eq!(rows(), vec![("link".into(), plain_path(&thesis), r#"["README.md","notes.txt","plans/HANDOFF_*.md"]"#.into(), Some("thLong".into()))]);
         let line = human_headline("propose_link_folder", &json!({}), &out).unwrap();
         assert!(line.starts_with("Nothing is linked yet") && line.contains("never that it is linked"), "{line}");
         // Nothing went into the folder or the link tables.

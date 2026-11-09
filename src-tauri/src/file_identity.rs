@@ -268,13 +268,9 @@ mod imp {
         usable(identity) && record(path).as_deref() == Some(identity)
     }
 
-    /// `\\?\C:\…` → `C:\…` (a UNC path keeps its long form, which is still a valid path).
+    /// `\\?\C:\…` → `C:\…`, `\\?\UNC\server\share\…` → `\\server\share\…` (mcp::plain_path).
     fn plain(p: PathBuf) -> PathBuf {
-        let s = p.to_string_lossy();
-        match s.strip_prefix(r"\\?\") {
-            Some(rest) if !rest.starts_with(r"UNC\") => PathBuf::from(rest),
-            _ => p,
-        }
+        PathBuf::from(crate::mcp::plain_path(&p))
     }
 
     fn final_path(h: &Handle) -> Option<PathBuf> {
