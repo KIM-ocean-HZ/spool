@@ -20527,9 +20527,12 @@ mod tests {
         assert_eq!(rows().len(), 1);
 
         // Already linked to this folder: the same files are nothing to queue, other files are a swap.
+        // The link is stored the way folder_link stores it — `C:\…`, never canonicalize's `\\?\C:\…`
+        // (P13: seeded with the prefixed spelling, the "same folder" was not recognised on Windows).
+        let linked = plain_path(&thesis);
         conn.execute_batch(&format!(
             "DELETE FROM main.folder_proposals;
-             INSERT INTO main.folders (id, path, snapshot, synced_at, created_at) VALUES ('fT', '{folder}', '{{}}', 1, 1);
+             INSERT INTO main.folders (id, path, snapshot, synced_at, created_at) VALUES ('fT', '{linked}', '{{}}', 1, 1);
              INSERT INTO main.workspace_folders (workspace_id, folder_id, primary_thread_id, state_files, created_at)
                VALUES ('wsWork', 'fT', 'thLong', '[\"README.md\"]', 1);"
         ))
