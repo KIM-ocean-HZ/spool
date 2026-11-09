@@ -14,9 +14,26 @@ ext=""
 case "$triple" in *windows*) ext=".exe";; esac
 
 echo "building spool-ai for $triple"
-cargo build --release --manifest-path "$here/src-tauri/sidecar/Cargo.toml"
+case "$triple" in
+  *-windows-msvc)
+    # DISCOVERED-20261106-4：不静态链 C 运行库，spool-ai.exe 会要 VCRUNTIME140.dll，没装 VC++ 运行库
+    # 的 Windows 上所有走 API 的 AI 功能都起不来。写明 --target：RUSTFLAGS 就只给目标产物、不给
+    # 构建脚本和过程宏；产物也跟着挪到 target/<triple>/release/ 下。
+    RUSTFLAGS="${RUSTFLAGS:+$RUSTFLAGS }-C target-feature=+crt-static" \
+      cargo build --release --target "$triple" --manifest-path "$here/src-tauri/sidecar/Cargo.toml"
+    built="$here/src-tauri/sidecar/target/$triple/release/spool-ai$ext"
+    # CARGO_ENCODED_RUSTFLAGS 一设就会悄悄盖过 RUSTFLAGS —— 查编出来的东西，不信要的是什么。
+    if grep -aqiE 'vcruntime140|msvcp140' "$built"; then
+      echo "spool-ai still links the dynamic VC++ runtime — refusing to ship it" >&2
+      exit 1
+    fi
+    ;;
+  *)
+    cargo build --release --manifest-path "$here/src-tauri/sidecar/Cargo.toml"
+    built="$here/src-tauri/sidecar/target/release/spool-ai$ext"
+    ;;
+esac
 
 mkdir -p "$here/src-tauri/binaries"
-cp "$here/src-tauri/sidecar/target/release/spool-ai$ext" \
-   "$here/src-tauri/binaries/spool-ai-$triple$ext"
+cp "$built" "$here/src-tauri/binaries/spool-ai-$triple$ext"
 echo "→ src-tauri/binaries/spool-ai-$triple$ext"
