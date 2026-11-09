@@ -1,6 +1,6 @@
 # 产品任务书 P13 —— 发版二之前：Windows 验证（在 Mac 上的 Parallels Desktop 里做；只验，不发）
 
-> **状态：ACTIVE（2026-11-06 夜重新开始）** —— 10-28 下发（HANDOFF §9.2 第 241 条），11-05 夜暂停、改在 Parallels 里做（第 248 条）；P14、P15 插在前面，都已验收（第 252、257 条），Windows 那一半带进本任务书 §6 K、L。
+> **状态：ACTIVE（2026-11-06 夜重新开始）** —— 10-28 下发（HANDOFF §9.2 第 241 条），11-05 夜暂停、改在 Parallels 里做（第 248 条）；P14、P15 插在前面，都已验收（第 252、257 条），Windows 那一半带进本任务书 §6 K、L。**11-07 – 11-09 修复轮**（Ocean：`-3` – `-8` 发版前全修 + 两条现场反馈）做完，修复包 `adee9a9` 装在虚拟机里，**等 Ocean 手指验收**，回执在 §7.9。
 > 这一窗在 **Mac 上**执行，Windows 是 Parallels 里的虚拟机，命令从 Mac 用 `prlctl` 发进去（§0.1）。
 > 开工先做 §0（环境），再问 Ocean §4 的几件，答完再动手。
 >
@@ -418,6 +418,106 @@ Codex：CLI 0.167.0，Ocean 11-06 23:27 登录（ChatGPT 账号）；`scripts/co
 
 （§0 实测的键位、W-0 基线数字（Mac + Windows）、W-1 安装包大小 / 哈希 / 是不是 x64、W-2 迁移前后条数、W-5 MCP 数字和路径闸原话、§6 每一条「过 / 不过 / 没测」和哪些是「虚拟机」、新发现编号、提交号 —— 上面 7.1 – 7.7；没走完的在 HANDOFF §9.8。）
 
----
+### 7.9 修复轮（11-07 下发，11-09 做完；还没给 Ocean 手指验收）
+
+**Ocean 的话（11-07）**：`DISCOVERED-20261106-3` – `-8` 六项发版前全修，连同两条现场反馈 ——「Win 论文」连 `link-test` 报 `Not changed: no such table: workspaces`；**真手长按 Ctrl 完全不弹**。先交最小 diff 审，批准后实现 / 测试 / 重打包 / 装机验证 / 交待验收。不推送、不发版、不改版本号、不换装 Mac 的 Spool。审阅稿在 `~/Desktop/Spool/P13-vm-20261106/research-20261107/03-fix-diff-for-review.md`；11-09「同意，开始任务」（两个待定项按推荐：B0 先量、-4 建干净虚拟机）。中途 Ocean 叫停一次（「先暂停」），之后「continue」。
+
+**提交**（都在 `main`，⛔ 没推送；本地比 `origin/main` 多 18 笔）：`3608575`（-7 + 导出保护）· `9729485`（-6 第一版 + 长按诊断 + -8）· `8d1f315`（-5 + -3）· `bc80a95`（-4）· `130e1a2`（-3 第三处）· `cae94cd`（-6 改正一，作废）· `adee9a9`（-6 改正二，定稿）。实验分支 `exp/p13-fg`（`d52b05a`，只在本地，没合并，已删）。
+
+**每一项：根因 → 改了什么 → 证据**
+
+| 项 | 根因（实测 / 读码） | 改动 | 证据 |
+|---|---|---|---|
+| **-7** P0 | SQL 插件、前端、MCP 都用 `app_config_dir`（Windows = Roaming），只有 Rust 的 `transfer::data_dir` 用 `app_local_data_dir`（Local）；`images::open_library` 用 `Connection::open` ⇒ 在 Local 建了一个 0 字节的 `spool.db`。图片、文件夹连接 21 个命令、文件跟踪 5 个命令、带图导出、导出 / 导入整库全读它 —— **「no such table: workspaces」就是这条**，和文件夹在哪无关 | `data_dir` → `app_config_dir`，setup 只建这一个目录；Rust 打开库不再新建（去掉 CREATE），打开后验「是 Spool 的库」（`user_version` + `blocks` 表）；导出整库先验源库再动目标 | 装好的包上：剪贴板图片 → 存进 Roaming 真库（`block_images` 一行，png 320×120）+ 打的注释；MCP 探针 `get_block_images` 回这张图；**Codex 真客户端读出图上的字「P13 fix image 1109」**；Local 那个 0 字节文件从 11-06 23:44 起一直没变（没删，按 Ocean 说的留着）。测试：空 / 外来源库不导出且旧备份还在、WAL 里没合并的一行在导出里、不新建也不接受空库、钉住三处同一个目录（Mac + Windows 都过） |
+| 导出保护（新发现） | `clear_export_target` 原样比较路径：目录名大小写写得不一样就放行，紧接着 `remove_file` 删的是真库。scratchpad 假目录实测：`FakeData/spool.db` 写成 `fakedata/SPOOL.db` ⇒ 返回 Ok、文件没了（**Mac 上也一样**）；Windows 上另外因为 `data_dir` 指 Local，Roaming 真库根本不在保护里 | 原样比较之外再按磁盘真路径（`canonicalize`）比一次，拒绝仍在任何删除之前 | 新测试修复前红、修复后绿（Mac）；Windows（NTFS）也过 |
+| **B0** 真手长按不弹 | **Parallels 的键盘翻译**：默认（`Keyboard optimization mode: auto`）把单独按下的修饰键憋到松开才和松开一起送进 Windows —— 诊断记录里你按了 1 秒的 control，按下和松开是**同一毫秒**到的，按住时长永远 0。prlctl 直接从虚拟键盘注入，绕过这一层，所以昨晚能弹 | Spool 判定**不改**；加了 `SPOOL_GESTURE_TRACE=1` 时才写的诊断（只记 Ctrl / Shift / Alt / Win 的码、时间、判定）+ 三处 emit 失败写日志 + 每张卡一行转权结果 | 虚拟机改成「为游戏优化修饰键」（`prlctl set --keyboard-optimize on`，随时可改回）后，**Ocean 真手**：长按 4 次都弹（按住 1.2 – 1.8 秒），复制后 2 秒内长按卡里带字，`abc` 进卡、Esc 后 `xyz` 进记事本 |
+| **-6** P1 | 主进程 `AllowSetForegroundWindow` 对 Raw Input 旁听永远失败 ⇒ 浮窗收到 `focus:false` 连试都不试 | 卡片不管转权成没成都自己抢；**在浮窗主线程上**（排在 show 之后）先直接 `SetForegroundWindow`，被拒就发一个**位移为零的鼠标输入**再试（最多 5 次，每次重发）；回给主进程的是事后真看前台的结果 | 第三版（`adee9a9`）：本次启动以来 **20 张卡 20 张拿到键盘**，记事本 / Edge / 主窗在前 / 主窗最小化 / 主窗藏在托盘 × 双击 + 长按，打的字全进库；关卡（Esc / 空框 Ctrl+Z / 回车）后下一个字母 **10 / 10 进了记事本**；双击 ⇧ 面板照旧不抢键盘；主窗藏在托盘时没被拉出来 |
+| -6 走过的两步弯路 | ① 第一版用 tao 的 `set_focus`：能拿到键盘，但它被拒时补的是**光 Alt 按下 + 松开**，落在来源程序上 ⇒ 卡片用 Esc / 空框 Ctrl+Z 关掉后，记事本吃掉下一个字母（弹出菜单）—— 同样步骤 6 / 6 复现；没发这下 Alt 的一次干净；测试脚本自己的终端闪现排除过。② `cae94cd` 换成「Alt + 0xE8」但在**读管道的线程**上调：`SetForegroundWindow` 回 TRUE、卡片却没到前面（12 张只 2 张拿到键盘）。实验版（同一个包里切换做法）量出来：主线程上「Alt+0xE8」和「零位移鼠标」都是 9 / 9 拿到键盘、9 / 9 下一个字母不丢；选鼠标，因为它不往前台程序里按任何键 | —— | 原生小程序和实验版日志在 `fix-20261109/logs/fgtool-*`、`logs/exp/` |
+| **-4** P1 | `scripts/build-sidecar.sh` 普通 `cargo build`，sidecar 动态链 VC++ 运行库 | 只在 `*-windows-msvc`：写明 `--target` + `RUSTFLAGS=+crt-static`（只给目标产物），从 `target/<triple>/release` 拷；编完 grep 产物里还有没有 `vcruntime140` / `msvcp140`，有就停。Mac 那一支逐字不变 | 新 `spool-ai.exe` 普通 + 延迟导入只剩系统 DLL（三版同一个哈希 `a17d926d…`）。**新建的干净虚拟机**（无人值守装的 Windows 11 ARM、没有任何 VC++ 运行库，`*_clr0400.dll` 是 .NET 自带的私有副本）：旧 `spool-ai` 退出码 `0xC0000135`（缺 DLL）；新的回它自己的「stdin 不是合法 JSON」、退出码 2 = 起得来；装 Spool 前后系统运行库状态一字不差。**用 key 跑 API：没测**（要你在那台里粘一次 key） |
+| **-3** | 测试写法：`SystemRoot` = `C:\WINDOWS`；期望值用了带 `\\?\` 的写法（两处） | 只动测试：先 canonicalize 真目录再拼文件；期望值用 `plain_path`；新加 Windows 测试：磁盘上真有的系统 / AppData 文件、AppData 文件夹，原样 / 小写 / 大写都被拒 | Windows `SPOOL_TEST_CC6_MANIFEST=1 cargo test --no-fail-fast`：**292 过 · 0 红 · 14 ignored**（三版都是）；Mac `--lib` 316 过 · 15 ignored |
+| **-5** | `folder_link::plain` 把 `\\?\UNC\server\share` 去成**相对路径** `UNC\server\share`（连上以后读写会按当前目录解析）；另两处保留 `\\?\UNC\` | 三处一个规则（`mcp::plain_path`）：`\\?\C:\…` → `C:\…`，`\\?\UNC\…` → `\\server\share\…`，`Volume{…}` / `GLOBALROOT` 原样。政策不变（照旧要你最后点「连接」） | MCP 探针和 Codex 提议 `\\localhost\C$\Users\hzjin\spool-p13\unc-test`（虚拟机自己的回环共享，不碰 Mac）⇒ 存成 `\\localhost\C$\…`；纯函数测试。**界面上连一次：没测**（Codex 已排好「UNC 测试」那张卡） |
+| **-8** | Windows 来源 = 窗口标题原样 | 只对 Edge / Chrome / Firefox 去认得出的品牌尾巴，Edge 另去「Profile N」「and N more pages」；认不准原样留；不碰别的程序、不改旧块 | 第三版真 Edge 捕捉 ⇒ 来源「P13 Edge 复制测试」；纯函数测试（含标题里本来就有 ` - `、`Profile 1`、零宽字符） |
+
+**安装包**（不签名、x64、在 `~/Desktop/Spool/P13-vm-20261106/fix-20261109/`）：
+
+| 版本 | 代码 | 安装包 SHA-256 | 装上的 `spool.exe` | 结论 |
+|---|---|---|---|---|
+| `build/` | `bc80a95` | `21d3ebb978fa…22068c` | `895b8c5b…9549` | -6 有 Alt 副作用，作废 |
+| `build2/` | `cae94cd` | `a5799dd8c84f…a48846` | `7ba75ad3…c93d` | -6 大多拿不到键盘，作废 |
+| `build-exp/` | `d52b05a`（实验分支） | `bceaa3b3…f8df` | `11245a76…4850` | 只用来量，作废 |
+| **`build3/`** | **`adee9a9`（工作区干净）** | **`6cf618ffeeea51ca6b8360b98dddbfe72bc4c88031be6a159d3ae117fc786f87`**（10,097,725 字节） | **`5b37aee4137f…93c7`**（= 产物打包标记换算后；`spool-ai.exe` `a17d926d…`） | **现在装在「Windows 11」里，就是要你验的这一版** |
+
+装好的 `spool.exe` 和 `target` 里那份差的只是 Tauri 打包时就地改的一个等长标记（`__TAURI_BUNDLE_TYPE_VAR_UNK` → `…_NSS`）—— 昨晚「装好的和交换目录那份哈希不同」也是这个，不是装错。旧的 from-web 包是 11-06 那版，⛔ 别再拿它验修复。
+
+**虚拟机现场**：主虚拟机快照「P13 before fix install (2026-11-09)」（装第一版前，可回退）；键盘「为游戏优化修饰键」= **开**（真手长按要它）；剪贴板共享已开回；Spool 是用 `run-spool-trace.cmd` 起的（带诊断开关，日志在 `C:\Users\hzjin\spool-p13\logs\fix-20261109\`）；记事本里 `p13-source.txt` 有测试打的字没保存（关时选不保存）。干净虚拟机「Spool-clean-P13」开着（4 GB 内存，只读挂了一张放安装包的光盘，没有共享文件夹 / 剪贴板）。
+
+**§6 全部 75 条（这一轮之后）** —— 过 = PASS · 不过 = FAIL · 没测 = NOT RUN · 被挡 = BLOCKED；「手」= Ocean 真手，「自」= 我用自动按键 / 探针 / Codex，「虚」= 只在虚拟机里成立
+
+| § | 结论 | 说明 |
+|---|---|---|
+| 1 | NOT RUN | 新包是我静默装的；SmartScreen 那一步要你从下载的文件双击（虚） |
+| 2 | PASS（自） | 不白屏、主窗大小合适 |
+| 3 | PASS（自） | 0.7.4；语言跟随（昨晚） |
+| 4 | 部分 | ✕ 收进托盘、进程还在 PASS（自）；托盘图标 / 右键菜单 / 左键点回 NOT RUN（手） |
+| 5 | PASS（自） | W-2 对比 0 处不一样 |
+| 6 | PASS（自·虚） | 来源是窗口标题；Edge 只剩网页标题（-8） |
+| 7 | PASS（自 + 手） | 20 / 20 张卡直接打字、回车存；长按卡 Ocean 真手打 abc 进卡；空框 Ctrl+Z 撤回捕捉 PASS（自）；改投、固定窗口 NOT RUN（手） |
+| 8 | PASS（自） | 剪贴板位图 → 图片块 + 注释进真库；用截图工具实际截一次 NOT RUN（手） |
+| 9 | NOT RUN | Win+PrtScn（虚） |
+| 10 | NOT RUN | 资源管理器复制图片文件（手） |
+| 11 | NOT RUN | 往输入框粘 / 拖图（手） |
+| 12 | —— | 见 63 – 68 |
+| 13 – 15 | NOT RUN | 看图 / 编辑 / 合并移动 / 打包带图（手；-7 修好之前被挡） |
+| 16 – 21 | NOT RUN | 项目文件（手；Rust 文件跟踪原来也读错库） |
+| 22 – 24 | NOT RUN | 导出（手） |
+| 25 | PASS（自） | 标题栏跟不跟着变待你看一眼 |
+| 26 – 33 | NOT RUN | 界面（手） |
+| 34 | 部分 | AI 建的私密项目有标记（自）；右键设私密 NOT RUN |
+| 35 | NOT RUN | 休息提醒（手） |
+| 36 | PASS（自） | |
+| 37 – 38 | NOT RUN | 一键接入 Codex（手） |
+| 39 – 40 | PASS（自） | Codex（昨晚） |
+| 41 | PASS（自） | Codex 读出图上的字 |
+| 42 | NOT RUN | 取代卡在待审里等你点 |
+| 43 – 48 | NOT RUN | API（你已配好 key，要手点） |
+| 49 – 51 | NOT RUN | 连接文件夹（手；-7 修好之前被挡） |
+| 52 | PASS（自） | 首启（昨晚） |
+| 53 – 55 | PASS（自） | |
+| 56 | NOT RUN | 半句话和滚动位置（手） |
+| 57 | NOT RUN | 打包对话框那一行 + 导出文件夹（手） |
+| 58 | 前半 PASS（自）/ 后半 NOT RUN | 关「AI 可读」后请求卡（手） |
+| 59 | NOT RUN | 公式 / 表格显示（手） |
+| 60 – 62 | PASS（自） | |
+| 63 | PASS（手·虚） | **只在虚拟机键盘设成「为游戏优化」时**；默认设置下不弹是 Parallels 的原因（B0）；真 PC 键盘 NOT RUN |
+| 64 | 部分 | 键盘那三种 PASS（自）；按住点鼠标 / 转滚轮 NOT RUN（手） |
+| 65 | PASS（手） | 带字、只带一次 |
+| 66 | PASS（自） | |
+| 67 | NOT RUN | 触控板缩放（虚） |
+| 68 | NOT RUN | 主窗鼠标（手） |
+| 69 | PASS（自） | |
+| 70 | 部分 | 不抢键盘 PASS（自，两版）；滚轮 / 点一行 / 点外面 NOT RUN（手） |
+| 71 | 部分 | 大写 / ⇧+字母不弹 PASS（自）；设置开关 / 托盘暂停 NOT RUN（手） |
+| 72 | NOT RUN | 写「Shift」（手） |
+| 73 | PASS（自） | |
+| 74 | NOT RUN | 修好了，原来那张「Win 论文 ↔ link-test」卡还在，等你点「去连接…」 |
+| 75 | PASS（自） | |
+| 加 · 整库往返 | NOT RUN | 单元测试过（含 WAL）；装好的包上「导出 → 导进隔离的新库 → 逐表逐字段 + 图片字节比」要你点导出、导入两下，比对脚本 `fix-20261109/scripts/deep_compare.py` 已备好 |
+| 加 · UNC 界面连接 | NOT RUN | 「UNC 测试」卡已排好 |
+| 加 · 干净机器跑 API | NOT RUN | 要你在「Spool-clean-P13」里粘 key |
+
+**还剩、要你手指的**（这几条直接挂着这次修的东西，先做；其余 NOT RUN 照 §6 原文）：
+1. 待审里两张连接卡点「去连接…」走完：「Win 论文 ↔ link-test」（74）和「UNC 测试」（UNC）⇒ 卡消失、文件夹里有 `SPOOL.md`；再走 49 – 51。
+2. 图片：8（截图工具）、10、11、13 – 15。
+3. 项目文件：16 – 21。
+4. 导出：22 – 24、57；再「设置 → 导出整个库」存到 `C:\Users\hzjin\spool-p13\exports\lib-1109.db` 后告诉我，我做隔离导入和逐字段比对（中间还要你点一次「导入」）。
+5. API：43 – 48（用已配好的 key）；干净虚拟机里打开 Spool、粘一次 key、拉一次模型列表。
+6. 7 / 63 再真手各来一两次：弹出直接打字、Esc 关掉后马上在记事本里打字 —— 字都该在该在的地方。
+
+**剩下的限制**：
+- 63 / 64 的真手结论只在 Parallels 键盘「为游戏优化」下成立；默认设置下 Mac 键盘的 control 长按在 Parallels 里根本到不了 Windows。用 Parallels 跑 Windows 版的 Mac 用户会撞上，建议发版说明写一句（`DISCOVERED-20261107-2`）。
+- 抢前台用的是「零位移鼠标输入」，靠的是实测，不是官方保证；抢不到时退回「点一下才能打字」并记日志。
+- 物理 x64 电脑、真 PC 键盘、多屏混合缩放、Windows 10、中文用户名，照 §0.5 都没测。
+- 干净机器用 key 跑 API、整库往返、UNC 界面连接：没测（上面清单 4、5、1）。
+- 最终包是 `adee9a9`；它之后只改文档。
 
 附录：读库 / 在副本上跑真迁移、MCP 探针 —— 照 `docs/archive/product-taskbooks/TASKBOOK-P9W-WINDOWS-V070-VERIFY-2026-10-20.md` 的附录 A、B；那里写的库版本 35、工具数 26 / 25 换成这里 §2 的 **38、30 / 26**。附录 A 的迁移测试在 Mac 上跑（库副本经交换文件夹拷过来）；附录 B 的探针在虚拟机里跑（要 Node 22）。
