@@ -598,7 +598,8 @@ export const useBlocksStore = create<BlocksState>((set, get) => {
     },
 
     setContent: async (id, content) => {
-      await db.updateBlockContent(id, content);
+      // v39: the user's own edit (the editor, a highlight) — it stamps `edited_at`.
+      await db.editBlockContent(id, content);
       // §9.13: a content edit invalidates any prior undo entry for this block — the
       // user's most-recent edit wins, so Cmd+Z won't silently revert it.
       useUndoStore.getState().invalidateForBlock(id);
@@ -627,7 +628,7 @@ export const useBlocksStore = create<BlocksState>((set, get) => {
       // ⭐ The author comes BACK from the write (2026-08-25): editing an AI note keeps it an
       // AI note, marked as edited, so the feed has to re-render with the new label rather
       // than assume 'user'.
-      const annotationBy = await db.updateBlockAnnotation(id, annotation);
+      const annotationBy = await db.updateBlockAnnotation(id, annotation, true);
       // §9.13: an annotation edit invalidates any prior undo entry for this block (same
       // rationale as setContent). Pin/source edits do NOT — those are reversible by the
       // reverse action, so they leave undo entries intact.

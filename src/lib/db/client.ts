@@ -38,7 +38,7 @@ export const setSeedLanguage = (lang: SeedLanguage): void => {
 // carries a database from the previous version to the new one. On startup the
 // database's PRAGMA user_version is compared against this and every applicable step
 // runs in sequence, each stamping user_version as its own checkpoint (§19.3).
-const SCHEMA_VERSION = 38;
+const SCHEMA_VERSION = 39;
 
 // Things a migration did to the user's data that the user is entitled to hear about.
 // v15 is the first migration that removes anything (the retired `url` attachments), and
@@ -1243,6 +1243,24 @@ const MIGRATIONS: Migration[] = [
       )`);
       await db.execute(`CREATE INDEX IF NOT EXISTS idx_folder_proposals_workspace
         ON folder_proposals(workspace_id, created_at ASC)`);
+    },
+  },
+  {
+    // v39（P16-1，Ocean 2026-11-09 选乙，HANDOFF 第 271 条）：块记下「最后修改时间」，接着聊的 AI 才认得出
+    // 「#5 刚改过」。⚠️⚠️ **只有一句 ADD COLUMN（可空、没有默认值、没有回填）**；⛔ 已有的列一个不动、⛔ 不重建表、
+    // ⛔ 没有 rebuild 分支（2026-05-29 抹库是重建表那条分支干的）。谁写这一列见 schema.sql 那一段。
+    //   * 往前：老库的块全是 NULL = 「建好之后没被改过」—— 迁移之前改过的，库里本来就没记，不编。
+    //   * 往回：`ALTER TABLE blocks DROP COLUMN edited_at` 一句退回 v38，⛔ 不丢任何 v38 就有的数据。
+    // 半跑一次和跑完一次分不出来：列已经在就跳过（和 v34 同一个写法）。
+    from: 38,
+    to: 39,
+    name: 'add-block-edited-at',
+    run: async (db) => {
+      try {
+        await db.execute('ALTER TABLE blocks ADD COLUMN edited_at INTEGER');
+      } catch (e) {
+        console.info('[db] blocks.edited_at: not added (likely exists)', e);
+      }
     },
   },
 ];

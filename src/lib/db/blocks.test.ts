@@ -13,6 +13,7 @@ import {
   countUserWrittenChars,
   createBlock,
   deleteBlock,
+  editBlockContent,
   getBlockById,
   listBlocksByThread,
   listCapturesSince,
@@ -29,6 +30,8 @@ import {
   setBlockSupersession,
   setCorrectedQuote,
   togglePin,
+  updateBlockAnnotation,
+  updateBlockContent,
   updateBlockGist,
 } from './blocks';
 import { parseImageLines, renderImageLines } from '@/lib/blocks/imageLines';
@@ -861,6 +864,56 @@ describe('Q4 · 用户自己写块摘要', () => {
     await updateBlockGist(id, '先写一句');
     await updateBlockGist(id, '   ');
     expect(readGist(id)).toEqual({ gist: null, gist_by: 'user' });
+  });
+});
+
+// v39（P16-1，Ocean 2026-11-09 选乙）：「最后修改时间」只在用户自己改字、而且字真的变了时才动。
+describe('v39 · edited_at', () => {
+  let handle: Sqlite;
+  beforeEach(async () => {
+    handle = new DatabaseSync(':memory:');
+    handle.exec(schemaSql.replace(/--.*$/gm, ''));
+    __setTestDb(makeAdapter(handle));
+  });
+  afterEach(() => handle.close());
+
+  const editedAt = (id: string): number | null =>
+    (handle.prepare('SELECT edited_at FROM blocks WHERE id = ?1').get(id) as { edited_at: number | null }).edited_at;
+
+  it('the user editing the text or the note stamps it; making a block, or a no-op, does not', async () => {
+    const ws = await createWorkspace('收件箱');
+    const th = await createThread(ws.id, '改字');
+    const a = await createBlock({ threadId: th.id, content: '原文' });
+    const b = await createBlock({ threadId: th.id, content: '另一块' });
+    const c = await createBlock({ threadId: th.id, content: '第三块' });
+    // Part of making a block (a picture's line) and the note on the capture card: not edits.
+    await updateBlockContent(a.id, '原文\n![](spool-image:img_1)');
+    await updateBlockAnnotation(b.id, '捕捉卡上写的');
+    expect([editedAt(a.id), editedAt(b.id), editedAt(c.id)]).toEqual([null, null, null]);
+    // The same text written back: not an edit.
+    await editBlockContent(c.id, '第三块', 111);
+    await updateBlockAnnotation(c.id, null, true, 111);
+    expect(editedAt(c.id)).toBeNull();
+    // The user changes the text, then the note.
+    await editBlockContent(a.id, '改过的正文', 1_000);
+    await updateBlockAnnotation(b.id, '后来改的批注', true, 2_000);
+    expect([editedAt(a.id), editedAt(b.id)]).toEqual([1_000, 2_000]);
+    // A later no-op keeps the last real edit.
+    await editBlockContent(a.id, '改过的正文', 3_000);
+    expect(editedAt(a.id)).toBe(1_000);
+  });
+
+  it('a merge stamps the survivor, and only it', async () => {
+    const ws = await createWorkspace('收件箱');
+    const th = await createThread(ws.id, '合并');
+    const a = await createBlock({ threadId: th.id, content: '甲' });
+    const b = await createBlock({ threadId: th.id, content: '乙' });
+    const merged = computeMergedFields([
+      { ...a, createdAt: 1 },
+      { ...b, createdAt: 2 },
+    ] as Block[]);
+    await mergeBlocks(merged.survivorId, merged.content, merged.annotation, merged.pinned, merged.source, merged.nonSurvivorIds);
+    expect(editedAt(merged.survivorId)).not.toBeNull();
   });
 });
 

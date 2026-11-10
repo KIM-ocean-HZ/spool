@@ -61,7 +61,7 @@ const blocksSansV13 = (handle: Sqlite): Record<string, unknown>[] =>
     void stale_at;
     void ref_kind;
     void annotation_by;
-    return stripV32(stripV29(stripV28(stripGist(stripCompression(stripProvenance(stripCorrectedQuote(rest)))))));
+    return stripV39(stripV32(stripV29(stripV28(stripGist(stripCompression(stripProvenance(stripCorrectedQuote(rest))))))));
   });
 
 // v20's three columns, off a `blocks` row. Same job as stripBriefSuggestion below: a test
@@ -221,6 +221,15 @@ const V38_FOLDER_PROPOSAL_COLS = [
 // v38's table and its index, off a list of sqlite_master rows.
 const notV38 = (r: { name: string }): boolean => !r.name.includes('folder_proposals');
 
+// v39's one column, off a `blocks` row, and the text its ADD COLUMN appends to the CREATE statement —
+// every migration test walks up to the current version, so every one walks past v39.
+const stripV39 = (r: Record<string, unknown>): Record<string, unknown> =>
+  Object.fromEntries(Object.entries(r).filter(([k]) => k !== 'edited_at'));
+const sansV39Sql = (r: { name: string; sql: string | null }) => ({
+  name: r.name,
+  sql: r.sql?.replace(/, edited_at INTEGER/g, '') ?? null,
+});
+
 const V35_SPLIT_PROPOSAL_COLS = ['id', 'thread_id', 'client', 'why', 'plan', 'created_at', 'expires_at'];
 // v35's table and its index, off a list of sqlite_master rows — every test that rewinds below
 // v35 and compares the schema across the migration walks past them.
@@ -273,7 +282,17 @@ const downgradeToV13 = (handle: Sqlite): void => {
 // Rewind past v37: a folder was linked to a project, not to a workspace.
 // ⚠️ 这一句 DROP 就是 v37 的「能回滚」——`add-workspace-folders` 只加了一张新表（和搬进去的那几行），
 // ⛔ 一个字的既有数据都没动。
+// Rewind past v39: a block did not record when its text was last edited.
+// ⚠️ 这一句就是 v39 的「能回滚」——`add-block-edited-at` 只加了一个可空列，⛔ 一个字的既有数据都没动。
+const downgradeToV38 = (handle: Sqlite): void => {
+  handle.exec(`
+    ALTER TABLE blocks DROP COLUMN edited_at;
+    PRAGMA user_version = 38;
+  `);
+};
+
 const downgradeToV37 = (handle: Sqlite): void => {
+  downgradeToV38(handle);
   handle.exec(`
     DROP TABLE IF EXISTS folder_proposals;
     PRAGMA user_version = 37;
@@ -992,7 +1011,7 @@ describe('migrateSchema registry (§19.3)', () => {
       (handle.prepare('SELECT * FROM blocks').all() as Record<string, unknown>[]).map((r) => {
         const { annotation_by, ...rest } = r;
         void annotation_by;
-        return stripV32(stripV29(stripV28(stripGist(stripCompression(stripProvenance(stripCorrectedQuote(rest)))))));
+        return stripV39(stripV32(stripV29(stripV28(stripGist(stripCompression(stripProvenance(stripCorrectedQuote(rest))))))));
       }),
     ).toEqual(blocksBefore);
   });
@@ -1078,7 +1097,7 @@ describe('migrateSchema registry (§19.3)', () => {
     expect(
       (handle.prepare('SELECT * FROM blocks').all() as Record<string, unknown>[]).map(
         (r: Record<string, unknown>) =>
-          stripV32(stripV29(stripV28(stripGist(stripCompression(stripProvenance(stripCorrectedQuote(r))))))),
+          stripV39(stripV32(stripV29(stripV28(stripGist(stripCompression(stripProvenance(stripCorrectedQuote(r)))))))),
       ),
     ).toEqual(blocksBefore);
   });
@@ -1113,7 +1132,7 @@ describe('migrateSchema registry (§19.3)', () => {
     // first open after an upgrade, with nothing having been read.
     expect(handle.prepare('SELECT COUNT(*) AS c FROM read_positions').get()).toEqual({ c: 0 });
     expect(
-      (handle.prepare('SELECT * FROM blocks').all() as Record<string, unknown>[]).map((r) => stripV32(stripV29(stripV28(r)))),
+      (handle.prepare('SELECT * FROM blocks').all() as Record<string, unknown>[]).map((r) => stripV39(stripV32(stripV29(stripV28(r))))),
     ).toEqual(blocksBefore);
     expect(handle.prepare('SELECT * FROM threads').all().map(stripV34)).toEqual(threadsBefore);
   });
@@ -1142,7 +1161,7 @@ describe('migrateSchema registry (§19.3)', () => {
     expect(columnNames(handle, 'proposals')).not.toContain('gist_by');
     // 三列全 NULL，其余一个字节都没动。
     expect(
-      (handle.prepare('SELECT * FROM blocks').all() as Record<string, unknown>[]).map((r) => stripV32(stripV29(stripV28(r)))),
+      (handle.prepare('SELECT * FROM blocks').all() as Record<string, unknown>[]).map((r) => stripV39(stripV32(stripV29(stripV28(r))))),
     ).toEqual(blocksBefore);
     expect(
       handle.prepare('SELECT COUNT(*) AS c FROM blocks WHERE ref_note IS NOT NULL').get(),
@@ -1176,7 +1195,7 @@ describe('migrateSchema registry (§19.3)', () => {
     // 那一列全 NULL，其余一个字节都没动 —— ⛔ 老库的每一条引用都按「没审过」读，
     // 也就是 §3.2 ② 那几条待审边照旧全部出现（v28 的行为）。
     expect(
-      (handle.prepare('SELECT * FROM blocks').all() as Record<string, unknown>[]).map((r) => stripV32(stripV29(r))),
+      (handle.prepare('SELECT * FROM blocks').all() as Record<string, unknown>[]).map((r) => stripV39(stripV32(stripV29(r)))),
     ).toEqual(blocksBefore);
     expect(
       handle
@@ -1220,7 +1239,7 @@ describe('migrateSchema registry (§19.3)', () => {
         .prepare('SELECT anchor_block_id, added_by, superseded_by, superseded_at FROM attachments ORDER BY id')
         .all(),
     ).toEqual([unwritten, unwritten]);
-    expect(handle.prepare('SELECT * FROM blocks').all().map(stripV32)).toEqual(blocksBefore);
+    expect(handle.prepare('SELECT * FROM blocks').all().map(stripV32).map(stripV39)).toEqual(blocksBefore);
   });
 
   // ⚠️ 真库的 `attachments` 不是 schema.sql 那个形状：`thread_id` 是 v15 用 ALTER 加的（可空、
@@ -1282,7 +1301,7 @@ describe('migrateSchema registry (§19.3)', () => {
         .get(),
     ).toEqual({ c: 1 });
     for (const t of tables) {
-      expect(handle.prepare(`SELECT * FROM ${t} ORDER BY rowid`).all().map(stripV32).map(stripV33).map(stripV34).map(stripV36), t).toEqual(
+      expect(handle.prepare(`SELECT * FROM ${t} ORDER BY rowid`).all().map(stripV32).map(stripV33).map(stripV34).map(stripV36).map(stripV39), t).toEqual(
         before[t],
       );
     }
@@ -1297,7 +1316,7 @@ describe('migrateSchema registry (§19.3)', () => {
           .all() as { name: string; sql: string | null }[]
       )
         .map(sansV32Sql)
-        .map(sansV33Sql).map(sansV34Sql).filter(notV35).filter(notV36).map(sansV36Sql),
+        .map(sansV33Sql).map(sansV34Sql).filter(notV35).filter(notV36).map(sansV36Sql).map(sansV39Sql),
     ).toEqual(schemaBefore);
   });
 
@@ -1350,7 +1369,7 @@ describe('migrateSchema registry (§19.3)', () => {
     // 每张表逐行相等（加了列的表去掉新列再比；v33 接着走过去，它那两列另有一条测试盯着）；
     // v32 以前那条 `supersedes` 一个字没动。
     for (const t of tables) {
-      expect(handle.prepare(`SELECT * FROM ${t} ORDER BY rowid`).all().map(stripV32).map(stripV33).map(stripV34).map(stripV36), t).toEqual(
+      expect(handle.prepare(`SELECT * FROM ${t} ORDER BY rowid`).all().map(stripV32).map(stripV33).map(stripV34).map(stripV36).map(stripV39), t).toEqual(
         before[t],
       );
     }
@@ -1361,7 +1380,7 @@ describe('migrateSchema registry (§19.3)', () => {
           name: string;
           sql: string | null;
         }[]
-      ).map(sansV36Sql).map(sansV33Sql).map(sansV34Sql).filter(notV35).filter(notV36),
+      ).map(sansV36Sql).map(sansV33Sql).map(sansV34Sql).filter(notV35).filter(notV36).map(sansV39Sql),
     ).toEqual(schemaBefore);
   });
 
@@ -1416,7 +1435,7 @@ describe('migrateSchema registry (§19.3)', () => {
     ).toEqual({ t: 'null' });
     // 每张表逐行相等（attachments 去掉两列新列再比）。
     for (const t of tables) {
-      expect(handle.prepare(`SELECT * FROM ${t} ORDER BY rowid`).all().map(stripV33).map(stripV34).map(stripV36), t).toEqual(before[t]);
+      expect(handle.prepare(`SELECT * FROM ${t} ORDER BY rowid`).all().map(stripV33).map(stripV34).map(stripV36).map(stripV39), t).toEqual(before[t]);
     }
     // ⛔ 只许两句 ADD COLUMN：别的表、索引、触发器的建表语句一个字没变，attachments 只在尾巴上多两列。
     // （v34 接着走过去，threads 尾巴上那一列另有测试盯着，这里先抹掉。）
@@ -1426,7 +1445,7 @@ describe('migrateSchema registry (§19.3)', () => {
           name: string;
           sql: string | null;
         }[]
-      ).map(sansV34Sql).filter(notV35).filter(notV36),
+      ).map(sansV34Sql).filter(notV35).filter(notV36).map(sansV39Sql),
     ).toEqual(schemaBefore);
     expect(
       sansV33Sql(
@@ -1494,7 +1513,7 @@ describe('migrateSchema registry (§19.3)', () => {
       { id: 't3', private: 0 },
     ]);
     for (const t of tables) {
-      expect(handle.prepare(`SELECT * FROM ${t} ORDER BY rowid`).all().map(stripV34).map(stripV36), t).toEqual(before[t]);
+      expect(handle.prepare(`SELECT * FROM ${t} ORDER BY rowid`).all().map(stripV34).map(stripV36).map(stripV39), t).toEqual(before[t]);
     }
     // ⛔ 只许一句 ADD COLUMN：别的表、索引、触发器的建表语句一个字没变，threads 只在尾巴上多一列。
     // （v35 接着走过去，那张新表另有测试盯着，这里先抹掉。）
@@ -1505,7 +1524,7 @@ describe('migrateSchema registry (§19.3)', () => {
       }[])
         .filter(notV35)
         .filter(notV36)
-        .map(sansV36Sql),
+        .map(sansV36Sql).map(sansV39Sql),
     ).toEqual(schemaBefore);
     expect(
       sansV34Sql({
@@ -1571,7 +1590,7 @@ describe('migrateSchema registry (§19.3)', () => {
         .get(),
     ).toEqual({ c: 1 });
     for (const t of tables) {
-      expect(handle.prepare(`SELECT * FROM ${t} ORDER BY rowid`).all().map(stripV36), t).toEqual(before[t]);
+      expect(handle.prepare(`SELECT * FROM ${t} ORDER BY rowid`).all().map(stripV36).map(stripV39), t).toEqual(before[t]);
     }
     // ⛔ 只许 CREATE TABLE + 它自己的索引：别的表、索引、触发器的建表语句一个字没变。
     // （v36 接着走过去，它的两张表和 attachments 那两列另有测试盯着，这里先抹掉。）
@@ -1579,7 +1598,7 @@ describe('migrateSchema registry (§19.3)', () => {
       (handle.prepare('SELECT name, sql FROM sqlite_master ORDER BY name').all() as { name: string; sql: string | null }[])
         .filter(notV35)
         .filter(notV36)
-        .map(sansV36Sql),
+        .map(sansV36Sql).map(sansV39Sql),
     ).toEqual(schemaBefore);
   });
 
@@ -1642,13 +1661,13 @@ describe('migrateSchema registry (§19.3)', () => {
     });
     for (const t of tables) {
       const after = handle.prepare(`SELECT * FROM ${t} ORDER BY rowid`).all() as Record<string, unknown>[];
-      expect(t === 'attachments' ? after.map(stripV36) : after, t).toEqual(before[t]);
+      expect(t === 'attachments' ? after.map(stripV36) : after.map(stripV39), t).toEqual(before[t]);
     }
     // ⛔ 只许两张新表、它们的索引、attachments 尾巴上那两列：别的建表语句一个字没变。
     expect(
       (handle.prepare('SELECT name, sql FROM sqlite_master ORDER BY name').all() as { name: string; sql: string | null }[])
         .filter(notV36)
-        .map(sansV36Sql),
+        .map(sansV36Sql).map(sansV39Sql),
     ).toEqual(schemaBefore);
   });
 
@@ -1708,12 +1727,13 @@ describe('migrateSchema registry (§19.3)', () => {
       { workspace_id: 'w1', folder_id: 'f1', primary_thread_id: 't1', state_files: '["README.md"]', created_at: NOW },
     ]);
     for (const t of tables) {
-      expect(handle.prepare(`SELECT * FROM ${t} ORDER BY rowid`).all(), t).toEqual(before[t]);
+      expect(handle.prepare(`SELECT * FROM ${t} ORDER BY rowid`).all().map(stripV39), t).toEqual(before[t]);
     }
     expect(
-      (handle.prepare('SELECT name, sql FROM sqlite_master ORDER BY name').all() as { name: string }[])
+      (handle.prepare('SELECT name, sql FROM sqlite_master ORDER BY name').all() as { name: string; sql: string | null }[])
         .filter(notV37)
-        .filter(notV38),
+        .filter(notV38)
+        .map(sansV39Sql),
     ).toEqual(schemaBefore);
   });
 
@@ -1757,15 +1777,14 @@ describe('migrateSchema registry (§19.3)', () => {
     const fresh = await __migrateSchemaForTest(db);
 
     expect(fresh).toBe(false);
-    expect(userVersion(handle)).toBe(38);
-    expect(CURRENT_SCHEMA_VERSION).toBe(38);
+    expect(userVersion(handle)).toBe(CURRENT_SCHEMA_VERSION);
     expect(columnNames(handle, 'folder_proposals')).toEqual(V38_FOLDER_PROPOSAL_COLS);
     expect(handle.prepare('SELECT COUNT(*) AS c FROM folder_proposals').get()).toEqual({ c: 0 });
     for (const t of tables) {
-      expect(handle.prepare(`SELECT * FROM ${t} ORDER BY rowid`).all(), t).toEqual(before[t]);
+      expect(handle.prepare(`SELECT * FROM ${t} ORDER BY rowid`).all().map(stripV39), t).toEqual(before[t]);
     }
     expect(
-      (handle.prepare('SELECT name, sql FROM sqlite_master ORDER BY name').all() as { name: string }[]).filter(notV38),
+      (handle.prepare('SELECT name, sql FROM sqlite_master ORDER BY name').all() as { name: string; sql: string | null }[]).filter(notV38).map(sansV39Sql),
     ).toEqual(schemaBefore);
   });
 
@@ -1781,8 +1800,58 @@ describe('migrateSchema registry (§19.3)', () => {
 
     await __migrateSchemaForTest(db);
 
-    expect(userVersion(handle)).toBe(38);
+    expect(userVersion(handle)).toBe(CURRENT_SCHEMA_VERSION);
     expect(columnNames(handle, 'folder_proposals')).toEqual(V38_FOLDER_PROPOSAL_COLS);
+  });
+
+  // P16-1（Ocean 2026-11-09 选乙，HANDOFF 第 271 条）：一个可空列，⛔ 已有的行一个字不动。
+  it('v38 → v39 adds blocks.edited_at, all NULL, and touches nothing else', async () => {
+    applySchema(handle);
+    downgradeToV38(handle);
+    seedUserData(handle);
+    const tables = (
+      handle
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE '%fts%' ORDER BY name")
+        .all() as { name: string }[]
+    ).map((r) => r.name);
+    expect(columnNames(handle, 'blocks')).not.toContain('edited_at');
+    const before = Object.fromEntries(
+      tables.map((t) => [t, handle.prepare(`SELECT * FROM ${t} ORDER BY rowid`).all()]),
+    );
+    const schemaBefore = handle.prepare('SELECT name, sql FROM sqlite_master ORDER BY name').all();
+
+    const fresh = await __migrateSchemaForTest(db);
+
+    expect(fresh).toBe(false);
+    expect(userVersion(handle)).toBe(39);
+    expect(CURRENT_SCHEMA_VERSION).toBe(39);
+    expect(columnNames(handle, 'blocks').slice(-1)).toEqual(['edited_at']);
+    expect(handle.prepare('SELECT COUNT(*) AS c FROM blocks WHERE edited_at IS NOT NULL').get()).toEqual({ c: 0 });
+    for (const t of tables) {
+      expect(handle.prepare(`SELECT * FROM ${t} ORDER BY rowid`).all().map(stripV39), t).toEqual(before[t]);
+    }
+    expect(
+      (handle.prepare('SELECT name, sql FROM sqlite_master ORDER BY name').all() as { name: string; sql: string | null }[])
+        .map(sansV39Sql),
+    ).toEqual(schemaBefore);
+  });
+
+  it('v38 → v39 is re-runnable after a half-finished pass', async () => {
+    applySchema(handle);
+    downgradeToV38(handle);
+    seedUserData(handle);
+    // Half a pass: the column went in, the version stamp did not.
+    handle.exec('ALTER TABLE blocks ADD COLUMN edited_at INTEGER');
+
+    await __migrateSchemaForTest(db);
+
+    expect(userVersion(handle)).toBe(39);
+    expect(columnNames(handle, 'blocks').filter((c) => c === 'edited_at')).toHaveLength(1);
+  });
+
+  it('a fresh install builds blocks.edited_at straight from schema.sql', () => {
+    applySchema(handle);
+    expect(columnNames(handle, 'blocks').slice(-1)).toEqual(['edited_at']);
   });
 
   it('a fresh install builds folder_proposals straight from schema.sql', () => {
@@ -1886,7 +1955,7 @@ describe('migrateSchema registry (§19.3)', () => {
     expect(handle.prepare('SELECT * FROM threads').all().map(stripV34)).toEqual(threadsBefore);
     expect(
       (handle.prepare('SELECT * FROM blocks').all() as Record<string, unknown>[]).map(
-        (r: Record<string, unknown>) => stripV32(stripV29(stripV28(stripGist(stripCompression(r))))),
+        (r: Record<string, unknown>) => stripV39(stripV32(stripV29(stripV28(stripGist(stripCompression(r)))))),
       ),
     ).toEqual(blocksBefore);
   });

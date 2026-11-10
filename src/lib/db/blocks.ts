@@ -660,6 +660,19 @@ export const updateBlockContent = async (id: string, content: string): Promise<v
   await db.execute('UPDATE blocks SET content = $1 WHERE id = $2', [content, id]);
 };
 
+// v39 (P16-1, Ocean 2026-11-09 选乙): the user changing a block's text — the edit panel, a highlight, and
+// undoing / redoing either. Same write as `updateBlockContent`, plus `edited_at` when the text actually
+// changed, so an AI still talking about this project can tell 「#5 刚改过」 (MCP `get_blocks` `edited_after`).
+// ⚠️ `updateBlockContent` stays for what is part of MAKING a block (a picture's line, a copy's picture ids):
+// those are not edits. In SET, `content` on the right is the row's old value.
+export const editBlockContent = async (id: string, content: string, now = Date.now()): Promise<void> => {
+  const db = await getDb();
+  await db.execute(
+    'UPDATE blocks SET content = $1, edited_at = CASE WHEN content IS NOT $1 THEN $2 ELSE edited_at END WHERE id = $3',
+    [content, now, id],
+  );
+};
+
 // ⭐ Q4（WORKPLAN §2.Q4，Ocean 2026-08-25）：用户自己改这一块的摘要。
 //
 // 他的原话：「摘要也需要可视化，可以修改，放在内容，压缩，过期检测同级的新区域显示。」
@@ -692,9 +705,14 @@ export const updateBlockGist = async (id: string, gist: string | null): Promise<
 // while a note on a block that had none is the user's, as before.
 // ⛔ There is no parameter for the caller to override this with: 「不能人为新增」 means the
 // interface must have no path that writes 'ai'.
+// v39: `edited` = this is the user changing an existing block's note (the feed's editor), not the note
+// written on the capture card as the block is made — only then does `edited_at` move, and only when the
+// note actually changed.
 export const updateBlockAnnotation = async (
   id: string,
   annotation: string | null,
+  edited = false,
+  now = Date.now(),
 ): Promise<AnnotationAuthor> => {
   const db = await getDb();
   const rows = await db.select<{ annotation_by: string | null; source: string | null }[]>(
@@ -705,11 +723,12 @@ export const updateBlockAnnotation = async (
     (rows[0]?.annotation_by as AnnotationAuthor | null) ?? null,
     rows[0]?.source ?? null,
   );
-  await db.execute('UPDATE blocks SET annotation = $1, annotation_by = $2 WHERE id = $3', [
-    annotation,
-    by,
-    id,
-  ]);
+  await db.execute(
+    edited
+      ? 'UPDATE blocks SET annotation = $1, annotation_by = $2, edited_at = CASE WHEN annotation IS NOT $1 THEN $4 ELSE edited_at END WHERE id = $3'
+      : 'UPDATE blocks SET annotation = $1, annotation_by = $2 WHERE id = $3',
+    edited ? [annotation, by, id, now] : [annotation, by, id],
+  );
   return by;
 };
 
@@ -1335,8 +1354,11 @@ export const restoreBlockFields = async (
 ): Promise<void> => {
   const db = await getDb();
   await db.execute(
-    'UPDATE blocks SET content = $1, annotation = $2, pinned = $3, source = $4 WHERE id = $5',
-    [content, annotation, pinned ? 1 : 0, source, id],
+    // v39: undoing a merge changes the survivor's text back — an edit as far as a reader is concerned.
+    `UPDATE blocks SET content = $1, annotation = $2, pinned = $3, source = $4,
+       edited_at = CASE WHEN content IS NOT $1 OR annotation IS NOT $2 THEN $6 ELSE edited_at END
+     WHERE id = $5`,
+    [content, annotation, pinned ? 1 : 0, source, id, Date.now()],
   );
 };
 
@@ -1422,8 +1444,11 @@ export const mergeBlocks = async (
   const db = await getDb();
 
   await db.execute(
-    'UPDATE blocks SET content = $1, annotation = $2, pinned = $3, source = $4 WHERE id = $5',
-    [content, annotation, pinned ? 1 : 0, source, survivorId],
+    // v39: the survivor now says something else — the merged text — so it counts as edited.
+    `UPDATE blocks SET content = $1, annotation = $2, pinned = $3, source = $4,
+       edited_at = CASE WHEN content IS NOT $1 OR annotation IS NOT $2 THEN $6 ELSE edited_at END
+     WHERE id = $5`,
+    [content, annotation, pinned ? 1 : 0, source, survivorId, Date.now()],
   );
 
   const deletePlaceholders = nonSurvivorIds.map((_, i) => `$${i + 1}`).join(', ');

@@ -326,7 +326,14 @@ CREATE TABLE IF NOT EXISTS blocks (
   --
   -- NULL = 没被取代 / 用户手动退役 / v32 以前的取代（那些仍记在新块的
   -- `ref_kind='supersedes'` 上，⛔ 没有回填）。手动「取回来」时和 `stale_at` 一起清。
-  replaced_by_block_id TEXT
+  replaced_by_block_id TEXT,
+  -- v39 (P16-1, Ocean 2026-11-09 选乙，HANDOFF 第 271 条)：用户最后一次改这一块的正文或批注的时间（毫秒）。
+  -- 给接着聊的 AI 认「#5 刚改过」用（MCP `get_blocks` 的 `edited_after`）。只有「用户自己改字」的那几条路写它
+  -- （blocks.ts `editBlockContent`、`updateBlockAnnotation(…, true)`、合并和撤销合并），而且只在字真的变了时。
+  -- NULL = 建好之后没被改过。不算「改」的：建块时顺手改的（插图片那一行、复制时换图片 id、捕捉卡上写的批注）、
+  -- 压缩和还原（措辞变了，意思没变）。⛔ 不用触发器：它在 UPDATE blocks 里再 UPDATE blocks，会把外部内容的
+  -- 全文索引（`blocks_au`）弄坏 —— 测试里实测过「database disk image is malformed」。
+  edited_at INTEGER
 );
 
 -- v9 (DESIGN_SCHEMA_V9 H-1): `seq` is the number a human sees and says out loud — "#12"

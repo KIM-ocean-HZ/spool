@@ -27,7 +27,7 @@ import {
   restoreBlockFields,
   restoreRefFields,
   setBlockSupersession,
-  updateBlockContent,
+  editBlockContent,
 } from '@/lib/db/blocks';
 import {
   getCaptureTargetThread,
@@ -410,9 +410,10 @@ const reverseAndBuildRedo = async (
       const { blockId, beforeContent } = entry.payload;
       // Snapshot the highlighted (after) content first so redo can re-apply it.
       const after = (await getBlockById(blockId))?.content ?? beforeContent;
-      await updateBlockContent(blockId, beforeContent);
+      // v39: taking a highlight back (or putting it back) changes the text a reader sees — an edit.
+      await editBlockContent(blockId, beforeContent);
       return async () => {
-        await updateBlockContent(blockId, after);
+        await editBlockContent(blockId, after);
       };
     }
     case 'thread_delete': {
