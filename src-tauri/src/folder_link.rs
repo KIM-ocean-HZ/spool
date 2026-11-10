@@ -1808,13 +1808,6 @@ pub(crate) fn thread_folders(conn: &Connection) -> Result<HashMap<String, (Strin
         .collect())
 }
 
-/// Projects whose folder has moved ahead — the weekly automatic follow-up waits for them (P9Y-b).
-pub(crate) fn ahead_threads(conn: &Connection) -> Result<Vec<String>, String> {
-    let mut ids: Vec<String> = thread_folders(conn)?.into_iter().filter(|(_, (_, n))| *n > 0).map(|(id, _)| id).collect();
-    ids.sort();
-    Ok(ids)
-}
-
 /// Linked workspaces, for the sidebar's mark beside their names: (workspace id, folder shortened,
 /// moved ahead).
 #[derive(Debug, Clone, Serialize)]
@@ -2390,13 +2383,6 @@ pub fn folder_cache_text(app: tauri::AppHandle, folder_id: String, rel: String, 
     cache_text(&conn, &folder_id, &rel, &text)
 }
 
-/// P9Y-b: projects whose weekly automatic follow-up waits until someone says 「已经对过了」.
-#[tauri::command(async)]
-pub fn folder_ahead_threads(app: tauri::AppHandle) -> Result<Vec<String>, String> {
-    let conn = crate::images::open_library(&app)?;
-    ahead_threads(&conn)
-}
-
 /// The sidebar's mark beside a linked workspace.
 #[tauri::command(async)]
 pub fn folder_linked_workspaces(app: tauri::AppHandle) -> Result<Vec<LinkedWorkspace>, String> {
@@ -2787,13 +2773,11 @@ mod tests {
         // The plan moves on: every project of the workspace sees it; the sync puts it back.
         write(&root, "plans/dissertation/HANDOFF_2026-10-31.md", "new direction");
         assert!(view(&conn, "t2", true, false).unwrap().unwrap().ahead);
-        assert_eq!(ahead_threads(&conn).unwrap(), vec!["t1", "t2", "t4", "td", "tp"]);
         assert_eq!(linked_workspaces(&conn).unwrap().iter().map(|l| (l.workspace_id.as_str(), l.ahead)).collect::<Vec<_>>(), vec![("w1", true)]);
         mark_synced(&conn, "t4", "Claude Code · MCP", Some("把 10-31 的方向写回了 Flux"), 40).unwrap();
         let v = view(&conn, "t1", true, false).unwrap().unwrap();
         assert!(!v.ahead);
         assert_eq!((v.synced_at, v.sync_note.as_deref(), v.sync_by.as_deref()), (40, Some("把 10-31 的方向写回了 Flux"), Some("Claude Code · MCP")));
-        assert!(ahead_threads(&conn).unwrap().is_empty());
 
         // The main project is the user's pick; a new project, a rename, a finish all reach SPOOL.md.
         set_primary(&conn, "w1", "t2", Lang::Zh, &backups).unwrap();
@@ -2977,7 +2961,6 @@ mod tests {
         write(&moved, "README.md", "the plan changed after moving");
         let folders = thread_folders(&conn).unwrap();
         assert_eq!(folders.get("t1"), Some(&(short_path(&moved.to_string_lossy()), 1)));
-        assert!(ahead_threads(&conn).unwrap().contains(&"t1".to_string()));
         assert!(linked_workspaces(&conn).unwrap()[0].ahead);
         let stored: String = conn.query_row("SELECT path FROM folders", [], |r| r.get(0)).unwrap();
         assert_eq!(stored, root.to_string_lossy(), "a read-only MCP lookup never writes the moved path");

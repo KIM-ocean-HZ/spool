@@ -27,7 +27,6 @@ import {
   useEngineStore,
   type EngineKind,
 } from "@/stores/engineStore";
-import { useFolderStore } from "@/stores/folderStore";
 import { useFollowUpStore } from "@/stores/followUpStore";
 import { useProposalsStore } from "@/stores/proposalsStore";
 import { useSettingsStore } from "@/stores/settingsStore";
@@ -118,12 +117,10 @@ export default function RightRail({ thread, onCollapse, onEditBrief }: Props) {
   // grey tail on 「上次查」, which a project that has not searched yet never showed.
   const followUpRoads = useFollowUpRoads();
   const followUpRoute = useSettingsStore((s) => s.followUpRoute);
-  // P9Y-b (task book §3.6 b): a linked folder whose state files changed since the last sync holds the
-  // weekly search back — it would otherwise go out on a premise the folder has since dropped.
-  const folderAhead = useFolderStore((s) => (thread ? s.views[thread.id]?.ahead === true : false));
+  // P16-4 (第 276 条): a linked folder that moved ahead no longer holds the weekly search back — the run reads
+  // the folder first (DISCOVERED-20261030-4 甲), so there is nothing to say here about it.
   const autoFollowUp = ((): string | null => {
     if (!followUpRun?.auto) return null;
-    if (folderAhead) return t("每周自动查 · 连着的文件夹改了现状文件，先停着；点「已经对过了」就恢复");
     if (routeFor(followUpRoute, followUpRoads) === null) return t("每周自动查 · 现在没有能联网搜索的 AI 连着，先不查");
     const next = autoFollowUpNextAt(followUpRun, Date.now());
     return next === null

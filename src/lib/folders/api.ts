@@ -129,7 +129,6 @@ export const relocateFolder = (workspaceId: string, path: string): Promise<void>
   invoke('folder_relocate', { workspaceId, path });
 export const cacheStateText = (folderId: string, rel: string, text: string): Promise<void> =>
   invoke('folder_cache_text', { folderId, rel, text });
-export const aheadThreads = (): Promise<string[]> => invoke('folder_ahead_threads');
 export const setFolderPointers = (workspaceId: string, claude: boolean, agents: boolean): Promise<void> =>
   invoke('folder_set_pointers', { workspaceId, claude, agents });
 /** After a project's 「设为私密 / 取消私密」: its folder's SPOOL.md drops it (over an edit) / takes it back. */

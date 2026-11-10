@@ -12,6 +12,8 @@ import {
   staleScanViaCli,
   staleScanWs,
   staleScanWsViaCli,
+  repoCheckViaApi,
+  repoCheckViaCli,
   PROGRESS_EVENT,
   type CompressLevel,
   type CompressOutcome,
@@ -48,6 +50,17 @@ import { buildThreadPack, pictureLinesAsIs } from '@/lib/pack/forThread';
 import { t } from '@/lib/i18n';
 import { cliRouteNow, roadsNow, routeFor } from '@/lib/engine/roads';
 import { useBlocksStore } from './blocksStore';
+import { useFolderStore } from './folderStore';
+import { listBlocksByThread } from '@/lib/db/blocks';
+import {
+  applyRepoSummary,
+  decideRepoBlock,
+  decideRepoLine,
+  markRepoChecked,
+  repoAllDecided,
+  type RepoAction,
+  type RepoCheckSession,
+} from '@/lib/stale/repoCheck';
 import { toast } from './toastStore';
 import { useSettingsStore } from './settingsStore';
 import { apiCallFrom } from '@/lib/ai/vendors';
@@ -156,7 +169,8 @@ interface CompressState {
    *  压缩那一页跟着转圈、跟着显示「正在写压缩稿…」、按钮变成「停下」。
    *
    *  ⛔ 别用「哪个面板挂着 session」去猜：两件事可以同时有各自的历史结果。 */
-  runningKind: 'compress' | 'stale' | null;
+  /** P16-4：`repo` = 对照仓库（结果也在过期检测页签上，但它不是「查过期」，别让那一页转错圈）。 */
+  runningKind: 'compress' | 'stale' | 'repo' | null;
   /** P9V-2：过期检测正在跑的是哪一个范围 —— `p:<项目 id>`（只查这个项目）/ `w:<工作区 id>`（整个工作区）。
    *  ⚠️ 两种范围在同一个页签里切换，只问「哪个项目」会让另一种范围也跟着转圈。 */
   runningKey: string | null;
@@ -240,6 +254,16 @@ interface CompressState {
    *  「标完成」开的是项目顶上那个完成面板，完没完成看项目自己的状态）。 */
   decideStaleWs: (workspaceId: string, key: string, action: StaleAction) => Promise<void>;
   refreshStaleWsBlocks: (workspaceId: string) => Promise<void>;
+
+  // -------------------------------------------------------------------------------
+  // P16-4 · 对照仓库（Ocean 11-09 第 267、275、276 条；lib/stale/repoCheck.ts 写了每个按钮做什么）
+  // -------------------------------------------------------------------------------
+  /** 每个项目最新那一次对照仓库的结果。只在内存里（和整理稿一样，按项目存）。 */
+  repoCheck: Record<string, RepoCheckSession>;
+  /** 没发出去的那几种（已完成、没连、找不到文件夹、超上限）和跑之前就失败的，按项目记。 */
+  repoCheckErrors: Record<string, string>;
+  runRepoCheck: (threadId: string) => Promise<void>;
+  decideRepoCheck: (threadId: string, key: string, action: RepoAction) => Promise<void>;
 }
 
 export type StaleScope = 'workspace' | 'project';
@@ -538,6 +562,8 @@ export const useCompressStore = create<CompressState>((set, get) => ({
   stale: {},
   staleWs: {},
   staleWsErrors: {},
+  repoCheck: {},
+  repoCheckErrors: {},
   staleWsBlocks: {},
   staleScope: {},
   staleAuto: {},
@@ -1214,6 +1240,102 @@ export const useCompressStore = create<CompressState>((set, get) => ({
       }));
     } finally {
       set({ running: false, runningThreadId: null, runningKind: null, runningKey: null, progress: null });
+    }
+  },
+
+  // P16-4 · 对照仓库 —— 一次不带工具的请求，走过期检测选的那条路（`staleRoute`）。⛔ 回来的东西一样都不写库。
+  runRepoCheck: async (threadId) => {
+    if (get().running) return;
+    const thread = Object.values(useThreadsStore.getState().threadsByWorkspace)
+      .flat()
+      .find((th) => th.id === threadId);
+    // P9E-3：私密项目不发给 AI（它本来也连不了文件夹）。
+    if (!thread || thread.isPrivate) return;
+    set((st) => ({
+      running: true,
+      runningThreadId: threadId,
+      runningKind: 'repo',
+      runningKey: `r:${threadId}`,
+      progress: { stage: 'starting' },
+      repoCheckErrors: omit(st.repoCheckErrors, threadId),
+    }));
+    try {
+      const s = useSettingsStore.getState();
+      const scan =
+        routeFor(s.staleRoute, roadsNow()) === 'cli'
+          ? await repoCheckViaCli(threadId, s.aiEngineTimeoutSecs, cliRouteNow())
+          : await (async () => {
+              const call = apiCallFrom(s);
+              return repoCheckViaApi({
+                threadId,
+                baseUrl: call.baseUrl,
+                apiKey: await loadApiKey(),
+                model: call.model,
+                reasoning: call.reasoning,
+                wire: call.wire,
+                timeoutSecs: s.apiTimeoutSecs,
+              });
+            })();
+      if (scan.outcome.kind === 'cancelled') {
+        toast.notice(t('已经停下了。已经跑出去的那一段，模型厂商那边可能照样算钱。'));
+        return;
+      }
+      const sess: RepoCheckSession = {
+        scan,
+        blocks: await listBlocksByThread(threadId),
+        decided: {},
+        startedAt: Date.now(),
+        synced: false,
+      };
+      // 一条对不上的都没有，这一次就是「对过了」。
+      if (scan.outcome.ok && repoAllDecided(sess)) {
+        await markRepoChecked(scan.workspaceId);
+        sess.synced = true;
+        void useFolderStore.getState().reloadAll();
+      }
+      set((st) => ({ repoCheck: { ...st.repoCheck, [threadId]: sess } }));
+    } catch (e) {
+      set((st) => ({
+        repoCheckErrors: { ...st.repoCheckErrors, [threadId]: e instanceof Error ? e.message : String(e) },
+      }));
+    } finally {
+      set({ running: false, runningThreadId: null, runningKind: null, runningKey: null, progress: null });
+    }
+  },
+
+  decideRepoCheck: async (threadId, key, action) => {
+    const sess = get().repoCheck[threadId];
+    if (!sess || sess.decided[key]) return;
+    const title =
+      Object.values(useThreadsStore.getState().threadsByWorkspace)
+        .flat()
+        .find((th) => th.id === threadId)?.title ?? '';
+    try {
+      if (key.startsWith('b') && (action === 'merge' || action === 'retire')) {
+        const item = sess.scan.blocks[Number(key.slice(1))];
+        if (!item) return;
+        const done = await decideRepoBlock(threadId, item, action, sess.blocks, (m) => toast.error(m));
+        if (!done) return;
+        await useBlocksStore.getState().load(threadId);
+      } else if (key.startsWith('f') && action === 'close') {
+        const item = sess.scan.followUps[Number(key.slice(1))];
+        if (!item) return;
+        await decideRepoLine(threadId, title, item);
+        toast.notice(t('关掉了这条跟进，按 ⌘Z 撤回'));
+      } else if (key === 's' && action === 'apply' && sess.scan.summary) {
+        await applyRepoSummary(threadId, sess.scan.summary.text);
+        await useThreadsStore.getState().loadAll();
+      }
+      const next: RepoCheckSession = { ...sess, decided: { ...sess.decided, [key]: action } };
+      // 全部处理完 = 「对过了」（P9Y：「以后『对照仓库』的结果处理完也算」）。
+      if (!next.synced && next.scan.outcome.ok && repoAllDecided(next)) {
+        await markRepoChecked(next.scan.workspaceId);
+        next.synced = true;
+        void useFolderStore.getState().reloadAll();
+      }
+      set((st) => ({ repoCheck: { ...st.repoCheck, [threadId]: next } }));
+    } catch (e) {
+      toast.error(t('写不进去：{msg}', { msg: e instanceof Error ? e.message : String(e) }));
     }
   },
 

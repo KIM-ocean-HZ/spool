@@ -1282,6 +1282,62 @@ export const staleScanWsViaCli = async (
 ): Promise<WsStaleScan> => invoke<WsStaleScan>('stale_scan_ws_via_cli', { packs, timeoutSecs, cli });
 
 // ---------------------------------------------------------------------------------------
+// P16-4 · 对照仓库（Rust: api_engine.rs `repo_check_via_cli` / `repo_check_via_api`；材料在 mcp.rs
+// `repo_check_material`）。⛔ 回来的东西过了逐字闸，⛔ 一样都没写库 —— 用户点了才生效（compressStore）。
+// ---------------------------------------------------------------------------------------
+
+/** 被仓库推翻的一块。`from` = 新说法出自哪一份：现状文件的相对路径 / "commits" / "changes" / "#15"。 */
+export interface RepoBlock {
+  staleSeq: number;
+  kind: 'corrects' | 'supersedes';
+  why: string;
+  quoteStale: string;
+  from: string;
+  quoteNew: string;
+  retyped: boolean;
+}
+
+/** 前提已经没了的一行跟进。 */
+export interface RepoLine {
+  itemId: string;
+  line: string;
+  standing: boolean;
+  why: string;
+  from: string;
+  quoteNew: string;
+}
+
+export interface RepoDropped {
+  kind: 'block' | 'follow_up' | 'summary';
+  label: string;
+  why: string;
+  quote: string;
+  reason: string;
+}
+
+export interface RepoCheckScan {
+  outcome: CompressOutcome;
+  blocks: RepoBlock[];
+  followUps: RepoLine[];
+  summary: { text: string; why: string } | null;
+  dropped: RepoDropped[];
+  workspaceId: string;
+}
+
+export const repoCheckViaCli = (threadId: string, timeoutSecs: number, cli: CliRoute): Promise<RepoCheckScan> =>
+  invoke<RepoCheckScan>('repo_check_via_cli', { threadId, timeoutSecs, cli });
+
+export const repoCheckViaApi = (req: {
+  threadId: string;
+  baseUrl: string;
+  apiKey: string;
+  model: string;
+  reasoning: string;
+  wire: ApiCall['wire'];
+  timeoutSecs: number;
+}): Promise<RepoCheckScan> => invoke<RepoCheckScan>('repo_check_via_api', { ...req });
+
+// ---------------------------------------------------------------------------------------
 // P9U-4 · 跟进 on the API road (第 186 条: 用各家自带的联网搜索)
 // ---------------------------------------------------------------------------------------
 

@@ -53,6 +53,3 @@ export const lineDiff = (a: string, b: string): DiffLine[] => {
   return out;
 };
 
-/** P9Y-b: the weekly automatic follow-up waits while a project's folder has moved ahead of it. */
-export const withoutAhead = <T extends { id: string }>(candidates: T[], ahead: readonly string[]): T[] =>
-  ahead.length === 0 ? candidates : candidates.filter((c) => !ahead.includes(c.id));

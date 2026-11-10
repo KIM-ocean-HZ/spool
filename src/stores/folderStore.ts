@@ -5,7 +5,6 @@ import {
   folderView,
   folderViewWorkspace,
   linkedWorkspaces,
-  markFolderSynced,
   type FolderView,
   type LinkedWorkspace,
 } from '@/lib/folders/api';
@@ -29,8 +28,6 @@ interface FolderState {
   loadLinked: () => Promise<void>;
   /** After anything that changes a link: look again at everything already looked at. */
   reloadAll: () => Promise<void>;
-  /** 「已经对过了」 on the linked workspace of this view. */
-  markSynced: (view: FolderView) => Promise<void>;
 }
 
 // A docx / pdf state file is read here, by the same extractor project files use, and handed to Rust
@@ -102,8 +99,4 @@ export const useFolderStore = create<FolderState>((set, get) => ({
     ]);
   },
 
-  markSynced: async (view) => {
-    await markFolderSynced(view.workspaceId);
-    await get().reloadAll();
-  },
 }));

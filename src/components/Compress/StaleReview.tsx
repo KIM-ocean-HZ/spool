@@ -1,3 +1,4 @@
+import RepoCheckPanel from './RepoCheckPanel';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, Loader2, ScanSearch } from 'lucide-react';
 import { splitPackEntries } from '@/lib/ai/compressBlocks';
@@ -56,6 +57,8 @@ export default function StaleReview({ threadId }: { threadId: string }) {
   const setScope = useCompressStore((s) => s.setStaleScope);
   return (
     <div className="flex h-full min-h-0 flex-col">
+      {/* P16-4：对照仓库 —— 只在项目连着文件夹（或者已经有结果）时出现。 */}
+      <RepoCheckPanel threadId={threadId} />
       {/* P9V-2（第 200 条）：同一个页签，两种范围 —— 默认整个工作区，「只查这个项目」照旧在。
           能查的项目不到两个（比如只有一个项目的子工作区）就不出这一行。 */}
       {available && (

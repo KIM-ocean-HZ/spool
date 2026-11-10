@@ -1,5 +1,5 @@
 import { open } from '@tauri-apps/plugin-dialog';
-import { ArrowRight, Check, ChevronDown, ChevronRight, FolderGit2, MoreHorizontal } from 'lucide-react';
+import { ArrowRight, ChevronDown, ChevronRight, FolderGit2, MoreHorizontal } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
 import RailSection from './RailSection';
 import { ConnectDialog, DiffDialog, DisconnectDialog, PointersDialog, StateFilesDialog } from './FolderDialogs';
@@ -17,6 +17,7 @@ import { shortRel, stateTag } from '@/lib/folders/view';
 import { dateLocale, useT } from '@/lib/i18n';
 import { openTarget } from '@/lib/utils/openTarget';
 import type { Thread } from '@/lib/db/threads';
+import { useCompressStore } from '@/stores/compressStore';
 import { useFolderStore } from '@/stores/folderStore';
 import { useThreadsStore } from '@/stores/threadsStore';
 import { toast } from '@/stores/toastStore';
@@ -27,7 +28,7 @@ import { toast } from '@/stores/toastStore';
 //   * `FolderPanel` is the whole thing, on the workspace page: connect, what changed, the state files,
 //     SPOOL.md, 「让 AI 读到它」, change folder, disconnect.
 //   * `FolderCard` (default) is a project's right rail: which folder the project's workspace is
-//     linked to, whether it moved ahead, 「已经对过了」, and the way to the workspace page.
+//     linked to, whether it moved ahead, 「拿仓库对一遍」 (P16-4), and the way to the workspace page.
 //
 // ⚠️ Looked at when on screen and when the window comes back to the front — ⛔ never in the
 // background. One colour for attention (the one 项目文件 uses for a missing file), no warning signs.
@@ -85,32 +86,42 @@ function StateList({ v }: { v: FolderView }) {
   );
 }
 
-function SyncButton({ v }: { v: FolderView }) {
+// P16-4 (DISCOVERED-20261030-4 甲, Ocean 11-09 第 276 条): 「已经对过了」 is gone — Ocean 10-30: 「意义不明，我看不懂
+// 这是在干什么；有摩擦，每次用户需要自己 update」. The sync clock now moves when a repo check has been dealt with, or
+// when the AI working in the repository says so (mark_folder_synced); the weekly follow-up no longer waits on it. What
+// is left here is the last sync's note, and — on a project — the way to check the project against the folder.
+function SyncNote({ v }: { v: FolderView }) {
+  if (!v.syncNote) return null;
+  return (
+    <p className="min-w-0 truncate text-[11px] text-muted" title={`${v.syncBy ?? ''} · ${v.syncNote}`}>
+      {v.syncNote}
+    </p>
+  );
+}
+
+/** 「拿仓库对一遍」: runs the repo check for this project and opens the 过期检测 tab, where its results land. */
+function RepoCheckButton({ v, threadId }: { v: FolderView; threadId: string }) {
   const t = useT();
-  const markSynced = useFolderStore((s) => s.markSynced);
+  const busy = useCompressStore((s) => s.running || s.batchRunning);
+  const running = useCompressStore((s) => s.running && s.runningKind === 'repo' && s.runningThreadId === threadId);
+  const run = useCompressStore((s) => s.runRepoCheck);
+  const setTab = useCompressStore((s) => s.setTab);
   return (
     <div className="flex items-center gap-2 pt-0.5">
       <button
         type="button"
-        onClick={() =>
-          void markSynced(v).then(
-            () => toast.notice(t('记下了：从现在起再看改动')),
-            (e) => toast.error(folderError(e)),
-          )
-        }
-        title={t('仓库里的新情况已经记进 Spool 了：从现在起重新算改动')}
-        className={`flex flex-none items-center gap-1 whitespace-nowrap rounded border px-2 py-0.5 text-[11px] transition-colors ${
+        disabled={busy}
+        onClick={() => {
+          setTab(threadId, 'stale');
+          void run(threadId);
+        }}
+        title={t('把这个项目和文件夹现在的样子对一遍，结果在「过期检测」页签里，点了才生效')}
+        className={`flex flex-none items-center gap-1 whitespace-nowrap rounded border px-2 py-0.5 text-[11px] transition-colors disabled:opacity-40 ${
           v.ahead ? 'border-accent text-accent hover:bg-accent/10' : 'border-line text-muted hover:border-line-strong hover:text-ink'
         }`}
       >
-        <Check size={11} className="flex-none" />
-        {t('已经对过了')}
+        {running ? t('正在对照…') : t('拿仓库对一遍')}
       </button>
-      {v.syncNote && (
-        <span className="min-w-0 truncate text-[11px] text-muted" title={`${v.syncBy ?? ''} · ${v.syncNote}`}>
-          {v.syncNote}
-        </span>
-      )}
     </div>
   );
 }
@@ -293,7 +304,7 @@ export function FolderPanel({ workspaceId, title, view }: { workspaceId: string;
                 <p className="text-[11px]" style={v.ahead ? ATTENTION : undefined}>
                   <span className={v.ahead ? '' : 'text-ink-2'}>{syncLine(v)}</span>
                 </p>
-                <SyncButton v={v} />
+                <SyncNote v={v} />
               </>,
             )}
 
@@ -534,7 +545,8 @@ export default function FolderCard({ thread }: { thread: Thread }) {
               <span className={v.ahead ? '' : 'text-muted'}>{syncLine(v)}</span>
             </p>
             <StateList v={v} />
-            <SyncButton v={v} />
+            <SyncNote v={v} />
+            <RepoCheckButton v={v} threadId={thread.id} />
           </>
         )}
         {toWorkspace(v.workspaceId, t('在工作区里管理'))}

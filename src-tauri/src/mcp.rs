@@ -3847,6 +3847,8 @@ fn pack_read_note(conn: &Connection, thread_id: &str) -> Result<String, String> 
     ))
 }
 
+// The tests' entry point (they all read without a cursor); the server calls `get_blocks_json_since`.
+#[cfg(test)]
 #[allow(clippy::too_many_arguments)]
 fn get_blocks_json(
     conn: &Connection,
@@ -11597,6 +11599,232 @@ fn stale_ws_why_rule() -> &'static str {
 
 /// 工作区那一次的两段消息。`packs` = 每个项目的（名字, pack），按顺序编成 P1、P2……
 /// ⚠️ 编号的顺序就是 `api_engine::gate_ws` 收到的 pack 的顺序 —— 两边必须是同一个数组。
+// ---------------------------------------------------------------------------------------
+// P16-4 —— 对照仓库（P9Y 任务书 §3.6 d；Ocean 11-08「让 MCP，CLI 和 API 可以实时跟进整个代码库的动向，以此
+// 更新项目的跟进（包括打开，关闭），摘要」；11-09 第 267、275 条：只有按钮）。
+//
+// 一次不带工具的请求（和过期检测同一条路：本机 CLI 不连 MCP、API 一发），把一个项目在 Spool 里的样子和它连着
+// 的文件夹现在的样子一起发出去，找三类对不上的：被仓库推翻的块、前提没了的跟进行、对不上的 AI 摘要。结果只
+// 落在过期检测那一页，用户点了才生效（`api_engine.rs` `gate_repo_check` 逐字闸，⛔ 这边不判）。
+// ⛔ 只读现状文件的正文、提交标题和改动列表 —— 文件夹里别的文件一个字不读（P9Y「不读文件夹里别的文件」）。
+// 外来文字照 P16-0：整份放在 ⟦SPOOL:MATERIAL⟧ 围栏里，围栏记号先中和。
+// ---------------------------------------------------------------------------------------
+
+/// 本机 CLI / API 两条路各自的发送上限（旧第 201 条：CLI 20 万字、API 12 万字），超了不发。
+pub(crate) const REPO_CHECK_CLI_CAP: usize = 200_000;
+pub(crate) const REPO_CHECK_API_CAP: usize = 120_000;
+
+/// 一次对照仓库要发的东西，和逐字闸要拿来比的几份原文。
+pub(crate) struct RepoCheckMaterial {
+    pub system: String,
+    pub user: String,
+    /// 发出去的那份 pack（块的原话从这里找）。
+    pub pack: String,
+    /// 仓库那一边能被引的几份：现状文件（相对路径 → 正文）、"commits"、"changes"。
+    pub sources: Vec<(String, String)>,
+    /// 开着的跟进行：(item_id, 那一行, 是不是永久的)。
+    pub items: Vec<(String, String, bool)>,
+    /// 摘要是用户自己写的 —— 那就不许提新摘要。
+    pub summary_by_user: bool,
+    pub workspace_id: String,
+}
+
+fn repo_check_system() -> String {
+    let rule = material_rule();
+    t!(
+        "你在帮用户把 Spool 里的一个项目和它连着的文件夹(多半是一个代码仓库)对一遍。用户下一条消息里有两部分:\
+        这个项目在 Spool 里的样子(摘要、在跟进的几行、记录),和仓库现在的样子(现状文件的正文、上次对过之后的提交标题、改动过的文件)。\n\n\
+        # 规则\n\
+        1. 仓库是「现在在做什么、做到哪」的权威。Spool 里和它冲突的块是历史,不是现在的计划。\n\
+        2. 找三类对不上的,别的都不管:\n\
+           - 被仓库推翻的块:块里写的计划、方向、结论,仓库现在明明白白说不做了、换了、或者做完了;\n\
+           - 前提已经没了的跟进行:这一行要去查的东西,仓库现在说那个方向已经不做了;\n\
+           - 对不上的摘要:摘要说的已经不是仓库里在做的事。摘要是用户自己写的就不提(材料里会写明谁写的)。\n\
+        3. 每一条都要两句原话,一个字不改地抄:\n\
+           - 块:quote_stale 从那一块里抄(块用 #编号 指,stale 写 \"#12\");\n\
+           - quote_new 从仓库那一份里抄,from 写那一份的名字:现状文件就照抄它的路径,提交标题写 \"commits\",改动列表写 \"changes\";也可以是项目里另一块,写 \"#15\"。\n\
+           原话照文件里的字符抄:`**`、反引号、[链接文字](地址) 这类记号也一起抄,不要抄成显示出来的样子。抄不出原话的不要提。\n\
+        4. 一块里只有几条不成立、大部分还成立 → kind 写 \"corrects\";整块都被换掉了 → \"supersedes\"。拿不准就写 \"corrects\"。\n\
+        5. 一个文件被挪进了 archive / 归档 这类文件夹,是「它记的东西不做了」的线索,但光凭挪了还不够,要有一句原话撑着。\n\
+        6. why 用一句大白话说清楚对不上在哪,给用户读的。\n\
+        7. 什么都对得上,三样就都空着 —— 这是正常结果,不是失败。\n\
+        8. {rule}\n\n\
+        # 只回一个 JSON 对象,别的什么都不写\n\
+        {{\"blocks\":[{{\"stale\":\"#12\",\"kind\":\"corrects\",\"why\":\"…\",\"quote_stale\":\"…\",\"from\":\"README.md\",\"quote_new\":\"…\"}}],\
+        \"follow_ups\":[{{\"item_id\":\"…\",\"why\":\"…\",\"from\":\"README.md\",\"quote_new\":\"…\"}}],\
+        \"summary\":{{\"text\":\"…\",\"why\":\"…\"}}}}\n\
+        没有对不上的块或跟进行就写 [];摘要对得上(或者是用户写的)就写 \"summary\":null。item_id 照抄跟进清单括号里的那个。",
+        "You are helping the user check one Spool project against the folder it is linked to (usually a code repository). \
+        Their next message has two parts: the project as Spool holds it (its summary, the lines it follows up, its record), \
+        and the repository as it is now (the state files' text, the commit titles since the last check, the files that changed).\n\n\
+        # Rules\n\
+        1. The repository is the authority on what is being done now and how far it has got. A block in Spool that conflicts \
+        with it is history, not the current plan.\n\
+        2. Look for three kinds of mismatch and nothing else:\n\
+           - a block the repository overturned: a plan, direction or conclusion the repository now plainly says is dropped, \
+        changed, or done;\n\
+           - a follow-up line whose premise is gone: what it goes out to check is a direction the repository says is no longer pursued;\n\
+           - a summary that no longer matches: it describes something other than what the repository is doing. Not when the \
+        user wrote the summary themselves (the material says who wrote it).\n\
+        3. Every item needs two quotes, copied word for word:\n\
+           - for a block, quote_stale from that block (blocks are named by number: stale = \"#12\");\n\
+           - quote_new from the repository side, with from = which piece it is: a state file by its path as given, the commit \
+        titles as \"commits\", the list of changed files as \"changes\" \u{2014} or another block of the project, \"#15\".\n\
+           Copy the characters as the file has them: Markdown marks such as `**`, backticks and [link text](address) are \
+        part of the quote \u{2014} not the text as it would display. If you cannot copy both, do not propose it.\n\
+        4. Only some points in a block no longer hold and most of it still does \u{2192} kind \"corrects\"; the whole block was \
+        replaced \u{2192} \"supersedes\". When unsure, \"corrects\".\n\
+        5. A file moved into an archive folder is a clue that what it records was dropped \u{2014} a clue, not proof: it still needs a quote.\n\
+        6. why = one plain sentence on where the mismatch is, written for the user.\n\
+        7. If everything matches, leave all three empty \u{2014} a normal result, not a failure.\n\
+        8. {rule}\n\n\
+        # Answer with ONE JSON object and nothing else\n\
+        {{\"blocks\":[{{\"stale\":\"#12\",\"kind\":\"corrects\",\"why\":\"…\",\"quote_stale\":\"…\",\"from\":\"README.md\",\"quote_new\":\"…\"}}],\
+        \"follow_ups\":[{{\"item_id\":\"…\",\"why\":\"…\",\"from\":\"README.md\",\"quote_new\":\"…\"}}],\
+        \"summary\":{{\"text\":\"…\",\"why\":\"…\"}}}}\n\
+        Write [] when there is no block or line to raise; \"summary\":null when the summary matches (or the user wrote it). \
+        Copy item_id from the brackets on the follow-up list."
+    )
+}
+
+/// 一个项目的对照仓库材料。`cap` = 这条路的上限（`REPO_CHECK_CLI_CAP` / `REPO_CHECK_API_CAP`）。
+/// ⛔ 不发的几种都是 Err，说清楚为什么：已完成的、没连文件夹的、文件夹找不到的、超上限的；私密项目在 AI 的视图里
+/// 就不存在（P9E），照「没有这个项目」说。
+pub(crate) fn repo_check_material(thread_id: &str, cap: usize) -> Result<RepoCheckMaterial, String> {
+    let dir = app_data_dir().ok_or_else(|| t!("无法定位 Spool 数据目录。", "Could not locate Spool's data directory."))?;
+    refresh_lang(&dir);
+    let conn = open_db(&dir)?;
+    let (title, status, summary, summary_source): (String, String, Option<String>, Option<String>) = conn
+        .query_row(
+            "SELECT title, status, summary, summary_source FROM threads WHERE id = ?1 AND deleted_at IS NULL",
+            [thread_id],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+        )
+        .map_err(|_| no_such_thread())?;
+    if status == "done" {
+        return Err(t!(
+            "〈{title}〉已经标了完成,不拿仓库对照。要对照,先在 Spool 里把它重新打开。",
+            "\u{2039}{title}\u{203a} is marked finished, so it is not checked against the repository. Reopen it in Spool first."
+        ));
+    }
+    let Some(v) = crate::folder_link::view(&conn, thread_id, false, true)? else {
+        return Err(t!("〈{title}〉所在的工作区没有连文件夹。", "\u{2039}{title}\u{203a} is in a workspace that is not linked to a folder."));
+    };
+    if !matches!(v.location, "in_place" | "moved") {
+        return Err(t!(
+            "Spool 现在找不到〈{title}〉连着的文件夹,先在右栏重新选位置。",
+            "Spool cannot find the folder \u{2039}{title}\u{203a} is linked to; point it at the folder again first."
+        ));
+    }
+    let mut sources: Vec<(String, String)> = Vec::new();
+    for st in &v.state {
+        let Some(rel) = st.path.as_deref() else { continue };
+        if let Some((text, _)) = crate::folder_link::state_text(&v, rel) {
+            sources.push((rel.to_string(), neutralize_material_markers(&text)));
+        }
+    }
+    if !v.commits.is_empty() {
+        let lines: Vec<String> =
+            v.commits.iter().map(|c| format!("{} {}", format_pack_time(c.at), neutralize_material_markers(&c.title))).collect();
+        sources.push(("commits".into(), lines.join("\n")));
+    }
+    if !v.changes.is_empty() {
+        let lines: Vec<String> = v.changes.iter().take(100).map(|c| format!("{} {}", c.kind, c.path)).collect();
+        sources.push(("changes".into(), lines.join("\n")));
+    }
+    // 挪进归档文件夹的项目文件（DISCOVERED-20261025-4）：给模型一条线索。
+    let archived: Vec<String> = {
+        let mut stmt = conn
+            .prepare("SELECT label, target FROM attachments WHERE thread_id = ?1 AND superseded_by IS NULL")
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map([thread_id], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))
+            .map_err(|e| e.to_string())?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| e.to_string())?;
+        rows.into_iter()
+            .filter(|(_, target)| {
+                target.split(['/', '\\']).any(|c| {
+                    let c = c.to_lowercase();
+                    c == "archive" || c == "archives" || c == "archived" || c.contains("归档")
+                })
+            })
+            .map(|(label, target)| if label.trim().is_empty() { target } else { format!("{label} ({target})") })
+            .collect()
+    };
+    let mut items: Vec<(String, String, bool)> =
+        standing_follow_up_lines(&conn, thread_id)?.into_iter().map(|(id, text)| (id, text, true)).collect();
+    items.extend(open_follow_up_questions(&conn, thread_id)?.into_iter().map(|(id, text, _)| (id, text, false)));
+    let summary_by_user = summary.as_deref().is_some_and(|x| !x.trim().is_empty()) && summary_source.as_deref() != Some("mcp");
+
+    // 仓库那一份和项目的框架先拼好，剩下的额度给 pack。
+    let mut repo = t!(
+        "# 仓库现在的样子({path};上次对过:{at})\n",
+        "# The repository now ({path}; last checked against it: {at})\n",
+        path = v.path,
+        at = format_pack_time(v.synced_at)
+    );
+    for (name, text) in &sources {
+        let head = match name.as_str() {
+            "commits" => t!("## 上次对过之后的提交标题(from 写 commits)", "## Commit titles since the last check (from = commits)").to_string(),
+            "changes" => t!("## 上次对过之后改动过的文件(from 写 changes)", "## Files changed since the last check (from = changes)").to_string(),
+            rel => t!("## 现状文件 {rel}(from 写 {rel})", "## State file {rel} (from = {rel})", rel = rel),
+        };
+        repo.push_str(&format!("\n{head}\n{text}\n"));
+    }
+    if !archived.is_empty() {
+        repo.push_str(&t!(
+            "\n## 这个项目挂着的文件里,现在在归档文件夹里的(只是线索)\n",
+            "\n## Files of this project that now sit in an archive folder (a clue only)\n"
+        ));
+        for a in &archived {
+            repo.push_str(&format!("- {a}\n"));
+        }
+    }
+    let mut head = t!("# 项目〈{title}〉\n", "# Project \u{2039}{title}\u{203a}\n", title = title);
+    match summary.as_deref().map(str::trim).filter(|x| !x.is_empty()) {
+        Some(sm) => head.push_str(&if summary_by_user {
+            t!("## 摘要(用户自己写的 —— 不提新摘要)\n{sm}\n", "## Summary (written by the user \u{2014} do not propose a new one)\n{sm}\n", sm = sm)
+        } else {
+            t!("## 摘要(AI 写的)\n{sm}\n", "## Summary (written by an AI)\n{sm}\n", sm = sm)
+        }),
+        None => head.push_str(&t!("## 摘要\n(还没有)\n", "## Summary\n(none yet)\n")),
+    }
+    if !items.is_empty() {
+        head.push_str(&t!("\n## 在跟进的\n", "\n## Lines it follows up\n"));
+        for (id, text, standing) in &items {
+            let kind = if *standing { t!("永久", "standing") } else { t!("单次", "one-off") };
+            head.push_str(&format!("- {text}({kind};item_id: {id})\n"));
+        }
+    }
+    head.push_str(&t!("\n## Spool 里的记录\n", "\n## The record in Spool\n"));
+    let system = repo_check_system();
+    let fixed = system.chars().count() + head.chars().count() + repo.chars().count() + 200;
+    if fixed >= cap {
+        return Err(t!(
+            "〈{title}〉要发的仓库那一份就有 {n} 字,超过了这条路的上限 {cap} 字,没发。可以少选几份现状文件再试。",
+            "The repository side of \u{2039}{title}\u{203a} alone is {n} characters, over this road's limit of {cap}; nothing was sent. Try with fewer state files.",
+            n = fixed,
+            cap = cap
+        ));
+    }
+    let built = build_pack(&conn, thread_id, "all")?;
+    let room = (cap - fixed) as i64;
+    let pack = if built.text.chars().count() as i64 <= room {
+        built.text.clone()
+    } else {
+        budgeted_pack(&built, room).map(|(t, _)| t).ok_or_else(|| {
+            t!(
+                "〈{title}〉的记录放不进这条路的上限({cap} 字),没发。",
+                "\u{2039}{title}\u{203a}'s record does not fit this road's limit ({cap} characters); nothing was sent.",
+                cap = cap
+            )
+        })?
+    };
+    let user = fenced_material(&format!("{head}{pack}\n\n{repo}"));
+    Ok(RepoCheckMaterial { system, user, pack, sources, items, summary_by_user, workspace_id: v.workspace_id.clone() })
+}
+
 pub fn stale_ws_messages_for_api(packs: &[(String, String)]) -> (String, String) {
     let system = STALE_WS_SYSTEM
         .replace("{rule}", material_rule())
@@ -12435,6 +12663,32 @@ fn follow_up_brief_prompt_text(title: &str, pack: &str) -> String {
 // by the run: they come back as a list (`follow_up_review_of`) that the run card shows with a button per entry.
 const FOLLOW_UP_RECHECK_MAX: usize = 5;
 
+/// P16-4 (DISCOVERED-20261030-4 甲, Ocean 11-09 第 276 条): a follow-up of a project linked to a folder reads the
+/// folder before it goes out — the weekly run no longer waits for 「已经对过了」, so this is what keeps it from searching
+/// on a premise the repository dropped (DISCOVERED-20261025-3). `None` when the project is not linked, or the
+/// folder cannot be found. The text of the state files (each capped as get_folder_status caps it) and the commit
+/// titles since the last sync, markers neutralised — for the API road, which has no tools to read it with.
+fn follow_up_folder_state(conn: &Connection, thread_id: &str) -> Option<String> {
+    let v = crate::folder_link::view(conn, thread_id, false, true).ok()??;
+    if !matches!(v.location, "in_place" | "moved") {
+        return None;
+    }
+    let mut out = String::new();
+    for st in &v.state {
+        let Some(rel) = st.path.as_deref() else { continue };
+        if let Some((text, _)) = crate::folder_link::state_text(&v, rel) {
+            out.push_str(&format!("\n## {rel}\n{}\n", neutralize_material_markers(&text)));
+        }
+    }
+    if !v.commits.is_empty() {
+        out.push_str(&t!("\n## 上次对过之后的提交标题\n", "\n## Commit titles since the last check\n"));
+        for c in &v.commits {
+            out.push_str(&format!("- {} {}\n", format_pack_time(c.at), neutralize_material_markers(&c.title)));
+        }
+    }
+    Some(out)
+}
+
 /// The blocks whose recheck date has passed, oldest due first, at most `FOLLOW_UP_RECHECK_MAX`:
 /// (seq, head, source_url, recheck_after).
 fn overdue_recheck_blocks(conn: &Connection, thread_id: &str, now: i64) -> Result<Vec<(i64, String, Option<String>, i64)>, String> {
@@ -12686,6 +12940,17 @@ fn follow_up_targets_of(conn: &Connection, id: &str, title: &str, headless: bool
              **suggest_follow_up_item** — it waits on the review screen and takes effect only when the \
              user approves it. At most two swaps per run."
         ));
+        // P16-4 (第 276 条): a linked project's run reads the folder before it searches.
+        if crate::folder_link::view(conn, id, false, false).ok().flatten().is_some() {
+            out.push_str(&t!(
+                "\n\n## 这个项目连着文件夹\n出去查之前,先调 get_folder_status 读它的现状文件。清单里有一条要查的东西,\
+                 仓库里已经写着不做了、换了方向或者做完了,就**别**去网上查它:写进 review,verdict \"suggest_close\",\
+                 why 一句话说仓库里哪份文件怎么写的。",
+                "\n\n## This project is linked to a folder\nBefore searching, call get_folder_status and read its state files. \
+                 If a line on the list goes out to check something the repository now says is dropped, changed or done, do \
+                 NOT search for it: put it in review, verdict \"suggest_close\", why = one sentence on which file says so and how."
+            ));
+        }
         // P16-3: the overdue blocks, and the one place the two new kinds of answer go.
         out.push_str(&recheck_section(&overdue_recheck_blocks(conn, id, now_ms())?));
         out.push_str(&t!(
@@ -12930,9 +13195,21 @@ pub(crate) fn follow_up_messages_for_api(thread_id: &str) -> Result<(String, Str
     let now = now_ms();
     let seen = follow_up_seen_block(&conn, thread_id, now);
     let material = fenced_material(&text);
+    // P16-4 (第 276 条): a linked project's folder, read before going out — this road has no tools to read it with.
+    let folder = match follow_up_folder_state(&conn, thread_id) {
+        Some(state) => t!(
+            "\n\n# 这个项目连着的文件夹现在的样子\n清单里有一条要查的东西,下面这几份里已经写着不做了、换了方向或者做完了,就**别**去查它:\
+             放进 review,verdict 写 \"suggest_close\",why 一句话说哪份文件怎么写的。\n{state}",
+            "\n\n# The folder this project is linked to, as it is now\nIf a line on the list goes out to check something these \
+             files now say is dropped, changed or done, do NOT search for it: put it in review, verdict \"suggest_close\", \
+             why = one sentence on which file says so and how.\n{state}",
+            state = fenced_material(&state)
+        ),
+        None => String::new(),
+    };
     let user = t!(
-        "# 用户在跟进的(这才是你的搜索规则)\n{targets}\n\n# 这个项目现在的样子\n{material}{seen}",
-        "# What the user is watching (these are your search rules)\n{targets}\n\n# What the project looks like now\n{material}{seen}"
+        "# 用户在跟进的(这才是你的搜索规则)\n{targets}\n\n# 这个项目现在的样子\n{material}{seen}{folder}",
+        "# What the user is watching (these are your search rules)\n{targets}\n\n# What the project looks like now\n{material}{seen}{folder}"
     );
     Ok((title.clone(), follow_up_api_system(&title, &format_pack_date(now)), user))
 }
@@ -19961,6 +20238,39 @@ mod tests {
         // The routing text names the trigger, in both languages.
         assert!(OPENERS.contains("帮我改一版") && OPENERS.contains("save the new version to my Desktop"));
         assert!(INSTRUCTION_BODY.contains("DELIVERING") && INSTRUCTION_BODY.contains("propose_replace_file"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // P16-4: what is never sent — a finished project, a folder Spool cannot find, a project that is not linked, a private
+    // one (it does not exist in the AI's view) — each said in words.
+    #[test]
+    fn a_repo_check_is_not_sent_for_what_it_must_not_read() {
+        let _home = crate::home_lock();
+        let dir = std::env::temp_dir().join(format!("spool-p16-4-{}", std::process::id()));
+        canary_library(&dir, true);
+        TEST_DATA_DIR.with(|d| *d.borrow_mut() = Some(dir.clone()));
+        store_lang(Lang::En);
+        // pubGarden's workspace is linked to a folder that is not on this disk.
+        let lost = repo_check_material("pubGarden", REPO_CHECK_API_CAP).err().unwrap();
+        assert!(lost.contains("cannot find the folder"), "{lost}");
+        let conn = Connection::open(dir.join("spool.db")).unwrap();
+        conn.execute_batch(
+            "INSERT INTO workspaces (id, title, sort_order, created_at, updated_at) VALUES ('wsLone', 'Lone', 9, 1, 1);
+             INSERT INTO threads (id, workspace_id, title, status, created_at, updated_at)
+               VALUES ('loneT', 'wsLone', 'Lone project', 'active', 1, 1);
+             UPDATE threads SET status = 'done' WHERE id = 'pubGarden';",
+        )
+        .unwrap();
+        drop(conn);
+        let done = repo_check_material("pubGarden", REPO_CHECK_API_CAP).err().unwrap();
+        assert!(done.contains("marked finished"), "{done}");
+        let unlinked = repo_check_material("loneT", REPO_CHECK_API_CAP).err().unwrap();
+        assert!(unlinked.contains("not linked"), "{unlinked}");
+        let private = repo_check_material("PRIVthread1", REPO_CHECK_API_CAP).err().unwrap();
+        assert_eq!(private, no_such_thread());
+        // 真跑（11-10）第 3 次 Codex 抄成了显示出来的字（丢了 `**`、链接），五条全被逐字闸挡下：提示词说明要连记号一起抄。
+        assert!(repo_check_system().contains("Markdown marks"));
+        TEST_DATA_DIR.with(|d| *d.borrow_mut() = None);
         let _ = std::fs::remove_dir_all(&dir);
     }
 

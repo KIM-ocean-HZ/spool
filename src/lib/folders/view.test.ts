@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { defaultPicks, lineDiff, shortRel, stateTag, withoutAhead } from './view';
+import { defaultPicks, lineDiff, shortRel, stateTag } from './view';
 
 describe('folder view helpers (P9Y)', () => {
   it('pre-ticks the recommended files, three at most, in order', () => {
@@ -33,9 +33,4 @@ describe('folder view helpers (P9Y)', () => {
     expect(lineDiff('x', 'x\ny').map((l) => l.kind)).toEqual(['same', 'add']);
   });
 
-  it('keeps a project whose folder moved ahead out of the automatic follow-up', () => {
-    const list = [{ id: 't1' }, { id: 't2' }];
-    expect(withoutAhead(list, ['t1'])).toEqual([{ id: 't2' }]);
-    expect(withoutAhead(list, [])).toBe(list);
-  });
 });

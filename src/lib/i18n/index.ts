@@ -1489,6 +1489,47 @@ const EN: Record<string, string> = {
   '标成已核对（{date} 再查）': 'Mark as checked (again on {date})',
   '关掉了这条跟进，按 ⌘Z 撤回': 'Closed that follow-up line. ⌘Z to undo',
   '标成已核对了，按 ⌘Z 撤回': 'Marked as checked. ⌘Z to undo',
+  // P16-4: checking a project against its linked repository (the 过期检测 tab, the folder card).
+  '指的那一块不在': 'the block it names is not there',
+  '旧块里找不到它引的那句': 'its quote is not in the old block',
+  '仓库里没有它说的那一份': 'the repository has no such file',
+  '仓库那一份里找不到它引的那句': 'its quote is not in that repository file',
+  '跟进清单里没有这一行': 'that line is not on the follow-up list',
+  '摘要是你自己写的，不换': 'you wrote the summary yourself, so it stays',
+  '没说为什么': 'no reason given',
+  '提交标题': 'commit titles',
+  '改动的文件': 'changed files',
+  '对照仓库': 'Check against the repository',
+  '把这个项目和它连着的文件夹现在的样子对一遍，找出被仓库推翻的块、前提没了的跟进、对不上的摘要。点了才生效。':
+    'Compare this project with its linked folder as it is now: blocks the repository overturned, follow-ups whose premise is gone, a summary that no longer fits. Nothing changes until you click.',
+  '再对一遍': 'Check again',
+  '拿仓库对一遍': 'Check against the repository',
+  '正在拿仓库对照…': 'Checking against the repository…',
+  '没跑成：{msg}': 'It did not run: {msg}',
+  '仓库和 Spool 里的对得上，记成对过了。': 'The repository and Spool agree — recorded as in sync.',
+  '#{n} 被仓库推翻了': '#{n} was overturned by the repository',
+  '旧的：「{q}」': 'Before: “{q}”',
+  '仓库（{from}）：「{q}」': 'Repository ({from}): “{q}”',
+  '已更正一处': 'Corrected one point',
+  '已整条作废': 'Retired',
+  '没动': 'Left as it was',
+  '整条作废': 'Retire it',
+  '这条跟进的前提没了：{line}': 'This follow-up’s premise is gone: {line}',
+  '已关掉': 'Closed',
+  '留着了': 'Kept',
+  '摘要可以换成：{text}': 'The summary could read: {text}',
+  '已换上': 'Replaced',
+  '没换': 'Not replaced',
+  '换成这句': 'Use this',
+  '另有 {n} 条原话对不上，没摆出来': '{n} more whose quotes did not match, not shown',
+  '都处理完了，记成对过了。': 'All dealt with — recorded as in sync.',
+  '把这个项目和文件夹现在的样子对一遍，结果在「过期检测」页签里，点了才生效':
+    'Compare this project with the folder as it is now. The results are in the Out-of-date check tab; nothing changes until you click.',
+  '正在对照…': 'Checking…',
+  '仓库里的「{name}」现在写着：\n\n{quote}': 'The repository’s “{name}” now says:\n\n{quote}',
+  '仓库 · {name}': 'Repository · {name}',
+  '第 {n} 块已经不在了，这一条做不了。': 'Block #{n} is no longer there, so this one cannot be done.',
+  '{from} 那一块已经不在了，这一条做不了。': 'Block {from} is no longer there, so this one cannot be done.',
   '这家的 key 不能联网搜，换一家或用本机 CLI。': 'This vendor\u2019s key cannot search the web \u2014 use another vendor or the local CLI.',
   '夜里跑，你不用守在电脑前，早上起来核对就行。': 'It runs overnight \u2014 no need to sit there; check the drafts in the morning.',
   '接口地址': 'Endpoint',
@@ -2014,12 +2055,6 @@ const EN: Record<string, string> = {
     'Spool’s section is no longer in SPOOL.md.',
   '重新写一份':
     'Write it again',
-  '记下了：从现在起再看改动':
-    'Noted: changes are counted from now on',
-  '仓库里的新情况已经记进 Spool 了：从现在起重新算改动':
-    'What is new in the folder is in Spool now: count changes from here',
-  '已经对过了':
-    'In sync now',
   '改现状文件':
     'Change state files',
   '设为主项目':
@@ -2146,10 +2181,6 @@ const EN: Record<string, string> = {
     'Lines with − are what the file says now (your edit); lines with + are what Spool would write. The old version is backed up before it is replaced.',
   '这个文件挂上之后改过，Spool 已经重新读了它的文字。点开这个文件看过之后，这个标记就不再显示。':
     'This file changed after it was attached; Spool has read its text again. Once you open the file, this mark goes away.',
-  '每周自动查 · 连着的文件夹改了现状文件，先停着；点「已经对过了」就恢复':
-    'Searches weekly · the linked folder changed a state file, so it is waiting; press “In sync now” to resume',
-  '这个项目连着的文件夹在上次同步之后改了现状文件，自动查先停着，免得拿已经变了的计划去查。在右栏点「已经对过了」就恢复。':
-    'This project’s linked folder changed a state file since the last sync, so the weekly search is waiting rather than searching on a plan that has changed. Press “In sync now” in the right rail to resume.',
   '那个位置上已经没有这个文件夹了':
     'That folder is no longer there',
   '现状文件最多选 {n} 份':

@@ -1781,6 +1781,247 @@ pub async fn stale_scan_ws_via_api(
 }
 
 // ---------------------------------------------------------------------------------------
+// P16-4 —— 对照仓库（材料和提示词在 `mcp.rs` `repo_check_material`）。和过期检测同一把锁、同一个 `ask_cli`
+// （不给工具、不连 MCP）/ 同一个 sidecar 请求；回来的东西过一道逐字闸，结果只给界面，⛔ 一样都不写库。
+// ---------------------------------------------------------------------------------------
+
+/// 被仓库推翻的一块。`from` = 新说法出自哪一份（现状文件的相对路径 / "commits" / "changes" / "#15"）。
+#[derive(serde::Serialize, Debug, Clone, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct RepoBlock {
+    pub stale_seq: i64,
+    /// "corrects" | "supersedes"
+    pub kind: String,
+    pub why: String,
+    pub quote_stale: String,
+    pub from: String,
+    pub quote_new: String,
+    pub retyped: bool,
+}
+
+/// 前提已经没了的一行跟进。
+#[derive(serde::Serialize, Debug, Clone, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct RepoLine {
+    pub item_id: String,
+    pub line: String,
+    pub standing: bool,
+    pub why: String,
+    pub from: String,
+    pub quote_new: String,
+}
+
+#[derive(serde::Serialize, Debug, Clone, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct RepoSummary {
+    pub text: String,
+    pub why: String,
+}
+
+/// 被闸挡掉的一条，整条带回来（和 `StaleDropped` 同一个道理：只回一个数，用户读到的是「Spool 不告诉我」）。
+#[derive(serde::Serialize, Debug, Clone, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct RepoDropped {
+    /// block | follow_up | summary
+    pub kind: &'static str,
+    pub label: String,
+    pub why: String,
+    pub quote: String,
+    /// no_block · quote_stale · no_source · quote_new · no_item · user_summary · empty
+    pub reason: &'static str,
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RepoCheckScan {
+    pub outcome: CompressOutcome,
+    pub blocks: Vec<RepoBlock>,
+    pub follow_ups: Vec<RepoLine>,
+    pub summary: Option<RepoSummary>,
+    pub dropped: Vec<RepoDropped>,
+    /// 连着的那个工作区 —— 处理完之后「对过了」推的是它的同步游标。
+    pub workspace_id: String,
+}
+
+fn gate_repo_check(raw: &str, m: &crate::mcp::RepoCheckMaterial) -> (Vec<RepoBlock>, Vec<RepoLine>, Option<RepoSummary>, Vec<RepoDropped>) {
+    let blocks_by_seq = blocks_of(&m.pack);
+    let t = raw.trim();
+    let parsed: serde_json::Value = match (t.find('{'), t.rfind('}')) {
+        (Some(a), Some(b)) if b > a => serde_json::from_str(&t[a..=b]).unwrap_or_default(),
+        _ => serde_json::Value::Null,
+    };
+    let list = |k: &str| parsed.get(k).and_then(serde_json::Value::as_array).cloned().unwrap_or_default();
+    let ok = |q: &Quoted| matches!(q, Quoted::Verbatim | Quoted::Retyped);
+    // 「新的一方」的原文：一份现状文件（按路径；只写了文件名也认）、提交标题、改动列表，或者项目里另一块。
+    let source_text = |from: &str| -> Option<String> {
+        let from = from.trim();
+        if let Some(seq) = from.strip_prefix('#').and_then(|n| n.trim().parse::<i64>().ok()) {
+            return blocks_by_seq.get(&seq).cloned();
+        }
+        m.sources
+            .iter()
+            .find(|(name, _)| name == from)
+            .or_else(|| {
+                m.sources.iter().find(|(name, _)| {
+                    std::path::Path::new(name).file_name().and_then(|f| f.to_str()) == Some(from)
+                })
+            })
+            .map(|(_, text)| text.clone())
+    };
+    let (mut out_blocks, mut out_lines, mut dropped) = (Vec::new(), Vec::new(), Vec::new());
+    let mut seen_blocks = std::collections::HashSet::new();
+    for item in list("blocks") {
+        let s = |k: &str| item.get(k).and_then(serde_json::Value::as_str).unwrap_or_default().to_string();
+        // ⛔ 引文一个字符都不动（`gate_proposals` 那段话）；只有 why 给人读，才 trim。
+        let (stale, why, qs, from, qn) = (s("stale"), s("why").trim().to_string(), s("quote_stale"), s("from").trim().to_string(), s("quote_new"));
+        let kind = if s("kind").trim() == "supersedes" { "supersedes" } else { "corrects" }.to_string();
+        let drop = |reason: &'static str| RepoDropped { kind: "block", label: stale.clone(), why: why.clone(), quote: qs.clone(), reason };
+        let Some(seq) = stale.trim().trim_start_matches('#').trim().parse::<i64>().ok() else {
+            dropped.push(drop("no_block"));
+            continue;
+        };
+        let Some(old_text) = blocks_by_seq.get(&seq) else {
+            dropped.push(drop("no_block"));
+            continue;
+        };
+        if why.is_empty() {
+            dropped.push(drop("empty"));
+            continue;
+        }
+        let a = locate(&qs, old_text);
+        if !ok(&a) {
+            dropped.push(drop("quote_stale"));
+            continue;
+        }
+        let Some(new_text) = source_text(&from) else {
+            dropped.push(drop("no_source"));
+            continue;
+        };
+        let c = locate(&qn, &new_text);
+        if !ok(&c) {
+            dropped.push(drop("quote_new"));
+            continue;
+        }
+        if !seen_blocks.insert(seq) {
+            continue;
+        }
+        out_blocks.push(RepoBlock {
+            stale_seq: seq,
+            kind,
+            why,
+            quote_stale: qs,
+            from,
+            quote_new: qn,
+            retyped: a == Quoted::Retyped || c == Quoted::Retyped,
+        });
+    }
+    let mut seen_lines = std::collections::HashSet::new();
+    for item in list("follow_ups") {
+        let s = |k: &str| item.get(k).and_then(serde_json::Value::as_str).unwrap_or_default().to_string();
+        let (id, why, from, qn) = (s("item_id").trim().to_string(), s("why").trim().to_string(), s("from").trim().to_string(), s("quote_new"));
+        let drop = |reason: &'static str| RepoDropped { kind: "follow_up", label: id.clone(), why: why.clone(), quote: qn.clone(), reason };
+        let Some((_, line, standing)) = m.items.iter().find(|(i, _, _)| *i == id) else {
+            dropped.push(drop("no_item"));
+            continue;
+        };
+        if why.is_empty() {
+            dropped.push(drop("empty"));
+            continue;
+        }
+        let Some(new_text) = source_text(&from) else {
+            dropped.push(drop("no_source"));
+            continue;
+        };
+        if !ok(&locate(&qn, &new_text)) {
+            dropped.push(drop("quote_new"));
+            continue;
+        }
+        if !seen_lines.insert(id.clone()) {
+            continue;
+        }
+        out_lines.push(RepoLine { item_id: id.clone(), line: line.clone(), standing: *standing, why, from, quote_new: qn });
+    }
+    let summary = parsed.get("summary").filter(|v| v.is_object()).and_then(|v| {
+        let text = v.get("text").and_then(serde_json::Value::as_str).unwrap_or_default().trim().to_string();
+        let why = v.get("why").and_then(serde_json::Value::as_str).unwrap_or_default().trim().to_string();
+        if m.summary_by_user {
+            dropped.push(RepoDropped { kind: "summary", label: String::new(), why: why.clone(), quote: text.clone(), reason: "user_summary" });
+            return None;
+        }
+        if text.is_empty() {
+            return None;
+        }
+        Some(RepoSummary { text, why })
+    });
+    (out_blocks, out_lines, summary, dropped)
+}
+
+fn repo_scan(outcome: CompressOutcome, m: &crate::mcp::RepoCheckMaterial) -> RepoCheckScan {
+    let (blocks, follow_ups, summary, dropped) =
+        if outcome.ok { gate_repo_check(&outcome.text, m) } else { (Vec::new(), Vec::new(), None, Vec::new()) };
+    RepoCheckScan { outcome, blocks, follow_ups, summary, dropped, workspace_id: m.workspace_id.clone() }
+}
+
+/// P16-4 对照仓库，本机 CLI 那条路（不给工具、不连 MCP）。不发的几种（已完成、没连、找不到文件夹、超上限）是 Err。
+#[tauri::command]
+pub async fn repo_check_via_cli(
+    app: tauri::AppHandle,
+    thread_id: String,
+    timeout_secs: u64,
+    cli: CliRoute,
+) -> Result<RepoCheckScan, String> {
+    if RUNNING.swap(true, Ordering::SeqCst) {
+        return Err("a run is already in flight".into());
+    }
+    let out = tauri::async_runtime::spawn_blocking(move || {
+        if let Ok(dir) = tauri::Manager::path(&app).app_config_dir() {
+            crate::mcp::refresh_lang(&dir);
+        }
+        let m = crate::mcp::repo_check_material(&thread_id, crate::mcp::REPO_CHECK_CLI_CAP)?;
+        let outcome = ask_cli(&cli, &m.system, &m.user, timeout_secs);
+        Ok(repo_scan(outcome, &m))
+    })
+    .await;
+    RUNNING.store(false, Ordering::SeqCst);
+    out.map_err(|e| e.to_string())?
+}
+
+/// P16-4 对照仓库，API 那条路（一发，和过期检测同一个请求，只换了提示词和材料）。
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub async fn repo_check_via_api(
+    app: tauri::AppHandle,
+    thread_id: String,
+    base_url: String,
+    api_key: String,
+    model: String,
+    reasoning: String,
+    wire: Option<ApiWire>,
+    timeout_secs: u64,
+) -> Result<RepoCheckScan, String> {
+    if RUNNING.swap(true, Ordering::SeqCst) {
+        return Err("a run is already in flight".into());
+    }
+    let wire = ApiWire::or_legacy(wire);
+    let out = tauri::async_runtime::spawn_blocking(move || {
+        if let Ok(dir) = tauri::Manager::path(&app).app_config_dir() {
+            crate::mcp::refresh_lang(&dir);
+        }
+        let m = crate::mcp::repo_check_material(&thread_id, crate::mcp::REPO_CHECK_API_CAP)?;
+        let bin = sidecar_path()?;
+        let timeout_secs = clamp_timeout(timeout_secs);
+        let request = sidecar_request(&base_url, &api_key, &model, &m.system, &m.user, &reasoning, &wire, timeout_secs);
+        let payload = serde_json::to_vec(&request).map_err(|e| e.to_string())?;
+        let outcome = spawn_sidecar_with(&bin, payload, timeout_secs, Some(app.clone()));
+        Ok(repo_scan(outcome, &m))
+    })
+    .await;
+    RUNNING.store(false, Ordering::SeqCst);
+    *CHILD.lock().unwrap() = None;
+    out.map_err(|e| e.to_string())?
+}
+
+// ---------------------------------------------------------------------------------------
 // 余额 —— 2026-08-26，Ocean：「能不能拿到用户的 api 剩余额度，目前使用 api 摩擦还是比较大，
 // 用户需要反复查看余额，但是尽可能保住不出网叙事。」
 //
@@ -2265,6 +2506,40 @@ mod p9u_real_runs {
         assert!(c.ok && s.ok, "both runs should come back");
     }
 
+    /// P16-4: one repo check on a copy whose linked folder points at a clone of the repository. `SPOOL_P16_PROJECT` =
+    /// the project's title, `SPOOL_P16_ROAD` = cli | api (api: the OpenAI key and model below), `SPOOL_P16_OUT` = where
+    /// the material, the raw answer and the gated result go.
+    #[test]
+    #[ignore = "real repo check (local Codex or OpenAI) against a library copy; see the header"]
+    fn real_repo_check_on_a_copy() {
+        assert_on_a_copy();
+        let out = std::path::PathBuf::from(env("SPOOL_P16_OUT"));
+        std::fs::create_dir_all(&out).unwrap();
+        let id = crate::mcp::engine_project_id(&env("SPOOL_P16_PROJECT")).unwrap();
+        let road = env("SPOOL_P16_ROAD");
+        let cap = if road == "cli" { crate::mcp::REPO_CHECK_CLI_CAP } else { crate::mcp::REPO_CHECK_API_CAP };
+        let m = crate::mcp::repo_check_material(&id, cap).unwrap();
+        std::fs::write(out.join("system.txt"), &m.system).unwrap();
+        std::fs::write(out.join("user.txt"), &m.user).unwrap();
+        println!("material: system {} + user {} chars", m.system.chars().count(), m.user.chars().count());
+        let outcome = if road == "cli" {
+            let cli = CliRoute { engine: Some("codex".into()), model: None, effort: None, manual_path: None };
+            ask_cli(&cli, &m.system, &m.user, 900)
+        } else {
+            let key = env("SPOOL_P9U_OPENAI_KEY");
+            let wire = ApiWire { protocol: "openai".into(), temperature: None, max_output_tokens: None };
+            let request = sidecar_request("https://api.openai.com/v1", &key, &env("SPOOL_P9U_MODEL"), &m.system, &m.user, "", &wire, 600);
+            let o = spawn_sidecar(&sidecar_path().unwrap(), serde_json::to_vec(&request).unwrap(), 600);
+            assert!(!o.text.contains(&key));
+            o
+        };
+        println!("run: ok={} kind={:?} msg={:?} model={:?} ms={} in={} out={}", outcome.ok, outcome.kind, outcome.message, outcome.model, outcome.ms, outcome.input_tokens, outcome.output_tokens);
+        std::fs::write(out.join("raw.txt"), &outcome.text).unwrap();
+        let scan = repo_scan(outcome, &m);
+        std::fs::write(out.join("scan.json"), serde_json::to_string_pretty(&scan).unwrap()).unwrap();
+        println!("gated: {} blocks, {} follow-ups, summary {}, dropped {}", scan.blocks.len(), scan.follow_ups.len(), scan.summary.is_some(), scan.dropped.len());
+    }
+
     #[test]
     #[ignore = "real OpenAI web search against a library copy; see the header"]
     fn real_api_follow_up_on_a_copy() {
@@ -2292,6 +2567,62 @@ mod p9u_real_runs {
         println!("--- answer ---\n{}\n---", o.text);
         let filed = crate::mcp::apply_follow_up_answer(&thread, &o.text, "OpenAI").unwrap();
         println!("filed: {filed:?}");
+    }
+}
+
+#[cfg(test)]
+mod repo_check_tests {
+    use super::*;
+
+    // P16-4: the gate over a repo check's answer. Both quotes verbatim or the item goes, whole; the new side can be a
+    // state file (by path, or by its file name alone), the commit titles, the changed-file list, or another block;
+    // a line must be one the project follows up; a summary the user wrote is never replaced.
+    fn material(summary_by_user: bool) -> crate::mcp::RepoCheckMaterial {
+        crate::mcp::RepoCheckMaterial {
+            system: String::new(),
+            user: String::new(),
+            pack: "# Project Context: Flux\n\n## Full Record (chronological)\n\n\
+                   #3 [2026-10-02 09:00] 训练计划：用学院 GPU 跑 RFT，两种候选选择策略都试。\n\
+                   #9 [2026-10-21 18:00] 改成本地 LoRA。\n"
+                .into(),
+            sources: vec![
+                ("docs/PLAN.md".into(), "RFT 不做了，改成本地 LoRA 微调。".into()),
+                ("commits".into(), "2026-10-21 18:00 drop RFT pipeline".into()),
+            ],
+            items: vec![("fu1".into(), "学院 GPU 排队要多久".into(), false), ("fu2".into(), "LoRA 新论文".into(), true)],
+            summary_by_user,
+            workspace_id: "w1".into(),
+        }
+    }
+
+    #[test]
+    fn a_repo_check_answer_keeps_only_what_both_sides_quote() {
+        let raw = r##"{"blocks":[
+            {"stale":"#3","kind":"supersedes","why":"仓库说不做 RFT 了","quote_stale":"用学院 GPU 跑 RFT","from":"PLAN.md","quote_new":"RFT 不做了"},
+            {"stale":"#3","why":"重复的一条","quote_stale":"用学院 GPU 跑 RFT","from":"commits","quote_new":"drop RFT pipeline"},
+            {"stale":"#9","why":"编出来的原话","quote_stale":"改成云端训练","from":"docs/PLAN.md","quote_new":"RFT 不做了"},
+            {"stale":"#3","why":"新说法对不上","quote_stale":"两种候选选择策略都试","from":"docs/PLAN.md","quote_new":"改成云上训练"},
+            {"stale":"#3","why":"没有这份","quote_stale":"两种候选选择策略都试","from":"README.md","quote_new":"RFT 不做了"},
+            {"stale":"#40","why":"没有这块","quote_stale":"x","from":"commits","quote_new":"drop RFT pipeline"}],
+          "follow_ups":[
+            {"item_id":"fu1","why":"不用学院 GPU 了","from":"commits","quote_new":"drop RFT pipeline"},
+            {"item_id":"fu2","why":"另一块也说了","from":"#9","quote_new":"改成本地 LoRA"},
+            {"item_id":"nope","why":"编的 id","from":"commits","quote_new":"drop RFT pipeline"}],
+          "summary":{"text":"Flux 现在用本地 LoRA 微调","why":"摘要还写着 RFT"}}"##;
+        let (blocks, lines, summary, dropped) = gate_repo_check(raw, &material(false));
+        assert_eq!(blocks.len(), 1, "{blocks:?}");
+        assert_eq!((blocks[0].stale_seq, blocks[0].kind.as_str(), blocks[0].from.as_str()), (3, "supersedes", "PLAN.md"));
+        assert_eq!(lines.iter().map(|l| (l.item_id.as_str(), l.standing)).collect::<Vec<_>>(), vec![("fu1", false), ("fu2", true)]);
+        assert_eq!(summary.map(|s| s.text), Some("Flux 现在用本地 LoRA 微调".into()));
+        let reasons: Vec<&str> = dropped.iter().map(|d| d.reason).collect();
+        assert_eq!(reasons, vec!["quote_stale", "quote_new", "no_source", "no_block", "no_item"], "{dropped:?}");
+        // A summary the user wrote is never replaced; it is said why, not silently dropped.
+        let (_, _, summary, dropped) = gate_repo_check(raw, &material(true));
+        assert!(summary.is_none());
+        assert!(dropped.iter().any(|d| d.reason == "user_summary"));
+        // Nothing wrong is a normal answer.
+        let (b, l, s, d) = gate_repo_check(r#"{"blocks":[],"follow_ups":[],"summary":null}"#, &material(false));
+        assert!(b.is_empty() && l.is_empty() && s.is_none() && d.is_empty());
     }
 }
 
