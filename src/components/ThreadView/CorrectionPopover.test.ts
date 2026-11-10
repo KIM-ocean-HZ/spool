@@ -1,25 +1,28 @@
 import { describe, expect, it } from 'vitest';
-import { followSentence } from './CorrectionPopover';
+import { placePanel } from './CorrectionPopover';
 
-// P16 验收（11-10 Ocean「更正的批注会随着滑动移动，不是固定的」）：预览一直跟着它那一句，形状不变；
-// 那一句滚出时间线看得见的那一格时就藏起来，滚回来再出现。
+// P16 验收（11-10 Ocean：预览先是「随着滑动移动，不是固定的」，跟着滚之后又「上下滑动，批注会抖动」）：
+// 预览现在放进时间线的滚动区里，由浏览器和字一起滚（组件里，没法在这里测）；这里测它打开那一刻放在哪：
+// 不盖住那一句、在时间线看得见的那一格里、放不下就缩短。
 
-describe('更正的预览跟着那一句', () => {
-  const opened = { x: 100, top: 300, bottom: 320 };
-  const place = { left: 96, top: 324 };
-  const feed = { top: 80, bottom: 900 };
+describe('更正的预览放在哪', () => {
+  const feed = { left: 300, right: 1100, top: 80, bottom: 900 };
+  const panel = { width: 420, height: 200 };
 
-  it('没滚动：还在打开时的位置', () => {
-    expect(followSentence(place, opened, opened, feed)).toEqual({ left: 96, top: 324, hidden: false });
+  it('下面放得下：放在那一句下面，左边对齐那一句', () => {
+    expect(placePanel({ x: 400, top: 300, bottom: 320 }, panel, feed)).toEqual({ left: 400, top: 324, maxHeight: 200 });
   });
 
-  it('往下滚了 120：那一句上去 120，预览也上去 120', () => {
-    expect(followSentence(place, opened, { x: 100, top: 180, bottom: 200 }, feed)).toEqual({ left: 96, top: 204, hidden: false });
+  it('下面放不下、上面更宽：放到上面，不盖住那一句', () => {
+    const p = placePanel({ x: 400, top: 800, bottom: 820 }, panel, feed);
+    expect(p.top + p.maxHeight).toBeLessThanOrEqual(800 - 4);
+    expect(p.maxHeight).toBe(200);
   });
 
-  it('那一句滚出了时间线（上面或下面）：藏起来；没有可滚的那一格就不藏', () => {
-    expect(followSentence(place, opened, { x: 100, top: 40, bottom: 60 }, feed).hidden).toBe(true);
-    expect(followSentence(place, opened, { x: 100, top: 950, bottom: 970 }, feed).hidden).toBe(true);
-    expect(followSentence(place, opened, { x: 100, top: 40, bottom: 60 }, null).hidden).toBe(false);
+  it('靠右边：往左挪，整个留在时间线里；两边都窄就缩短', () => {
+    expect(placePanel({ x: 1000, top: 300, bottom: 320 }, panel, feed).left).toBe(1100 - 420 - 8);
+    const tight = placePanel({ x: 400, top: 120, bottom: 140 }, { width: 420, height: 2000 }, { ...feed, bottom: 400 });
+    expect(tight.maxHeight).toBeLessThanOrEqual(400 - 140 - 4 - 8);
+    expect(tight.top).toBe(144);
   });
 });
