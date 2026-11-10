@@ -2814,6 +2814,61 @@ mod p9u_real_runs {
         println!("gated: {} blocks, {} follow-ups, summary {}, dropped {}", scan.blocks.len(), scan.follow_ups.len(), scan.summary.is_some(), scan.dropped.len());
     }
 
+    /// P16-7: one whole-workspace stale check carrying the repository, on a copy whose linked folder points at a clone.
+    /// `SPOOL_P16_PROJECT` = the project it is started from (its workspace's open, public projects go, oldest first —
+    /// the order the GUI sends them in), `SPOOL_P16_ROAD` = cli | api, `SPOOL_P16_OUT` = where material, raw answer and
+    /// gated result go.
+    #[test]
+    #[ignore = "real whole-workspace check (local Codex or OpenAI) against a library copy; see the header"]
+    fn real_ws_repo_check_on_a_copy() {
+        assert_on_a_copy();
+        let out = std::path::PathBuf::from(env("SPOOL_P16_OUT"));
+        std::fs::create_dir_all(&out).unwrap();
+        let from = crate::mcp::engine_project_id(&env("SPOOL_P16_PROJECT")).unwrap();
+        let conn = rusqlite::Connection::open(std::path::Path::new(&env("SPOOL_DATA_DIR")).join("spool.db")).unwrap();
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, title FROM threads WHERE workspace_id = (SELECT workspace_id FROM threads WHERE id = ?1)
+                   AND deleted_at IS NULL AND status != 'done' AND private = 0 ORDER BY created_at",
+            )
+            .unwrap();
+        let threads: Vec<(String, String)> =
+            stmt.query_map([&from], |r| Ok((r.get(0)?, r.get(1)?))).unwrap().collect::<Result<_, _>>().unwrap();
+        let triples: Vec<(String, String, String)> =
+            threads.iter().map(|(id, title)| (id.clone(), title.clone(), crate::mcp::pack_text_for_test(id).unwrap())).collect();
+        let road = env("SPOOL_P16_ROAD");
+        let cap = if road == "cli" { crate::mcp::REPO_CHECK_CLI_CAP } else { crate::mcp::REPO_CHECK_API_CAP };
+        let m = crate::mcp::ws_repo_material(&triples, &from, cap).unwrap().expect("the workspace should be linked");
+        std::fs::write(out.join("system.txt"), &m.system).unwrap();
+        std::fs::write(out.join("user.txt"), &m.user).unwrap();
+        std::fs::write(out.join("projects.txt"), threads.iter().enumerate().map(|(i, (id, t))| format!("P{} {id} {t}\n", i + 1)).collect::<String>()).unwrap();
+        println!("material: system {} + user {} chars, {} projects", m.system.chars().count(), m.user.chars().count(), threads.len());
+        let outcome = if road == "cli" {
+            let cli = CliRoute { engine: Some("codex".into()), model: None, effort: None, manual_path: None };
+            ask_cli(&cli, &m.system, &m.user, 900)
+        } else {
+            // The vendor as the app sends it (vendors.ts `wireFor`): SPOOL_P16_BASE / _MODEL / _REASONING / _TEMPERATURE,
+            // the key only in SPOOL_P16_API_KEY (never written anywhere).
+            let key = env("SPOOL_P16_API_KEY");
+            let temperature = std::env::var("SPOOL_P16_TEMPERATURE").ok().and_then(|t| t.parse().ok());
+            let wire = ApiWire { protocol: "openai".into(), temperature, max_output_tokens: None };
+            let reasoning = std::env::var("SPOOL_P16_REASONING").unwrap_or_default();
+            let request = sidecar_request(&env("SPOOL_P16_BASE"), &key, &env("SPOOL_P16_MODEL"), &m.system, &m.user, &reasoning, &wire, 600);
+            let o = spawn_sidecar(&sidecar_path().unwrap(), serde_json::to_vec(&request).unwrap(), 600);
+            assert!(!o.text.contains(&key));
+            o
+        };
+        println!("run: ok={} kind={:?} msg={:?} model={:?} ms={} in={} out={}", outcome.ok, outcome.kind, outcome.message, outcome.model, outcome.ms, outcome.input_tokens, outcome.output_tokens);
+        std::fs::write(out.join("raw.txt"), &outcome.text).unwrap();
+        let texts: Vec<String> = triples.iter().map(|(_, _, p)| p.clone()).collect();
+        let scan = ws_repo_scan(outcome, &texts, &m);
+        std::fs::write(out.join("scan.json"), serde_json::to_string_pretty(&scan).unwrap()).unwrap();
+        println!(
+            "gated: {} blocks by blocks, {} by the repository, {} projects, {} follow-ups, {} summaries, dropped {} + {}",
+            scan.blocks.len(), scan.repo_blocks.len(), scan.projects.len(), scan.follow_ups.len(), scan.summaries.len(), scan.dropped.len(), scan.repo_dropped.len()
+        );
+    }
+
     #[test]
     #[ignore = "real OpenAI web search against a library copy; see the header"]
     fn real_api_follow_up_on_a_copy() {
