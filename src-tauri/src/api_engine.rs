@@ -410,17 +410,33 @@ fn spawn_sidecar(bin: &std::path::Path, payload: Vec<u8>, timeout_secs: u64) -> 
 /// 进度事件的名字。前端 `listen` 它。
 pub const PROGRESS_EVENT: &str = "compress://progress";
 
+/// The sidecar's command: its environment cleared — everything it needs arrives on stdin, and it can read no
+/// other vendor's API key lying in the user's environment — except, on Windows, `SystemRoot`.
+/// ⚠️⚠️ P16-6 (DISCOVERED-20261110-7): without `SystemRoot` a Windows process cannot resolve a host name (Winsock
+/// answers os error 11003, 「A non-recoverable error occurred during a database lookup」) — so every AI request on
+/// the API road (压缩、过期检测、周回顾、跟进、对照仓库) failed on Windows as 「could not reach」, from 08-20 on. The
+/// key and model list (`run_balance_child`) never cleared the environment, which is why Windows looked fine.
+/// Measured in the P16 VM with the installed spool-ai.exe and a fake key: empty environment → 11003;
+/// `SystemRoot` alone → the vendor's 401.
+fn sidecar_command(bin: &std::path::Path) -> Command {
+    let mut cmd = Command::new(bin);
+    cmd.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
+    cmd.env_clear();
+    #[cfg(windows)]
+    if let Some(root) = std::env::var_os("SystemRoot") {
+        cmd.env("SystemRoot", root);
+    }
+    cmd
+}
+
 fn spawn_sidecar_with(
     bin: &std::path::Path,
     payload: Vec<u8>,
     timeout_secs: u64,
     app: Option<tauri::AppHandle>,
 ) -> CompressOutcome {
-    let mut cmd = Command::new(bin);
-    cmd.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
-    // 环境清空：这个子进程要的东西全部从 stdin 进来。清掉也顺便保证它读不到
-    // 用户环境里可能存在的别的家 API key。
-    cmd.env_clear();
+    // 环境清空（Windows 留下 SystemRoot，见 `sidecar_command`）：这个子进程要的东西全部从 stdin 进来。
+    let mut cmd = sidecar_command(bin);
     #[cfg(unix)]
     {
         // 自成进程组，取消/超时能把它整棵带走——和 engine.rs 同一个做法。
@@ -2567,6 +2583,24 @@ mod p9u_real_runs {
         println!("--- answer ---\n{}\n---", o.text);
         let filed = crate::mcp::apply_follow_up_answer(&thread, &o.text, "OpenAI").unwrap();
         println!("filed: {filed:?}");
+    }
+}
+
+#[cfg(test)]
+mod sidecar_env_tests {
+    use super::*;
+
+    // P16-6 (DISCOVERED-20261110-7): the sidecar gets no environment but what the platform needs to reach the
+    // network — on Windows that is SystemRoot, and nothing else (no API key can ride in from the user's env).
+    #[test]
+    fn the_sidecar_gets_no_environment_but_what_windows_needs_to_resolve_a_name() {
+        let cmd = sidecar_command(std::path::Path::new("spool-ai"));
+        let set: Vec<String> = cmd.get_envs().filter(|(_, v)| v.is_some()).map(|(k, _)| k.to_string_lossy().into_owned()).collect();
+        if cfg!(windows) {
+            assert_eq!(set, vec!["SystemRoot".to_string()]);
+        } else {
+            assert!(set.is_empty(), "{set:?}");
+        }
     }
 }
 
