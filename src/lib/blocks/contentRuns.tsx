@@ -523,7 +523,7 @@ export function ContentRuns({
   // would break the line box it lives in.
   const sentenceAt = (el: Element) => {
     const r = el.getBoundingClientRect();
-    return { x: r.left, top: r.top, bottom: r.bottom };
+    return { x: r.left, top: r.top, bottom: r.bottom, el };
   };
   const clickable = (node: ReactNode, key: number, id: string | undefined): ReactNode =>
     onCorrectedClick ? (
