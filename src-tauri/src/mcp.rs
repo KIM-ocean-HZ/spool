@@ -11610,6 +11610,14 @@ fn stale_ws_why_rule() -> &'static str {
 // 外来文字照 P16-0：整份放在 ⟦SPOOL:MATERIAL⟧ 围栏里，围栏记号先中和。
 // ---------------------------------------------------------------------------------------
 
+/// A state file's text as material for a model: Spool's own fence markers neutralised, and line endings made `\n`.
+/// ⚠️ P16-6: a file written on Windows ends its lines with `\r\n`; a model quoting it hands back `\n`, and the verbatim
+/// gate then finds no quote in a two-line passage (the VM's link-test README, 11-10). The gate is not loosened: the
+/// text the model sees and the text the gate checks are made the same text, before either sees it.
+fn state_text_for_material(text: &str) -> String {
+    neutralize_material_markers(&text.replace("\r\n", "\n"))
+}
+
 /// 本机 CLI / API 两条路各自的发送上限（旧第 201 条：CLI 20 万字、API 12 万字），超了不发。
 pub(crate) const REPO_CHECK_CLI_CAP: usize = 200_000;
 pub(crate) const REPO_CHECK_API_CAP: usize = 120_000;
@@ -11720,7 +11728,7 @@ pub(crate) fn repo_check_material(thread_id: &str, cap: usize) -> Result<RepoChe
     for st in &v.state {
         let Some(rel) = st.path.as_deref() else { continue };
         if let Some((text, _)) = crate::folder_link::state_text(&v, rel) {
-            sources.push((rel.to_string(), neutralize_material_markers(&text)));
+            sources.push((rel.to_string(), state_text_for_material(&text)));
         }
     }
     if !v.commits.is_empty() {
@@ -12677,7 +12685,7 @@ fn follow_up_folder_state(conn: &Connection, thread_id: &str) -> Option<String> 
     for st in &v.state {
         let Some(rel) = st.path.as_deref() else { continue };
         if let Some((text, _)) = crate::folder_link::state_text(&v, rel) {
-            out.push_str(&format!("\n## {rel}\n{}\n", neutralize_material_markers(&text)));
+            out.push_str(&format!("\n## {rel}\n{}\n", state_text_for_material(&text)));
         }
     }
     if !v.commits.is_empty() {
@@ -20268,6 +20276,8 @@ mod tests {
         assert!(unlinked.contains("not linked"), "{unlinked}");
         let private = repo_check_material("PRIVthread1", REPO_CHECK_API_CAP).err().unwrap();
         assert_eq!(private, no_such_thread());
+        // P16-6: a Windows file's line endings reach the model — and the gate — as `\n`.
+        assert_eq!(state_text_for_material("# link-test\r\nP13 test folder (Windows path).\r\n"), "# link-test\nP13 test folder (Windows path).\n");
         // 真跑（11-10）第 3 次 Codex 抄成了显示出来的字（丢了 `**`、链接），五条全被逐字闸挡下：提示词说明要连记号一起抄。
         assert!(repo_check_system().contains("Markdown marks"));
         TEST_DATA_DIR.with(|d| *d.borrow_mut() = None);
