@@ -204,6 +204,15 @@ export type ReviewActionPayload =
       itemId: string;
       outcome: string | null;
       answerBlockId: string | null;
+    }
+  // P16-3: a block a follow-up rechecked and the user confirmed still holds — ⌘Z puts its old dates back.
+  | {
+      op: 'recheck_block';
+      threadId: string;
+      title: string;
+      blockId: string;
+      before: { retrievedAt: number | null; recheckAfter: number | null };
+      after: { retrievedAt: number | null; recheckAfter: number | null };
     };
 
 interface BaseEntry {

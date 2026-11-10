@@ -28,6 +28,7 @@ import {
   restoreRefFields,
   setBlockSupersession,
   editBlockContent,
+  setBlockRecheck,
 } from '@/lib/db/blocks';
 import {
   getCaptureTargetThread,
@@ -543,6 +544,11 @@ const reverseAndBuildRedo = async (
           await reopenFollowUpItem(p.itemId);
           return async () => {
             await closeFollowUpItem(p.itemId, p.outcome, p.answerBlockId);
+          };
+        case 'recheck_block':
+          await setBlockRecheck(p.blockId, p.before.retrievedAt, p.before.recheckAfter);
+          return async () => {
+            await setBlockRecheck(p.blockId, p.after.retrievedAt, p.after.recheckAfter);
           };
       }
     }

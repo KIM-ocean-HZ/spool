@@ -2861,6 +2861,10 @@ mod p10_real_runs {
             crate::engine::parse_codex_error(&events)
         );
         save(&out, "usage.json", &serde_json::to_string_pretty(&usage).unwrap());
+        // P16-3: what the app keeps of that message — the prose on the card, and the list for the user.
+        let (prose, review) = crate::mcp::split_follow_up_review(&id, &answer);
+        save(&out, "prose.txt", &prose);
+        save(&out, "review.json", &serde_json::to_string_pretty(&review).unwrap());
     }
 
     #[test]

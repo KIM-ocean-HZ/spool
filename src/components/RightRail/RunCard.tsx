@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { dateLocale, useT } from '@/lib/i18n';
 import { MarkdownContent } from '@/lib/blocks/MarkdownContent';
 import type { EngineRun } from '@/lib/db/engineRuns';
+import type { FollowUpReviewItem } from '@/lib/engine/followUpReview';
 import { ACTION_LABEL, ENGINE_LABEL, type EngineKind } from '@/stores/engineStore';
 
 // DESIGN_WORKBENCH §3.1 — one finished run, and the answer to Ocean's #6/#8.
@@ -24,6 +25,10 @@ interface Props {
    *  (跟进 files proposals; a failed run has nothing to store). */
   onStore?: (run: EngineRun) => void;
   busy?: boolean;
+  /** P16-3: a follow-up's list for the user — one decision per entry. */
+  review?: FollowUpReviewItem[];
+  /** close = close that follow-up line; confirm = mark that block as rechecked; keep = leave it as it is. */
+  onReview?: (index: number, action: 'close' | 'confirm' | 'keep') => void;
 }
 
 /** DESIGN_WORKBENCH §5 — spend, never remaining quota. Neither CLI reports how much of the
@@ -33,7 +38,7 @@ interface Props {
 const money = (usd: number | null): string | null =>
   usd === null ? null : usd < 0.01 ? '<$0.01' : `$${usd.toFixed(2)}`;
 
-export default function RunCard({ run, onDismiss, onStore, busy }: Props) {
+export default function RunCard({ run, onDismiss, onStore, busy, review = [], onReview }: Props) {
   const t = useT();
   const hasText = (run.resultText ?? '').trim().length > 0;
   // Answered cards collapse: the rail is a place to act, and a wall of resolved cards
@@ -62,7 +67,9 @@ export default function RunCard({ run, onDismiss, onStore, busy }: Props) {
           ? t('归档了 {n} 块', { n: run.blocksWritten })
           : run.proposalsQueued > 0
             ? t('提了 {n} 条待你过目', { n: run.proposalsQueued })
-            : hasText
+            : review.length > 0
+              ? t('有 {n} 条要你定', { n: review.length })
+              : hasText
               ? // ⚠️ 「有回话」 rather than 「写好了」 (2026-08-11): a run whose text is the AI
                 // explaining why it did NOT do the job is still text, and this line cannot
                 // tell the two apart. Saying which one it is was how a refusal got stored as
@@ -139,6 +146,17 @@ export default function RunCard({ run, onDismiss, onStore, busy }: Props) {
         </div>
       )}
 
+      {/* P16-3 (Ocean 11-08 #1): what the follow-up could not settle on its own — one decision each, nothing
+          applied until the user clicks, ⌘Z takes a click back. Open even when the text is folded: it is the part
+          of the card that wants an answer. */}
+      {review.length > 0 && onReview && (
+        <div className="mt-1.5 space-y-2 border-t border-line/60 pt-1.5">
+          {review.map((item, i) => (
+            <ReviewEntry key={`${item.kind}-${item.kind === 'line' ? item.itemId : item.blockId}`} item={item} busy={busy} onAct={(a) => onReview(i, a)} />
+          ))}
+        </div>
+      )}
+
       {/* The engine line. Ocean 2026-08-06: "我在使用过程中对使用了什么模型花了多少额度
           毫不知情，但这不是免费的". Model and cost sit on every card because every card is
           a thing that was paid for. */}
@@ -161,6 +179,72 @@ export default function RunCard({ run, onDismiss, onStore, busy }: Props) {
           {t('存成一块')}
         </button>
       )}
+    </div>
+  );
+}
+
+/** One entry of a follow-up's list: what it is about, the AI's one sentence, and the buttons that fit it. */
+function ReviewEntry({
+  item,
+  busy,
+  onAct,
+}: {
+  item: FollowUpReviewItem;
+  busy?: boolean;
+  onAct: (action: 'close' | 'confirm' | 'keep') => void;
+}) {
+  const t = useT();
+  const title =
+    item.kind === 'line'
+      ? item.verdict === 'suggest_close'
+        ? t('建议关掉这条跟进：{line}', { line: item.line })
+        : t('这条要你自己答：{line}', { line: item.line })
+      : item.verdict === 'still_holds'
+        ? t('#{n} 复查过了，还成立：{head}', { n: item.seq, head: item.head })
+        : item.verdict === 'changed'
+          ? t('#{n} 变了：{head}', { n: item.seq, head: item.head })
+          : t('#{n} 这次没法复查：{head}', { n: item.seq, head: item.head });
+  const basis = item.kind === 'line' ? item.evidence : item.url;
+  const button =
+    'rounded border px-2 py-0.5 text-[12px] transition-colors disabled:opacity-40';
+  return (
+    <div className="text-[13px] leading-snug">
+      <div className="text-ink">{title}</div>
+      {item.why && <div className="mt-0.5 text-[12px] text-ink-2">{item.why}</div>}
+      {basis && <div className="mt-0.5 break-all text-[12px] text-muted">{t('依据：{basis}', { basis })}</div>}
+      {item.kind === 'block' && item.verdict === 'changed' && (
+        <div className="mt-0.5 text-[12px] text-muted">{t('新的说法排在待审里，你在那里决定要不要。')}</div>
+      )}
+      <div className="mt-1 flex flex-wrap gap-1.5">
+        {item.kind === 'line' && (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => onAct('close')}
+            className={`${button} border-accent/60 text-accent enabled:hover:bg-accent/15`}
+          >
+            {t('关掉')}
+          </button>
+        )}
+        {item.kind === 'block' && item.verdict === 'still_holds' && item.nextRecheck && (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => onAct('confirm')}
+            className={`${button} border-accent/60 text-accent enabled:hover:bg-accent/15`}
+          >
+            {t('标成已核对（{date} 再查）', { date: item.nextRecheck })}
+          </button>
+        )}
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => onAct('keep')}
+          className={`${button} border-line text-muted enabled:hover:bg-paper-2 enabled:hover:text-ink`}
+        >
+          {item.kind === 'block' && item.verdict !== 'still_holds' ? t('知道了') : t('留着')}
+        </button>
+      </div>
     </div>
   );
 }

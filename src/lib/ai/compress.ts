@@ -1292,6 +1292,8 @@ export interface FollowUpFiled {
   suggested: number;
   dropped: number;
   notes: string[];
+  /** P16-3: what the user decides on the run card, as Rust checked it (raw; `parseFollowUpReview`). */
+  review?: unknown[];
 }
 
 export interface FollowUpApiOutcome {

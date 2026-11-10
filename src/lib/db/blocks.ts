@@ -732,6 +732,18 @@ export const updateBlockAnnotation = async (
   return by;
 };
 
+// P16-3 (Ocean 2026-11-09 第 274 条): the user confirmed, on a follow-up's run card, that a block past its recheck
+// date still holds — it was checked on `retrievedAt`, and is due again on `recheckAfter`. Also how ⌘Z puts the
+// old dates back. Nothing else on the block moves.
+export const setBlockRecheck = async (
+  id: string,
+  retrievedAt: number | null,
+  recheckAfter: number | null,
+): Promise<void> => {
+  const db = await getDb();
+  await db.execute('UPDATE blocks SET retrieved_at = $1, recheck_after = $2 WHERE id = $3', [retrievedAt, recheckAfter, id]);
+};
+
 export const togglePin = async (id: string): Promise<boolean> => {
   const db = await getDb();
   const rows = await db.select<{ pinned: number }[]>(

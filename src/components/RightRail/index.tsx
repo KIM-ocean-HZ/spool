@@ -12,6 +12,7 @@ import { createBlock } from "@/lib/db/blocks";
 import type { EngineRun } from "@/lib/db/engineRuns";
 import { groupAiActivity, visibleRuns } from "@/lib/engine/activity";
 import { autoFollowUpNextAt } from "@/lib/engine/followUp";
+import { closeSuggestedLine, confirmRecheck } from "@/lib/engine/followUpReviewActions";
 import { routeFor, useFollowUpRoads } from "@/lib/engine/roads";
 import { aiEntryState, canShowEngineActions } from "@/lib/engine/gate";
 import { imageLinesAsText } from "@/lib/blocks/imageLines";
@@ -96,6 +97,8 @@ export default function RightRail({ thread, onCollapse, onEditBrief }: Props) {
   const probe = useEngineStore((s) => s.probe);
   const loadRuns = useEngineStore((s) => s.loadRuns);
   const dismissRun = useEngineStore((s) => s.dismissRun);
+  const followUpReviews = useEngineStore((s) => s.followUpReviews);
+  const dropFollowUpReview = useEngineStore((s) => s.dropFollowUpReview);
 
   const mcpEnabled = useSettingsStore((s) => s.mcpEnabled);
   const mcpWriteEnabled = useSettingsStore((s) => s.mcpWriteEnabled);
@@ -184,6 +187,32 @@ export default function RightRail({ thread, onCollapse, onEditBrief }: Props) {
   // and made him ask 「是对应每个规划区一个回顾吗？」. A review is not a block; it lives in
   // `engine_runs` and is read in its own view (components/ReviewBoard), so nothing needs to be
   // guessed about where it belongs.
+  // P16-3: one decision on a follow-up card's list. The click is the only write; ⌘Z takes it back.
+  const answerReview = async (run: EngineRun, index: number, action: "close" | "confirm" | "keep"): Promise<void> => {
+    const item = followUpReviews[run.id]?.[index];
+    if (!item) return;
+    const threadId = run.threadId ?? thread?.id;
+    if (action !== "keep" && threadId) {
+      const title = thread?.id === threadId ? thread.title : "";
+      setStoring(run.id);
+      try {
+        if (action === "close" && item.kind === "line") {
+          await closeSuggestedLine(threadId, title, item);
+          toast.notice(t("关掉了这条跟进，按 ⌘Z 撤回"));
+        } else if (action === "confirm" && item.kind === "block") {
+          await confirmRecheck(threadId, title, item);
+          toast.notice(t("标成已核对了，按 ⌘Z 撤回"));
+        }
+      } catch (e) {
+        toast.error(t("这一步没做成"), e instanceof Error ? e.message : String(e));
+        return;
+      } finally {
+        setStoring(null);
+      }
+    }
+    dropFollowUpReview(run.id, index);
+  };
+
   const store = async (run: EngineRun): Promise<void> => {
     if (!run.resultText) return;
     const target = run.threadId ?? thread?.id;
@@ -295,6 +324,8 @@ export default function RightRail({ thread, onCollapse, onEditBrief }: Props) {
             onStore={
               run.action === "follow_up" ? undefined : (r) => void store(r)
             }
+            review={followUpReviews[run.id]}
+            onReview={(i, a) => void answerReview(run, i, a)}
           />
         ))}
 

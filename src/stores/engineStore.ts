@@ -1,3 +1,4 @@
+import { parseFollowUpReview, type FollowUpReviewItem } from '@/lib/engine/followUpReview';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { create } from 'zustand';
@@ -120,6 +121,8 @@ type ResultHandler = (result: string) => void;
  *  the AI had fully written came back to the user as "跑完了，没有新增块" (§1.1). */
 interface EngineRunResult {
   result: string;
+  /** P16-3: a follow-up's list for the user, taken off the end of its last message in Rust. */
+  followUpReview?: unknown[];
   /** P10: the run finished (and spent what it spent) but its answer cannot be used — a weekly
    *  review that did not come back as one complete JSON object. `result` is empty then. */
   error: string | null;
@@ -161,6 +164,11 @@ interface EngineState {
    *  wrote blocks; two of the three actions produce a paragraph and nothing else, and
    *  closing the window threw away a review that had cost real money to produce. */
   runs: EngineRun[];
+  /** P16-3: per finished follow-up run (by its id), what it handed back for the user to decide — one button
+   *  per entry on its card. In memory only (Ocean 第 273 条选甲: 不改库). */
+  followUpReviews: Record<string, FollowUpReviewItem[]>;
+  /** The user answered entry `index` of that run's list (closed / kept / confirmed): it leaves the card. */
+  dropFollowUpReview: (runId: string, index: number) => void;
   probe: () => Promise<void>;
   /** P9T: look again only if nothing was found yet, at most every 10 s — the window regaining focus
    *  calls it, so installing a CLI and switching back is enough for it to show up. */
@@ -295,6 +303,8 @@ export const useEngineStore = create<EngineState>((set, get) => {
       inputTokens: null,
       outputTokens: null,
     };
+    // P16-3: what the run handed back for the user to decide (follow-up only).
+    let review: FollowUpReviewItem[] = [];
     try {
       if (isFollowUp && next.road === 'api') {
         // P9U-4: one request with the vendor's own web search; Rust files the answer through the same
@@ -327,6 +337,7 @@ export const useEngineStore = create<EngineState>((set, get) => {
           throw new Error(o.message ? `${sentence}（${o.message}）` : sentence);
         }
         resultText = describeApiFollowUp(o.text, t);
+        review = parseFollowUpReview(out.filed?.review);
       } else if (next.action === 'follow_up_brief' && next.road === 'api') {
         // 「让 AI 看看还缺什么」: the same drafting prompt, one request, the lines come back as text.
         const call = apiCallFrom(useSettingsStore.getState());
@@ -378,6 +389,7 @@ export const useEngineStore = create<EngineState>((set, get) => {
         resultText = answer.result;
         ranOn = answer.engine;
         usage = answer.usage;
+        if (isFollowUp) review = parseFollowUpReview(answer.followUpReview);
         // P10-1: a failure that still cost money — thrown after the usage is in hand, so the
         // row below keeps what this run spent.
         if (answer.error) throw new Error(answer.error);
@@ -489,7 +501,7 @@ export const useEngineStore = create<EngineState>((set, get) => {
     // finding — storing every discarded draft would bury the cards that do want an answer.
     if (next.action !== 'follow_up_brief') {
       try {
-        await recordRun({
+        const recorded = await recordRun({
           action: next.action,
           // 周回顾 reads the whole library, so it belongs to no project (§3.4).
           threadId: next.action === 'weekly_review' ? null : next.threadId,
@@ -503,6 +515,9 @@ export const useEngineStore = create<EngineState>((set, get) => {
           startedAt,
           finishedAt: Date.now(),
         });
+        if (review.length > 0) {
+          set((st) => ({ followUpReviews: { ...st.followUpReviews, [recorded.id]: review } }));
+        }
         // P10-4: a weekly review is on its page now — the card says so over whatever app is up.
         if (outcome === 'ok' && next.action === 'weekly_review') announceWeeklyReview(resultText);
       } catch (e) {
@@ -523,6 +538,15 @@ export const useEngineStore = create<EngineState>((set, get) => {
     progress: null,
     queue: [],
     runs: [],
+    followUpReviews: {},
+    dropFollowUpReview: (runId, index) =>
+      set((st) => {
+        const left = (st.followUpReviews[runId] ?? []).filter((_, i) => i !== index);
+        const next = { ...st.followUpReviews };
+        if (left.length > 0) next[runId] = left;
+        else delete next[runId];
+        return { followUpReviews: next };
+      }),
     briefOpen: false,
     setBriefOpen: (open) => set({ briefOpen: open }),
 

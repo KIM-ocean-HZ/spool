@@ -116,6 +116,9 @@ struct EngineRunResult {
     /// uninstalled engine falls back (DESIGN_AI_ENGINE §7.4).
     engine: String,
     usage: engine::RunUsage,
+    /// P16-3: a follow-up's 「建议你关」 / 「这条要你自己答」 / rechecked blocks, taken out of its last message
+    /// (`mcp::split_follow_up_review`) — the run card puts a button on each. Empty for every other action.
+    follow_up_review: Vec<serde_json::Value>,
 }
 
 // DESIGN_AI_ENGINE §5 M2: all three actions. The prompt comes from mcp.rs's
@@ -229,7 +232,12 @@ async fn ai_engine_run(
                     },
                     None => (env.result, None),
                 };
-                EngineRunResult { result, error, engine: kind.as_str().to_string(), usage: env.usage }
+                // P16-3: a follow-up's review list comes off the end of its message; the card shows the rest.
+                let (result, follow_up_review) = match only.as_deref() {
+                    Some(id) => mcp::split_follow_up_review(id, &result),
+                    None => (result, Vec::new()),
+                };
+                EngineRunResult { result, error, engine: kind.as_str().to_string(), usage: env.usage, follow_up_review }
             })
     })
     .await
