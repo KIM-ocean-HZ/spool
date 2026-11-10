@@ -521,6 +521,16 @@ Parallels 试用 **11-20 到期**。P16-6 要在那之前做完；预计来不�
   - 第 6 题「自动跟进先读文件夹」在真跑里的效果：这次的跟进真跑用的是没连文件夹的测试项目，只有单元测试和提示词。
 
 ### 7.3 换装和 Ocean 验收
+
+**换装（11-10 11:07，Ocean 授权「可以，现在换」，没有没点「完成」的编辑；HANDOFF 第 284 条）**
+- 包：代码 `f36183e`（P16-4 那一笔），`CARGO_PROFILE_RELEASE_BUILD_OVERRIDE_STRIP=none npx tauri build --bundles app`，用 `APPLE_SIGNING_IDENTITY` 签 Developer ID（Hanze JIN），和原来装的一样是本机构建、没公证；`codesign --verify --deep --strict` 通过。
+- 备份：`~/Desktop/Spool/db/spool.before-p16-install-20261110-110651.db`（`VACUUM INTO`，`integrity_check` ok，1431 块）+ 7 个 json（ai-seen / drafts / focus / knit / mcp-clients / settings / stale，同一个时间戳）。
+- 换装：按 pid 停掉 GUI 主进程 35796 和它的浮窗进程 35810（一次 TERM 就退了）；18 个别的客户端起的 `--mcp` 一个没动。旧包挪到 `~/Desktop/Spool/spool-pre-install/Spool-0.7.4-87c9261-before-p16-20261110-110651.app`。新包 `ditto` 进 `/Applications`，`open -a … --stdout/--stderr` 启动，日志在 `~/Desktop/Spool/db/p16-run-20261110-110651.{out,err}.log`。
+- 迁移：GUI 自己把库从 v38 迁到 v39（11:07:16），旁边多了自动快照 `spool.pre-migration-v38-2026-11-10T11-07-16-291Z.db`。块数和正文总长（1431 / 942020 字）、项目 108、文件 88、跟进行 65、待审提案 0、图片 24，前后逐项一样；`edited_at` 全是空的；`integrity_check` ok；启动日志里没有报错。
+- ⚠️ 换装之前就开着的 Codex / Claude 桌面版，手里的 `spool --mcp` 还是旧程序，会报「库比服务新」：要重启一次那些客户端。
+- 这一次装的包第一次把 P13 修复轮里 Mac 也有的改动装到了 Mac 上（例如 `3608575` 的导出保护）。
+
+**Ocean 验收**：（等 Ocean 照 §6.1 走完再写）
 ### 7.4 Windows
 ### 7.5 新发现（同时记进 HANDOFF §5，格式见方针 §7.2）
 
