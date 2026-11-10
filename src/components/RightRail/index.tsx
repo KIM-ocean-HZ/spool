@@ -251,7 +251,12 @@ export default function RightRail({ thread, onCollapse, onEditBrief }: Props) {
   //     hasText`. A textless run had no ✕. RunCard gives every card a ✕ now, unconditionally.
   // P9S-6: a follow-up's own words are not a card up here any more — what it found is on the review
   // screen, and what it said is folded inside the follow-up editor (FollowUpSearch).
-  const shown = visibleRuns(runs, thread?.id ?? null).filter((r) => r.action !== "follow_up");
+  // P16-3 验收（11-10 Ocean「我貌似没有看见结果卡」）: except while it still holds something for the user to
+  // decide — the 「建议你关」 / 「这条要你自己答」 list lives on this card, and the line above used to keep the card,
+  // and with it the list, from ever being drawn. Answered down to nothing, it goes again.
+  const shown = visibleRuns(runs, thread?.id ?? null).filter(
+    (r) => r.action !== "follow_up" || (followUpReviews[r.id]?.length ?? 0) > 0,
+  );
   // R2: the durable half of "what did the AI put in my library". ⚠️ Unlike the cards, this
   // does NOT go away when answered: a block an AI wrote stays a block an AI wrote.
   const blocks = useBlocksStore((s) =>

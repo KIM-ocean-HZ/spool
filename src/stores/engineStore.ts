@@ -450,10 +450,15 @@ export const useEngineStore = create<EngineState>((set, get) => {
       // weeks when the world genuinely did not move. M3 makes the sentence true rather
       // than hopeful: `queued` counts what survived the dedup gate, so a run that brought
       // back five links the user has already seen says exactly this.
+      // P16-3 验收（11-10）: a run that brought back only things for the user to decide said 「这次没有新东西」.
       toast.notice(
-        queued > 0
-          ? t('跟进：提了 {n} 条待你过目', { n: queued })
-          : t('跟进：这次没有新东西'),
+        queued > 0 && review.length > 0
+          ? t('跟进：提了 {n} 条待你过目，另有 {m} 条要你定（在右边）', { n: queued, m: review.length })
+          : queued > 0
+            ? t('跟进：提了 {n} 条待你过目', { n: queued })
+            : review.length > 0
+              ? t('跟进：有 {n} 条要你定，在右边', { n: review.length })
+              : t('跟进：这次没有新东西'),
       );
     } else if (outcome === 'ok') {
       // DESIGN_WORKBENCH §1.1 — the sentence this replaces was the whole bug. 压缩 and

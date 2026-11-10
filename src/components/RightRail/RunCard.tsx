@@ -43,7 +43,9 @@ export default function RunCard({ run, onDismiss, onStore, busy, review = [], on
   const hasText = (run.resultText ?? '').trim().length > 0;
   // Answered cards collapse: the rail is a place to act, and a wall of resolved cards
   // would bury the one that still wants something.
-  const [open, setOpen] = useState(run.reviewedAt === null && hasText);
+  // P16-3: a follow-up card is up here only for its list, and its words are also in the follow-up editor
+  // (「上次 AI 说的」), so they start folded.
+  const [open, setOpen] = useState(run.reviewedAt === null && hasText && run.action !== 'follow_up');
 
   const when = new Date(run.finishedAt).toLocaleString(dateLocale(), {
     month: 'short',

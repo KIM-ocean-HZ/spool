@@ -41,17 +41,30 @@ export const repoKeys = (scan: RepoCheckScan): string[] => [
 
 export const repoAllDecided = (s: RepoCheckSession): boolean => repoKeys(s.scan).every((k) => k in s.decided);
 
-/** 新的一方那一块：项目里另一块，或者现在存一块仓库里的原话。 */
-const newerBlockFor = async (threadId: string, item: RepoBlock, bySeq: Map<number, Block>): Promise<Block | null> => {
+/** 新的一方那一块：项目里另一块，或者现在存一块仓库里的原话。
+ *  P16-4 验收（11-10 Ocean「来源全部都是：仓库 · 提交标题，没看懂什么意思，写的清楚一点」）：来源和开头那句都说出是哪个
+ *  文件夹、是它的哪一样（提交记录 / 改动的文件 / 哪一份文件）。`folder` = 连着的文件夹的名字。 */
+const newerBlockFor = async (
+  threadId: string,
+  item: RepoBlock,
+  bySeq: Map<number, Block>,
+  folder: string | null,
+): Promise<Block | null> => {
   const m = /^#\s*(\d+)$/.exec(item.from.trim());
   if (m) return bySeq.get(Number(m[1])) ?? null;
-  const name =
-    item.from === 'commits' ? t('提交标题') : item.from === 'changes' ? t('改动的文件') : item.from;
+  const name = item.from === 'commits' ? t('提交记录') : item.from === 'changes' ? t('改动的文件') : item.from;
+  const where = folder || t('连着的文件夹');
+  const quote = item.quoteNew;
   return createBlock({
     threadId,
-    content: t('仓库里的「{name}」现在写着：\n\n{quote}', { name, quote: item.quoteNew }),
+    content:
+      item.from === 'commits'
+        ? t('「{folder}」最近的一笔提交，说明写着：\n\n{quote}', { folder: where, quote })
+        : item.from === 'changes'
+          ? t('「{folder}」上次对过之后改动的文件：\n\n{quote}', { folder: where, quote })
+          : t('「{folder}」里的 {name} 现在写着：\n\n{quote}', { folder: where, name, quote }),
     annotation: item.why || null,
-    source: t('仓库 · {name}', { name }),
+    source: folder ? t('{folder} 仓库 · {name}', { folder, name }) : t('仓库 · {name}', { name }),
   });
 };
 
@@ -63,6 +76,7 @@ export const decideRepoBlock = async (
   blocks: Block[],
   say: (msg: string) => void,
   now = Date.now(),
+  folder: string | null = null,
 ): Promise<boolean> => {
   const bySeq = new Map<number, Block>();
   for (const b of blocks) if (b.seq !== null) bySeq.set(b.seq, b);
@@ -74,7 +88,7 @@ export const decideRepoBlock = async (
   const fromBlock = /^#\s*\d+$/.test(item.from.trim());
   let newer: Block | null;
   if (fromBlock) {
-    newer = await newerBlockFor(threadId, item, bySeq);
+    newer = await newerBlockFor(threadId, item, bySeq, folder);
     if (!newer) {
       say(t('{from} 那一块已经不在了，这一条做不了。', { from: item.from }));
       return false;
@@ -85,7 +99,7 @@ export const decideRepoBlock = async (
     }
   } else {
     // Only now, once the user has chosen: the repository's sentence becomes a block of the project.
-    newer = await newerBlockFor(threadId, item, bySeq);
+    newer = await newerBlockFor(threadId, item, bySeq, folder);
     if (!newer) return false;
   }
   if (action === 'merge') {

@@ -912,6 +912,9 @@ const EN: Record<string, string> = {
   '存不下来：{msg}': 'Could not save: {msg}',
   '跟进：提了 {n} 条待你过目': 'Follow up: {n} item(s) waiting for you',
   '跟进：这次没有新东西': 'Follow up: nothing new this time',
+  '跟进：提了 {n} 条待你过目，另有 {m} 条要你定（在右边）':
+    'Follow up: {n} item(s) waiting for you, and {m} for you to decide (on the right)',
+  '跟进：有 {n} 条要你定，在右边': 'Follow up: {n} for you to decide, on the right',
 
   // M2 §1.2 — the running pill, and what the queue behind it says.
   '{action}中': '{action} running',
@@ -1497,9 +1500,10 @@ const EN: Record<string, string> = {
   '跟进清单里没有这一行': 'that line is not on the follow-up list',
   '摘要是你自己写的，不换': 'you wrote the summary yourself, so it stays',
   '没说为什么': 'no reason given',
-  '提交标题': 'commit titles',
+  '提交记录': 'commit history',
   '改动的文件': 'changed files',
   '对照仓库': 'Check against the repository',
+  '还有 {n} 条没点': '{n} still to decide',
   '把这个项目和它连着的文件夹现在的样子对一遍，找出被仓库推翻的块、前提没了的跟进、对不上的摘要。点了才生效。':
     'Compare this project with its linked folder as it is now: blocks the repository overturned, follow-ups whose premise is gone, a summary that no longer fits. Nothing changes until you click.',
   '再对一遍': 'Check again',
@@ -1526,7 +1530,11 @@ const EN: Record<string, string> = {
   '把这个项目和文件夹现在的样子对一遍，结果在「过期检测」页签里，点了才生效':
     'Compare this project with the folder as it is now. The results are in the Out-of-date check tab; nothing changes until you click.',
   '正在对照…': 'Checking…',
-  '仓库里的「{name}」现在写着：\n\n{quote}': 'The repository’s “{name}” now says:\n\n{quote}',
+  '「{folder}」最近的一笔提交，说明写着：\n\n{quote}': 'A recent commit in “{folder}” says:\n\n{quote}',
+  '「{folder}」上次对过之后改动的文件：\n\n{quote}': 'Files changed in “{folder}” since the last check:\n\n{quote}',
+  '「{folder}」里的 {name} 现在写着：\n\n{quote}': '{name} in “{folder}” now says:\n\n{quote}',
+  '{folder} 仓库 · {name}': '{folder} repository · {name}',
+  '连着的文件夹': 'the linked folder',
   '仓库 · {name}': 'Repository · {name}',
   '第 {n} 块已经不在了，这一条做不了。': 'Block #{n} is no longer there, so this one cannot be done.',
   '{from} 那一块已经不在了，这一条做不了。': 'Block {from} is no longer there, so this one cannot be done.',

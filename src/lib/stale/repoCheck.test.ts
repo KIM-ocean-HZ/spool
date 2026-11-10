@@ -7,6 +7,7 @@ import { __setTestDb } from '@/lib/db/client';
 import schemaSql from '@/lib/db/schema.sql?raw';
 import { createThread } from '@/lib/db/threads';
 import { createWorkspace } from '@/lib/db/workspaces';
+import { useSettingsStore } from '@/stores/settingsStore';
 import { decideRepoBlock, repoAllDecided, repoKeys, type RepoCheckSession } from './repoCheck';
 
 // P16-4: what a click on a repo check result writes. When the new side is a file of the repository, its sentence
@@ -74,6 +75,36 @@ describe('repo check clicks', () => {
     expect(retired.replacedByBlockId).toBe(later.id);
     expect((await listBlocksByThread(th.id)).length).toBe(3);
     expect(said).toEqual([]);
+  });
+
+  // P16-4 验收（11-10 Ocean「来源全部都是：仓库 · 提交标题，没看懂什么意思，写的清楚一点」）.
+  it('the block it makes says which folder, and which part of it', async () => {
+    useSettingsStore.setState({ language: 'zh' });
+    const ws = await createWorkspace('spool');
+    const th = await createThread(ws.id, '新功能&新想法记录');
+    const old = await createBlock({ threadId: th.id, content: 'AI 接着聊时会把整个项目再读一遍。' });
+    const base = { staleSeq: old.seq!, kind: 'corrects' as const, why: '已经做了', quoteStale: '再读一遍', retyped: false };
+    const made = async (from: string, folder: string | null) => {
+      const before = new Set((await listBlocksByThread(th.id)).map((b) => b.id));
+      const blocks = await listBlocksByThread(th.id);
+      expect(await decideRepoBlock(th.id, { ...base, from, quoteNew: 'feat(p16-1): 只读新加的块' }, 'merge', blocks, () => {}, 1, folder)).toBe(true);
+      return (await listBlocksByThread(th.id)).find((b) => !before.has(b.id))!;
+    };
+    const commit = await made('commits', 'Knote');
+    expect(commit.source).toBe('Knote 仓库 · 提交记录');
+    expect(commit.content).toBe('「Knote」最近的一笔提交，说明写着：\n\nfeat(p16-1): 只读新加的块');
+    const file = await made('docs/HANDOFF.md', 'Knote');
+    expect(file.source).toBe('Knote 仓库 · docs/HANDOFF.md');
+    expect(file.content.startsWith('「Knote」里的 docs/HANDOFF.md 现在写着：')).toBe(true);
+    const changes = await made('changes', 'Knote');
+    expect(changes.content.startsWith('「Knote」上次对过之后改动的文件：')).toBe(true);
+    // No folder name to hand (the card never loaded): still readable, never 「提交标题」.
+    const bare = await made('commits', null);
+    expect(bare.source).toBe('仓库 · 提交记录');
+    expect(bare.content.startsWith('「连着的文件夹」最近的一笔提交')).toBe(true);
+    useSettingsStore.setState({ language: 'en' });
+    const en = await made('commits', 'Knote');
+    expect([en.source, en.content]).toEqual(['Knote repository · commit history', 'A recent commit in “Knote” says:\n\nfeat(p16-1): 只读新加的块']);
   });
 
   it('a block that is gone is said, not done; 「对过了」 waits for every entry', async () => {

@@ -1314,7 +1314,8 @@ export const useCompressStore = create<CompressState>((set, get) => ({
       if (key.startsWith('b') && (action === 'merge' || action === 'retire')) {
         const item = sess.scan.blocks[Number(key.slice(1))];
         if (!item) return;
-        const done = await decideRepoBlock(threadId, item, action, sess.blocks, (m) => toast.error(m));
+        const folder = useFolderStore.getState().views[threadId]?.name ?? null;
+        const done = await decideRepoBlock(threadId, item, action, sess.blocks, (m) => toast.error(m), Date.now(), folder);
         if (!done) return;
         await useBlocksStore.getState().load(threadId);
       } else if (key.startsWith('f') && action === 'close') {
