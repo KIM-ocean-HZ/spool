@@ -74,12 +74,13 @@ const MCP_SERVER_NAME: &str = "spool";
 // review screen, and the refusal to touch what the user wrote.
 // P9G follow-up (Ocean 2026-10-16): except the tools this engine must never have
 // (`mcp::ENGINE_EXCLUDED_TOOLS`: propose_split, mark_folder_synced, create_workspace,
-// propose_link_folder). Desktop clients see 30 tools; the background engine keeps these 26.
-pub(crate) const ALLOWED_TOOL_NAMES: [&str; 26] = [
-    "add_block",
+// propose_link_folder). Desktop clients see 30 tools; the background engine keeps these 22.
+// P16-0 (HANDOFF 第 279 条): the four that write straight into the library are excluded too — add_block,
+// create_thread, set_thread_summary, set_block_gist. Every headless prompt already told the run not to
+// use them; now they are not there to use.
+pub(crate) const ALLOWED_TOOL_NAMES: [&str; 22] = [
     "check_library",
     "close_follow_up_item",
-    "create_thread",
     "distill",
     "find_similar_blocks",
     // P9H-6 (Ocean 10-16 第 151 条): the engine may look at pictures too — a follow-up can then
@@ -101,8 +102,6 @@ pub(crate) const ALLOWED_TOOL_NAMES: [&str; 26] = [
     "propose_supersede",
     "request_file_access",
     "search_blocks",
-    "set_block_gist",
-    "set_thread_summary",
     "suggest_follow_up_item",
     "thread_health",
     "weekly_review",
@@ -713,13 +712,18 @@ pub fn detect(preferred: Option<EngineKind>, manual: Option<&str>) -> EngineStat
 // line (mcp.rs `serving_follow_up`).
 // P10 验收第一轮 adds `--engine-weekly` to the weekly review's run: that server hides finished projects
 // from the AI (mcp.rs `ENGINE_WEEKLY_FLAG`) — 「已完成的项目不允许进周回顾」.
-fn server_args(web: bool, weekly: bool) -> Vec<&'static str> {
-    let mut args = vec!["--mcp", crate::mcp::ENGINE_RUN_FLAG];
+// P16-0 (HANDOFF 第 279 条) adds `--engine-project=<id>` to the follow-up's run: that server sees the one
+// project being followed up and nothing else (mcp.rs `ENGINE_PROJECT_FLAG`).
+fn server_args(web: bool, weekly: bool, project: Option<&str>) -> Vec<String> {
+    let mut args = vec!["--mcp".to_string(), crate::mcp::ENGINE_RUN_FLAG.to_string()];
     if web {
-        args.push(crate::mcp::ENGINE_FOLLOW_UP_FLAG);
+        args.push(crate::mcp::ENGINE_FOLLOW_UP_FLAG.to_string());
     }
     if weekly {
-        args.push(crate::mcp::ENGINE_WEEKLY_FLAG);
+        args.push(crate::mcp::ENGINE_WEEKLY_FLAG.to_string());
+    }
+    if let Some(id) = project {
+        args.push(format!("{}{id}", crate::mcp::ENGINE_PROJECT_FLAG));
     }
     args
 }
@@ -739,8 +743,8 @@ pub(crate) fn data_dir() -> Option<String> {
 // i.e. exactly the server Claude Desktop is pointed at by the one-click hookup — so
 // "several processes on one library" is the model already in production, not a new risk
 // surface opened here.
-pub fn mcp_config_json(exe: &str, web: bool, weekly: bool, data_dir: Option<&str>) -> String {
-    let mut server = serde_json::json!({ "command": exe, "args": server_args(web, weekly) });
+pub fn mcp_config_json(exe: &str, web: bool, weekly: bool, project: Option<&str>, data_dir: Option<&str>) -> String {
+    let mut server = serde_json::json!({ "command": exe, "args": server_args(web, weekly, project) });
     if let Some(dir) = data_dir {
         server["env"] = serde_json::json!({ DATA_DIR_VAR: dir });
     }
@@ -864,11 +868,32 @@ pub fn claude_plain_args(system: &str, prompt: &str, model: Option<&str>) -> Vec
     args
 }
 
+/// P16-0 (HANDOFF 第 282 条, Ocean 2026-11-10 「其他功能可以关闭，生成图片……留着」): what codex switches on
+/// by default and an engine run has no use for. `--ignore-user-config` skips the user's config.toml, not
+/// these — a 11-08 follow-up's session still carried the apps (ChatGPT connectors), plugins and
+/// multi-agent instructions. Each name was checked against codex 0.147 (`codex -c features.<name>=false
+/// features list` shows it false). `image_generation` is left on deliberately (DISCOVERED-20261110-3), and
+/// `shell_tool` too (第 280 条: a follow-up reads the linked repository with it).
+const CODEX_FEATURES_OFF: [&str; 8] = [
+    "apps",
+    "plugins",
+    "multi_agent",
+    "memories",
+    "browser_use",
+    "browser_use_external",
+    "computer_use",
+    "in_app_browser",
+];
+
+fn codex_features_off() -> impl Iterator<Item = String> {
+    CODEX_FEATURES_OFF.iter().map(|f| format!("features.{f}=false"))
+}
+
 /// P9U-1 — the codex counterpart. `--ignore-user-config` already keeps the user's own MCP servers
-/// out; no Spool server is added, the web is off, the sandbox is read-only. (Codex's shell tool
-/// cannot be removed — see `codex_args` — but read-only it can change nothing.)
+/// out; no Spool server is added, the web is off, the sandbox is read-only. (Codex's shell stays —
+/// see `codex_config_overrides` — but read-only it can change nothing.)
 pub fn codex_plain_args(prompt: &str, last_message_path: &str) -> Vec<String> {
-    vec![
+    let mut args: Vec<String> = vec![
         "exec".into(),
         "--ignore-user-config".into(),
         "--skip-git-repo-check".into(),
@@ -881,8 +906,13 @@ pub fn codex_plain_args(prompt: &str, last_message_path: &str) -> Vec<String> {
         "approval_policy=\"never\"".into(),
         "-c".into(),
         "tools.web_search=false".into(),
-        prompt.into(),
-    ]
+    ];
+    for f in codex_features_off() {
+        args.push("-c".into());
+        args.push(f);
+    }
+    args.push(prompt.into());
+    args
 }
 
 /// P9U-1 — gemini reads its tools from `.gemini/settings.json`: no MCP server, every built-in that
@@ -959,15 +989,15 @@ pub fn claude_args(
 // here too; it is just spelled with `-c` overrides instead of a file.
 //
 // Two honest gaps to say out loud rather than paper over:
-//   * **The shell tool cannot be removed.** `tools.shell` is not a config key (probed with
-//     `--strict-config`, which rejects unknown fields). claude's `--allowedTools` denies
-//     Bash outright; codex has no equivalent. The lever that does exist is
-//     `--sandbox read-only`, which is passed below: model-run commands cannot write to the
-//     user's disk. §7.3 asked for the degradation to be stated plainly if it could not be
-//     closed — the settings page says it.
+//   * **The shell tool stays.** In 0.146 it could not be removed (`tools.shell` is not a config
+//     key); 0.147 has `features.shell_tool`, and Ocean chose to keep it on (2026-11-10, HANDOFF
+//     第 280 条): a follow-up reads the linked repository with it. claude's `--allowedTools` denies
+//     Bash outright. The lever in use is `--sandbox read-only`, passed below: model-run commands
+//     cannot write to the user's disk — but they can READ it, spool.db included, which is why
+//     `--engine-project` narrows only what Spool's own server hands the run.
 //   * **No `--max-turns` equivalent.** The run's only ceiling is the timeout, which is
 //     enforced here anyway (clamp_timeout_secs + the kill).
-fn codex_config_overrides(exe: &str, web: bool, weekly: bool, data_dir: Option<&str>) -> Vec<String> {
+fn codex_config_overrides(exe: &str, web: bool, weekly: bool, project: Option<&str>, data_dir: Option<&str>) -> Vec<String> {
     // TOML values, since `-c` parses the right-hand side as TOML. The tool list is the same
     // constant as claude's whitelist, spelled with bare names because that is what codex's
     // per-server `enabled_tools` takes (confirmed with `codex mcp get spool`, which echoed
@@ -988,7 +1018,7 @@ fn codex_config_overrides(exe: &str, web: bool, weekly: bool, data_dir: Option<&
         // P9G follow-up: `--engine-run` tells the server it is serving this engine (mcp.rs).
         format!(
             "mcp_servers.{MCP_SERVER_NAME}.args=[{}]",
-            server_args(web, weekly).iter().map(|a| format!("\"{a}\"")).collect::<Vec<_>>().join(",")
+            server_args(web, weekly, project).iter().map(|a| format!("\"{a}\"")).collect::<Vec<_>>().join(",")
         ),
         format!("mcp_servers.{MCP_SERVER_NAME}.enabled_tools=[{tools}]"),
         // ⚠️⚠️ P9F F6 (DISCOVERED-20260924-1, Ocean 2026-10-11 #80「Codex 必须能写回」).
@@ -1007,6 +1037,7 @@ fn codex_config_overrides(exe: &str, web: bool, weekly: bool, data_dir: Option<&
     if let Some(dir) = data_dir {
         overrides.push(format!("mcp_servers.{MCP_SERVER_NAME}.env={{{DATA_DIR_VAR}={}}}", toml_string(dir)));
     }
+    overrides.extend(codex_features_off());
     overrides
 }
 
@@ -1056,7 +1087,7 @@ const GEMINI_EXCLUDED_TOOLS: [&str; 13] = [
 /// Migrate to Policy Engine". When that lands this function must be rewritten, and until it
 /// is, a gemini upgrade can silently restore the shell tool. Stated in §7.8.6 rather than
 /// papered over.
-pub fn gemini_settings_json(exe: &str, web: bool, weekly: bool, data_dir: Option<&str>) -> String {
+pub fn gemini_settings_json(exe: &str, web: bool, weekly: bool, project: Option<&str>, data_dir: Option<&str>) -> String {
     let mut excluded: Vec<&str> = GEMINI_EXCLUDED_TOOLS.to_vec();
     if !web {
         excluded.push("google_web_search");
@@ -1064,7 +1095,7 @@ pub fn gemini_settings_json(exe: &str, web: bool, weekly: bool, data_dir: Option
     }
     let mut server = serde_json::json!({
         "command": exe,
-        "args": server_args(web, weekly),
+        "args": server_args(web, weekly, project),
         "trust": true,
         "includeTools": ALLOWED_TOOL_NAMES,
     });
@@ -1121,6 +1152,7 @@ pub fn codex_args(
     last_message_path: &str,
     web: bool,
     weekly: bool,
+    project: Option<&str>,
     data_dir: Option<&str>,
 ) -> Vec<String> {
     let mut args: Vec<String> = vec![
@@ -1146,7 +1178,7 @@ pub fn codex_args(
         "-o".into(),
         last_message_path.into(),
     ];
-    for c in codex_config_overrides(exe, web, weekly, data_dir) {
+    for c in codex_config_overrides(exe, web, weekly, project, data_dir) {
         args.push("-c".into());
         args.push(c);
     }
@@ -1592,6 +1624,8 @@ pub fn run_action(
     web: bool,
     // P10 验收第一轮: this run is the weekly review — its Spool server hides finished projects.
     weekly: bool,
+    // P16-0: the one project this run is about — its Spool server sees nothing else. Passed for 跟进 only.
+    project: Option<&str>,
     model: Option<&str>,
     effort: Option<&str>,
     on_progress: Arc<dyn Fn(Progress) + Send + Sync>,
@@ -1660,7 +1694,7 @@ pub fn run_action(
     } else {
     match kind {
         EngineKind::Claude => {
-            std::fs::write(&cfg_path, mcp_config_json(&exe.to_string_lossy(), web, weekly, data_dir().as_deref()))
+            std::fs::write(&cfg_path, mcp_config_json(&exe.to_string_lossy(), web, weekly, project, data_dir().as_deref()))
                 .map_err(|e| format!("could not write the MCP config: {e}"))?;
             cmd.args(claude_args(prompt, &cfg_path.to_string_lossy(), max_turns, web, model));
         }
@@ -1674,6 +1708,7 @@ pub fn run_action(
                 &msg_path.to_string_lossy(),
                 web,
                 weekly,
+                project,
                 data_dir().as_deref(),
             ));
         }
@@ -1685,7 +1720,7 @@ pub fn run_action(
                 .map_err(|e| format!("could not prepare the engine's working directory: {e}"))?;
             std::fs::write(
                 work_dir.join(".gemini/settings.json"),
-                gemini_settings_json(&exe.to_string_lossy(), web, weekly, data_dir().as_deref()),
+                gemini_settings_json(&exe.to_string_lossy(), web, weekly, project, data_dir().as_deref()),
             )
             .map_err(|e| format!("could not write the MCP config: {e}"))?;
             // ⚠️ The cwd IS the configuration on this path. Without it gemini reads whatever
@@ -2066,7 +2101,7 @@ mod tests {
     // config keys, so the overrides below are known-good rather than plausible.
     #[test]
     fn codex_args_isolate_the_run_from_the_users_own_config() {
-        let args = codex_args("提炼一下", "/Applications/Spool.app/Contents/MacOS/spool", "/tmp/m.txt", false, false, None);
+        let args = codex_args("提炼一下", "/Applications/Spool.app/Contents/MacOS/spool", "/tmp/m.txt", false, false, None, None);
         assert_eq!(args[0], "exec");
         // The prompt is positional and must stay last — anything after it would be read as
         // a subcommand, not a flag.
@@ -2194,7 +2229,7 @@ mod tests {
     #[test]
     fn gemini_settings_carry_both_whitelists() {
         let v: serde_json::Value =
-            serde_json::from_str(&gemini_settings_json("/Applications/Spool.app/x", false, false, None)).unwrap();
+            serde_json::from_str(&gemini_settings_json("/Applications/Spool.app/x", false, false, None, None)).unwrap();
         let server = &v["mcpServers"][MCP_SERVER_NAME];
         assert_eq!(server["command"], "/Applications/Spool.app/x");
         assert_eq!(server["args"], serde_json::json!(["--mcp", "--engine-run"]));
@@ -2216,7 +2251,7 @@ mod tests {
         // Web tools are granted per action, exactly as claude's are.
         assert!(excluded.contains(&"google_web_search"), "no web unless the action gets it");
         let web: serde_json::Value =
-            serde_json::from_str(&gemini_settings_json("/x", true, false, None)).unwrap();
+            serde_json::from_str(&gemini_settings_json("/x", true, false, None, None)).unwrap();
         let web_excluded: Vec<&str> =
             web["tools"]["exclude"].as_array().unwrap().iter().map(|x| x.as_str().unwrap()).collect();
         assert!(!web_excluded.contains(&"google_web_search"));
@@ -2438,33 +2473,33 @@ mod tests {
     // the CLI would be talking to something other than the user's library.
     #[test]
     fn mcp_config_registers_spool_itself() {
-        let json = mcp_config_json("/Applications/Spool.app/Contents/MacOS/spool", false, false, None);
+        let json = mcp_config_json("/Applications/Spool.app/Contents/MacOS/spool", false, false, None, None);
         let v: serde_json::Value = serde_json::from_str(&json).unwrap();
         let server = &v["mcpServers"]["spool"];
         assert_eq!(server["command"], "/Applications/Spool.app/Contents/MacOS/spool");
         assert_eq!(server["args"], serde_json::json!(["--mcp", "--engine-run"]));
         // P9S-6: the follow-up run (the one that searches the web) also says it is the follow-up.
         let web: serde_json::Value =
-            serde_json::from_str(&mcp_config_json("/x/spool", true, false, None)).unwrap();
+            serde_json::from_str(&mcp_config_json("/x/spool", true, false, None, None)).unwrap();
         assert_eq!(
             web["mcpServers"]["spool"]["args"],
             serde_json::json!(["--mcp", "--engine-run", "--engine-follow-up"])
         );
-        let gemini: serde_json::Value = serde_json::from_str(&gemini_settings_json("/x/spool", true, false, None)).unwrap();
+        let gemini: serde_json::Value = serde_json::from_str(&gemini_settings_json("/x/spool", true, false, None, None)).unwrap();
         assert_eq!(gemini["mcpServers"]["spool"]["args"][2], "--engine-follow-up");
-        assert!(codex_args("p", "/x/spool", "/tmp/m", true, false, None)
+        assert!(codex_args("p", "/x/spool", "/tmp/m", true, false, None, None)
             .iter()
             .any(|a| a == "mcp_servers.spool.args=[\"--mcp\",\"--engine-run\",\"--engine-follow-up\"]"));
         // P10 验收第一轮: the weekly review's server hides finished projects — all three engines say so.
         let weekly: serde_json::Value =
-            serde_json::from_str(&mcp_config_json("/x/spool", false, true, None)).unwrap();
+            serde_json::from_str(&mcp_config_json("/x/spool", false, true, None, None)).unwrap();
         assert_eq!(
             weekly["mcpServers"]["spool"]["args"],
             serde_json::json!(["--mcp", "--engine-run", "--engine-weekly"])
         );
-        let gemini: serde_json::Value = serde_json::from_str(&gemini_settings_json("/x/spool", false, true, None)).unwrap();
+        let gemini: serde_json::Value = serde_json::from_str(&gemini_settings_json("/x/spool", false, true, None, None)).unwrap();
         assert_eq!(gemini["mcpServers"]["spool"]["args"][2], "--engine-weekly");
-        assert!(codex_args("p", "/x/spool", "/tmp/m", false, true, None)
+        assert!(codex_args("p", "/x/spool", "/tmp/m", false, true, None, None)
             .iter()
             .any(|a| a == "mcp_servers.spool.args=[\"--mcp\",\"--engine-run\",\"--engine-weekly\"]"));
     }
@@ -2474,21 +2509,21 @@ mod tests {
     #[test]
     fn the_library_a_spool_runs_on_reaches_the_engines_spool_server() {
         let dir = "/Users/x/lab/com.oceanjin.spool.lab/data";
-        let claude: serde_json::Value = serde_json::from_str(&mcp_config_json("/x/spool", false, true, Some(dir))).unwrap();
+        let claude: serde_json::Value = serde_json::from_str(&mcp_config_json("/x/spool", false, true, None, Some(dir))).unwrap();
         assert_eq!(claude["mcpServers"]["spool"]["env"], serde_json::json!({ "SPOOL_DATA_DIR": dir }));
-        let gemini: serde_json::Value = serde_json::from_str(&gemini_settings_json("/x/spool", false, true, Some(dir))).unwrap();
+        let gemini: serde_json::Value = serde_json::from_str(&gemini_settings_json("/x/spool", false, true, None, Some(dir))).unwrap();
         assert_eq!(gemini["mcpServers"]["spool"]["env"], serde_json::json!({ "SPOOL_DATA_DIR": dir }));
-        let codex = codex_args("p", "/x/spool", "/tmp/m", false, true, Some(dir));
+        let codex = codex_args("p", "/x/spool", "/tmp/m", false, true, None, Some(dir));
         let env_at = codex.iter().position(|a| a == &format!("mcp_servers.spool.env={{SPOOL_DATA_DIR=\"{dir}\"}}")).unwrap();
         assert_eq!(codex[env_at - 1], "-c");
         assert_eq!(codex.last().unwrap(), "p", "the prompt stays the last, positional argument");
 
         for (web, weekly) in [(false, false), (true, false), (false, true)] {
             let before = serde_json::json!({
-                "mcpServers": { MCP_SERVER_NAME: { "command": "/x/spool", "args": server_args(web, weekly) } }
+                "mcpServers": { MCP_SERVER_NAME: { "command": "/x/spool", "args": server_args(web, weekly, None) } }
             })
             .to_string();
-            assert_eq!(mcp_config_json("/x/spool", web, weekly, None), before);
+            assert_eq!(mcp_config_json("/x/spool", web, weekly, None, None), before);
             let mut excluded: Vec<&str> = GEMINI_EXCLUDED_TOOLS.to_vec();
             if !web {
                 excluded.extend(["google_web_search", "web_fetch"]);
@@ -2496,14 +2531,47 @@ mod tests {
             let before = serde_json::json!({
                 "tools": { "exclude": excluded },
                 "mcpServers": { MCP_SERVER_NAME: {
-                    "command": "/x/spool", "args": server_args(web, weekly), "trust": true, "includeTools": ALLOWED_TOOL_NAMES,
+                    "command": "/x/spool", "args": server_args(web, weekly, None), "trust": true, "includeTools": ALLOWED_TOOL_NAMES,
                 } }
             })
             .to_string();
-            assert_eq!(gemini_settings_json("/x/spool", web, weekly, None), before);
-            let overrides = codex_config_overrides("/x/spool", web, weekly, None);
-            assert_eq!(overrides.len(), 6);
+            assert_eq!(gemini_settings_json("/x/spool", web, weekly, None, None), before);
+            let overrides = codex_config_overrides("/x/spool", web, weekly, None, None);
+            assert_eq!(overrides.len(), 6 + CODEX_FEATURES_OFF.len());
             assert!(!overrides.iter().any(|o| o.contains("SPOOL_DATA_DIR")));
+        }
+    }
+
+    // P16-0 (HANDOFF 第 279、282 条): a follow-up's Spool server is told which project it serves, on all
+    // three engines; no other run carries the flag; codex's default extras are off on both kinds of run
+    // (with Spool's server and the plain one) while its image generation and shell stay; and the engine's
+    // whitelist holds none of the tools that write straight into the library.
+    #[test]
+    fn a_follow_up_run_is_scoped_to_its_project_and_codex_runs_without_its_extras() {
+        let flag = format!("{}thABC_1-x", crate::mcp::ENGINE_PROJECT_FLAG);
+        assert!(server_args(true, false, Some("thABC_1-x")).contains(&flag));
+        assert!(!server_args(true, false, None).iter().any(|a| a.starts_with(crate::mcp::ENGINE_PROJECT_FLAG)));
+        let claude: serde_json::Value =
+            serde_json::from_str(&mcp_config_json("/x/spool", true, false, Some("thABC_1-x"), None)).unwrap();
+        assert!(claude["mcpServers"]["spool"]["args"].as_array().unwrap().iter().any(|a| a == &serde_json::json!(flag)));
+        let gemini: serde_json::Value =
+            serde_json::from_str(&gemini_settings_json("/x/spool", true, false, Some("thABC_1-x"), None)).unwrap();
+        assert!(gemini["mcpServers"]["spool"]["args"].as_array().unwrap().iter().any(|a| a == &serde_json::json!(flag)));
+        let codex = codex_args("p", "/x/spool", "/tmp/m", true, false, Some("thABC_1-x"), None);
+        assert!(codex.iter().any(|a| a.starts_with("mcp_servers.spool.args=") && a.contains(&flag)), "{codex:?}");
+        assert_eq!(codex.last().unwrap(), "p");
+
+        for run in [codex, codex_plain_args("p", "/tmp/m")] {
+            for f in CODEX_FEATURES_OFF {
+                let at = run.iter().position(|a| a == &format!("features.{f}=false")).unwrap_or_else(|| panic!("{f} not off"));
+                assert_eq!(run[at - 1], "-c");
+            }
+            assert!(!run.iter().any(|a| a.contains("image_generation") || a.contains("shell_tool")));
+            assert_eq!(run.last().unwrap(), "p", "the prompt stays the last, positional argument");
+        }
+        for name in ["add_block", "create_thread", "set_thread_summary", "set_block_gist"] {
+            assert!(!ALLOWED_TOOL_NAMES.contains(&name), "{name}");
+            assert!(!allowed_tools(true).split(',').any(|t| t == format!("mcp__spool__{name}")), "{name}");
         }
     }
 

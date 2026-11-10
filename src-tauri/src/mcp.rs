@@ -1408,8 +1408,41 @@ pub(crate) const ENGINE_RUN_FLAG: &str = "--engine-run";
 // background run that read the folder on its own.
 // P15-1 / P15-2 (Ocean 2026-11-06): nor does a background run grow the user's sidebar or put a folder
 // in front of them — a new workspace and a linked folder are asked for in a conversation.
-pub(crate) const ENGINE_EXCLUDED_TOOLS: [&str; 4] =
-    ["propose_split", "mark_folder_synced", "create_workspace", "propose_link_folder"];
+// P16-0 (C-b 复核, HANDOFF 第 279 条, Ocean 2026-11-10 「现在就修」): nor does it write straight into the
+// library. Every headless prompt already says so — the follow-up files through propose_blocks, the weekly
+// review answers in JSON — but the four tools below take effect the moment they are called, with nobody
+// at the screen, while a follow-up is reading pages off the open web. A sentence on one of those pages
+// could otherwise store a block, rewrite an AI summary or gist, or open a project. Queued tools
+// (propose_*, suggest_follow_up_item) and close_follow_up_item stay.
+pub(crate) const ENGINE_EXCLUDED_TOOLS: [&str; 8] = [
+    "propose_split",
+    "mark_folder_synced",
+    "create_workspace",
+    "propose_link_folder",
+    "add_block",
+    "create_thread",
+    "set_thread_summary",
+    "set_block_gist",
+];
+
+// P16-0 (same decision): a follow-up run is about ONE project, so the Spool server it starts sees only
+// that one — `--engine-project=<thread id>` beside `--engine-run` (engine.rs `server_args`), applied in
+// `hide_projects` like private projects are. ⚠️ It narrows what Spool hands the run; it does not stop a
+// CLI that reads spool.db straight off the disk with its own shell (codex keeps its shell, 第 280 条).
+pub(crate) const ENGINE_PROJECT_FLAG: &str = "--engine-project=";
+
+#[cfg(test)]
+thread_local! {
+    static TEST_ENGINE_PROJECT: std::cell::RefCell<Option<String>> = const { std::cell::RefCell::new(None) };
+}
+
+fn serving_project() -> Option<String> {
+    #[cfg(test)]
+    if let Some(id) = TEST_ENGINE_PROJECT.with(|p| p.borrow().clone()) {
+        return Some(id);
+    }
+    std::env::args().find_map(|a| a.strip_prefix(ENGINE_PROJECT_FLAG).map(str::to_string))
+}
 
 #[cfg(test)]
 thread_local! {
@@ -1554,7 +1587,7 @@ fn mcp_write_enabled(dir: &std::path::Path) -> bool {
 /// (`--engine-weekly`), finished projects are out of sight as well.
 pub(crate) fn open_db(dir: &std::path::Path) -> Result<Connection, String> {
     let conn = open_db_whole(dir)?;
-    hide_projects(&conn, serving_weekly())?;
+    hide_projects(&conn, serving_weekly(), serving_project().as_deref())?;
     Ok(conn)
 }
 
@@ -1563,7 +1596,7 @@ pub(crate) fn open_db(dir: &std::path::Path) -> Result<Connection, String> {
 /// 「已完成的项目不允许进周回顾」.
 pub(crate) fn open_db_weekly(dir: &std::path::Path) -> Result<Connection, String> {
     let conn = open_db_whole(dir)?;
-    hide_projects(&conn, true)?;
+    hide_projects(&conn, true, None)?;
     Ok(conn)
 }
 
@@ -1633,8 +1666,18 @@ pub(crate) fn open_db_whole(dir: &std::path::Path) -> Result<Connection, String>
 /// ⚠️ Only the projects themselves and what hangs off them: a reference block in a visible project
 /// that points at a finished one stays (the reference line just cannot open it), unlike a private
 /// one, whose very existence is hidden.
-fn hide_projects(conn: &Connection, finished: bool) -> Result<(), String> {
-    let seen = if finished { "private = 0 AND status != 'done'" } else { "private = 0" };
+/// `only` (P16-0): a follow-up run's server sees that one project and nothing else. The id is spliced in
+/// as a literal (a view cannot take a bound parameter), so anything but the id alphabet sees nothing.
+fn hide_projects(conn: &Connection, finished: bool, only: Option<&str>) -> Result<(), String> {
+    let mut seen = if finished { "private = 0 AND status != 'done'".to_string() } else { "private = 0".to_string() };
+    if let Some(id) = only {
+        let safe = !id.is_empty() && id.len() <= 64 && id.bytes().all(|c| c.is_ascii_alphanumeric() || c == b'-' || c == b'_');
+        if safe {
+            seen.push_str(&format!(" AND id = '{id}'"));
+        } else {
+            seen.push_str(" AND 0");
+        }
+    }
     conn.execute_batch(&format!(
         "CREATE TEMP VIEW threads AS
            SELECT rowid AS rowid, * FROM main.threads WHERE {seen};
@@ -4819,7 +4862,7 @@ fn open_db_rw(dir: &std::path::Path) -> Result<Connection, String> {
     }
     // P9E: the write tools read as well — whether a project or block exists, what a quote is
     // checked against — and every one of those reads must see what the AI may see.
-    hide_projects(&conn, serving_weekly())?;
+    hide_projects(&conn, serving_weekly(), serving_project().as_deref())?;
     Ok(conn)
 }
 
@@ -9463,6 +9506,14 @@ fn handle_tool_call(params: &Value) -> Value {
                     "Spool's own background runs (weekly review, follow-up) do not mark a folder as synced \
                      — that is said by the user, or by the AI they are talking to."
                 )
+            } else if matches!(name, "add_block" | "create_thread" | "set_thread_summary" | "set_block_gist") {
+                t!(
+                    "Spool 自己的后台任务(周回顾、跟进)不直接写库 —— 跟进的结论用 propose_blocks 排进待审,\
+                     用户点了才存;周回顾的建议只写进回答里。",
+                    "Spool's own background runs (weekly review, follow-up) do not write into the library \
+                     directly — a follow-up's findings go through propose_blocks and wait for the user's \
+                     approval; a weekly review's suggestions go in its answer."
+                )
             } else {
                 t!(
                     "Spool 自己的后台任务(周回顾、跟进)不提议拆项目 —— 拆不拆由用户在对话里提出。",
@@ -11790,6 +11841,16 @@ mod compress_prompt_tests {
 // A prompt's arguments are typed by a HUMAN into the client's slash-command dialog, and
 // the naming hard rule says ids never reach the user — so a project is named by title
 // here (an id still resolves, for a model that already holds one from list_threads).
+/// P16-0: the id of the project a follow-up run is about, resolved exactly the way its prompt was
+/// (`resolve_thread` on the AI's view) — so the server it starts with `--engine-project` sees the same
+/// project the prompt names. The GUI passes the title.
+pub(crate) fn engine_project_id(key: &str) -> Result<String, String> {
+    let dir = app_data_dir()
+        .ok_or_else(|| t!("无法定位 Spool 数据目录。", "Could not locate Spool's data directory."))?;
+    let conn = open_db(&dir)?;
+    resolve_thread(&conn, key).map(|(id, _)| id)
+}
+
 fn resolve_thread(conn: &Connection, key: &str) -> Result<(String, String), String> {
     use rusqlite::OptionalExtension;
     let key = key.trim();
@@ -19187,6 +19248,69 @@ mod tests {
         }
     }
 
+    // P16-0 (HANDOFF 第 279 条): Spool's own engine does not write straight into the library, and a
+    // follow-up run's server sees the one project it follows up — reads and the queued writes alike.
+    #[test]
+    fn an_engine_run_writes_nothing_directly_and_a_follow_up_sees_one_project() {
+        let _home = crate::home_lock();
+        let dir = std::env::temp_dir().join(format!("spool-p16-scope-{}", std::process::id()));
+        canary_library(&dir, false);
+        let conn = Connection::open(dir.join("spool.db")).unwrap();
+        conn.execute_batch(
+            "INSERT INTO threads (id, workspace_id, title, status, created_at, updated_at) VALUES
+               ('pubOther', 'wsStudio', 'Zq9other plans', 'active', 1, 2);
+             INSERT INTO blocks (id, thread_id, kind, content, seq, created_at) VALUES
+               ('othB1', 'pubOther', 'text', 'Zq9other secret plan lighthouse', 1, 3);
+             INSERT INTO follow_up_items (id, thread_id, text, standing, fingerprint, status, sort_order, created_at)
+               VALUES ('othFu1', 'pubOther', 'Zq9other question', 0, 'zq9other question', 'open', 0, 3);",
+        )
+        .unwrap();
+        drop(conn);
+        let tool = |name: &str, args: Value| ai_call(&dir, "tools/call", &json!({ "name": name, "arguments": args }));
+        let blocks = || -> i64 {
+            Connection::open(dir.join("spool.db")).unwrap().query_row("SELECT COUNT(*) FROM blocks", [], |r| r.get(0)).unwrap()
+        };
+        // An ordinary client sees both projects.
+        assert!(tool("list_threads", json!({})).contains("Zq9other"));
+
+        TEST_ENGINE_RUN.with(|e| e.set(true));
+        let listed = ai_call(&dir, "tools/list", &json!({}));
+        let before = blocks();
+        let add = tool("add_block", json!({ "thread_id": "pubGarden", "content": "from a web page" }));
+        let summary = tool("set_thread_summary", json!({ "thread_id": "pubGarden", "summary": "x" }));
+        TEST_ENGINE_PROJECT.with(|p| *p.borrow_mut() = Some("pubGarden".into()));
+        let threads = tool("list_threads", json!({}));
+        let search = tool("search_blocks", json!({ "query": "lighthouse" }));
+        let other_brief = tool("get_follow_up_brief", json!({ "thread_id": "pubOther" }));
+        let other_close = tool("close_follow_up_item", json!({ "item_id": "othFu1", "outcome": "a page said so" }));
+        let other_suggest = tool("suggest_follow_up_item", json!({ "thread_id": "pubOther", "text": "Zq9other more" }));
+        let own_brief = tool("get_follow_up_brief", json!({ "thread_id": "pubGarden" }));
+        TEST_ENGINE_PROJECT.with(|p| *p.borrow_mut() = Some("x' OR 1=1 --".into()));
+        let forged = tool("list_threads", json!({}));
+        TEST_ENGINE_PROJECT.with(|p| *p.borrow_mut() = None);
+        TEST_ENGINE_RUN.with(|e| e.set(false));
+
+        for name in ["add_block", "create_thread", "set_thread_summary", "set_block_gist"] {
+            assert!(!listed.contains(&format!("\"name\":\"{name}\"")), "{name} listed to the engine");
+        }
+        assert!(add.contains("\"isError\":true") && add.contains("propose_blocks"), "{add}");
+        assert!(summary.contains("\"isError\":true"), "{summary}");
+        assert_eq!(blocks(), before);
+        assert!(threads.contains("Garden notes") && !threads.contains("Zq9other"), "{threads}");
+        assert!(search.contains("Tomatoes") && !search.contains("Zq9other"), "{search}");
+        assert!(other_brief.contains("\"isError\":true") && !other_brief.contains("Zq9other"), "{other_brief}");
+        assert!(other_close.contains("\"isError\":true"), "{other_close}");
+        assert!(other_suggest.contains("\"isError\":true"), "{other_suggest}");
+        assert!(own_brief.contains("Frost date"), "{own_brief}");
+        assert!(!forged.contains("Garden notes") && !forged.contains("Zq9other"), "{forged}");
+        let status: String = Connection::open(dir.join("spool.db"))
+            .unwrap()
+            .query_row("SELECT status FROM follow_up_items WHERE id = 'othFu1'", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(status, "open");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     /// One AI-facing call against the library in `dir`, through the same entry point a client
     /// (or Spool's own engine) uses. `kind` is a JSON-RPC method, or `guidance` / `headless`
     /// for the two prompt-assembly functions.
@@ -20677,7 +20801,8 @@ mod tests {
         TEST_ENGINE_RUN.with(|e|e.set(true));
         let engine=listed(&dir);
         TEST_ENGINE_RUN.with(|e|e.set(false));
-        assert_eq!(engine["tools"].as_array().unwrap().len(), 26);
+        // P16-0: 30 − 8 (ENGINE_EXCLUDED_TOOLS, four of them the direct writes).
+        assert_eq!(engine["tools"].as_array().unwrap().len(), 22);
         assert!(!OPENERS.contains("request_folder_file") && !INSTRUCTION_BODY.contains("request_folder_file"));
         let out=ai_call(&dir,"tools/call",&json!({"name":"request_folder_file","arguments":{"thread_id":"th1","path":"x.txt","why":"check"}}));
         assert!(out.contains("Unknown tool: request_folder_file"), "{out}");

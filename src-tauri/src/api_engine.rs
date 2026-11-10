@@ -167,6 +167,7 @@ fn ask_cli_inner(cli: &CliRoute, system: &str, user: &str, timeout_secs: u64) ->
         2,
         false,
         false,
+        None,
         cli.model.as_deref(),
         cli.effort.as_deref(),
         quiet,
@@ -2811,6 +2812,57 @@ mod p10_real_runs {
         }
     }
 
+    /// P16-0 (HANDOFF 第 279 条): one local-Codex follow-up on a copy, argv built the app's way — web on, the
+    /// Spool server scoped to the project. `SPOOL_P16_PROJECT` = the project's title.
+    #[test]
+    #[ignore = "real local Codex follow-up against a library copy; see the header"]
+    fn real_cli_follow_up_on_a_copy() {
+        use std::io::Read;
+        let dir = copy_dir();
+        let out = out_dir();
+        let exe = env("SPOOL_P10_EXE");
+        let title = env("SPOOL_P16_PROJECT");
+        let prompt = crate::mcp::guidance_text_headless("follow_up", &serde_json::json!({ "project": title })).unwrap();
+        let id = crate::mcp::engine_project_id(&title).unwrap();
+        save(&out, "prompt.txt", &prompt);
+        let status = crate::engine::detect(Some(crate::engine::EngineKind::Codex), None);
+        let bin = status.path.expect("codex on this machine");
+        let msg = out.join("final.txt");
+        let _ = std::fs::remove_file(&msg);
+        let args =
+            crate::engine::codex_args(&prompt, &exe, &msg.to_string_lossy(), true, false, Some(&id), crate::engine::data_dir().as_deref());
+        assert!(args.iter().any(|a| a.contains(&dir)), "the copy reaches Spool's server the app's way");
+        save(&out, "args.json", &serde_json::to_string_pretty(&args[..args.len() - 1]).unwrap());
+        let mut cmd = std::process::Command::new(&bin);
+        cmd.args(&args).env_clear();
+        for (k, v) in crate::engine::run_env(crate::engine::EngineKind::Codex, std::path::Path::new(&bin)) {
+            cmd.env(k, v);
+        }
+        let started = std::time::Instant::now();
+        let mut child = cmd
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        let mut events = String::new();
+        child.stdout.take().unwrap().read_to_string(&mut events).unwrap();
+        let mut stderr = String::new();
+        child.stderr.take().unwrap().read_to_string(&mut stderr).unwrap();
+        let code = child.wait().unwrap();
+        save(&out, "events.jsonl", &events);
+        save(&out, "stderr.txt", &stderr);
+        let usage = crate::engine::parse_codex_usage(&events);
+        let answer = std::fs::read_to_string(&msg).unwrap_or_default();
+        println!(
+            "cli: exit={code} ms={} usage={usage:?} answer {} chars, error={:?}",
+            started.elapsed().as_millis(),
+            answer.chars().count(),
+            crate::engine::parse_codex_error(&events)
+        );
+        save(&out, "usage.json", &serde_json::to_string_pretty(&usage).unwrap());
+    }
+
     #[test]
     #[ignore = "real local Codex weekly review against a library copy; see the header"]
     fn real_cli_weekly_on_a_copy() {
@@ -2825,7 +2877,7 @@ mod p10_real_runs {
         let bin = status.path.expect("codex on this machine");
         let msg = out.join("final.txt");
         let _ = std::fs::remove_file(&msg);
-        let args = crate::engine::codex_args(&prompt, &exe, &msg.to_string_lossy(), false, true, crate::engine::data_dir().as_deref());
+        let args = crate::engine::codex_args(&prompt, &exe, &msg.to_string_lossy(), false, true, None, crate::engine::data_dir().as_deref());
         assert!(args.iter().any(|a| a.contains(&dir)), "the copy reaches Spool's server the app's way");
         let mut cmd = std::process::Command::new(&bin);
         cmd.args(&args).env_clear();

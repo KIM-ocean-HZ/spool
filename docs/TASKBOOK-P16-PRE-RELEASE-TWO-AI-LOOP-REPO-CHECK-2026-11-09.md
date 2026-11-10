@@ -314,6 +314,28 @@ Parallels 试用 **11-20 到期**。P16-6 要在那之前做完；预计来不�
 3. Codex 引擎（跟进和周回顾都算）**关掉跟它的活无关的默认功能**：`apps`、`plugins`、`multi_agent`、`memories`、`browser_use`、`browser_use_external`、`computer_use`、`in_app_browser`、`image_generation`？好处：引擎只剩 Spool 的工具和搜索。代价：几乎没有；要真跑一次确认还能跑完。
 4. R5 那一句要不要随 P16-1 / P16-2 一起加进 `INSTRUCTION_BODY`？
 5. R3、R4 放到发版二之后？
+
+**Ocean 11-10 的答复**（HANDOFF 第 280 – 283 条）：第 1 件 shell **留着**；第 2 件**照旧现场开**网址；第 3 件关掉，**生成图片留着**（「周回顾配一张总结图」记成 `DISCOVERED-20261110-3`，发版二之后研究）；第 4 件顺带加。第 5 件没问，按方针默认记成 captured（`DISCOVERED-20261110-1`、`-2`）。
+⇒ **剩下的风险，照实写**：Codex 跟进那一轮仍然能用 shell 读磁盘（包括 `spool.db` 本身）、仍然能现场打开任意网址，所以「网页让它读库再把内容拼进网址发出去」这条路在 Codex 那一槽**还在**。这次修复关掉的是 Spool 自己这边的两半：MCP 不再把别的项目递给它，它也没有直接写库的工具了。
+
+#### 7.1.5 修复（插在 P16-0 之后，HANDOFF 第 279、282 条）
+
+改了什么：
+- `mcp.rs`：`ENGINE_EXCLUDED_TOOLS` 从 4 个变成 8 个，加上直接写的 `add_block` / `create_thread` / `set_thread_summary` / `set_block_gist`（引擎看不到，调了就拒，拒的那句话指向 `propose_blocks`）；新增 `--engine-project=<id>`，带了它的服务在 `hide_projects` 那套临时视图里只留这一个项目（读和排队写都只碰得到它；id 只认 `[A-Za-z0-9_-]`，别的一律什么都看不到）；`engine_project_id` 用和提示词同一套 `resolve_thread` 把界面传来的标题换成 id。
+- `engine.rs`：`ALLOWED_TOOL_NAMES` 26 → 22；`server_args` / 三种引擎的配置 / `run_action` 多一个 `project`，只有跟进传；Codex 两种运行（带 Spool 服务的、不带工具的）都加 `-c features.<x>=false` 关掉 `apps` / `plugins` / `multi_agent` / `memories` / `browser_use` / `browser_use_external` / `computer_use` / `in_app_browser`（每一项先用 `codex -c … features list` 核过 0.147 认）；`image_generation`、`shell_tool` 不动；「shell 关不掉」那段旧注释改成现状。
+- `lib.rs`：跟进那一次把项目 id 传下去。`api_engine.rs`：两个调用方补参数，加一条 `#[ignore]` 的真跑 `real_cli_follow_up_on_a_copy`。
+
+验证：
+- `cargo test --lib` 318 过（基线 316 + 新加 2：`an_engine_run_writes_nothing_directly_and_a_follow_up_sees_one_project` —— 引擎列不到、调不动那四个，块数不变；限定到〈Garden notes〉后 `list_threads` / `search_blocks` 看不到另一个项目，读它的跟进、关它的跟进行、往它里面提跟进行都被拒，那条跟进行仍是 open；伪造的 id 什么都看不到。`a_follow_up_run_is_scoped_to_its_project_and_codex_runs_without_its_extras` —— 三种引擎的配置都带上项目、别的运行不带；Codex 两种运行都关了那八项、没碰图片和 shell；工具单里没有那四个）。原来写死「引擎 26 个工具」的那条测试改成 22。
+- 真跑 1 次（本机 Codex 0.147，真库 `VACUUM INTO` 副本、副本里的连接文件夹先删掉，项目〈剩余推荐信〉，11-10 00:22，30 秒）。判定标准跑之前写在 `/private/tmp/claude-501/-Users-hzjin-Desktop-Knote/dac73557-5746-4b60-ae9c-0f4bb758d70c/scratchpad/p16-0-fix-run/CRITERIA.md`，原始数据（提示词、参数、事件流、最后回复）在同一目录 `out-after/`。逐条：
+  1. 跑完：退出 0、没有 `turn.failed`，最后回复 107 字（「这次没有新进展……两项都属于私人邮件或申请系统状态，公开网页无法证实」）—— 过。
+  2. Spool 的工具调用 3 次（`list_threads` 1、`search_blocks` 2）全部 completed，没有被 Codex 自己取消 —— 过。
+  3. 没调那四个直接写的工具 —— 过。
+  4. 读到的结果里没有别的项目（它这次用标题筛着调的 `list_threads`，没有走到「不筛也只看得到一个」那一步，那一步由上面的单元测试覆盖）—— 过。
+  5. 副本里块数 1431 不变、提案 0、新建议的跟进行 0、关掉的跟进行没变 —— 过。
+  6. Codex 会话里 `<apps_instructions>`、`<plugins_instructions>`、推荐插件那一段都**没了**；但**多代理那段说明还在**（`spawn_agent` …「4 available concurrency slots」）—— `features.multi_agent=false` 在 0.147 里管不到它。**一半过**。子代理拿的是同一套工具和同一个沙箱，不多出能力，所以没再往下挖；回执照实记。
+- 这一轮不足以支撑：跟进提案的质量没变（只跑 1 次、没有改前对照）；挡得住注入（没放恶意网页）；多代理关掉了（没关掉）。
+- 用掉的额度：本机 Codex 1 次（P16-0 这一件上限 10 次）。
 ### 7.2 P16-1 – P16-4：改了什么（提交）、怎么验的（命令和数字）、真跑原始数据在哪
 ### 7.3 换装和 Ocean 验收
 ### 7.4 Windows

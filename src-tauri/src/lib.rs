@@ -185,6 +185,8 @@ async fn ai_engine_run(
         // just one that fits the job. Reaches claude only: codex has no equivalent flag,
         // so there the timeout is the whole ceiling (§7.3).
         let max_turns = if web { 24 } else { 12 };
+        // P16-0: resolved the same way the prompt above resolved it, so the two name one project.
+        let only = if web { Some(mcp::engine_project_id(&project)?) } else { None };
         let preferred = engine.as_deref().and_then(engine::EngineKind::parse);
         // W3-c: an unrecognised model name is dropped rather than passed on. This value
         // crosses from settings.json, which the user edits by hand, and a typo reaching
@@ -210,6 +212,8 @@ async fn ai_engine_run(
             web,
             // P10 验收第一轮: 「已完成的项目不允许进周回顾」 — its Spool server hides them.
             digest.is_some(),
+            // P16-0 (HANDOFF 第 279 条): a follow-up's Spool server sees only the project it follows up.
+            only.as_deref(),
             model.as_deref(),
             effort.as_deref(),
             emit,
