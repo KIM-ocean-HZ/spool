@@ -701,6 +701,7 @@ Parallels 试用 **11-20 到期**。P16-6 要在那之前做完；预计来不�
 **双击进编辑时预览有时还开着（11-10，Ocean「我双击点击进入block编辑页面，有概率批注也进入编辑页面，修复」；HANDOFF 第 298 条）**
 - 原因：双击之前浏览器先发两下单击。第一下落在被更正的那一句上就打开预览；第二下关不关它要看落在哪（还在那一句上就关，偏一点就不关），所以是「有概率」。双击打开编辑器（`openEditor`）时没人关预览。
 - 修（`d226bbb`）：`openEditor` 里先关预览。编辑器只从这一处打开（内容和批注两种双击都走它）。没有能点的测试环境（vitest 没有 DOM），只跑了 `tsc` 和全套 1355；等换装后 Ocean 双击看。
+- 换装第六次（17:17，Ocean「换装」；HANDOFF 第 299 条）：代码 `333c803`（含 `d226bbb`），`spool` SHA-256 `a50f5b95b9480c8189bd516eba9489e59976ea8682d0228aa4e1adad4556c10f`，和 `/Applications` 那份一致；`drafts.json` 空；备份 `~/Desktop/Spool/db/spool.before-p16r5-install-20261110-171732.db`（ok）+ 7 个 json；按 pid 停 59847 / 59929，18 个 `--mcp` 没动；旧包 `~/Desktop/Spool/spool-pre-install/Spool-0.7.4-40acc17-before-p16r5-20261110-171732.app`；新进程 17:17:33 起，库 v39，1461 / 948941 / 109 / 65 前后一样，启动日志没有报错。
 
 ### 7.4 Windows
 
