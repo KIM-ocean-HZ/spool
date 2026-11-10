@@ -11620,7 +11620,8 @@ fn state_text_for_material(text: &str) -> String {
 
 /// 本机 CLI / API 两条路各自的发送上限（旧第 201 条：CLI 20 万字、API 12 万字），超了不发。
 pub(crate) const REPO_CHECK_CLI_CAP: usize = 200_000;
-pub(crate) const REPO_CHECK_API_CAP: usize = 120_000;
+// P16-7（11-10 第 290 条）：API 12 万 → 15 万。flux 工作区带上仓库量到 120,447 字，超了；Ocean 的 DeepSeek 实测约 3 字一个 token。
+pub(crate) const REPO_CHECK_API_CAP: usize = 150_000;
 
 /// 一次对照仓库要发的东西，和逐字闸要拿来比的几份原文。
 pub(crate) struct RepoCheckMaterial {

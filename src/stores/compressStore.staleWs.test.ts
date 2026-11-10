@@ -128,14 +128,14 @@ describe('P9V-2 · 过期检测查整个工作区', () => {
   });
 
   it('⛔ 第 201 条：超上限就不发，结果上记着多大、上限多少', async () => {
-    await createBlock({ threadId: flux.id, content: '字'.repeat(130_000) });
+    await createBlock({ threadId: flux.id, content: '字'.repeat(160_000) });
     put([midi, flux], [ws, sub]);
     await useCompressStore.getState().runStaleScanWorkspace(ws.id);
     expect(sent.packs).toBeNull();
     const sess = useCompressStore.getState().staleWs[ws.id]!;
     expect(sess.outcome).toBeNull();
-    expect(sess.tooBig!.cap).toBe(120_000);
-    expect(sess.tooBig!.chars).toBeGreaterThan(130_000);
+    expect(sess.tooBig!.cap).toBe(150_000);
+    expect(sess.tooBig!.chars).toBeGreaterThan(160_000);
   });
 
   it('项目级「不动」只划掉这一条，不碰项目', async () => {
@@ -151,7 +151,7 @@ describe('P9V-2 · 过期检测查整个工作区', () => {
   });
 
   it('P9V-4：开着每月自动查的工作区，查一次就记上时间 —— 超上限没发也记（不会每 10 分钟重试）', async () => {
-    await createBlock({ threadId: flux.id, content: '字'.repeat(130_000) });
+    await createBlock({ threadId: flux.id, content: '字'.repeat(160_000) });
     put([midi, flux], [ws, sub]);
     useCompressStore.getState().setStaleAuto(ws.id, true);
     expect(useCompressStore.getState().staleAuto[ws.id]).toEqual({ on: true, lastRunAt: 0 });

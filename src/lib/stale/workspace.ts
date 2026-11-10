@@ -9,7 +9,7 @@ import type { Workspace } from '@/lib/db/workspaces';
 
 /** 第 201 条：一次最多发多少字，超了就不发。两条路各一个（任务书 P9V-2，我定的）。
  *  ⚠️ 按「字」（JS 字符串长度）量，不按 token —— 界面上说的也是字。 */
-export const WS_STALE_CAP = { cli: 200_000, api: 120_000 } as const;
+export const WS_STALE_CAP = { cli: 200_000, api: 150_000 } as const; // P16-7（第 290 条）：API 12 万 → 15 万，和 Rust 的 REPO_CHECK_API_CAP 一样
 
 /** 这个工作区和它下面所有子工作区的 id。⚠️ 防环：库被手改出一个环也不会转死。 */
 export const workspaceSubtree = (workspaces: readonly Workspace[], rootId: string): Set<string> => {
