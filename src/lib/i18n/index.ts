@@ -1482,6 +1482,10 @@ const EN: Record<string, string> = {
   '这次没有新进展。': 'Nothing new this time.',
   // P16-3: a follow-up's list for the user, on its run card.
   '有 {n} 条要你定': '{n} for you to decide',
+  // P16-8: a correction / a batch written in one go, drawn as one line in the timeline.
+  '#{n} 更正了 #{m} 里的一句': '#{n} corrects a sentence in #{m}',
+  '{n} 处更正': '{n} corrections',
+  '跟进带回 {n} 块': 'Follow-up brought back {n} blocks',
   '建议关掉这条跟进：{line}': 'Suggested closing: {line}',
   '这条要你自己答：{line}': 'Only you can answer this one: {line}',
   '#{n} 复查过了，还成立：{head}': '#{n} rechecked, still holds: {head}',

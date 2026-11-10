@@ -1,4 +1,4 @@
-import { Fragment, type RefObject, useEffect, useRef, useState } from 'react';
+import { Fragment, type RefObject, useEffect, useMemo, useRef, useState } from 'react';
 import { formatAccelerator } from '@/lib/capture/shortcut';
 import type { Block } from '@/lib/db/blocks';
 import {
@@ -19,6 +19,8 @@ import { IS_MAC } from '@/lib/platform';
 import { useSearchStore } from '@/stores/searchStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 import BlockItem from './BlockItem';
+import { BatchRow, CompactBlockRow } from './CompactRows';
+import { feedRows } from '@/lib/blocks/feedGroups';
 import DateNotices from './DateNotices';
 import { dateLocale, useT } from '@/lib/i18n';
 
@@ -164,6 +166,22 @@ export default function BlockFeed({ threadId, scrollRef }: Props) {
   // 记号，#21 在屏幕上哪儿都没有。Ocean 选甲：更正块回到时间线，被更正的那一句点一下在浮窗里
   // 预览（CorrectionPopover），不来回跳。⛔ 别再按「是不是更正」从这里滤块。
   const ordered = blocks;
+
+  // P16-8（第 289 条）：一次写进来的更正 / 跟进块缩成一行（lib/blocks/feedGroups.ts）。每一块照旧在自己的位置；
+  // 点开的记在这里 —— `openGroups` 记组里的块 id（组有一块在里面就算开着），`openBlocks` 记换回整张卡的块。
+  // 跳到某一块（搜索、「被 #N 更正」、引用）时它那一组和它自己都打开，渲染时就先当开着，下面的滚动才找得到它。
+  const [openGroups, setOpenGroups] = useState<ReadonlySet<string>>(new Set());
+  const [openBlocks, setOpenBlocks] = useState<ReadonlySet<string>>(new Set());
+  useEffect(() => {
+    setOpenGroups(new Set());
+    setOpenBlocks(new Set());
+  }, [threadId]);
+  useEffect(() => {
+    if (!highlightBlockId) return;
+    setOpenGroups((s) => (s.has(highlightBlockId) ? s : new Set(s).add(highlightBlockId)));
+    setOpenBlocks((s) => (s.has(highlightBlockId) ? s : new Set(s).add(highlightBlockId)));
+  }, [highlightBlockId]);
+  const byId = useMemo(() => new Map(ordered.map((b) => [b.id, b] as const)), [ordered]);
 
   // If a search result targets a block outside the current tail window, widen so it's
   // mounted before the scrollIntoView below runs. Runs before the highlight effect so
@@ -564,25 +582,34 @@ export default function BlockFeed({ threadId, scrollRef }: Props) {
         </div>
       )}
       <div className="space-y-1 [&_article+article]:border-t [&_article+article]:border-line/40">
-        {visible.map((b, i) => {
-          // Date divider above any block that opens a new calendar day — the first
-          // visible block always gets one. The previous-day comparison uses the full
-          // `ordered` array via the absolute index so the boundary stays correct
-          // across the tail-window cut.
-          const absIdx = hiddenCount + i;
-          const showDivider = i === 0 || !isSameDay(ordered[absIdx - 1]!.createdAt, b.createdAt);
-          return (
-            <Fragment key={b.id}>
-              {showDivider && <DateDivider ts={b.createdAt} />}
-              <BlockItem
+        {(() => {
+          // P16-8: rows, not raw blocks — a correction or a batch written in one go is one line until opened
+          // (lib/blocks/feedGroups.ts). The date divider compares a row's first block with the previous row's last.
+          const rows = feedRows(visible, ordered);
+          const full = (b: Block) => (
+            <BlockItem
+              block={b}
+              highlight={b.id === highlightBlockId}
+              selected={selectedBlockIds.has(b.id)}
+              anySelected={anySelected}
+              onSelectClick={(shiftKey) => handleSelectClick(b.id, shiftKey)}
+              onTogglePin={() => void togglePin(b.id)}
+              onDelete={() => void deleteAsking(b.id)}
+            />
+          );
+          const one = (b: Block) =>
+            openBlocks.has(b.id) || b.id === highlightBlockId ? (
+              full(b)
+            ) : (
+              <CompactBlockRow
                 block={b}
-                highlight={b.id === highlightBlockId}
-                selected={selectedBlockIds.has(b.id)}
-                anySelected={anySelected}
-                onSelectClick={(shiftKey) => handleSelectClick(b.id, shiftKey)}
-                onTogglePin={() => void togglePin(b.id)}
-                onDelete={() => void deleteAsking(b.id)}
+                target={b.refBlockId ? (byId.get(b.refBlockId) ?? null) : null}
+                highlight={false}
+                onOpen={() => setOpenBlocks((s) => new Set(s).add(b.id))}
               />
+            );
+          const hint = (b: Block) => (
+            <>
               {/* 拍板点 5 / 首日价值 §4.5: one line, once, under the block that took the
                   user to three captures — the point at which 「打个包试试」 is something
                   they can do now rather than remember for later. */}
@@ -591,9 +618,48 @@ export default function BlockFeed({ threadId, scrollRef }: Props) {
                   {t('现在够打一个包了 —— 按 ⌘⇧P 打包，粘给任何 AI 试试。')}
                 </p>
               )}
-            </Fragment>
+            </>
           );
-        })}
+          return rows.map((row, i) => {
+            const first = row.kind === 'block' ? row.block : row.blocks[0]!;
+            const prev = i === 0 ? null : rows[i - 1]!;
+            const prevLast = prev === null ? null : prev.kind === 'block' ? prev.block : prev.blocks[prev.blocks.length - 1]!;
+            const showDivider = prevLast === null || !isSameDay(prevLast.createdAt, first.createdAt);
+            if (row.kind === 'block') {
+              return (
+                <Fragment key={first.id}>
+                  {showDivider && <DateDivider ts={first.createdAt} />}
+                  {row.compact ? one(first) : full(first)}
+                  {hint(first)}
+                </Fragment>
+              );
+            }
+            const open = row.blocks.some((b) => openGroups.has(b.id) || b.id === highlightBlockId);
+            const toggle = (): void => {
+              const ids = row.blocks.map((b) => b.id);
+              const drop = (s: ReadonlySet<string>) => new Set([...s].filter((id) => !ids.includes(id)));
+              if (open) {
+                setOpenGroups(drop);
+                setOpenBlocks(drop);
+              } else {
+                setOpenGroups((s) => new Set(s).add(first.id));
+              }
+            };
+            return (
+              <Fragment key={row.key}>
+                {showDivider && <DateDivider ts={first.createdAt} />}
+                <BatchRow batch={row.batch} blocks={row.blocks} open={open} onToggle={toggle} />
+                {open &&
+                  row.blocks.map((b) => (
+                    <Fragment key={b.id}>
+                      {one(b)}
+                      {hint(b)}
+                    </Fragment>
+                  ))}
+              </Fragment>
+            );
+          });
+        })()}
         {/* 拖文件进来时落在哪儿。⚠️⚠️ 2026-08-27 改了这句话，因为**它说的不是真的**：
             写着「新建一个块」，而 v15（DESIGN_PROJECT_FILES）之后从访达拖进来的文件
             是加进**这个项目的文件清单**的，一个块都不会新建（useThreadDropTarget 顶上
