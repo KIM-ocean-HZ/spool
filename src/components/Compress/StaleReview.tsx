@@ -15,6 +15,7 @@ import type { StaleSession } from '@/stores/compressStore';
 import { Choice, Stat } from './StaleParts';
 import WorkspaceStale from './WorkspaceStale';
 import { useStaleScope } from './useStaleScope';
+import { useFolderStore } from '@/stores/folderStore';
 
 // E3 · 「过期检测」（COMPRESS-UX-R2-2026-08-22 §7 / WORKPLAN §2.E3）。
 //
@@ -55,10 +56,15 @@ export default function StaleReview({ threadId }: { threadId: string }) {
   const t = useT();
   const { scope, available, workspaceId, plan } = useStaleScope(threadId);
   const setScope = useCompressStore((s) => s.setStaleScope);
+  // P16-7（第 286 条）：连着文件夹就和仓库一起查 —— 只查这个项目时是对照仓库那一页，整个工作区时 WorkspaceStale
+  // 自己带上仓库；没连照旧。⛔ 顶上不再有单独一块「对照仓库」（11-10 它把下面挤没了，也让人做两遍）。
+  const linked = useFolderStore((s) => s.views[threadId] != null);
+  const loadFolder = useFolderStore((s) => s.load);
+  useEffect(() => {
+    void loadFolder(threadId);
+  }, [threadId, loadFolder]);
   return (
     <div className="flex h-full min-h-0 flex-col">
-      {/* P16-4：对照仓库 —— 只在项目连着文件夹（或者已经有结果）时出现。 */}
-      <RepoCheckPanel threadId={threadId} />
       {/* P9V-2（第 200 条）：同一个页签，两种范围 —— 默认整个工作区，「只查这个项目」照旧在。
           能查的项目不到两个（比如只有一个项目的子工作区）就不出这一行。 */}
       {available && (
@@ -73,7 +79,9 @@ export default function StaleReview({ threadId }: { threadId: string }) {
       )}
       <div className="min-h-0 flex-1">
         {scope === 'workspace' && workspaceId ? (
-          <WorkspaceStale workspaceId={workspaceId} plan={plan} />
+          <WorkspaceStale workspaceId={workspaceId} plan={plan} fromThreadId={threadId} />
+        ) : linked ? (
+          <RepoCheckPanel threadId={threadId} />
         ) : (
           <ProjectStale threadId={threadId} />
         )}

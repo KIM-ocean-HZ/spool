@@ -18,6 +18,7 @@ import { dateLocale, useT } from '@/lib/i18n';
 import { openTarget } from '@/lib/utils/openTarget';
 import type { Thread } from '@/lib/db/threads';
 import { useCompressStore } from '@/stores/compressStore';
+import { useStaleScope } from '@/components/Compress/useStaleScope';
 import { useFolderStore } from '@/stores/folderStore';
 import { useThreadsStore } from '@/stores/threadsStore';
 import { toast } from '@/stores/toastStore';
@@ -99,12 +100,22 @@ function SyncNote({ v }: { v: FolderView }) {
   );
 }
 
-/** 「拿仓库对一遍」: runs the repo check for this project and opens the 过期检测 tab, where its results land. */
+/** 「拿仓库对一遍」: opens the 过期检测 tab and runs it in whichever scope that tab is on — since P16-7 (第 286 条)
+ *  both scopes carry the repository when the project is linked, so this is the same check as the button there. */
 function RepoCheckButton({ v, threadId }: { v: FolderView; threadId: string }) {
   const t = useT();
   const busy = useCompressStore((s) => s.running || s.batchRunning);
-  const running = useCompressStore((s) => s.running && s.runningKind === 'repo' && s.runningThreadId === threadId);
-  const run = useCompressStore((s) => s.runRepoCheck);
+  const { scope, workspaceId } = useStaleScope(threadId);
+  const running = useCompressStore(
+    (s) =>
+      s.running &&
+      ((s.runningKind === 'repo' && s.runningThreadId === threadId) ||
+        (s.runningKind === 'stale' && s.runningKey === `w:${workspaceId}`)),
+  );
+  const runProject = useCompressStore((s) => s.runRepoCheck);
+  const runWorkspace = useCompressStore((s) => s.runStaleScanWorkspace);
+  const run = (id: string): Promise<void> =>
+    scope === 'workspace' && workspaceId ? runWorkspace(workspaceId, { repoFrom: id }) : runProject(id);
   const setTab = useCompressStore((s) => s.setTab);
   return (
     <div className="flex items-center gap-2 pt-0.5">
@@ -115,12 +126,12 @@ function RepoCheckButton({ v, threadId }: { v: FolderView; threadId: string }) {
           setTab(threadId, 'stale');
           void run(threadId);
         }}
-        title={t('把这个项目和文件夹现在的样子对一遍，结果在「过期检测」页签里，点了才生效')}
+        title={t('打开「过期检测」，连着仓库查一遍；结果在那一页，点了才生效')}
         className={`flex flex-none items-center gap-1 whitespace-nowrap rounded border px-2 py-0.5 text-[11px] transition-colors disabled:opacity-40 ${
           v.ahead ? 'border-accent text-accent hover:bg-accent/10' : 'border-line text-muted hover:border-line-strong hover:text-ink'
         }`}
       >
-        {running ? t('正在对照…') : t('拿仓库对一遍')}
+        {running ? t('正在查…') : t('拿仓库对一遍')}
       </button>
     </div>
   );

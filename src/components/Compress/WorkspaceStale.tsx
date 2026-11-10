@@ -3,7 +3,7 @@ import { AlertTriangle, Loader2, ScanSearch } from 'lucide-react';
 import { estimateCost, formatYuan, FAILURE_SENTENCE } from '@/lib/ai/compress';
 import { alreadyCorrects } from '@/lib/blocks/staleGuards';
 import { dateLocale, useT } from '@/lib/i18n';
-import type { WsBlockRef, WsDroppedItem } from '@/lib/stale/wsItems';
+import { wsRepoKeys, type WsBlockRef, type WsDroppedItem } from '@/lib/stale/wsItems';
 import { staleAutoNextAt, tenThousands, type WsStalePlan } from '@/lib/stale/workspace';
 import { resolveVendor, vendorName } from '@/lib/ai/vendors';
 import Toggle from '@/components/ui/Toggle';
@@ -14,6 +14,8 @@ import { useThreadsStore } from '@/stores/threadsStore';
 import { routeFor, useRoads } from '@/lib/engine/roads';
 import RoadPicker from '@/components/AiSetup/RoadPicker';
 import { Choice, Stat } from './StaleParts';
+import WsRepoSection from './WsRepoSection';
+import { useFolderStore } from '@/stores/folderStore';
 
 type T = (key: string, vars?: Record<string, string | number>) => string;
 
@@ -26,11 +28,15 @@ type T = (key: string, vars?: Record<string, string | number>) => string;
 export default function WorkspaceStale({
   workspaceId,
   plan,
+  fromThreadId,
 }: {
   workspaceId: string;
   plan: WsStalePlan | null;
+  /** P16-7：从哪个项目点进来的 —— 它所在的工作区连着文件夹，就把仓库一起带上。 */
+  fromThreadId?: string;
 }) {
   const t = useT();
+  const folder = useFolderStore((s) => (fromThreadId ? (s.views[fromThreadId] ?? null) : null));
   const session = useCompressStore((s) => s.staleWs[workspaceId] ?? null);
   const running = useCompressStore(
     (s) => s.running && s.runningKind === 'stale' && s.runningKey === `w:${workspaceId}`,
@@ -86,19 +92,24 @@ export default function WorkspaceStale({
   const label = (r: WsBlockRef): string => t('〈{name}〉#{n}', { name: name(r.threadId), n: r.seq });
   const isDone = (threadId: string): boolean => threads.get(threadId)?.status === 'done';
 
-  const found = session ? session.blocks.length + session.projectItems.length : 0;
+  const found = session ? session.blocks.length + session.projectItems.length + wsRepoKeys(session.repo).length : 0;
   const left = wsStaleLeft(session, isDone);
   const cost = session?.outcome?.ok ? estimateCost(session.outcome) : null;
   const scanned = !!session?.outcome;
-  const cleanRun = scanned && found === 0 && session!.dropped.length === 0;
+  const cleanRun = scanned && found === 0 && session!.dropped.length === 0 && (session!.repo?.dropped.length ?? 0) === 0;
 
   return (
     <div className="flex h-full min-h-0 flex-col">
       <header className="flex flex-none items-center justify-between gap-3 border-b border-line px-5 py-2">
         <div className="min-w-0 text-[11px] text-muted">
-          {t('查整个〈{ws}〉：哪些旧块已经被别的块整条取代了（可以跨项目），哪些项目看起来已经结束了。你不点按钮，库里一个字都不动。', {
-            ws: wsTitle,
-          })}
+          {folder
+            ? t('查整个〈{ws}〉，连着的文件夹（{folder}）一起带上：哪些旧块被别的块或仓库推翻了，哪些项目看起来已经结束了，哪些跟进的前提没了，摘要还对不对得上。你不点按钮，库里一个字都不动。', {
+                ws: wsTitle,
+                folder: folder.name,
+              })
+            : t('查整个〈{ws}〉：哪些旧块已经被别的块整条取代了（可以跨项目），哪些项目看起来已经结束了。你不点按钮，库里一个字都不动。', {
+                ws: wsTitle,
+              })}
         </div>
       </header>
 
@@ -283,6 +294,15 @@ export default function WorkspaceStale({
                 </ul>
               </section>
             )}
+            {session.repo && (
+              <WsRepoSection
+                repo={session.repo}
+                decided={session.decided}
+                name={name}
+                label={label}
+                onDecide={(key, action) => void decide(workspaceId, key, action)}
+              />
+            )}
             <WsDroppedNote t={t} dropped={session.dropped} />
           </>
         ) : (
@@ -330,6 +350,13 @@ export default function WorkspaceStale({
                     n: plan?.threads.length ?? 0,
                   })}
                 </div>
+                {folder && (
+                  <div>
+                    {t('这个工作区连着文件夹（{folder}）：仓库现在的样子（现状文件、上次对过之后的提交和改动）一起发过去，各项目开着的跟进和摘要也一起对一遍。', {
+                      folder: folder.name,
+                    })}
+                  </div>
+                )}
                 {(plan?.skippedPrivate ?? 0) > 0 && (
                   <div>{t('私密项目 {n} 个不发。', { n: plan!.skippedPrivate })}</div>
                 )}
@@ -372,7 +399,7 @@ export default function WorkspaceStale({
             <button
               type="button"
               disabled={busy && !running}
-              onClick={() => (running ? void cancel() : void scan(workspaceId))}
+              onClick={() => (running ? void cancel() : void scan(workspaceId, { repoFrom: fromThreadId }))}
               className="flex items-center gap-1.5 rounded-md border border-line-strong bg-paper px-3 py-1.5 text-ink transition-colors enabled:hover:border-accent enabled:hover:text-accent disabled:opacity-50"
             >
               {running ? <Loader2 size={12} className="animate-spin" /> : <ScanSearch size={12} />}

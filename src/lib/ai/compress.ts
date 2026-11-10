@@ -1254,16 +1254,58 @@ export interface WsStaleScan {
   blocks: WsBlockProposal[];
   projects: WsProjectProposal[];
   dropped: WsDropped[];
+  // P16-7（第 286 条）：下面几样只有工作区连着文件夹、带着仓库查的那一次才有；没带仓库时是空的 / null。
+  /** 新的一方是仓库里的一份的那几块。 */
+  repoBlocks: WsRepoBlock[];
+  /** 前提没了的跟进行。 */
+  followUps: WsRepoLine[];
+  /** 对不上的 AI 摘要。 */
+  summaries: WsRepoSummary[];
+  repoDropped: RepoDropped[];
+  /** 连着的那个工作区（处理完推它的同步游标）。没带仓库 = null。 */
+  repoWorkspaceId: string | null;
 }
 
-/** 送出去的一个项目。⚠️ 数组的顺序就是提示词里 P1、P2…… 的顺序。 */
+export interface WsRepoBlock {
+  stale: WsRef;
+  kind: 'corrects' | 'supersedes';
+  why: string;
+  quoteStale: string;
+  /** 现状文件的路径 / "commits" / "changes"。 */
+  from: string;
+  quoteNew: string;
+  retyped: boolean;
+}
+
+/** 新的一方是一块（`by`）或者仓库里的一份（`from`），只有一个。 */
+export interface WsRepoLine {
+  project: number;
+  itemId: string;
+  line: string;
+  standing: boolean;
+  why: string;
+  by: WsRef | null;
+  from: string | null;
+  quoteNew: string;
+}
+
+export interface WsRepoSummary {
+  project: number;
+  text: string;
+  why: string;
+}
+
+/** 送出去的一个项目。⚠️ 数组的顺序就是提示词里 P1、P2…… 的顺序。
+ *  P16-7：`threadId` 让带着仓库的那一次能读这个项目的跟进行和摘要。 */
 export interface WsPack {
   title: string;
   text: string;
+  threadId?: string;
 }
 
+/** `repoFrom` = 从哪个项目点进来的：工作区连着文件夹，Rust 就把仓库一起带上（P16-7）；不给 = 照旧。 */
 export const staleScanWs = async (
-  req: Omit<CompressRequest, 'level' | 'packText'> & { packs: WsPack[] },
+  req: Omit<CompressRequest, 'level' | 'packText'> & { packs: WsPack[]; repoFrom?: string | null },
 ): Promise<WsStaleScan> =>
   invoke<WsStaleScan>('stale_scan_ws_via_api', {
     packs: req.packs,
@@ -1273,13 +1315,15 @@ export const staleScanWs = async (
     reasoning: req.reasoning,
     wire: req.wire,
     timeoutSecs: req.timeoutSecs,
+    repoFrom: req.repoFrom ?? null,
   });
 
 export const staleScanWsViaCli = async (
   packs: WsPack[],
   timeoutSecs: number,
   cli: CliRoute,
-): Promise<WsStaleScan> => invoke<WsStaleScan>('stale_scan_ws_via_cli', { packs, timeoutSecs, cli });
+  repoFrom: string | null = null,
+): Promise<WsStaleScan> => invoke<WsStaleScan>('stale_scan_ws_via_cli', { packs, timeoutSecs, cli, repoFrom });
 
 // ---------------------------------------------------------------------------------------
 // P16-4 · 对照仓库（Rust: api_engine.rs `repo_check_via_cli` / `repo_check_via_api`；材料在 mcp.rs

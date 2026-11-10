@@ -1489,10 +1489,14 @@ pub async fn stale_scan_via_api(
 // ⛔ 引文那一道和「只查这个项目」是**同一个** `locate`，规矩一个字不放宽。
 
 /// 工作区那一次的一个项目：名字（进提示词的分隔行）+ 它的 pack。
+/// P16-7：`thread_id` 让带着仓库的那一次能读这个项目的跟进行和摘要（没带仓库时用不到）。
 #[derive(serde::Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct WsPack {
     pub title: String,
     pub text: String,
+    #[serde(default)]
+    pub thread_id: Option<String>,
 }
 
 /// 「P2#3」—— 第几个项目（⚠️ 从 0 数，是 `packs` 的下标）、它里面的第几块（块自己的 `#N`）。
@@ -1549,11 +1553,60 @@ pub struct WsDropped {
 }
 
 #[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct WsStaleScan {
     pub outcome: CompressOutcome,
     pub blocks: Vec<WsBlockProposal>,
     pub projects: Vec<WsProjectProposal>,
     pub dropped: Vec<WsDropped>,
+    /// P16-7：下面几样只有带着仓库查的那一次才有（工作区没连文件夹时都是空的、`repo_workspace_id` 是 None）。
+    /// A 里新的一方是仓库里的一份的那几条。
+    pub repo_blocks: Vec<WsRepoBlock>,
+    /// C：前提没了的跟进行。
+    pub follow_ups: Vec<WsRepoLine>,
+    /// D：对不上的 AI 摘要。
+    pub summaries: Vec<WsRepoSummary>,
+    /// 这三样里被闸挡掉的，整条带回来。
+    pub repo_dropped: Vec<RepoDropped>,
+    /// 连着的那个工作区 —— 全部处理完推它的同步游标。
+    pub repo_workspace_id: Option<String>,
+}
+
+/// A 里新的一方是仓库里的一份：`from` = 现状文件的路径 / "commits" / "changes"。
+#[derive(serde::Serialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct WsRepoBlock {
+    pub stale: WsRef,
+    /// "corrects" | "supersedes"
+    pub kind: String,
+    pub why: String,
+    pub quote_stale: String,
+    pub from: String,
+    pub quote_new: String,
+    pub retyped: bool,
+}
+
+/// C：`project` 那个项目里的一行跟进，前提没了。新的一方是一块（`by`）或者仓库里的一份（`from`），只有一个。
+#[derive(serde::Serialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct WsRepoLine {
+    pub project: usize,
+    pub item_id: String,
+    pub line: String,
+    pub standing: bool,
+    pub why: String,
+    pub by: Option<WsRef>,
+    pub from: Option<String>,
+    pub quote_new: String,
+}
+
+/// D：`project` 那个项目的 AI 摘要可以换成 `text`。
+#[derive(serde::Serialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct WsRepoSummary {
+    pub project: usize,
+    pub text: String,
+    pub why: String,
 }
 
 /// 「P3」→ `Some(2)`。⚠️ 大小写、首尾空白都放过 —— 编号不是引文，放宽它不会放进一句编出来的话。
@@ -1719,7 +1772,195 @@ fn gate_ws(raw: &str, packs: &[String]) -> (Vec<WsBlockProposal>, Vec<WsProjectP
 fn ws_scan(outcome: CompressOutcome, packs: &[String]) -> WsStaleScan {
     let (blocks, projects, dropped) =
         if outcome.ok { gate_ws(&outcome.text, packs) } else { (Vec::new(), Vec::new(), Vec::new()) };
-    WsStaleScan { outcome, blocks, projects, dropped }
+    WsStaleScan {
+        outcome,
+        blocks,
+        projects,
+        dropped,
+        repo_blocks: Vec::new(),
+        follow_ups: Vec::new(),
+        summaries: Vec::new(),
+        repo_dropped: Vec::new(),
+        repo_workspace_id: None,
+    }
+}
+
+/// 「仓库:README.md」/「仓库：commits」/「repo:changes」→ 那一份的名字；不是仓库 → None。
+fn ws_repo_label(s: &str) -> Option<&str> {
+    let s = s.trim();
+    for p in ["仓库:", "仓库：", "repo:", "repository:", "Repo:", "Repository:"] {
+        if let Some(rest) = s.strip_prefix(p) {
+            return Some(rest.trim());
+        }
+    }
+    None
+}
+
+/// P16-7 —— 整个工作区带着仓库的那一次的闸。A（新的一方是块）和 B 原样交给 `gate_ws`（同一个 `locate`，规矩一个字
+/// 不放宽）；A 里新的一方是仓库的那几条、C、D 照对照仓库（`gate_repo_check`）的规矩在这里过：块的原话在它自己项目的
+/// pack 里找，仓库那句在仓库那几份里找（按路径，只写文件名也认），跟进行必须是那个项目清单上的，用户写的摘要不换。
+fn gate_ws_repo(raw: &str, packs: &[String], m: &crate::mcp::WsRepoMaterial) -> WsStaleScan {
+    let t = raw.trim();
+    let parsed: serde_json::Value = match (t.find('{'), t.rfind('}')) {
+        (Some(a), Some(b)) if b > a => serde_json::from_str(&t[a..=b]).unwrap_or_default(),
+        _ => serde_json::Value::Null,
+    };
+    let list = |k: &str| parsed.get(k).and_then(serde_json::Value::as_array).cloned().unwrap_or_default();
+    let by_of = |x: &serde_json::Value| x.get("by").and_then(serde_json::Value::as_str).unwrap_or_default().to_string();
+    let (repo_items, block_items): (Vec<_>, Vec<_>) = list("blocks").into_iter().partition(|x| ws_repo_label(&by_of(x)).is_some());
+    let (blocks, projects, dropped) =
+        gate_ws(&serde_json::json!({ "blocks": block_items, "projects": list("projects") }).to_string(), packs);
+
+    let per: Vec<std::collections::HashMap<i64, String>> = packs.iter().map(|p| blocks_of(p)).collect();
+    let block_text = |r: WsRef| per.get(r.project).and_then(|x| x.get(&r.seq)).cloned();
+    let ok = |q: &Quoted| matches!(q, Quoted::Verbatim | Quoted::Retyped);
+    let source_text = |name: &str| -> Option<String> {
+        m.sources
+            .iter()
+            .find(|(n, _)| n == name)
+            .or_else(|| m.sources.iter().find(|(n, _)| std::path::Path::new(n).file_name().and_then(|f| f.to_str()) == Some(name)))
+            .map(|(_, text)| text.clone())
+    };
+    let mut repo_dropped = Vec::new();
+
+    let mut repo_blocks = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    for item in repo_items {
+        let s = |k: &str| item.get(k).and_then(serde_json::Value::as_str).unwrap_or_default().to_string();
+        // ⛔ 引文一个字符都不动；只有 why 给人读，才 trim。
+        let (stale, why, qs, qn) = (s("stale"), s("why").trim().to_string(), s("quote_stale"), s("quote_new"));
+        let from = ws_repo_label(&s("by")).unwrap_or_default().to_string();
+        let kind = if s("kind").trim() == "supersedes" { "supersedes" } else { "corrects" }.to_string();
+        let drop = |reason: &'static str| RepoDropped { kind: "block", label: stale.clone(), why: why.clone(), quote: qs.clone(), reason };
+        let Some(o) = ws_block_label(&stale).map(|(project, seq)| WsRef { project, seq }) else {
+            repo_dropped.push(drop("no_block"));
+            continue;
+        };
+        let Some(old_text) = block_text(o) else {
+            repo_dropped.push(drop("no_block"));
+            continue;
+        };
+        if why.is_empty() {
+            repo_dropped.push(drop("empty"));
+            continue;
+        }
+        let a = locate(&qs, &old_text);
+        if !ok(&a) {
+            repo_dropped.push(drop("quote_stale"));
+            continue;
+        }
+        let Some(new_text) = source_text(&from) else {
+            repo_dropped.push(drop("no_source"));
+            continue;
+        };
+        let c = locate(&qn, &new_text);
+        if !ok(&c) {
+            repo_dropped.push(drop("quote_new"));
+            continue;
+        }
+        // 同一块已经有一条「被块取代」的，或者已经有一条「被仓库推翻」的：只留第一条。
+        if blocks.iter().any(|b| b.stale == o) || !seen.insert((o.project, o.seq)) {
+            continue;
+        }
+        repo_blocks.push(WsRepoBlock { stale: o, kind, why, quote_stale: qs, from, quote_new: qn, retyped: a == Quoted::Retyped || c == Quoted::Retyped });
+    }
+
+    let mut follow_ups = Vec::new();
+    let mut seen_lines = std::collections::HashSet::new();
+    for item in list("follow_ups") {
+        let s = |k: &str| item.get(k).and_then(serde_json::Value::as_str).unwrap_or_default().to_string();
+        let (id, why, by_label, qn) = (s("item_id").trim().to_string(), s("why").trim().to_string(), s("by"), s("quote_new"));
+        let drop = |reason: &'static str| RepoDropped { kind: "follow_up", label: id.clone(), why: why.clone(), quote: qn.clone(), reason };
+        let Some((project, (_, line, standing))) =
+            m.projects.iter().enumerate().find_map(|(p, x)| x.items.iter().find(|(i, _, _)| *i == id).map(|it| (p, it)))
+        else {
+            repo_dropped.push(drop("no_item"));
+            continue;
+        };
+        if why.is_empty() {
+            repo_dropped.push(drop("empty"));
+            continue;
+        }
+        let (by, from, new_text) = match ws_repo_label(&by_label) {
+            Some(name) => (None, Some(name.to_string()), source_text(name)),
+            None => match ws_block_label(&by_label).map(|(project, seq)| WsRef { project, seq }) {
+                Some(r) => (Some(r), None, block_text(r)),
+                None => (None, None, None),
+            },
+        };
+        let Some(new_text) = new_text else {
+            repo_dropped.push(drop("no_source"));
+            continue;
+        };
+        if !ok(&locate(&qn, &new_text)) {
+            repo_dropped.push(drop("quote_new"));
+            continue;
+        }
+        if !seen_lines.insert(id.clone()) {
+            continue;
+        }
+        follow_ups.push(WsRepoLine { project, item_id: id.clone(), line: line.clone(), standing: *standing, why, by, from, quote_new: qn });
+    }
+
+    let mut summaries = Vec::new();
+    let mut seen_summaries = std::collections::HashSet::new();
+    for item in list("summaries") {
+        let s = |k: &str| item.get(k).and_then(serde_json::Value::as_str).unwrap_or_default().trim().to_string();
+        let (label, text, why) = (s("project"), s("text"), s("why"));
+        let drop = |reason: &'static str| RepoDropped { kind: "summary", label: label.clone(), why: why.clone(), quote: text.clone(), reason };
+        let Some(p) = ws_project_label(&label).filter(|p| *p < m.projects.len()) else {
+            repo_dropped.push(drop("no_block"));
+            continue;
+        };
+        if m.projects[p].summary_by_user {
+            repo_dropped.push(drop("user_summary"));
+            continue;
+        }
+        if text.is_empty() {
+            repo_dropped.push(drop("empty"));
+            continue;
+        }
+        if seen_summaries.insert(p) {
+            summaries.push(WsRepoSummary { project: p, text, why });
+        }
+    }
+
+    WsStaleScan {
+        outcome: CompressOutcome::failed("internal", String::new(), None), // replaced by the caller
+        blocks,
+        projects,
+        dropped,
+        repo_blocks,
+        follow_ups,
+        summaries,
+        repo_dropped,
+        repo_workspace_id: Some(m.workspace_id.clone()),
+    }
+}
+
+fn ws_repo_scan(outcome: CompressOutcome, packs: &[String], m: &crate::mcp::WsRepoMaterial) -> WsStaleScan {
+    if !outcome.ok {
+        let mut scan = ws_scan(outcome, packs);
+        scan.repo_workspace_id = Some(m.workspace_id.clone());
+        return scan;
+    }
+    let mut scan = gate_ws_repo(&outcome.text, packs, m);
+    scan.outcome = outcome;
+    scan
+}
+
+/// P16-7：工作区那一次要不要带上仓库。`repo_from` = 从哪个项目点进来的；没给、或者工作区没连文件夹 → None（照旧
+/// 发 `STALE_WS_SYSTEM`）。每个 pack 都要带 `thread_id`，否则读不到跟进行和摘要 —— 那种调用照旧走老路。
+fn ws_repo_for(packs: &[WsPack], repo_from: Option<&str>, cap: usize) -> Result<Option<crate::mcp::WsRepoMaterial>, String> {
+    let Some(from) = repo_from else { return Ok(None) };
+    let Some(triples) = packs
+        .iter()
+        .map(|p| p.thread_id.clone().map(|id| (id, p.title.clone(), p.text.clone())))
+        .collect::<Option<Vec<_>>>()
+    else {
+        return Ok(None);
+    };
+    crate::mcp::ws_repo_material(&triples, from, cap)
 }
 
 fn ws_messages(packs: &[WsPack]) -> (String, String) {
@@ -1735,6 +1976,7 @@ pub async fn stale_scan_ws_via_cli(
     packs: Vec<WsPack>,
     timeout_secs: u64,
     cli: CliRoute,
+    repo_from: Option<String>,
 ) -> Result<WsStaleScan, String> {
     if RUNNING.swap(true, Ordering::SeqCst) {
         return Err("a run is already in flight".into());
@@ -1744,13 +1986,18 @@ pub async fn stale_scan_ws_via_cli(
         if let Ok(dir) = tauri::Manager::path(&app).app_config_dir() {
             crate::mcp::refresh_lang(&dir);
         }
-        let (system, user) = ws_messages(&packs);
-        ask_cli(&cli, &system, &user, timeout_secs)
+        // P16-7：工作区连着文件夹就把仓库一起带上；没连照旧。
+        match ws_repo_for(&packs, repo_from.as_deref(), crate::mcp::REPO_CHECK_CLI_CAP)? {
+            Some(m) => Ok(ws_repo_scan(ask_cli(&cli, &m.system, &m.user, timeout_secs), &texts, &m)),
+            None => {
+                let (system, user) = ws_messages(&packs);
+                Ok(ws_scan(ask_cli(&cli, &system, &user, timeout_secs), &texts))
+            }
+        }
     })
     .await;
     RUNNING.store(false, Ordering::SeqCst);
-    let outcome = out.unwrap_or_else(|e| CompressOutcome::failed("internal", e.to_string(), None));
-    Ok(ws_scan(outcome, &texts))
+    out.map_err(|e| e.to_string())?
 }
 
 /// P9V-1 — 过期检测查整个工作区，API 那条路。请求和 `stale_scan_via_api` 一模一样，只换了提示词。
@@ -1765,35 +2012,46 @@ pub async fn stale_scan_ws_via_api(
     reasoning: String,
     wire: Option<ApiWire>,
     timeout_secs: u64,
+    repo_from: Option<String>,
 ) -> Result<WsStaleScan, String> {
     if RUNNING.swap(true, Ordering::SeqCst) {
         return Err("a run is already in flight".into());
     }
     let wire = ApiWire::or_legacy(wire);
     let texts: Vec<String> = packs.iter().map(|p| p.text.clone()).collect();
-    let out = tauri::async_runtime::spawn_blocking(move || {
+    let out = tauri::async_runtime::spawn_blocking(move || -> Result<WsStaleScan, String> {
         if let Ok(dir) = tauri::Manager::path(&app).app_config_dir() {
             crate::mcp::refresh_lang(&dir);
         }
-        let (system, user) = ws_messages(&packs);
-        let bin = match sidecar_path() {
-            Ok(p) => p,
-            Err(e) => return CompressOutcome::failed("no_sidecar", e, None),
+        // P16-7：工作区连着文件夹就把仓库一起带上；没连照旧。
+        let repo = ws_repo_for(&packs, repo_from.as_deref(), crate::mcp::REPO_CHECK_API_CAP)?;
+        let (system, user) = match &repo {
+            Some(m) => (m.system.clone(), m.user.clone()),
+            None => ws_messages(&packs),
         };
-        let timeout_secs = clamp_timeout(timeout_secs);
-        let request =
-            sidecar_request(&base_url, &api_key, &model, &system, &user, &reasoning, &wire, timeout_secs);
-        let payload = match serde_json::to_vec(&request) {
-            Ok(v) => v,
-            Err(e) => return CompressOutcome::failed("internal", e.to_string(), None),
-        };
-        spawn_sidecar_with(&bin, payload, timeout_secs, Some(app.clone()))
+        let outcome = (|| {
+            let bin = match sidecar_path() {
+                Ok(p) => p,
+                Err(e) => return CompressOutcome::failed("no_sidecar", e, None),
+            };
+            let timeout_secs = clamp_timeout(timeout_secs);
+            let request =
+                sidecar_request(&base_url, &api_key, &model, &system, &user, &reasoning, &wire, timeout_secs);
+            let payload = match serde_json::to_vec(&request) {
+                Ok(v) => v,
+                Err(e) => return CompressOutcome::failed("internal", e.to_string(), None),
+            };
+            spawn_sidecar_with(&bin, payload, timeout_secs, Some(app.clone()))
+        })();
+        Ok(match &repo {
+            Some(m) => ws_repo_scan(outcome, &texts, m),
+            None => ws_scan(outcome, &texts),
+        })
     })
     .await;
     RUNNING.store(false, Ordering::SeqCst);
     *CHILD.lock().unwrap() = None;
-    let outcome = out.unwrap_or_else(|e| CompressOutcome::failed("internal", e.to_string(), None));
-    Ok(ws_scan(outcome, &texts))
+    out.map_err(|e| e.to_string())?
 }
 
 // ---------------------------------------------------------------------------------------
@@ -2605,6 +2863,109 @@ mod sidecar_env_tests {
 }
 
 #[cfg(test)]
+mod ws_repo_tests {
+    use super::*;
+
+    // P16-7: the gate over a whole-workspace check that carried the repository. A (new side a block) and B go
+    // through `gate_ws` untouched; A whose new side is the repository, C and D follow the repo check's rules —
+    // quotes verbatim in their own project's pack or in the named piece, lines from that project's list, a
+    // summary the user wrote never replaced. Everything dropped comes back whole.
+    fn packs() -> Vec<String> {
+        vec![
+            "# Project Context: flux\n\n## Full Record (chronological)\n\n\
+             #3 [2026-10-02 09:00] 训练计划：用学院 GPU 跑 RFT。\n\
+             #9 [2026-10-21 18:00] 改成本地 LoRA。\n"
+                .into(),
+            "# Project Context: 调研\n\n## Full Record (chronological)\n\n\
+             #9 [2026-10-03 09:00] 两种候选选择策略：A 合规分数优先。\n\
+             #23 [2026-10-20 10:00] 改成两种模式（第 3.3 节有精确定义）。\n"
+                .into(),
+        ]
+    }
+
+    fn material(user_wrote_p2: bool) -> crate::mcp::WsRepoMaterial {
+        crate::mcp::WsRepoMaterial {
+            system: String::new(),
+            user: String::new(),
+            sources: vec![
+                ("plans/dissertation/FINAL_PLAN_2026-10-20.md".into(), "**不做：** RFT 或任何对 MIDI-GPT 的微调".into()),
+                ("commits".into(), "2026-10-21 18:00 drop RFT pipeline".into()),
+            ],
+            projects: vec![
+                crate::mcp::WsRepoProject { items: vec![("fu1".into(), "学院 GPU 跑 RFT 要排队多久".into(), false)], summary_by_user: false },
+                crate::mcp::WsRepoProject { items: vec![("fu2".into(), "MIDI-GPT 新版本".into(), true)], summary_by_user: user_wrote_p2 },
+            ],
+            workspace_id: "wsFlux".into(),
+        }
+    }
+
+    #[test]
+    fn a_workspace_check_with_the_repository_keeps_only_what_both_sides_quote() {
+        let raw = r##"{"blocks":[
+            {"stale":"P2#9","by":"P2#23","kind":"supersedes","why":"换成两种模式","quote_stale":"A 合规分数优先","quote_new":"改成两种模式"},
+            {"stale":"P1#3","by":"仓库:FINAL_PLAN_2026-10-20.md","kind":"supersedes","why":"仓库说不做 RFT","quote_stale":"用学院 GPU 跑 RFT","quote_new":"**不做：** RFT"},
+            {"stale":"P1#3","by":"仓库：commits","why":"重复的一条","quote_stale":"用学院 GPU 跑 RFT","quote_new":"drop RFT pipeline"},
+            {"stale":"P1#9","by":"仓库:commits","why":"Markdown 记号丢了","quote_stale":"改成本地 LoRA","quote_new":"不做： RFT"},
+            {"stale":"P1#9","by":"仓库:README.md","why":"没有这份","quote_stale":"改成本地 LoRA","quote_new":"RFT"},
+            {"stale":"P3#1","by":"仓库:commits","why":"没有这个项目","quote_stale":"x","quote_new":"drop RFT pipeline"}],
+          "projects":[],
+          "follow_ups":[
+            {"item_id":"fu1","by":"仓库:commits","why":"不跑 RFT 了","quote_new":"drop RFT pipeline"},
+            {"item_id":"fu2","by":"P1#9","why":"块也说了","quote_new":"改成本地 LoRA"},
+            {"item_id":"fu1","by":"仓库:commits","why":"重复","quote_new":"drop RFT pipeline"},
+            {"item_id":"nope","by":"仓库:commits","why":"编的 id","quote_new":"drop RFT pipeline"},
+            {"item_id":"fu2","by":"P2#23","why":"原话对不上","quote_new":"三种模式"}],
+          "summaries":[
+            {"project":"P1","text":"flux 现在只做本地 LoRA","why":"摘要还写着 RFT"},
+            {"project":"P2","text":"换掉用户写的","why":"不该提"},
+            {"project":"P7","text":"没有这个项目","why":"x"}]}"##;
+        let scan = gate_ws_repo(raw, &packs(), &material(true));
+        // A by a block: through gate_ws as before.
+        assert_eq!(scan.blocks.len(), 1);
+        assert_eq!((scan.blocks[0].stale, scan.blocks[0].by), (WsRef { project: 1, seq: 9 }, WsRef { project: 1, seq: 23 }));
+        // A by the repository: the state file named by its file name alone, Markdown marks and all.
+        assert_eq!(scan.repo_blocks.len(), 1, "{:?}", scan.repo_blocks);
+        let r = &scan.repo_blocks[0];
+        assert_eq!((r.stale, r.kind.as_str(), r.from.as_str()), (WsRef { project: 0, seq: 3 }, "supersedes", "FINAL_PLAN_2026-10-20.md"));
+        // C: by the repository, and by a block of another project; a standing line stays standing.
+        let lines: Vec<(usize, &str, bool, Option<WsRef>, Option<&str>)> =
+            scan.follow_ups.iter().map(|l| (l.project, l.item_id.as_str(), l.standing, l.by, l.from.as_deref())).collect();
+        assert_eq!(lines, vec![(0, "fu1", false, None, Some("commits")), (1, "fu2", true, Some(WsRef { project: 0, seq: 9 }), None)]);
+        // D: only the AI-written summary.
+        assert_eq!(scan.summaries, vec![WsRepoSummary { project: 0, text: "flux 现在只做本地 LoRA".into(), why: "摘要还写着 RFT".into() }]);
+        let reasons: Vec<(&str, &str)> = scan.repo_dropped.iter().map(|d| (d.kind, d.reason)).collect();
+        assert_eq!(
+            reasons,
+            vec![
+                ("block", "quote_new"),
+                ("block", "no_source"),
+                ("block", "no_block"),
+                ("follow_up", "no_item"),
+                ("follow_up", "quote_new"),
+                ("summary", "user_summary"),
+                ("summary", "no_block"),
+            ],
+            "{:?}",
+            scan.repo_dropped
+        );
+        assert_eq!(scan.repo_workspace_id.as_deref(), Some("wsFlux"));
+    }
+
+    #[test]
+    fn without_a_repository_the_workspace_check_sends_what_it_always_sent() {
+        let packs = vec![WsPack { title: "flux".into(), text: "x".into(), thread_id: None }];
+        // No project to start from, or packs without ids: the old road, untouched.
+        assert!(ws_repo_for(&packs, None, 1000).unwrap().is_none());
+        assert!(ws_repo_for(&packs, Some("t1"), 1000).unwrap().is_none());
+        let (system, _) = ws_messages(&packs);
+        assert!(system.starts_with("你是一个上下文审阅工具。用户下一条消息里是同一个工作区里几个项目的上下文简报。每个项目前面有一行"));
+        assert!(!system.contains("仓库"));
+        let scan = ws_scan(CompressOutcome::failed("x", String::new(), None), &["x".into()]);
+        assert!(scan.repo_workspace_id.is_none() && scan.repo_blocks.is_empty() && scan.follow_ups.is_empty());
+    }
+}
+
+#[cfg(test)]
 mod repo_check_tests {
     use super::*;
 
@@ -2986,7 +3347,7 @@ mod p9v_real_runs {
         assert!(!path.contains("Application Support"), "packs come from a copy, never the live library");
         let raw: Vec<serde_json::Value> = serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
         raw.iter()
-            .map(|v| WsPack { title: v["title"].as_str().unwrap().into(), text: v["text"].as_str().unwrap().into() })
+            .map(|v| WsPack { title: v["title"].as_str().unwrap().into(), text: v["text"].as_str().unwrap().into(), thread_id: None })
             .collect()
     }
 

@@ -41,7 +41,7 @@ import {
   type Block,
 } from '@/lib/db/blocks';
 import { WS_STALE_CAP, wsMaterialChars, wsStalePlan } from '@/lib/stale/workspace';
-import { wsItemsFromScan, type WsBlockItem, type WsBuilt, type WsDroppedItem, type WsProjectItem } from '@/lib/stale/wsItems';
+import { wsItemsFromScan, wsRepoKeys, type WsBlockItem, type WsBuilt, type WsDroppedItem, type WsProjectItem, type WsRepoItems } from '@/lib/stale/wsItems';
 import { PINNED_SEE_ABOVE } from '@/lib/pack/templates';
 import { stripInventedSkeleton, stripPackRule } from '@/lib/pack/skeleton';
 import type { Thread } from '@/lib/db/threads';
@@ -248,11 +248,12 @@ interface CompressState {
   staleAuto: Record<string, StaleAuto>;
   /** 开 / 关。⚠️ 关掉不忘上次时间 —— 再打开不会马上又查一遍刚查过的。 */
   setStaleAuto: (workspaceId: string, on: boolean) => void;
-  /** 查一遍整个工作区。`auto` = 每月自动查的那一次（P9V-4），结果上要标出来。 */
-  runStaleScanWorkspace: (workspaceId: string, opts?: { auto?: boolean }) => Promise<void>;
+  /** 查一遍整个工作区。`auto` = 每月自动查的那一次（P9V-4），结果上要标出来。
+   *  `repoFrom` = 从哪个项目点进来的（P16-7）：工作区连着文件夹就把仓库一起带上；每月自动查的不带。 */
+  runStaleScanWorkspace: (workspaceId: string, opts?: { auto?: boolean; repoFrom?: string }) => Promise<void>;
   /** 对工作区结果里的一条下决定。`key` = `b<下标>`（块级）/ `p<下标>`（项目级，只有「不动」走这里 ——
-   *  「标完成」开的是项目顶上那个完成面板，完没完成看项目自己的状态）。 */
-  decideStaleWs: (workspaceId: string, key: string, action: StaleAction) => Promise<void>;
+   *  「标完成」开的是项目顶上那个完成面板，完没完成看项目自己的状态）/ P16-7 的 `r` / `f` / `s`。 */
+  decideStaleWs: (workspaceId: string, key: string, action: WsAction) => Promise<void>;
   refreshStaleWsBlocks: (workspaceId: string) => Promise<void>;
 
   // -------------------------------------------------------------------------------
@@ -290,16 +291,37 @@ export interface WsStaleSession {
   projectItems: WsProjectItem[];
   dropped: WsDroppedItem[];
   already: number;
-  /** `b0` / `p1` → 下过的决定。⚠️ 划掉不删，和只查一个项目同一条规矩。 */
-  decided: Record<string, StaleAction>;
+  /** `b0` / `p1` → 下过的决定。⚠️ 划掉不删，和只查一个项目同一条规矩。
+   *  P16-7：带着仓库那一次还有 `r<i>`（被仓库推翻的块）/ `f<i>`（跟进行：close / keep）/ `s<i>`（摘要：apply / keep）。 */
+  decided: Record<string, WsAction>;
+  /** P16-7（第 286 条）：工作区连着文件夹、带着仓库查的那一次多出来的三样。⚠️ 存盘的旧结果没有这一栏。 */
+  repo?: WsRepoItems | null;
 }
+
+/** 工作区那一页的一个决定：块的三个，加上跟进行的「关掉」和摘要的「换成这句」（P16-7）。 */
+export type WsAction = StaleAction | 'close' | 'apply';
+
+/** P16-7：带着仓库查的那一次，单子上的每一条都定过了（或者那个项目已经标完成）—— 推同步游标，算「对过了」。 */
+const syncWsRepoIfDone = async (workspaceId: string): Promise<void> => {
+  const sess = useCompressStore.getState().staleWs[workspaceId];
+  if (!sess?.repo || sess.repo.synced || !sess.outcome?.ok) return;
+  const threads = Object.values(useThreadsStore.getState().threadsByWorkspace).flat();
+  if (wsStaleLeft(sess, (id) => threads.find((th) => th.id === id)?.status === 'done') > 0) return;
+  await markRepoChecked(sess.repo.workspaceId);
+  useCompressStore.setState((st) => {
+    const cur = st.staleWs[workspaceId];
+    return cur?.repo ? { staleWs: { ...st.staleWs, [workspaceId]: { ...cur, repo: { ...cur.repo, synced: true } } } } : {};
+  });
+  void useFolderStore.getState().reloadAll();
+};
 
 /** 工作区结果里还没决定的条数（页签上那个数）。项目级的那条项目已经标完成了也算决定过。 */
 export const wsStaleLeft = (sess: WsStaleSession | undefined | null, isDone: (threadId: string) => boolean): number => {
   if (!sess) return 0;
   const b = sess.blocks.filter((_, i) => sess.decided[`b${i}`] === undefined).length;
   const p = sess.projectItems.filter((it, i) => sess.decided[`p${i}`] === undefined && !isDone(it.threadId)).length;
-  return b + p;
+  const r = wsRepoKeys(sess.repo).filter((k) => sess.decided[k] === undefined).length;
+  return b + p + r;
 };
 
 /** ⭐ 界面**不许叫「作废」**（WORKPLAN §2.E3 写死的）。理由是实测的失败形状：
@@ -1176,7 +1198,8 @@ export const useCompressStore = create<CompressState>((set, get) => ({
         if (blocks.some((b) => b.staleAt === null)) built.push({ thread, text, blocks });
       }
       if (built.length === 0) return;
-      const packs = built.map((b) => ({ title: b.thread.title, text: b.text }));
+      const packs = built.map((b) => ({ title: b.thread.title, text: b.text, threadId: b.thread.id }));
+      const repoFrom = opts?.repoFrom ?? null;
       const base = {
         workspaceId,
         projects: built.map((b) => ({ threadId: b.thread.id, title: b.thread.title })),
@@ -1207,11 +1230,12 @@ export const useCompressStore = create<CompressState>((set, get) => ({
       }
       const scan =
         road === 'cli'
-          ? await staleScanWsViaCli(packs, s.aiEngineTimeoutSecs, cliRouteNow())
+          ? await staleScanWsViaCli(packs, s.aiEngineTimeoutSecs, cliRouteNow(), repoFrom)
           : await (async () => {
               const call = apiCallFrom(s);
               return staleScanWs({
                 packs,
+                repoFrom,
                 baseUrl: call.baseUrl,
                 apiKey: await loadApiKey(),
                 model: call.model,
@@ -1225,6 +1249,12 @@ export const useCompressStore = create<CompressState>((set, get) => ({
         return;
       }
       const items = wsItemsFromScan(scan, built);
+      // P16-7：带着仓库查、一条要定的都没有 —— 这一次就是「对过了」（和 P16-4 一样）。
+      if (items.repo && scan.outcome.ok && items.blocks.length + items.projectItems.length + wsRepoKeys(items.repo).length === 0) {
+        await markRepoChecked(items.repo.workspaceId);
+        items.repo.synced = true;
+        void useFolderStore.getState().reloadAll();
+      }
       const live: Record<string, Block> = {};
       for (const b of built) for (const x of b.blocks) live[x.id] = x;
       set((st) => ({
@@ -1358,12 +1388,49 @@ export const useCompressStore = create<CompressState>((set, get) => ({
   decideStaleWs: async (workspaceId, key, action) => {
     const sess = get().staleWs[workspaceId];
     if (!sess || sess.decided[key]) return;
-    const mark = () =>
+    const mark = () => {
       set((st) => {
         const cur = st.staleWs[workspaceId];
         if (!cur) return {};
         return { staleWs: { ...st.staleWs, [workspaceId]: { ...cur, decided: { ...cur.decided, [key]: action } } } };
       });
+      void syncWsRepoIfDone(workspaceId);
+    };
+    // P16-7：带着仓库那一次多出来的三样，做的事和对照仓库（P16-4）的按钮一样（lib/stale/repoCheck.ts）。
+    if (/^[rfs]\d+$/.test(key)) {
+      const repo = sess.repo;
+      if (!repo) return;
+      const i = Number(key.slice(1));
+      const titleOf = (threadId: string) =>
+        Object.values(useThreadsStore.getState().threadsByWorkspace).flat().find((th) => th.id === threadId)?.title ?? '';
+      try {
+        if (key[0] === 'r' && (action === 'merge' || action === 'retire')) {
+          const it = repo.blocks[i];
+          if (!it) return;
+          const folder = useFolderStore.getState().views[it.stale.threadId]?.name ?? null;
+          const item = { staleSeq: it.stale.seq, kind: it.kind, why: it.why, quoteStale: it.quoteStale, from: it.from, quoteNew: it.quoteNew, retyped: it.retyped };
+          const ok = await decideRepoBlock(it.stale.threadId, item, action, await listBlocksByThread(it.stale.threadId), (m) => toast.error(m), Date.now(), folder);
+          if (!ok) return;
+          await useBlocksStore.getState().load(it.stale.threadId);
+        } else if (key[0] === 'f' && action === 'close') {
+          const it = repo.followUps[i];
+          if (!it) return;
+          await decideRepoLine(it.threadId, titleOf(it.threadId), { itemId: it.itemId, line: it.line, standing: it.standing, why: it.why, from: it.from ?? '', quoteNew: it.quoteNew });
+          toast.notice(t('关掉了这条跟进，按 ⌘Z 撤回'));
+        } else if (key[0] === 's' && action === 'apply') {
+          const it = repo.summaries[i];
+          if (!it) return;
+          await applyRepoSummary(it.threadId, it.text);
+          await useThreadsStore.getState().loadAll();
+        } else if (action !== 'keep') {
+          return;
+        }
+        mark();
+      } catch (e) {
+        toast.error(t('写不进去：{msg}', { msg: e instanceof Error ? e.message : String(e) }));
+      }
+      return;
+    }
     if (key.startsWith('p')) {
       // 项目级只有「不动」走这里（见 `decideStaleWs` 上的说明）。
       if (action === 'keep') mark();
