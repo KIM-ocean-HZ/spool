@@ -687,6 +687,12 @@ Parallels 试用 **11-20 到期**。P16-6 要在那之前做完；预计来不�
 - 那个问题：点被更正那一句弹出的预览（`CorrectionPopover`，10-16 第 125 条加的）是 `position: fixed`，钉在打开那一刻那一句在屏幕上的位置；时间线一滚，字滑走了预览还在原地。这个问题从 10-16 起就有，不是 P16 改出来的；这次合成一行之后点开看更正的人多了，才看出来。
 - 修（只改了预览这一个组件，加上传给它的那一句的元素）：每次滚动（捕获阶段，时间线自己的滚动不冒泡）重读那一句的位置，预览整体跟着挪；上下哪一边、多高打开时定一次，滚动时不再换，免得跳；那一句滚出时间线那一格就藏起来，滚回来再出现；那一句没了就关掉。挪的规则写成纯函数 `followSentence`，测试 3 条（`CorrectionPopover.test.ts`）。vitest 1355。没在真界面上滚过（正式版没法用脚本操作界面，等换装后 Ocean 看）。
 
+**换装第四次（11-10 17:10，Ocean「reinstall now」；HANDOFF 第 296 条；`drafts.json` 是空的）**
+- 包：代码 `529987f`（含 `bfd6689` 更正预览修复），同样的构建命令和签名，`codesign` 通过；`spool` 的 SHA-256 `4d204ccf7ce7faefab6ffb38e939a34b47de439bc68dd1f154e0db095a41b940`，`/Applications` 里那份一致。
+- 备份 `~/Desktop/Spool/db/spool.before-p16r3-install-20261110-171010.db`（`integrity_check` ok）+ 7 个 json；按 pid 停 86843 / 86859，18 个 `--mcp` 前后都是 18 个；旧包 `~/Desktop/Spool/spool-pre-install/Spool-0.7.4-5ffdd20-before-p16r3-20261110-171010.app`；日志 `~/Desktop/Spool/db/p16r3-run-20261110-171010.{out,err}.log`。
+- 新进程 17:10:12 起；库 v39，1461 / 948941 / 109 / 65 前后一样；启动日志没有报错。
+- 等 Ocean 看：点一句被更正的话打开预览，滚动时间线，预览跟着那一句走；那一句滚出去时预览藏起来。
+
 ### 7.4 Windows
 
 （11-10，Parallels「Windows 11」虚拟机；Ocean 选「现在就开始」。脚本、日志、安装包、库副本都在 `~/Desktop/Spool/P16-vm-20261110/`，每一轮的日志留在 `logs/round*/`。）
