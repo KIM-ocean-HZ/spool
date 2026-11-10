@@ -723,6 +723,10 @@ function TextBlockItem({
   const openEditor = (field: 'content' | 'annotation', atMount = false): void => {
     setActive(block.id);
     setFocusField(field);
+    // P16 验收（11-10 Ocean「我双击点击进入block编辑页面，有概率批注也进入编辑页面」）: a double-click on a corrected
+    // sentence is two clicks first — the first opens its preview, and whether the second closes it again depends on
+    // where it lands. Editing is never done with a preview open, so opening the editor closes it.
+    setPreview(null);
     // P7 验收第一轮：pictures the text does not place yet (blocks from before 图文混排) come in
     // as lines at the end, so every picture of the block is in the editor and can be taken out.
     const o = editorOpening({
