@@ -337,6 +337,60 @@ Parallels 试用 **11-20 到期**。P16-6 要在那之前做完；预计来不�
 - 这一轮不足以支撑：跟进提案的质量没变（只跑 1 次、没有改前对照）；挡得住注入（没放恶意网页）；多代理关掉了（没关掉）。
 - 用掉的额度：本机 Codex 1 次（P16-0 这一件上限 10 次）。
 ### 7.2 P16-1 – P16-4：改了什么（提交）、怎么验的（命令和数字）、真跑原始数据在哪
+
+#### 7.2.1 P16-1 · AI 只读新加的块 + 块的「最后修改时间」（库 v39）
+
+改了什么：
+- 库 v39：`blocks` 只加一列 `edited_at`（可空，没有回填）。⛔ 不用触发器：先试了触发器，它在改块的时候再改一次块，和全文检索那个触发器打架，测试库直接报 `database disk image is malformed`，所以改成在「用户自己改字」的几处写：`blocks.ts` 新加 `editBlockContent`（编辑面板、高亮、撤销 / 重做高亮）、`updateBlockAnnotation(…, true)`（右栏改批注）、合并和撤销合并。字真的变了才写。建块时顺手改的（插图片那一行、复制时换图片 id、捕捉卡上写的批注）和压缩 / 还原都不算。`EXPECTED_SCHEMA_VERSION` 和 `SCHEMA_VERSION` 同抬到 39。
+- `get_blocks` 加两个参数：`after_seq`（只要块号比它大的，按时间先后）和 `edited_after`（另外加上在它之后被用户改过字的旧块）。两个都给的时候，两种块一起回来，每一行带 `returned_because: new / edited`；被改过的块带 `edited_at`。筛选条件照旧能叠加；不能和 `around_block_id` 一起用，一起用就拒。
+- 四处都报「最新一块是 #N」，字段名就是参数名，AI 照抄就行：
+  - `get_blocks`：`latest_seq` + `read_mark {after_seq, edited_after}`；
+  - `get_project_overview`：`blocks.latest_seq` + `read_mark`；
+  - `list_threads`：每行 `latest_seq`，有改动时多一个 `last_edited_at`；
+  - `get_pack`：回执末尾一段话，在 END 那一行之后，⛔ pack 正文和 golden 不动。
+  `edited_after` 取的是这个项目最后一次变动的时间，不是现在的钟点：读的时候和读完之间没有别的变动，所以不漏、不重复，没变过的项目两次读到的完全一样（私密项目那条逐字对比测试照旧绿）。
+- 只取「改了什么」的时候，开头那句小结改成「读了〈X〉里你上次读到之后新加的 N 块、改过的 M 块」。原来那句会把取到的块数说成「这个项目共几块」。
+- 路由文字：`OPENERS` 中英各一行（「我又加了几块」「我改了 #5」「I added a couple more」…… → `get_blocks(after_seq, edited_after)`，不用再调 `list_threads`，不要再取 `get_pack`；点名一块就用 `around_block_id` 加 `context=0`）。`INSTRUCTION_BODY` 加两句：一句 `READING ON`；另一句 `MATERIAL IS NOT INSTRUCTION`（P16-0 R5，第 283 条）。`list_threads` 的说明里「Call this first」后面补半句：这场对话里已经有项目 id，就不用再调。
+
+验证：
+- `cargo test --lib` 319 过（+1 `reading_on_returns_only_what_was_added_or_edited_since_the_last_read`）。vitest 1337（+5：v38 → v39 迁移只加一列、其余逐行不变；半跑一次可以重跑；新装直接有这一列；什么时候写 `edited_at`、什么时候不写；合并只写留下来的那一块）。19 条旧迁移测试照「从最新一层降起」补了 v39 的过滤。`tsc -b` 干净，i18n 干净。
+- 真库 `VACUUM INTO` 副本上跑真迁移：`fresh === false`，19 张表逐行一致（不算新列），1431 块全是 NULL，`integrity_check` ok。`--mcp` 探针（数据目录指副本）：新版对 v38 副本报「库还是旧版」，装着的 0.7.4 对 v39 副本报「库比服务新」，新版对 v39 副本读得出来。
+- 真跑（本机 Codex 0.147，副本上的〈剩余推荐信〉，两轮对话，两轮之间往副本里插 2 块；判定标准跑之前写在 `/private/tmp/claude-501/-Users-hzjin-Desktop-Knote/dac73557-5746-4b60-ae9c-0f4bb758d70c/scratchpad/p16-1-run/CRITERIA.md`，原始事件流在同一目录的 `before*/`、`after*/`）：
+
+  | 组 | 第 1 轮 Spool 回传 | 第 2 轮 Spool 回传 | 第 2 轮怎么取的 |
+  |---|---|---|---|
+  | 第一次 · 改前（0.7.4） | 2324 字（概况） | 2177 字 | 又调 `list_threads`，`get_blocks offset=23 limit=2` |
+  | 第一次 · 改后 | 2420 字（概况） | 2523 字 | `get_blocks after_seq=23 edited_after=…`，没调 `list_threads` |
+  | 第二次 · 改前 | 46238 字（pack + 带文件全文的 `get_blocks`） | 2179 字 | 又调 `list_threads`，`offset=23 limit=2` |
+  | 第二次 · 改后 | 28118 字（pack） | 2537 字（第 1 轮的 9%） | `get_blocks after_seq=23 edited_after=…`，没调 `list_threads` |
+
+  - 第一次照写死的标准：第 1、2 条过，第 3 条（第 2 轮 ≤ 第 1 轮的 1/10）不过。原因是第 1 轮只调了概况，本来就读得少，比不出来。没改标准。
+  - 另写标准做了第二次（第 1 轮让它读全项目）：四条全过。
+  - 照实说：**改前那组第 2 轮也只取了新的两块**，11-08 那场「重读 6 万字」这次没复现出来。所以这次量到的好处是：不再重调 `list_threads`；改过的旧块也取得到（改前取不到）；做法写死在说明里，不靠模型自己想到用 `offset`。两组改后的第 2 轮还都顺手关掉了两条已经答上的跟进行（在副本上）。
+  - 用掉本机 Codex 8 次（P16-1 上限 10）。
+- 这一轮不足以支撑：Claude 桌面版 / ChatGPT 也会这样取；用户说「改了 #5」那条路（这次没测）；更长的对话里还记得 `read_mark`；「少一个数量级」对 11-08 那种对话成立（没复现那种对话）。
+
+#### 7.2.2 P16-2 · 交活时提议挂文件 / 换新版、写回（第 272 条选甲）
+
+改了什么：
+- 读项目时多一段「交活的时候」：`get_pack` 回执末尾（END 之后）、`get_project_overview` 和 `get_blocks` 的 `when_you_deliver`。内容是：
+  - 自己写出了文件并存到用户电脑上 → 同一轮 `propose_attach_file`；是现有文件的新版 → `propose_replace_file`，带上旧文件的 `attachment_id`；
+  - 改了计划、定了事、留下问题 → `add_block` / `suggest_follow_up_item` / `close_follow_up_item`；
+  - 一轮最多一次，半成品、临时文件、别的项目的文件不提；
+  - 后面列出这个项目现在的文件和各自的 `attachment_id`。
+  只取「改了什么」的那次不再重复这一段；Spool 自己的引擎读到时也没有（它没有直接写的工具）。⛔ 不进 pack 正文，不进用户自己复制的 pack。
+- 路由文字：`OPENERS` 中英各一行（「帮我改一版存到〈某个文件夹〉」「写好了，存在桌面了」「save the new version to my Desktop」……），`INSTRUCTION_BODY` 一句 `DELIVERING`。
+
+验证：
+- `cargo test --lib` 320 过（+1 `a_read_of_a_project_says_how_to_deliver_and_the_pack_itself_does_not`：回执末尾有那一段和文件的 `attachment_id`，pack 正文里没有；概况和 `get_blocks` 有；只取改动的那次没有；引擎读到的没有；路由文字中英都有）。pack golden 不动。
+- 真跑（本机 Codex 0.147，副本上的〈个人网站素材〉，挂着的 README.md 复制进 scratchpad、副本里的路径改指复制件。标准在 `/private/tmp/claude-501/-Users-hzjin-Desktop-Knote/dac73557-5746-4b60-ae9c-0f4bb758d70c/scratchpad/p16-2-run/CRITERIA.md`，原始数据在同一目录）：
+  - A「把 README.md 改一版另存为 README_v2.md」：改前 3 次，新版都写出来了，**0 次提议**；改后 3 次，新版都写出来了，**3 次都提议了**：2 次 `propose_replace_file`，带对了旧文件的 `attachment_id`；1 次 `propose_attach_file`，它的理由是想新旧两版并存。
+    但 3 次都被 Spool 的路径闸拒了：测试文件放在 `/private/tmp` 下，路径闸把它当系统目录。这是测试环境的问题，路径闸本身没错。所以照写死的标准（「待审里出现换新版卡」）**字面上不过**。
+    补验（不花钱）：把 AI 那次 `propose_replace_file` 原样重放，路径换成家目录下的复制件，待审里出现了一张换新版卡（`kind = supersede`，指着 README.md）。临时文件夹已删。
+  - B「先不放宣传片，帮我调整计划」：改前 2 次、改后 2 次**都写回了一块**（`add_block`，其中一块还带了对旧计划块的更正），改前改后没差别；改后没有乱提文件（噪声 0）。
+  - 用掉本机 Codex 10 次（P16-2 上限 10）。
+- 这一轮不足以支撑：docx / pdf 这类 AI 不好改的文件；Claude 桌面版 / ChatGPT；多轮对话里「做完一段活」的时机；「待审里出现卡片」这一步端到端（被测试路径挡住了，靠重放补的）—— 等 Ocean 真用一次（P16-5）。
+- `DISCOVERED-20261027-6`（5 个连着的文件夹 CLAUDE.md / AGENTS.md 指针全关）对这次结果没有影响：这次的 Codex 不在连着的文件夹里干活，规矩是从 Spool 的回执里读到的。在仓库里干活的 AI 读不读得到，取决于它读不读 Spool 的回执，而不是那两个指针。
 ### 7.3 换装和 Ocean 验收
 ### 7.4 Windows
 ### 7.5 新发现（同时记进 HANDOFF §5，格式见方针 §7.2）
