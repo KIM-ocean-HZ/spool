@@ -379,6 +379,37 @@ gate what a client reads by other means, so the tool only suggested a control Sp
 The privacy policy changed in substance: it now lists what Spool reads in a linked folder, the four
 places it writes, and that a client's own file tools are outside Spool's reach.
 
+---
+
+| Field | v0.8.0 |
+|---|---|
+| Published | **2026-11-11** |
+| Tagged commit | tag `v0.8.0` → `85d9499`, the commit both installers were built from (the commits after it on `main` change documentation only) |
+| Signing identity — macOS | Developer ID Application (Apple Developer Program, Team `Q5Y5JRXZ58`) |
+| **Notarisation — `.app`** | submission `f1d3a4e9-ad75-4b21-ae24-122af3d88d77` · **Accepted** |
+| **Notarisation — `.dmg`** | submission `61211a65-5e75-4035-8974-9965db50a2e5` · **Accepted** |
+| Artefact — macOS | `Spool_0.8.0_aarch64.dmg`, 15,667,512 bytes |
+| sha256 — macOS | `7325074ad5410bc0b3d2569b6ad770c45e89f427595379c901af912d878033cf` |
+| Gatekeeper verdict — macOS | `accepted` · `source=Notarized Developer ID` on **both** artefacts, and re-verified on copies downloaded back from the published Release under both names (byte-identical sha256, staple intact); `codesign -dvv` Authority resolved to the Developer ID certificate, the bundled `spool-ai` sidecar too; `--verify --deep --strict` passes |
+| Artefact — Windows | `Spool_0.8.0_x64-setup.exe`, 10,200,942 bytes — NSIS, per-user, **not code-signed**; built by GitHub Actions run `43027680552` (`windows-latest`, x64) from the tagged commit |
+| sha256 — Windows | `788067a1037cdcf8a57029ae939dd074b4e1fe680d7a0dbcc2dfcbb37cf842ac` |
+| Windows checks | the same CI run: vitest 1,361 passed, `cargo test` 302 passed / 0 failed / 17 ignored. Installed silently over the previous build in a Windows 11 virtual machine (ARM, running the x64 build): the library compared identical row by row before and after. Installed on a second virtual machine with no Visual C++ runtime: it starts and creates a new library. Not checked on a physical PC, Windows 10, or mixed-scaling monitors |
+| Fixed-name assets | `Spool-macOS-arm64.dmg` and `Spool-windows-x64-setup.exe` — **HTTP 200** through `releases/latest/download/`, byte-identical to the versioned assets; the website's Windows buttons point at `latest` again (they had been pinned to v0.6.1) |
+| Database schema | macOS **v37 → v39** (one new table for folder-link proposals, `blocks` gains one nullable column); Windows, from v0.6.1, **v23 → v39** in one pass. Both run for real on copies — the owner's v37 library and a v0.6.1 library: every existing table kept its row count and the length of every text column |
+| MCP surface (release binary) | 30 tools — 15 read-only, 15 write; 22 for Spool's own engine (`--engine-run`: the 15 read-only tools and the 7 write tools that only queue something for review or close a follow-up line). Counted from the release binary against a copy of the library |
+| MCP Registry | not yet published for 0.8.0 when this row was written (the publish step needs the owner to run it) |
+
+**What this row adds: Windows ships again, and Spool's own engine stops writing straight into the
+library.** It is the first release on both platforms since v0.6.1; Windows users get everything
+released for macOS in between, with one route missing — the on-machine CLI engine is macOS only, so
+on Windows the AI actions run through an API key. Before release, a read-only review of what Spool
+treats as evidence found that a Follow Up run Spool starts itself could read the whole library and
+write into it without review; the engine now gets no tool that writes a block, a project, a summary
+or a workspace directly, and a Follow Up run sees only the project it follows. The privacy policy
+changed in substance: it now says that when a workspace is linked to a folder, Follow Up and the
+out-of-date check send that folder's state-file text, recent commit titles and changed-file list to
+the provider. The first-run guide no longer says Spool "ships no AI of its own".
+
 ## 2. Measured findings
 
 These are the rows that matter most: results obtained by measuring a running system, not

@@ -1,6 +1,6 @@
 # 产品任务书 P17 —— 发版二：Mac + Windows
 
-> **状态：ACTIVE（2026-11-10 夜下发，下一窗执行）**
+> **状态：COMPLETE — 待 Ocean 验收（2026-11-11 发出 v0.8.0：Mac + Windows，Release 四个资产、官网和 README 已上线、本机已换正式版；MCP Registry 要 Ocean 跑一条命令，见 §7.7）。** 回执 §7，验收单 §6。之前：ACTIVE（2026-11-10 夜下发）。
 >
 > **唯一交付**：把 v0.7.4 之后到现在的全部改动（P10、P12 – P16、编号圈）作为一个新版本**同时发 Mac 和 Windows**：Mac 签名 + 公证，Windows 不签名的 NSIS 包；GitHub Release 带四个资产（两个带版本号、两个固定名）；官网和 README 跟着改；MCP Registry 发新版本；本机换成正式版；台账记一行。步骤见 §3，每一步一笔提交（构建和发布本身没有提交的除外），回执写在 §7。
 >
@@ -235,6 +235,32 @@
 - 时间显示成 11/9 22:16：这台是 11-09 晚上挂起的，唤醒后 Spool 先建了库、时钟后同步，不是 Spool 的问题。
 - ⚠️ 读库那一步我写了一个叫 `Rd` 的 PowerShell 函数，`rd` 是 Remove-Item 的内置别名、比函数优先 ⇒ 实际执行成了删除 `spool.db` / `spool.db-wal`；文件被 Spool 占着，没删成，随后核过文件和进程都在。之后改名重读。这台是干净测试机里刚建的空库，不是任何人的数据；教训记进记忆。
 - 验完挂起，光盘还挂着（第 308 条：发版之后删这台）。
+
+### 7.6 P17-6 推送 + Release（2026-11-11，Ocean「五步都做」）
+
+- 推之前扫了要推的新增行（12,103 行）：找「老师 / 教授 / 推荐人 / Prof / Dr / 邮箱」和英文「名 姓」两种样子，命中的只有「导师」「推荐人」这种身份词（测试数据和验收记录）、Edge 标题里的 `Profile 1`、软件名；没有真人的名字，没有邮箱（旧第 207 条）。
+- ① 附注标签 `v0.8.0` → `85d9499`（两个包都是从它打的），推上去。② `gh release create v0.8.0 --verify-tag --latest`，标题「Spool 0.8.0 (macOS + Windows)」，说明 = `docs/RELEASE_NOTES_v0.8.0.md`，四个资产：`Spool_0.8.0_aarch64.dmg` + `Spool-macOS-arm64.dmg`（同一文件）、`Spool_0.8.0_x64-setup.exe` + `Spool-windows-x64-setup.exe`（同一文件）；Release 列表里是 Latest。③ 两个固定名 `releases/latest/download/…` 都是 **200**，分别落到 `download/v0.8.0/…`；四个文件下回来 sha256 和本地一样；下回来的 dmg `stapler validate` 过、`spctl` 仍是 `Notarized Developer ID`。④ `main` 推 `5f762da..084bedc`（58 笔，快进），`git update-ref refs/remotes/origin/main HEAD`；Pages 部署 run `43032650446` 成功；线上 spoolapp.org 中英首页各 3 个 Windows 按钮都指 `latest`、页面上没有 v0.6.1，中英隐私页是 v0.8.0 / 2026-11-11、API 那一行新加的那句都在。⑤ 远端临时分支 `release-0.8.0` 删了。
+- 这一窗推送用的都是 HTTPS + gh token（记忆 `push-requires-gh-token`）。
+
+### 7.7 P17-7 MCP Registry
+
+- `server.json` 已是 0.8.0（`21a60b6`，随 main 推上去了）；`mcp-publisher` 1.8.1 在本机。`publish` 会被执行权限拦（Create Public Surface），这一步写好命令请 Ocean 跑：在仓库根目录 `mcp-publisher login github --token "$(gh auth token)" && mcp-publisher publish`。跑完我查线上 0.8.0 是不是 isLatest，结果补在这里和台账那一行。
+
+### 7.8 P17-8 本机换成正式版（2026-11-11 13:51，Ocean「现在换，没有没点完成的」）
+
+- 换之前：`drafts.json` 两项都空；GUI 是 26604（主）/ 26686（`--overlay`），11-10 23:55 起的；`--mcp` 19 个。
+- 备份 `~/Desktop/Spool/db/*before-p17-install-20261111-135149*`：库（`VACUUM INTO`，`integrity_check` ok，v39）+ 7 个 json。换装前库：v39 · 1461 块 · 正文 948,941 字 · 109 项目 · 65 跟进行 · 41 工作区 · 89 文件。
+- 装的是从 Release 下回来的 dmg 里的 `.app`（`ditto` 出来 `chmod -R go+rX`；`spool` `64028828…`、`spool-ai` `b2c6f586…`，和发版构建一样；`Notarized Developer ID`、`--deep --strict` 过）。按 pid `kill -TERM` 两个 GUI 进程，一轮就退；`--mcp` 前后都是 19 个。旧包挪到 `~/Desktop/Spool/spool-pre-install/Spool-0.7.4-661b829-before-p17-20261111-135149.app`。
+- 「暂停捕捉手势」按第 308 条关掉：GUI 停着时把 `settings.json` 的 `captureDisabled` 从 true 改成 false。
+- `open -a /Applications/Spool.app --stdout/--stderr` ⇒ 新进程 34527 / 34544，13:52:22 起（换装之后）；日志两行：`[overlay] helper started`、`[double-tap] installed at HID/active`（授权没掉）；库还是 v39，七个数和换装前一样，没有新的迁移快照。
+- 开着的 AI 客户端跑的还是旧二进制，完全退出重开一次就换上（库结构没变，不重开也能用）。
+
+### 7.9 收尾
+
+- 台账 `CASE_STUDY_LEDGER.md` §1.2 加 v0.8.0 那一段（不写它自己所在提交的 sha）；`RELEASE.md` §0.0 那句改成「最新发布是 v0.8.0（2026-11-11，Mac + Windows）」。
+- 本任务书移进 `archive/product-taskbooks/`；`docs/README.md` 只提交产品那两行（研究线没提交的改动照旧不碰）。
+- HANDOFF：§1、§2 改成发版之后；新发现记成 `DISCOVERED-20261111-1` – `-3`；唯一下一步按 §5.1 的顺序问 Ocean。
+- 测试数字：Mac 开工基线 vitest 1360 → 改完 1361、`cargo test --lib` 326、sidecar 31、tsc / i18n 干净；CI（Windows x64）vitest 1361、`cargo test` 302 / 0 / 17。
 
 ---
 
