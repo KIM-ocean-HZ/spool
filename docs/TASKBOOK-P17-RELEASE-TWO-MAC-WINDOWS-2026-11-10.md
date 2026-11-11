@@ -190,6 +190,52 @@
 - 用 Mac 上的 v23 副本而不是从虚拟机里拷，是为了不为这一步唤醒虚拟机；两份是同一分钟的同一个库。
 - `--mcp` 连真库最新副本、两种模式数工具：见 7.2，发版二进制出来后再核。
 
+### 7.4 P17-4 Mac 构建 + 公证（2026-11-11，代码 `85d9499`，不提交）
+
+- 构建前：`xcodebuild -version` 正常（许可已同意）；Developer ID 在钥匙串；`/Volumes` 干净、没有 `rw.*.dmg`；`notarytool history` 退出 0（账号协议没卡）。凭据 Ocean 当场在对话里给，只当环境变量传给构建和补公证两条命令，⛔ 没写进任何文件、提交、记忆。
+- `APPLE_SIGNING_IDENTITY="Developer ID Application: Hanze JIN (Q5Y5JRXZ58)"` + `CARGO_PROFILE_RELEASE_BUILD_OVERRIDE_STRIP=none npm run tauri build`，日志进文件，`BUILD EXIT 0`；`spool-ai`、`spool`、`.app` 三处都是 Developer ID 签的，TSA 没出错。
+- **`.app` 公证 submission `f1d3a4e9-ad75-4b21-ae24-122af3d88d77` · Accepted**（`notarytool history` 里叫 `Spool.zip`）。
+- **dmg 补公证 submission `61211a65-5e75-4035-8974-9965db50a2e5` · Accepted**，`stapler staple` 成功。
+- 验：两份 `spctl -a -vv -t install` 都是 `accepted` · `source=Notarized Developer ID` · `origin=Developer ID Application: Hanze JIN (Q5Y5JRXZ58)`；`codesign -dvv` 第一行 Authority = Developer ID，`flags=0x10000(runtime)`，Timestamp 2026-11-11 13:19:03；`--verify --deep --strict` 过；两份 `stapler validate` 过；`CFBundleShortVersionString` = 0.8.0；构建后 `/Volumes` 干净。
+- 产物：`Spool_0.8.0_aarch64.dmg` **15,667,512 字节**（14.9 MB），sha256 **`7325074ad5410bc0b3d2569b6ad770c45e89f427595379c901af912d878033cf`**；`spool` `64028828…a741a1`、`spool-ai` `b2c6f586…afb198`。副本在 `~/Desktop/Spool/P17-release-20261111/`（dmg + `.app`）。
+- 发版二进制 `--mcp`（真库 `VACUUM INTO` 副本，v39）：`serverInfo` = spool 0.8.0；普通 **30**（只读 15、写 15）、`--engine-run` **22**（15 + 7），每个工具都带 annotations —— 和 README 一致。对没升级的 v37 副本：`list_threads` 回「库还是旧版 v37……打开一次 Spool 再试」，`isError`，库仍是 v37（版本闸活着）。
+
+### 7.5 P17-5 Windows 包 + 照单补验（2026-11-11）
+
+**打包（第 306 条：GitHub Actions）**
+- Ocean 批准后把本地 `main`（`85d9499`）推成远端分支 `release-0.8.0`（不是 main，官网没部署），`gh workflow run windows-build.yml --ref release-0.8.0` ⇒ run `43027680552`（`windows-latest`，真 x64），全绿：vitest **1361**（147 个文件）· `cargo test`（`SPOOL_TEST_CC6_MANIFEST=1`）**302 过 · 0 红 · 17 ignored** · sidecar 编译走 `crt-static`，`build-sidecar.sh` 对 `vcruntime140` / `msvcp140` 的检查过了 · `makensis` 出 `Spool_0.8.0_x64-setup.exe`。
+- 产物（artifact `spool-windows-nsis`）：**10,200,942 字节**（9.7 MB），sha256 **`788067a1037cdcf8a57029ae939dd074b4e1fe680d7a0dbcc2dfcbb37cf842ac`**，在 `~/Desktop/Spool/P17-vm-20261111/build/`。⛔ 不签名（红线）。
+
+**主虚拟机「Windows 11」装机**（快照「P17 before 0.8.0 install (2026-11-11)」先拍）
+- `r4-install.ps1`（P16 那套，路径换成 P17）：只停 GUI 两个进程（`--mcp` 前后都是 0 个），装前 `VACUUM INTO` 一份，`/S` 静默装（退出码 0），装后再一份。装上的 `spool.exe` `2298f058…0780`、`spool-ai.exe` `c99d2c98…1b55`；「已安装的应用」和 exe 版本都是 **0.8.0**。
+- 库：装前装后 `deep_compare.py same` ⇒ **RESULT SAME**（v39，逐行逐列，501 个 BLOB 按哈希），没有新的迁移快照。
+
+**`WINDOWS-CHECK.md` 第三、四轮（第 49 – 75 条）逐条对过**（真界面走 WebView2 调试口，真键盘走 `prlctl send-key-event`；测完 Spool 重启成普通启动、9222 关了）
+
+| 条 | 结论 | 怎么验的 |
+|---|---|---|
+| 49 – 51 第一次 ✕ 的说明卡 | 过 | 把 `closeToTrayHintSeen` 临时改回 false；发 `WM_CLOSE`（✕ 同一条消息）⇒ 窗口不藏、弹「Spool 没有退出 …… 拖到任务栏上 …… 要它回来：单击那个图标」；点「知道了」⇒ 窗口藏、进程在、设置记成 true；再启动一次 `spool.exe`（单实例把原窗口叫回来，同一个进程）⇒ 再 `WM_CLOSE` 直接藏、没卡；重启 Spool 再关 ⇒ 没卡 |
+| 52 把托盘图标拖到任务栏 | 没测 | Windows 外壳的拖动，只有真手做得了；P13 第 4 条托盘那一组 Ocean 11-09 手验过 |
+| 53 – 54 撤销卡自己走 | 过 | 真键盘：剪贴板放字 → 双击 Ctrl 弹卡（字对、项目对）→ 卡里打字回车 → Ctrl+Z ⇒「已撤销：捕获」，3.4 秒内收；连按 ⇒ 第二张「已撤销：写下的一条」、第三张「没有可撤销的操作」，都在 3.4 秒内收 |
+| 55 – 57 录快捷键时全局键让路 | 过 | 用已绑的搜索键 Ctrl+Shift+F：进「按键中…」、Spool 抬到前台 → 真 Ctrl+Z ⇒ 被拒「Ctrl+Z 是所有软件通用的『撤销』……」，没弹撤销卡；真 Ctrl+Shift+F ⇒ 录进去、没弹搜索；再进录制按 Esc 退出 → 在记事本里按 Ctrl+Shift+F ⇒ Spool 的搜索出来了（键装回去了） |
+| 58 – 60 默认 Ctrl+Alt+Space | 作废 | v0.5.0 起 Windows 和 Mac 一样默认不绑（`shortcut.ts` `DEFAULT_CAPTURE_ACCEL = null`），入口是双击 Ctrl；设置页写「备用 — 双击 Ctrl 之外的捕捉键」「未设置」 |
+| 61 捕捉键那一行没有清除 ✕ | 照现在的设计 | 默认「未设置」，没有东西可清；原文的理由（它是唯一入口）已经不成立 |
+| 62 – 63 没有引擎时的跟进面板 | 过（按现在的说法） | 没有 API key 时：「让 AI 看看还缺什么」锁着 +「怎么打开」+「要用你自己的 API key。」，下面那句「这台电脑上没有本机 AI 引擎……接了 MCP 的 AI 读得到它们」照旧；「联网搜索」同样锁着 |
+| 64 手写 / 编辑 / 已解决 / 删除 / 撤销 | 过 | 加一条、直接改字（右栏跟着变）、「已解决」⇒ 进「收起不再跟进的」、「重新跟进」拿回；删除 ⇒ 提示里「撤销」拿回；测完删掉 |
+| 65 – 66、68 MCP 页 | 过 | 两个开关 + 客户端列表 + 一行「▸ 详细说明：接好后在哪儿说、会改哪些文件」；Codex 底下只一句「ChatGPT 的普通对话连不上本机——用不了 Spool」；没有「当前是开发构建」（只在路径含 `target\debug|release` 时出） |
+| 67 详细说明四小块 | 过 | 展开是「在哪儿说，说什么」「接入会动到哪些文件」「你的 AI 工具不在上面？」（带「复制配置」和 JSON）三块；VS Code 那一块只在检测到 VS Code 时出（`McpConfig.tsx:348`），这台没装 |
+| 69、73 – 75 | 不适用 | 只在 Mac 上 |
+| 70 – 72 撤销自己写的一块 | 过 | 写一条回车 → Ctrl+Z ⇒ 收回、浮窗「已撤销：写下的一条」、点「重做」⇒ 回来；删一块 → Ctrl+Z ⇒ 回来；框里有字时 Ctrl+Z 撤的是字、块不动 |
+
+- 测法踩到的一个假象：用调试口在浮窗里「点」过「重做」之后，浮窗以为鼠标还停在卡上（卡片悬停时不收，好让人点「重做」），下一张撤销卡就不走；补一下「鼠标移出」就照常 3.5 秒内收。真鼠标会离开，不是产品问题。
+- 测试库状态：`closeToTrayHintSeen` 回到 true（和测之前一样）；`apiEngineEnabled` 原来是 true 但 key 文件早在 P16-6 被脚本删了，这次改成 false（和「没有 key」对上）。设置原件备份在 `~/Desktop/Spool/P17-vm-20261111/db/settings.before-p17-checks.json`。写进 Unsorted / 私密测试的测试块和跟进行都撤掉或删掉了。
+
+**干净虚拟机「Spool-clean-P13」**（没有 VC++ 运行库：System32 里没有 `vcruntime140.dll` / `msvcp140.dll`，注册表没有 VC Runtimes）
+- 安装包做成光盘挂上，`/S` 装（退出码 0，`spool.exe` 哈希和主虚拟机那份一样），第一次打开：主窗口 + 浮窗两个进程都起来了、建了新库、没有 `pre-migration-v0` 空快照；英文界面落在「Welcome to Spool」，左栏两条教程 + 示例项目。库文件里搜：新说法「unless you open a route yourself」「"Allow AI writes"」「pinned blocks, or the last 7 or 30 days」都在，旧说法「ships no AI of its own」「task template」「"Allow AI to write"」都是 0；说的是「double-tap Ctrl」，没有「Input Monitoring」。
+- 时间显示成 11/9 22:16：这台是 11-09 晚上挂起的，唤醒后 Spool 先建了库、时钟后同步，不是 Spool 的问题。
+- ⚠️ 读库那一步我写了一个叫 `Rd` 的 PowerShell 函数，`rd` 是 Remove-Item 的内置别名、比函数优先 ⇒ 实际执行成了删除 `spool.db` / `spool.db-wal`；文件被 Spool 占着，没删成，随后核过文件和进程都在。之后改名重读。这台是干净测试机里刚建的空库，不是任何人的数据；教训记进记忆。
+- 验完挂起，光盘还挂着（第 308 条：发版之后删这台）。
+
 ---
 
 ## 附录 A · 搬进来的条目原文（从 HANDOFF 附录 I 搬走，HANDOFF 那里只留一行「已下发到 P17」）
