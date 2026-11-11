@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Merged by Tauri into the app's Info.plist. macOS 26 and later draw the app icon
+  from the glass layers named "Spool" in icons/Assets.car. Tauri sets this key only
+  when the catalog holds a flattened "Icon Image", which scripts/generate-icon.mjs
+  strips so that macOS 15 and earlier fall back to icon.icns; so it is set here.
+-->
+<plist version="1.0">
+<dict>
+	<key>CFBundleIconName</key>
+	<string>Spool</string>
+</dict>
+</plist>

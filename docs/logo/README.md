@@ -106,8 +106,9 @@ a comment at the top of the SVG). Do not use them, and do not regenerate them.
 
 The generator also compiles `Spool.icon` with Xcode's `actool` (Xcode 26 or
 later) into `src-tauri/icons/Assets.car`, which `src-tauri/tauri.conf.json` lists
-under `bundle.icon`. Tauri copies it to `Contents/Resources/Assets.car` and sets
-`CFBundleIconName`; `icon.icns` stays as `CFBundleIconFile`. macOS 26 and later
+under `bundle.icon`. Tauri copies it to `Contents/Resources/Assets.car`;
+`src-tauri/Info.plist` sets `CFBundleIconName` (Tauri sets it only for a catalog
+that still has a flattened icon); `icon.icns` stays as `CFBundleIconFile`. macOS 26 and later
 draw the icon from `Assets.car`, natively from the same layers; earlier macOS
 versions use the ICNS. They do so only because the generator strips the flattened
 pre-macOS 26 icon that `actool` adds to the catalog (rendered in Icon Composer's
