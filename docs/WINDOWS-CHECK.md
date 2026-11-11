@@ -1,5 +1,10 @@
 # Windows 首版 —— 装机和验收（给 Ocean）
 
+> **2026-11-11（v0.8.0，发版二）**：第三、四轮（第 49 – 75 条）已在 Parallels 虚拟机里用 v0.8.0 的安装包逐条对过，
+> 结论和怎么验的在 `docs/archive/product-taskbooks/TASKBOOK-P17-RELEASE-TWO-MAC-WINDOWS-2026-11-10.md` §7.5。
+> 其中第 58 – 61 条（默认 Ctrl+Alt+Space）已作废：Windows 和 Mac 一样默认不绑组合键，入口是双击 Ctrl。
+> 第 52 条（把托盘图标拖到任务栏）只有真手做得了。下面是原稿，不再改。
+
 > 这份是给你在 Windows 电脑上照着做的。**一步一个动作**，
 > 每条前面一个 ☐，做完打个勾；哪条不对，把那条的编号发给我就行。
 >
