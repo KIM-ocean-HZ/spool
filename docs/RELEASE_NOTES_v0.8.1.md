@@ -4,17 +4,17 @@ Spool is a context hub for long-running projects: capture fragments the moment t
 
 ## Download
 
-**macOS** — `Spool_0.8.1_aarch64.dmg` · __ MB · Apple Silicon (M1 or later), macOS 11 or newer
+**macOS** — `Spool_0.8.1_aarch64.dmg` · 13.1 MB · Apple Silicon (M1 or later), macOS 11 or newer
 
 The macOS build is signed and notarized with a Developer ID, so it opens without the "unidentified developer" warning. `Spool-macOS-arm64.dmg` is the same file under a fixed name, for direct-download links — either name works.
 
-**Windows** — `Spool_0.8.1_x64-setup.exe` · __ MB · Windows 10 or 11, x64
+**Windows** — `Spool_0.8.1_x64-setup.exe` · 9.7 MB · Windows 10 or 11, x64
 
 The Windows installer is **not code-signed**, so SmartScreen warns once before it will install (*More info → Run anyway*). It installs for your user only and needs no administrator rights. `Spool-windows-x64-setup.exe` is the same file under a fixed name. Nothing in it changes from v0.8.0 except the version number.
 
 ```
-sha256  ________  Spool_0.8.1_aarch64.dmg
-sha256  ________  Spool_0.8.1_x64-setup.exe
+sha256  c310f6b97c95b1cd897228ab7e99e2971119035af7a87438ba2023990e9a016d  Spool_0.8.1_aarch64.dmg
+sha256  66cfdcbf69d23fc305488dc5595f073dc4e982dcda170abb8f5951053fc3583d  Spool_0.8.1_x64-setup.exe
 ```
 
 **Upgrading changes nothing in your database** — it stays at schema v39.
