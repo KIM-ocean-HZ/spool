@@ -38,7 +38,7 @@
 <main class="wrap article measure" style="margin: 0 auto;" data-zh-body="privacy">
 
 <h1>Privacy Policy</h1>
-<p class="lede">Last updated: 2026-11-05 (Spool v0.7.4). This English translation is provided for convenience;
+<p class="lede">Last updated: 2026-11-11 (Spool v0.8.0). This English translation is provided for convenience;
 the <a href="zh/privacy.html" hreflang="zh-Hans" lang="zh">Chinese original</a> is authoritative.</p>
 
 <h2>The one-sentence version</h2>
@@ -182,7 +182,10 @@ request is made on your behalf, by a subprocess Spool starts:</p>
         Zhipu GLM or OpenRouter), or an HTTPS endpoint you entered yourself</td>
     <td><strong>This is the one route Spool runs itself.</strong> The project content involved
         is sent to that provider, and the run is billed to your own key — including a run you
-        cancel partway, because the provider still charges for what it already produced. Following
+        cancel partway, because the provider still charges for what it already produced. If a
+        workspace is linked to a folder, Follow Up and the out-of-date check also send that folder's
+        information: the text of the state files you chose and the commit titles since the last sync,
+        and, for the out-of-date check, the list of files changed since then. Following
         up this way uses that provider's own web search (OpenAI, Claude, Gemini, Kimi and Qwen have
         one; the others cannot be used for Follow Up). The request is made by a bundled subprocess
         (<code>spool-ai</code>) that Spool starts and that exits when the run ends; Spool's own

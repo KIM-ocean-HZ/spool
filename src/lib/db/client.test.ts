@@ -2355,6 +2355,40 @@ describe('retranslateTutorial', () => {
     ).toEqual({ c: 1 });
   });
 
+  // v0.8.0 reworded four blocks per language. A library seeded before that still holds the old
+  // text; without `formerly` the byte-for-byte match finds nothing and both threads stay English.
+  it('still switches a tutorial seeded with the wording before v0.8.0', async () => {
+    await __seedTutorialThreadForTest(db, 'en');
+    // Put back exactly what v0.7.4 seeded (only the tails changed, so the key caps stay as seeded).
+    handle.exec(`
+      UPDATE blocks SET content = REPLACE(content,
+        'Your data stays on this machine unless you open a route yourself — an AI client you connect, or an AI engine you switch on.',
+        'Spool ships no AI of its own — your data never leaves this machine.');
+      UPDATE blocks SET content = REPLACE(content,
+        'Pack all of it, or only the pinned blocks, or the last 7 or 30 days.',
+        'Pick a range (pinned only / last 7 days) and a task template.');
+      UPDATE blocks SET content = content || ' Spool ships no AI of its own; your data stays on this machine.'
+        WHERE content LIKE 'This whole project is about the optional step:%';
+      UPDATE blocks SET content = REPLACE(content, '(Needs "Allow AI writes".)', '(Needs "Allow AI to write".)'),
+                        annotation = REPLACE(annotation, '"Allow AI writes"', '"Allow AI to write"');
+    `);
+    const old = handle
+      .prepare("SELECT COUNT(*) AS c FROM blocks WHERE content LIKE '%ships no AI%' OR content LIKE '%Allow AI to write%' OR content LIKE '%task template%'")
+      .get() as { c: number };
+    expect(old.c).toBe(4);
+
+    expect(await retranslateTutorial('en', 'zh')).toBe(true);
+
+    expect(titles()).toEqual(['欢迎使用 Spool', '让 AI 用上你的 Spool']);
+    const zh = handle.prepare('SELECT content FROM blocks').all() as { content: string }[];
+    expect(
+      handle.prepare("SELECT COUNT(*) AS c FROM blocks WHERE source = 'Spool Guide'").get(),
+    ).toEqual({ c: 0 });
+    // …and it lands on the current wording, not a translation of the old claim.
+    expect(zh.some((b) => b.content.includes('只有你自己打开的路'))).toBe(true);
+    expect(zh.some((b) => b.content.includes('不带 AI'))).toBe(false);
+  });
+
   it('never re-creates a tutorial the user deleted', async () => {
     await __seedTutorialThreadForTest(db, 'en');
     handle.prepare('DELETE FROM blocks').run();

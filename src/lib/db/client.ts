@@ -1397,6 +1397,12 @@ interface SeedBlock {
   // are one sentence written twice, and an index would keep pointing at whatever ends up in
   // that slot after the next edit.
   offMac?: string;
+  // The block exactly as an earlier version seeded it (macOS form; `annotation` left out = it had
+  // none). Seeded rows never change, so libraries created before a wording fix still hold the old
+  // text — and the language switch below matches byte for byte, so without this it would find no
+  // match and skip the whole thread for every one of them. Matching accepts it; the switch writes
+  // the current wording. (2026-11-11, v0.8.0: the guide stopped saying "ships no AI of its own".)
+  formerly?: { content: string; annotation?: string };
 }
 interface SeedThread {
   title: string;
@@ -1421,10 +1427,14 @@ const platformTutorial = (
   raw: Record<SeedLanguage, { source: string; gesture: SeedThread; mcp: SeedThread }>,
 ): typeof raw => {
   if (IS_MAC) return raw;
+  const caps = (c: { content: string; annotation?: string }) => ({
+    content: localizeKeyCaps(c.content),
+    ...(c.annotation === undefined ? {} : { annotation: localizeKeyCaps(c.annotation) }),
+  });
   const block = (b: SeedBlock): SeedBlock => ({
     ...b,
-    content: localizeKeyCaps(b.offMac ?? b.content),
-    ...(b.annotation === undefined ? {} : { annotation: localizeKeyCaps(b.annotation) }),
+    ...caps({ content: b.offMac ?? b.content, annotation: b.annotation }),
+    ...(b.formerly === undefined ? {} : { formerly: caps(b.formerly) }),
   });
   const thread = (s: SeedThread): SeedThread => ({ ...s, blocks: s.blocks.map(block) });
   return Object.fromEntries(
@@ -1447,8 +1457,13 @@ const TUTORIAL: Record<SeedLanguage, { source: string; gesture: SeedThread; mcp:
       blocks: [
         {
           content:
-            'Spool 是一张上下文工作台：把散落的资料捕进「项目」，需要 AI 时一键打包成完整上下文。它自己不带 AI——你的数据永远只在本机。',
+            'Spool 是一张上下文工作台：把散落的资料捕进「项目」，需要 AI 时一键打包成完整上下文。你的数据存在本机；只有你自己打开的路（接上的 AI 客户端、开启的 AI 引擎）才会把内容交给 AI。',
           annotation: '这条灰字就是「批注」——你自己的话，打包时会原样保留给 AI。',
+          formerly: {
+            content:
+              'Spool 是一张上下文工作台：把散落的资料捕进「项目」，需要 AI 时一键打包成完整上下文。它自己不带 AI——你的数据永远只在本机。',
+            annotation: '这条灰字就是「批注」——你自己的话，打包时会原样保留给 AI。',
+          },
         },
         {
           content:
@@ -1470,7 +1485,11 @@ const TUTORIAL: Record<SeedLanguage, { source: string; gesture: SeedThread; mcp:
         },
         {
           content:
-            '⌘⇧P 把整个项目变成结构化上下文，粘给任何 AI 就能用——网页版也行，不用装东西、不用配置。可选范围（仅置顶/近 7 天）与任务模板。',
+            '⌘⇧P 把整个项目变成结构化上下文，粘给任何 AI 就能用——网页版也行，不用装东西、不用配置。可以打包全部，也可以只打包置顶的、或者最近 7 天 / 30 天的。',
+          formerly: {
+            content:
+              '⌘⇧P 把整个项目变成结构化上下文，粘给任何 AI 就能用——网页版也行，不用装东西、不用配置。可选范围（仅置顶/近 7 天）与任务模板。',
+          },
         },
         {
           content:
@@ -1484,9 +1503,14 @@ const TUTORIAL: Record<SeedLanguage, { source: string; gesture: SeedThread; mcp:
       blocks: [
         {
           content:
-            '这一整个项目讲的是可选的那一步：设置 → MCP，一键接上你在用的 AI 客户端（重启那个客户端才生效）。不接也不缺功能——⌘⇧P 打包粘给任何 AI 的网页版一样能用，接上只是省掉每次粘贴。下面每块一个场景，引号里的话可以照抄。Spool 本体不带 AI，数据始终在本机。',
+            '这一整个项目讲的是可选的那一步：设置 → MCP，一键接上你在用的 AI 客户端（重启那个客户端才生效）。不接也不缺功能——⌘⇧P 打包粘给任何 AI 的网页版一样能用，接上只是省掉每次粘贴。下面每块一个场景，引号里的话可以照抄。',
           annotation: 'AI 只读接入即可用；要让它代写，需另开「允许 AI 写入」。',
           pinned: true,
+          formerly: {
+            content:
+              '这一整个项目讲的是可选的那一步：设置 → MCP，一键接上你在用的 AI 客户端（重启那个客户端才生效）。不接也不缺功能——⌘⇧P 打包粘给任何 AI 的网页版一样能用，接上只是省掉每次粘贴。下面每块一个场景，引号里的话可以照抄。Spool 本体不带 AI，数据始终在本机。',
+            annotation: 'AI 只读接入即可用；要让它代写，需另开「允许 AI 写入」。',
+          },
         },
         {
           content:
@@ -1523,9 +1547,15 @@ const TUTORIAL: Record<SeedLanguage, { source: string; gesture: SeedThread; mcp:
       blocks: [
         {
           content:
-            'Spool is a workbench for context: capture scattered material into a project, then pack the whole project into one ready-made context whenever you need an AI. Spool ships no AI of its own — your data never leaves this machine.',
+            'Spool is a workbench for context: capture scattered material into a project, then pack the whole project into one ready-made context whenever you need an AI. Your data stays on this machine unless you open a route yourself — an AI client you connect, or an AI engine you switch on.',
           annotation:
             'This grey line is an annotation — your own words. Packing passes them to the AI exactly as written.',
+          formerly: {
+            content:
+              'Spool is a workbench for context: capture scattered material into a project, then pack the whole project into one ready-made context whenever you need an AI. Spool ships no AI of its own — your data never leaves this machine.',
+            annotation:
+              'This grey line is an annotation — your own words. Packing passes them to the AI exactly as written.',
+          },
         },
         {
           content:
@@ -1544,7 +1574,11 @@ const TUTORIAL: Record<SeedLanguage, { source: string; gesture: SeedThread; mcp:
         },
         {
           content:
-            '⌘⇧P turns the whole project into structured context you can paste into any AI — a browser tab works, with nothing to install and nothing to configure. Pick a range (pinned only / last 7 days) and a task template.',
+            '⌘⇧P turns the whole project into structured context you can paste into any AI — a browser tab works, with nothing to install and nothing to configure. Pack all of it, or only the pinned blocks, or the last 7 or 30 days.',
+          formerly: {
+            content:
+              '⌘⇧P turns the whole project into structured context you can paste into any AI — a browser tab works, with nothing to install and nothing to configure. Pick a range (pinned only / last 7 days) and a task template.',
+          },
         },
         {
           content:
@@ -1558,10 +1592,16 @@ const TUTORIAL: Record<SeedLanguage, { source: string; gesture: SeedThread; mcp:
       blocks: [
         {
           content:
-            'This whole project is about the optional step: Settings → MCP, and connect whichever AI client you use in one click (restart that client to apply). Skipping it costs you no features — ⌘⇧P packs the project for any AI, a browser tab included; connecting only saves you the pasting. One scenario per block below, and the line in quotes is meant to be copied as-is. Spool ships no AI of its own; your data stays on this machine.',
+            'This whole project is about the optional step: Settings → MCP, and connect whichever AI client you use in one click (restart that client to apply). Skipping it costs you no features — ⌘⇧P packs the project for any AI, a browser tab included; connecting only saves you the pasting. One scenario per block below, and the line in quotes is meant to be copied as-is.',
           annotation:
-            'Read-only access is enough for all of this; to let the AI write back, turn on "Allow AI to write" as well.',
+            'Read-only access is enough for all of this; to let the AI write back, turn on "Allow AI writes" as well.',
           pinned: true,
+          formerly: {
+            content:
+              'This whole project is about the optional step: Settings → MCP, and connect whichever AI client you use in one click (restart that client to apply). Skipping it costs you no features — ⌘⇧P packs the project for any AI, a browser tab included; connecting only saves you the pasting. One scenario per block below, and the line in quotes is meant to be copied as-is. Spool ships no AI of its own; your data stays on this machine.',
+            annotation:
+              'Read-only access is enough for all of this; to let the AI write back, turn on "Allow AI to write" as well.',
+          },
         },
         {
           content:
@@ -1576,9 +1616,15 @@ const TUTORIAL: Record<SeedLanguage, { source: string; gesture: SeedThread; mcp:
         },
         {
           content:
-            'File something on the spot: "Save that conclusion into my \'XX\' project and note why it matters." (Needs "Allow AI to write".)',
+            'File something on the spot: "Save that conclusion into my \'XX\' project and note why it matters." (Needs "Allow AI writes".)',
           annotation:
             'That runs add_block: blocks written by an AI carry a "Claude · MCP" source tag and never blur with your own; it also cites the older blocks a conclusion rests on.',
+          formerly: {
+            content:
+              'File something on the spot: "Save that conclusion into my \'XX\' project and note why it matters." (Needs "Allow AI to write".)',
+            annotation:
+              'That runs add_block: blocks written by an AI carry a "Claude · MCP" source tag and never blur with your own; it also cites the older blocks a conclusion rests on.',
+          },
         },
         {
           content:
@@ -1733,11 +1779,13 @@ export const retranslateTutorial = async (
     );
     const matched: string[] = [];
     for (const seedBlock of before.blocks) {
+      const seededAs = seedBlock.formerly ? [seedBlock, seedBlock.formerly] : [seedBlock];
       const hit = rows.find(
         (r) =>
           !matched.includes(r.id) &&
-          r.content === seedBlock.content &&
-          (r.annotation ?? null) === (seedBlock.annotation ?? null),
+          seededAs.some(
+            (s) => r.content === s.content && (r.annotation ?? null) === (s.annotation ?? null),
+          ),
       );
       if (!hit) break;
       matched.push(hit.id);
