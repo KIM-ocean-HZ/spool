@@ -109,7 +109,13 @@ later) into `src-tauri/icons/Assets.car`, which `src-tauri/tauri.conf.json` list
 under `bundle.icon`. Tauri copies it to `Contents/Resources/Assets.car` and sets
 `CFBundleIconName`; `icon.icns` stays as `CFBundleIconFile`. macOS 26 and later
 draw the icon from `Assets.car`, natively from the same layers; earlier macOS
-versions use the ICNS. This matters on macOS 26 and later: with the ICNS alone,
+versions use the ICNS. They do so only because the generator strips the flattened
+pre-macOS 26 icon that `actool` adds to the catalog (rendered in Icon Composer's
+design generation 26: lighter, with a diagonal glass streak). With that set
+present, macOS 15 and earlier read it instead of the ICNS (found on Sequoia 15.6
+in v0.8.0). Xcode 26.1 and later cannot turn it off, so
+`scripts/strip-legacy-icon.m` removes it with CoreUI's private storage API and
+`assetutil` rebuilds and validates the catalog. This matters on macOS 26 and later: with the ICNS alone,
 Finder draws this inset icon on a grey "legacy icon" plate at several small sizes
 (16–64pt at 1x, 24–32pt at 2x). With `Assets.car` no size gets the plate. The
 catalog carries light, dark and tintable renditions; only the default appearance

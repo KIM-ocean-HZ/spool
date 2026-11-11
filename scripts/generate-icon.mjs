@@ -18,6 +18,7 @@ const MASTER = join(EXPORT_DIR, 'spool-app-icon-1024.png');
 const ARTWORK = join(EXPORT_DIR, 'spool-artwork-srgb-1024.png');
 const ICON_DIR = join(REPO, 'src-tauri', 'icons');
 const CATALOG = join(ICON_DIR, 'Assets.car');
+const STRIP_SOURCE = join(REPO, 'scripts', 'strip-legacy-icon.m');
 const SITE_ASSETS = join(REPO, 'site', 'assets');
 const TAURI_CLI = join(REPO, 'node_modules', '@tauri-apps', 'cli', 'tauri.js');
 const SIZES = [16, 32, 48, 64, 128, 256, 512, 1024];
@@ -215,11 +216,30 @@ const main = () => {
         '--output-partial-info-plist', join(catalog, 'partial.plist'),
         '--output-format', 'human-readable-text', '--errors',
       ], { stdio: ['ignore', 'inherit', 'inherit'] });
-      if (!existsSync(join(catalog, 'Assets.car'))) {
+      const compiled = join(catalog, 'Assets.car');
+      if (!existsSync(compiled)) {
         throw new Error('actool produced no Assets.car (see its errors above). If they say "Bad file descriptor", run `pkill -x ibtoold` and try again.');
       }
-      nativeExports.push([CATALOG, readFileSync(join(catalog, 'Assets.car'))]);
-      console.log('[icon] Compiled Spool.icon into Assets.car for macOS 26 and later.');
+      // actool also flattens the .icon into an "Icon Image" set for systems before
+      // macOS 26, rendered in Icon Composer's design generation 26 (lighter, with a
+      // diagonal glass streak), and macOS 15 and earlier read that set from the
+      // catalog instead of the ICNS because CFBundleIconName is set. Xcode 26.1 and
+      // later cannot turn it off, so strip it (see scripts/strip-legacy-icon.m):
+      // older systems then fall back to icon.icns, the reviewed generation 27
+      // export, and macOS 26 and later keep drawing the glass layers.
+      const stripper = join(work, 'strip-legacy-icon');
+      execFileSync('/usr/bin/xcrun', ['clang', '-fobjc-arc', '-framework', 'Foundation', '-o', stripper, STRIP_SOURCE], { stdio: 'inherit' });
+      execFileSync(stripper, [compiled], { stdio: 'inherit' });
+      execFileSync('/usr/bin/xcrun', ['assetutil', '--update-bitmap', compiled], { stdio: 'pipe' });
+      execFileSync('/usr/bin/xcrun', ['assetutil', '--validate-file', compiled], { stdio: 'pipe' });
+      const renditions = JSON.parse(execFileSync('/usr/bin/xcrun', ['assetutil', '--info', compiled], { encoding: 'utf8' })).slice(1);
+      const types = renditions.map(({ AssetType }) => AssetType);
+      if (types.includes('Icon Image') || types.includes('MultiSized Image') ||
+          types.filter((type) => type === 'IconImageStack').length !== 3) {
+        throw new Error(`Assets.car still has a flattened icon or lost a glass stack: ${[...new Set(types)].join(', ')}`);
+      }
+      nativeExports.push([CATALOG, readFileSync(compiled)]);
+      console.log('[icon] Compiled Spool.icon into Assets.car for macOS 26 and later; earlier macOS use icon.icns.');
     } else {
       console.warn('[icon] Native export skipped: ictool is unavailable; using checked-in spool-app-icon-1024.png, spool-artwork-srgb-1024.png and Assets.car.');
       for (const path of [MASTER, ARTWORK]) {
