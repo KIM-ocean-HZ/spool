@@ -114,3 +114,31 @@
 4. 有问题直接说哪一步、看到了什么。
 
 ## 7. 回执（执行窗填写）
+
+### 7.1 P18-0 开工核对（2026-11-11，对着 `b78772a`）
+
+- 基线：`tsc -b` 干净 · vitest **1361**（147 个文件）· `cargo test --lib` **326 过 · 18 ignored** · sidecar **31** · i18n 干净（和 P17 收尾一样）。
+- 工作树里研究线没提交的改动照旧没碰，没用 `git stash`；仓库根目录那张截图没提交。
+- 数据盘只剩 **14 GB**（99%）；两台虚拟机共 144 GB（「Windows 11」117 GB、「Spool-clean-P13」27 GB）。
+- §4 的答复：HANDOFF 第 318 条（在**朋友那台 M4** 上验 · Windows **也用 GitHub Actions 打 0.8.1** · 私有接口**先不允许** · 不为虚拟机删东西）。
+
+### 7.2 P18-1 找修法（scratchpad，仓库没动）
+
+| 试的 | 结果 |
+|---|---|
+| ① Apple 官方做法（论坛 794485 / 794567、Michael Tsai 11-05、GitHub psulak/Tahoe-Sequoia-Hybrid-Icon） | 没有。Xcode 26.0 有隐藏开关 `--enable-icon-stack-fallback-generation disabled`，26.1 起被忽略；有人用「预编译 `.car` 里去掉压平图 → 旧系统退回 ICNS」，那个 GitHub 项目靠的是 Xcode 26.0.1 |
+| ② 编出不带压平图的 `.car` | 这台 Xcode 27.1：那个开关照收不用（编译器里它是唯一没有对应设置名的参数），加不加 `.car` 一样；`--standalone-icon-behavior none/all/default`、不当主图标编（`--include-all-app-icons`、`--app-icon` 指别的名字、`--alternate-app-icon`）、最低系统版本 15.0 / 26.0 / 27.0、`assetutil` 按年份 / 缩放 / 设备裁剪 —— 那 7 张压平图都在，而且压平图和 26.0 那份逐字节一样。反汇编 `adjustShouldGenerateFlattenedIconStackForPrimaryAppIconForOptions:`：只控制旁边那个 ICNS，不控制 `.car` 里的压平图 |
+| ③ 换名字分开 | 旧系统和新系统读的都是 `CFBundleIconName`；系统缓存里没有只给 26 以上读的键；同名 `.xcassets` 里的 appiconset 照旧被忽略 |
+| Ocean 的线索「图标是 Icon Composer 做的」 | 查准了原因：压平图就是 Icon Composer **26 代**的渲染（和 `ictool --design-generation 26` 几乎一样：斜反光、上半截发亮、圆角更圆；opaque 逐像素差 6 / 12 / 16，对 27 代是 10 / 21 / 33）；设计的 ICNS 是 27 代导出。`.icon` 的「按条件分别设值」只能按外观和平台分，没有「给旧系统」这一项；`legacy…` 那几个名字是旧文档格式的字段 |
+
+⇒ 四种公开办法都不行，停下来问（§4 第 3 题）。Ocean 先答「不接受去掉玻璃，最好让旧版系统也用上几乎一样的效果」（第 319 条），讲清两种做法都不动 26 以上的玻璃、旧系统换成 27 代那张之后，选「**私有接口去掉那套 26 代图**」（第 320 条）。
+
+### 7.3 P18-2 改图标生成（`4a7a067`、`d6f5aad`）
+
+- `scripts/strip-legacy-icon.m`（新）：用 CoreUI 的 `CUIMutableCommonAssetStorage` 去掉 `.car` 里部件 220 的 7 张压平图（3 张小的是指向一张拼图的链接）、部件 218 的尺寸索引、只给那 3 个链接用的拼图；玻璃图层（245 / 246）、矢量、颜色、渐变不动。只认 actool 27 的那种结构（7 / 1 / 3 个），不对就拒绝、不写 —— 对已经去过的文件再跑一次，拒绝、文件哈希不变。
+- `scripts/generate-icon.mjs`：actool 之后编这个工具、去图、`assetutil --update-bitmap` 重建位图索引（不重建 `assetutil -Z` 报 invalid bitmapindex）、`--validate-file`、再查 `--info` 里没有 `Icon Image` / `MultiSized Image`、`IconImageStack` 正好 3 个。重新生成：只有 `Assets.car` 变了（1,905,656 → 35,848 字节），其余 38 个产物（含官网图标）逐字节不变。
+- 构建时发现：Tauri 只在 `.car` 里找得到 `Icon Image` 时才写 `CFBundleIconName`（`tauri-bundler` 的 `app_icon_name_from_assets_car`），去掉之后它不写了（日志 `Failed to get icon name from Assets.car file`）⇒ 加 `src-tauri/Info.plist`（Tauri 自动并入）只放 `CFBundleIconName = Spool`。`docs/logo/README.md` 跟着改两句。
+- 本机构建（`d6f5aad`，Developer ID 签名、没公证、只出 `.app`）：`CFBundleIconFile = icon.icns`、`CFBundleIconName = Spool` 都在；包里的 `Assets.car` / `icon.icns` 和仓库的一样；`--deep --strict` 过。
+- **(b) macOS 27 外观不变**：按访达的画法（`NSWorkspace` → IconServices）画 16 – 512 pt @2x。同一个包里放旧 `.car` 和新 `.car`：最大差 0 – 1。新构建对装着的 0.8.0：64 pt 有 4 个、128 pt 有 9 个像素差 4 – 20（法兰左边缘），其余 ≤ 3 —— 这是装着那份的缓存图标，换成旧 `.car` 的同一个包对装着的 0.8.0 也是这 13 个像素，不是这次的改动。
+- **(a) 旧系统读到什么**：按名字取图（macOS 27 上的旧办法）去掉之后取不到压平图了，只能当参考；以朋友那台 macOS 15 的截图为准（7.4）。
+- 测法踩到的两个假象：没有可执行文件的假 App 会被画上「禁止」符号（两边都有，比较仍然公平，但最后用真构建重验了）；拷进 `/private/tmp` 的 App 被画成空白文档图标（没被系统当 App 认）。
