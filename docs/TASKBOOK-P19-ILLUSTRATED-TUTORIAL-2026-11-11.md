@@ -111,3 +111,12 @@
 4. 有不对的直接说哪一章、哪一步。
 
 ## 7. 回执（执行窗填写）
+
+### 7.1 进度（2026-11-11 晚，第一窗到这里结束）
+
+- **P19-0 完成**：§4 已答（第 326 – 329 条）。
+- **P19-2 演示版已编好、已就位**：`~/Movies/Spool-video/build/demo074-r1/` 换成 tag `v0.8.1` 源码（`git archive` + `rsync --delete`，保留 `node_modules` / `target`；`npm ci` 补了 katex）+ 三处演示改动（`tauri.conf.json` identifier、`mcp.rs` `APP_IDENTIFIER`、`api_engine.rs` `KEYCHAIN_SERVICE` 都是 `com.oceanjin.spool.demo074`；v0.8.1 源码里没有别处写死正式 identifier，测试除外），productName「Spool」，**Developer ID 签名**（授权不会每次重编就掉；没公证）。装在 `~/Desktop/Spool/Spool-Demo-v0.7.4/Spool-video.app`（swap-snapshot.sh 认死这个路径），旧的 0.7.4 演示版改名 `Spool-video-0.7.4-before-p19.app` 留着。**还没启动过**：演示数据目录 `~/Library/Application Support/com.oceanjin.spool.demo074` 仍是视频那份（库 v37，第一次打开会迁到 v39）；新签名 ⇒ 输入监控 / 辅助功能 / 自动化要 Ocean 重新给一次。
+- 查过的事实：视频快照 `A`（有 Job hunt、没有 Job search）/ `B`（Job search 2 块 + 连好 `~/spool-video/Job search`）/ `C`（12 块）/ `C10`、`C11`（13 块，第 13 块是 Claude 真写回的决定）都在、都是 v37；演示文件夹和演示仓库 `~/spool-demo-v074/portfolio-site` 在；`/etc/hosts` 里视频那几个 `.example` 网址还在（`sources/serve.py` 起 8080）；视频的脚本工具在 `~/Movies/Spool-video/scripts/`（`spoolinput.py` HID 层鼠标键盘 / 按文字找控件 / 双击 ⌥ / 中文输入法打字，`shots/apps.py` Safari 选字复制、等捕捉卡，`p0_common.py` 演示版 pid / 查库）。连着的文件夹靠系统书签认（`folders.identity`），换路径造不出来 ⇒ **中文那套的文件夹要在演示版里当场连**，之后关掉 app 再用 SQL 写入中文块、存快照。
+- 讲稿里要按 v0.8.1 改的已经查到两处：「In sync now / 已经对过了」按钮没了（P16-4）；「+ Workspace」不是这个说法了。界面字符串都在 `src/lib/i18n/index.ts`（中文原文 → 英文）。
+- 工作计划（章节截图清单、快照方案、拍摄铁律、中文数据怎么做）在 `~/Desktop/Spool/P19-guide-20261111/PLAN.md`；英文数据导出在本窗 scratchpad（会没，重导很快：`snapshots/C11/spool.db` 里读 workspaces / threads / blocks / follow_up_items / attachments / block_images）。
+- **还没做**：中文示例数据（映射、四张块内图片的中文版、`~/spool-video-zh/` 文件夹和简历 / 求职信、中文演示仓库、中文网页）；拍摄脚本；全部截图（每段前问 Ocean）；Windows 虚拟机那几张（**11-20 前**）；P19-1 正文；P19-4 页面；推送上线。
