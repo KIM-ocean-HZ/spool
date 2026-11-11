@@ -1,6 +1,6 @@
 # 产品任务书 P18 —— v0.8.1：修 macOS 15 及更早系统上发灰的 App 图标
 
-> **状态：ACTIVE（2026-11-11 下发，下一窗执行）**
+> **状态：COMPLETE — 待 Ocean 验收（2026-11-11 做完：v0.8.1 Mac + Windows 已发、本机已换装；MCP Registry 等 Ocean 跑命令）**
 >
 > **唯一交付**：macOS 15（Sequoia）及更早系统上，程序坞 / 访达 / ⌘Tab 里的 Spool 图标显示成**设计的那一版**（和 ICNS、安装包窗口里一样的饱和深橙色），macOS 26 以上的玻璃图标外观不变；作为 **v0.8.1** 发出去（Mac 公证、Release、官网下载照常可用、MCP Registry、本机换装、台账）。
 >
@@ -142,3 +142,33 @@
 - **(b) macOS 27 外观不变**：按访达的画法（`NSWorkspace` → IconServices）画 16 – 512 pt @2x。同一个包里放旧 `.car` 和新 `.car`：最大差 0 – 1。新构建对装着的 0.8.0：64 pt 有 4 个、128 pt 有 9 个像素差 4 – 20（法兰左边缘），其余 ≤ 3 —— 这是装着那份的缓存图标，换成旧 `.car` 的同一个包对装着的 0.8.0 也是这 13 个像素，不是这次的改动。
 - **(a) 旧系统读到什么**：按名字取图（macOS 27 上的旧办法）去掉之后取不到压平图了，只能当参考；以朋友那台 macOS 15 的截图为准（7.4）。
 - 测法踩到的两个假象：没有可执行文件的假 App 会被画上「禁止」符号（两边都有，比较仍然公平，但最后用真构建重验了）；拷进 `/private/tmp` 的 App 被画成空白文档图标（没被系统当 App 认）。
+
+### 7.4 P18-3 在 macOS 15 上验（朋友那台 M4，Sequoia 15.6）
+
+- 测试版：`d6f5aad` 的构建改名「Spool icon test」、bundle id `com.oceanjin.spool.icontest`（不和那台装着的 0.8.0 混），重新用 Developer ID 签名，没公证、不用打开；zip 在 `~/Desktop/Spool/P18-icon-20261111/`。
+- 截图（17:14，`friend-macos15-dock-finder-20261111-1714.png`，同一文件夹）：程序坞上测试版（左，没在运行）是设计的那张 —— 均匀的深橙、没有斜反光、没有浅色内框；旁边在运行的 0.8.0 是 26 代压平那张（上半截亮、斜反光、浅色内框）；访达列表里两个小图标同样分得出。放大并排对比在 `friend-compare.png`。⇒ **(a) 在真的 macOS 15 上过了**。⌘Tab 没看（要打开 App），程序坞和 ⌘Tab 用的是同一份图标。
+- macOS 27（这台）：见 7.3 (b)；换装后程序坞是同一份图标。
+
+### 7.5 P18-4 v0.8.1 发版（2026-11-11）
+
+- 版本号（`6279c50`）：六处 + 隐私说明三份只改版本（日期还是 11-11）；之后 tsc / i18n 干净，vitest 1361、`cargo test --lib` 326 / 18 ignored、sidecar 31、build-site-zh 14。
+- 发版说明 `docs/RELEASE_NOTES_v0.8.1.md`（Ocean「可以」，第 322 条）。
+- **Mac**（代码 `089a291`）：`notarytool history` 退出 0；`APPLE_SIGNING_IDENTITY` + 三个公证变量（Ocean 当场在对话里给，只当环境变量传给构建和补公证两条命令，⛔ 没写进任何文件、提交、记忆）+ `CI=true` + `CARGO_PROFILE_RELEASE_BUILD_OVERRIDE_STRIP=none npm run tauri build`，日志进文件，`BUILD EXIT 0`，TSA 没出错。**`.app` 公证 `5e259747-589c-41af-aac9-92cbe1cda6b4` · Accepted**；**dmg 补公证 `0dac3dee-bcf3-49a5-ac9a-2279c8ed2e5a` · Accepted**，staple 成功。两份 `spctl` = `accepted · Notarized Developer ID`；`--deep --strict` 过；两份 `stapler validate` 过；`CFBundleShortVersionString` 0.8.1，`CFBundleIconFile` / `CFBundleIconName` 都在。dmg **13,778,002 字节**，sha256 `c310f6b9…016d`；`spool` `ded630cf…`、`spool-ai` `3acfe81f…`。副本 `~/Desktop/Spool/P18-release-20261111/`。
+- 发版二进制 `--mcp`（真库 `VACUUM INTO` 副本）：`serverInfo` spool **0.8.1**；普通 30（15 + 15）、`--engine-run` 22（15 + 7），全带 annotations。
+- **Windows**（第 321 条：朋友看完再推）：推临时分支 `release-0.8.1`（= `089a291`），run `43066503488` 全绿：vitest 1361（147 个文件）· `cargo test` 302 / 0 / 17 ignored · `Spool_0.8.1_x64-setup.exe` **10,199,937 字节**，sha256 `66cfdcbf…583d`。主虚拟机「Windows 11」静默装（`P18-vm-20261111/scripts/r4-install.ps1`，只停 GUI 两个进程，`--mcp` 前后 0 / 0）：退出码 0，「已安装的应用」和 exe 版本 0.8.1，库装前装后 `deep_compare.py same` ⇒ **RESULT SAME**（v39，505 个 BLOB 按哈希），没有新的迁移快照。这次没拍虚拟机快照（带内存约 9 GB，磁盘只剩 13 GB；库装前装后各拷了一份）。
+- **发布五步**（Ocean「五步都做」，第 323 条）：① 附注标签 `v0.8.1` → `089a291`，推上去；② `gh release create v0.8.1 --verify-tag --latest`，标题「Spool 0.8.1 (macOS + Windows)」，四个资产（`Spool_0.8.1_aarch64.dmg` + `Spool-macOS-arm64.dmg`、`Spool_0.8.1_x64-setup.exe` + `Spool-windows-x64-setup.exe`，各自同一文件），Release 列表里是 Latest；③ 两个固定名 `releases/latest/download/…` 都是 **200**、先跳到 `download/v0.8.1/…`，四个文件下回来 sha256 和本地一样，下回来的 dmg staple 还在、`Notarized Developer ID`；④ `main` 推 `8070004..5fe4c88`（6 笔，快进），`git update-ref refs/remotes/origin/main`；Pages 部署 run `43069888585` 成功，线上中英隐私页是 v0.8.1，中英首页各 3 个 Mac、3 个 Windows 按钮都指 `latest`；⑤ 远端临时分支 `release-0.8.1` 删了。推之前扫过要推的新增行：没有私人的名字和邮箱，只有两处查资料的公开出处（一个开发者博客作者、一个 GitHub 项目）。
+- **MCP Registry**：`server.json` 0.8.1，`mcp-publisher validate` 过；线上最新还是 0.7.4（0.8.0 那次没发成）。`publish` 会被执行权限拦，请 Ocean 在对话里跑 `! cd ~/Desktop/Knote && mcp-publisher login github --token "$(gh auth token)" && mcp-publisher publish`，跑完查线上 isLatest，结果补在 HANDOFF 第 325 条和台账那一行。
+
+### 7.6 本机换成正式版 0.8.1（2026-11-11 17:44，Ocean「现在换，没有没点完成的」，第 324 条）
+
+- 换之前：`drafts.json` 两项都空；**Spool 的 GUI 没在运行** —— P17 那次的日志最后是 16:48 浮窗进程被主进程正常收掉、随后主进程退出（像是从菜单栏退出的），没有崩溃报告；`--mcp` 17 个。
+- 备份 `~/Desktop/Spool/db/*before-p18-install-20261111-174351*`：库（`VACUUM INTO`，`integrity_check` ok，v39）+ 7 个 json。换装前库：v39 · 1461 块 · 正文 948,941 字 · 109 项目 · 65 跟进行 · 41 工作区 · 89 文件。
+- 装的是从 Release **下回来的 dmg 里的** `.app`（`ditto` 出来 `chmod -R go+rX`；`spool` `ded630cf…`，和发版构建一样；`Notarized Developer ID`、`--deep --strict` 过）。旧包挪到 `~/Desktop/Spool/spool-pre-install/Spool-0.8.0-85d9499-before-p18-20261111-174351.app`。「暂停捕捉手势」仍是关（`captureDisabled` false，没动）。
+- `open -a /Applications/Spool.app --stdout/--stderr`（`~/Desktop/Spool/db/p18-run-20261111-174351.*.log`）⇒ 新进程 84695 / 84782，17:44:23 起；日志两行 `[overlay] helper started`、`[double-tap] installed at HID/active`（授权没掉）；`--mcp` 前后 17 / 17；库还是 v39，七个数和换装前一样，迁移快照前后都是 31 个。
+
+### 7.7 收尾
+
+- 台账 `CASE_STUDY_LEDGER.md` §1.2 加 v0.8.1 那一段（不写它自己所在提交的 sha）；`RELEASE.md` §0.0 改成「最新发布是 v0.8.1」。
+- 本任务书移进 `archive/product-taskbooks/`；`docs/README.md` 只提交产品那两行。
+- HANDOFF §1、§2 改成 v0.8.1 之后，唯一下一步 = P19 图文教程；新发现 `DISCOVERED-20261111-5`。
+- 测试数字：开工基线和改完一样 —— vitest 1361、`cargo test --lib` 326 / 18 ignored、sidecar 31、tsc / i18n 干净；CI（Windows x64）vitest 1361、`cargo test` 302 / 0 / 17。

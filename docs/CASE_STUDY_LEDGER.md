@@ -410,6 +410,35 @@ changed in substance: it now says that when a workspace is linked to a folder, F
 out-of-date check send that folder's state-file text, recent commit titles and changed-file list to
 the provider. The first-run guide no longer says Spool "ships no AI of its own".
 
+---
+
+| Field | v0.8.1 |
+|---|---|
+| Published | **2026-11-11** |
+| Tagged commit | tag `v0.8.1` → `089a291`, the commit both installers were built from (the commits after it on `main` change documentation only) |
+| Signing identity — macOS | Developer ID Application (Apple Developer Program, Team `Q5Y5JRXZ58`) |
+| **Notarisation — `.app`** | submission `5e259747-589c-41af-aac9-92cbe1cda6b4` · **Accepted** |
+| **Notarisation — `.dmg`** | submission `0dac3dee-bcf3-49a5-ac9a-2279c8ed2e5a` · **Accepted** |
+| Artefact — macOS | `Spool_0.8.1_aarch64.dmg`, 13,778,002 bytes |
+| sha256 — macOS | `c310f6b97c95b1cd897228ab7e99e2971119035af7a87438ba2023990e9a016d` |
+| Gatekeeper verdict — macOS | `accepted` · `source=Notarized Developer ID` on **both** artefacts, and re-verified on the copy downloaded back through the fixed-name link (byte-identical sha256, staple intact); `--verify --deep --strict` passes |
+| Artefact — Windows | `Spool_0.8.1_x64-setup.exe`, 10,199,937 bytes — NSIS, per-user, **not code-signed**; built by GitHub Actions run `43066503488` (`windows-latest`, x64) from the tagged commit |
+| sha256 — Windows | `66cfdcbf69d23fc305488dc5595f073dc4e982dcda170abb8f5951053fc3583d` |
+| Windows checks | the same CI run: vitest 1,361 passed, `cargo test` 302 passed / 0 failed / 17 ignored. Installed silently over v0.8.0 in the Windows 11 virtual machine: Windows lists it as 0.8.1, and the library compared identical row by row before and after |
+| Fixed-name assets | `Spool-macOS-arm64.dmg` and `Spool-windows-x64-setup.exe` — **HTTP 200** through `releases/latest/download/`, redirecting to `download/v0.8.1/`, byte-identical to the versioned assets |
+| Database schema | unchanged (**v39**) |
+| MCP surface (release binary) | unchanged: 30 tools (15 read-only, 15 write); 22 under `--engine-run`. Counted from the release binary against a copy of the library; the server reports version 0.8.1 |
+| The fix, as checked | on the owner's macOS 27: the icon the system draws for the app, 16–512 pt, is the same with the old and the new catalog (difference 0–1 per channel). On a friend's Mac running macOS 15: a test build with the new catalog shows the designed icon in the Dock and the Finder, next to v0.8.0 showing the washed-out one |
+| MCP Registry | not yet published for 0.8.1 when this row was written (the publish step needs the owner to run it); the registry's latest was still 0.7.4 |
+
+**What this row adds: older Macs get the designed icon.** Since v0.7.4 the app icon has come from
+an Icon Composer document compiled into an asset catalog, which macOS 26 and later draw as layered
+glass. `actool` also bakes into that catalog a flattened copy for earlier systems, rendered in Icon
+Composer's design generation 26 (lighter, with a diagonal streak), and macOS 15 and earlier preferred
+it to the reviewed ICNS. Xcode 26.1 and later offer no switch to leave it out, so the icon generator
+now removes it with CoreUI's private storage API; earlier systems then fall back to the ICNS. The app
+itself is unchanged and contains no private API; the catalog is 1.87 MB smaller.
+
 ## 2. Measured findings
 
 These are the rows that matter most: results obtained by measuring a running system, not
