@@ -14,10 +14,10 @@
 | 文件 | 干什么用 | 谁在改 |
 |---|---|---|
 | `EXECUTION_POLICY.md` | **长期顺序的唯一权威**，LOCKED。产品 / 记忆研究 / 营销的主次、交替节奏、任务准入 | 只有 Ocean 明确同意才能改，其他一律禁止 |
-| `HANDOFF-2026-11-09.md` | **唯一 active HANDOFF**：产品线的现状和唯一下一步（发版二 v0.8.0 已发，等 Ocean 验收，之后问下一件）、发版二之后的全部待办、一直生效的规矩；实验线在 Knote 这边的约束在它的附录 A（实验线的光标仍只看 Codex handoff）。2026-11-09 取代 `archive/HANDOFF-2026-09-04.md` | 每窗结束时更新 |
+| `HANDOFF-2026-11-09.md` | **唯一 active HANDOFF**：产品线的现状和唯一下一步（P18 v0.8.1 修图标，然后 P19 图文教程）、发版二之后的全部待办、一直生效的规矩；实验线在 Knote 这边的约束在它的附录 A（实验线的光标仍只看 Codex handoff）。2026-11-09 取代 `archive/HANDOFF-2026-09-04.md` | 每窗结束时更新 |
 | `CODEX-HANDOFF-STAGE0A-D2-REVIEW-2026-09-03.md` | **实验线（Stage 0-a）的唯一滚动入口**；GR15R3 已 `Redo`，当前光标为 ACTIVE GR15R4。文件名里的日期和 D2 只是历史，内容是最新的 | Codex |
 | `TASKBOOK-STAGE0A-GR15R4-DEVELOPMENT-TRACE-CALLS-MADE-PRE-PRODUCT-READ-CLOSURE-CORRECTION-2026-09-24.md` | **当前唯一 ACTIVE 实验任务书**；只纠正实际 product read / rebuild 顺序自保护，保留既有语义绑定与科学结果，完成即归档 | Codex 下发；Claude Code 执行 |
-| `TASKBOOK-P<n>-*.md` | **当前没有 ACTIVE 产品任务书**：P17 发版二（v0.8.0，Mac + Windows）2026-11-11 发完、等 Ocean 验收，下一件由 Ocean 定（HANDOFF §2）。P1 – P17 的任务书和回执都在 `archive/product-taskbooks/`（P17 11-11 发完当天移进去）；这一窗做什么、按什么顺序、怎么验。做完移进 `archive/product-taskbooks/`。产品线的任务库与红线在 `HANDOFF-2026-11-09.md` §5 和附录 B – G | 下发窗写；执行窗执行 |
+| `TASKBOOK-P<n>-*.md` | **当前 ACTIVE：`TASKBOOK-P18-SEQUOIA-ICON-FIX-V081-2026-11-11.md`**（v0.8.1：修 macOS 15 及更早系统上发灰的 App 图标，然后发版），见 HANDOFF §2；做完接着 P19 图文教程。P1 – P17 的任务书和回执都在 `archive/product-taskbooks/`（P17 11-11 发完当天移进去）；这一窗做什么、按什么顺序、怎么验。做完移进 `archive/product-taskbooks/`。产品线的任务库与红线在 `HANDOFF-2026-11-09.md` §5 和附录 B – G | 下发窗写；执行窗执行 |
 
 两份 handoff 的分工，别搞混：**实验线的执行光标只在 Codex 那一份**（它的 §8 列了所有不许恢复的旧光标）；
 **产品线的光标和唯一下一步只在 `HANDOFF-2026-11-09.md` §2**（2026-09-30 起产品线就在 HANDOFF 里），那里不写实验线的「下一步」。
