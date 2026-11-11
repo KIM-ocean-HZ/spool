@@ -160,6 +160,36 @@
 
 ## 7. 回执（执行窗填写）
 
+### 7.1 P17-0 开工核对（2026-11-11，对着 `bdcfd92`）
+
+- 基线：`tsc -b` 干净 · vitest **1360**（147 个文件）· `cargo test --lib` **326 过 · 18 ignored** · sidecar **31** · i18n 干净。
+- `git fetch`（HTTPS + gh token）：远端 `main` = `5f762da`；本地多 **53** 笔，没有一笔碰 `site/` 或 `README.md`；会公开的 `docs/` 文件 10 个，其中 `HANDOFF-2026-11-09.md`、`archive/HANDOFF-2026-09-04.md` 首行有 PURGE 标记。`v0.7.4..HEAD` = 115 笔。
+- 工作树里研究线没提交的改动（Codex handoff、`docs/README.md`、`archive/HANDOFF-2026-09-04.md`、`archive/stage0a-taskbooks/` 等）没碰，没用 `git stash`；`docs/promo/`、`generated_images/` 不是这一窗的，没碰。
+- 虚拟机两台都是 suspended。
+- §4 的答复：HANDOFF 第 304 – 309 条（0.8.0 · 照推 · **Windows 云端打** · 小改 a / c / d · 三件按推荐 · 方针选甲但本窗不改方针文件）。
+
+### 7.2 P17-1（`21a60b6`）和 P17-3（`33b8088`）
+
+- 版本号六处（含 `package-lock.json` 根版本和 `server.json`），`cargo check` 过。
+- 隐私说明三份：日期 2026-11-11 / v0.8.0；API 那一行加了「连着文件夹时跟进和过期检测还发现状文件文字、提交标题、改过的文件名单」—— 对着 `mcp.rs` 的 `follow_up_folder_state`（现状文件 + 提交标题）和 `repo_section`（再加 `changes`）核过。原文没写这件，属于「隐私说明里跟这一版对不上的说法」。
+- 首启教程中英各四处 + `formerly`（切语言时认旧说法）；新测试 `still switches a tutorial seeded with the wording before v0.8.0`，拿掉 `formerly` 那一处当场红。之后 vitest **1361**、tsc、i18n 干净；`build-site-zh` 测试 14 过。
+- 工具数从装着的 `661b829`（Rust 和 HEAD 一样）在真库 `VACUUM INTO` 副本上数：普通 `--mcp` **30**（只读 15、写 15）、`--mcp --engine-run` **22**（只读 15 + 写 7：`close_follow_up_item`、`propose_attach_file`、`propose_blocks`、`propose_replace_file`、`propose_supersede`、`request_file_access`、`suggest_follow_up_item`）。P17-4 出包后用发版二进制再数一次。
+- README 另改三句对不上的：官网交互演示（11-05 已删）→ 两分钟视频；Windows 捕捉「记程序名」→ 记窗口标题（`capture.rs` `browser_caption`，浏览器去尾巴）。
+- 发版说明里删掉了一条「修好的」：剪贴板文字和 HTML 同时读导致崩溃是 `cbd8c14` 带进来、`094aad1` 修的，用户从没拿到过；大块文字卡死留着（v0.7.4 的渲染就有，表格格子放大了它）。
+- Ocean 11-11「都可以，开始」（第 310 条）。
+
+### 7.3 P17-2 升级和首启验证（库副本，scratchpad vitest 跑真 `__migrateSchemaForTest`）
+
+| 来源 | 结果 |
+|---|---|
+| Mac：真库数据目录 `spool.pre-migration-v37-2026-11-06T17-32-17-931Z.db`（sha256 `cdaec334…`） | v37 → v39，`fresh = false`，`integrity_check` ok，外键 0；18 张老表条数、每一个文字列的总长度都不变（1386 块、块正文 933,012 字、104 项目）；新表 `folder_proposals`（0 行）、新列 `blocks.edited_at`（全空） |
+| Windows：P13 升级前的 v0.6.1 库 `~/Desktop/Spool/P13-vm-20261106/db/pre-upgrade-v23.db`（sha256 `31133f0a…`，11-06 23:44，和虚拟机里那份 `pre-migration-v23-…T23-44-31` 同一分钟） | v23 → v39 一次走完，`fresh = false`，ok，外键 0；10 张老表条数和文字长度都不变（19 块、5 项目）；新表 9 张、新列 19 个，全空；`edited_at` 全空 |
+| 新用户：空库 | `fresh = true`，v39，教程两条项目 12 块 |
+
+- 没起 debug 版 GUI；测试里的「升级前快照」写不出来（没有 Tauri 的 path API），这是测试环境的预期，app 里照写。
+- 用 Mac 上的 v23 副本而不是从虚拟机里拷，是为了不为这一步唤醒虚拟机；两份是同一分钟的同一个库。
+- `--mcp` 连真库最新副本、两种模式数工具：见 7.2，发版二进制出来后再核。
+
 ---
 
 ## 附录 A · 搬进来的条目原文（从 HANDOFF 附录 I 搬走，HANDOFF 那里只留一行「已下发到 P17」）
