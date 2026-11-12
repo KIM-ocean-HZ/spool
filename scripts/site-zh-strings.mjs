@@ -65,6 +65,7 @@ export const ZH = {
   'nav-video': '视频',
   'nav-how': '使用方式',
   'nav-faq': '常见问题',
+  'nav-guide': '教程',
   'nav-story': '开发故事',
   'nav-privacy': '隐私政策',
   'nav-dl': '下载',

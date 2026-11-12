@@ -1,0 +1,675 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Spool 图文教程——从安装到项目归档</title>
+<meta name="description" content="一步一步配截图讲 Spool：安装、项目和文件夹、捕捉、接上你的 AI、跟进、压缩、过期检测、代码仓库、周回顾、完成归档。">
+<link rel="canonical" href="https://spoolapp.org/zh/guide.html">
+<link rel="alternate" hreflang="en" href="https://spoolapp.org/guide.html">
+<link rel="alternate" hreflang="zh-Hans" href="https://spoolapp.org/zh/guide.html">
+<link rel="alternate" hreflang="x-default" href="https://spoolapp.org/guide.html">
+<link rel="icon" href="../assets/spool-icon-32.png" sizes="32x32" type="image/png">
+<link rel="icon" href="../assets/spool-icon-192.png" sizes="192x192" type="image/png">
+<link rel="stylesheet" href="../assets/site.css">
+</head>
+<body>
+
+<a class="skip-link" href="#guide">跳到教程正文</a>
+
+<div class="beta-banner">
+  <p class="wrap">Spool 正在招募第一批内测用户。<a href="./#beta">报名 →</a></p>
+</div>
+
+<div class="nav-shell">
+  <header class="wrap nav">
+    <a class="nav-brand" href="./">
+      <img src="../assets/spool-icon-28.png" srcset="../assets/spool-icon-56.png 2x, ../assets/spool-icon-84.png 3x" alt="">
+      Spool <span class="zh">思簿</span>
+    </a>
+    <nav class="nav-links" aria-label="主导航">
+      <a href="./#video">视频</a>
+      <a href="guide.html" aria-current="page">教程</a>
+      <a href="privacy.html">隐私政策</a>
+      <a href="https://github.com/KIM-ocean-HZ/spool">GitHub</a>
+      <a class="lang-toggle" href="../guide.html" hreflang="en" lang="en">EN</a>
+      <a class="nav-cta" href="index.html#get">下载</a>
+    </nav>
+  </header>
+</div>
+
+<div class="wrap story-wrap">
+<div class="story-grid">
+
+<aside class="story-toc">
+  <nav aria-label="教程目录">
+    <div class="toc-title">目录</div>
+    <a href="#start">开始之前</a>
+    <a href="#install">1. 安装和第一次打开</a>
+    <a href="#projects">2. 工作区和项目</a>
+    <a href="#folders">3. 连文件夹、加文件</a>
+    <a href="#capture">4. 捕捉：文字、截图、随手记</a>
+    <a href="#ai">5. 接上你的 AI（MCP）</a>
+    <a href="#writeback">6. AI 写回来的时候</a>
+    <a href="#engine">7. 让 Spool 替你调用 AI</a>
+    <a href="#upkeep">8. 压缩，以及检查过期的笔记</a>
+    <a href="#repo">9. 在代码仓库里用</a>
+    <a href="#weekly">10. 周回顾</a>
+    <a href="#finish">11. 完成和归档</a>
+    <a href="#recap">12. 一句话总结</a>
+  </nav>
+</aside>
+
+<main id="guide" class="article guide" tabindex="-1">
+
+<h1>Spool 图文教程</h1>
+<p class="lede">跟着一个例子从头走到尾——一次求职：从装好 Spool，到项目做完、归档。每张图都是 Spool 0.8.1 的真截图，用的是示例数据。点图可以看原图。</p>
+
+<details class="guide-mtoc">
+  <summary>章节</summary>
+  <nav aria-label="教程目录">
+    <a href="#start">开始之前</a>
+    <a href="#install">1. 安装和第一次打开</a>
+    <a href="#projects">2. 工作区和项目</a>
+    <a href="#folders">3. 连文件夹、加文件</a>
+    <a href="#capture">4. 捕捉：文字、截图、随手记</a>
+    <a href="#ai">5. 接上你的 AI（MCP）</a>
+    <a href="#writeback">6. AI 写回来的时候</a>
+    <a href="#engine">7. 让 Spool 替你调用 AI</a>
+    <a href="#upkeep">8. 压缩，以及检查过期的笔记</a>
+    <a href="#repo">9. 在代码仓库里用</a>
+    <a href="#weekly">10. 周回顾</a>
+    <a href="#finish">11. 完成和归档</a>
+    <a href="#recap">12. 一句话总结</a>
+  </nav>
+</details>
+
+<section id="start" class="guide-chapter">
+<h2>开始之前</h2>
+<p class="guide-lead">Spool 是 Mac 和 Windows 上的一个小软件，替你把每个项目要用的东西放在一起：从网页、邮件、文档里复制下来的内容，你自己写的笔记，文件，还有你的 AI 得出的结论。你已经在用的 AI——Claude、Codex、Cursor 等——都能直接读这个项目，也能把结论写回来。</p>
+<figure class="guide-shot">
+  <a href="../assets/guide/zh/c00-main.webp" title="打开原图"><img class="shot" src="../assets/guide/zh/c00-main.webp" width="1180" height="760" alt="主窗口：左边是工作区和项目，中间是这个项目的笔记，右边是它连着的文件夹、跟进和文件。" loading="lazy" decoding="async"></a>
+  <figcaption class="shot-caption">主窗口：左边是工作区和项目，中间是这个项目的笔记，右边是它连着的文件夹、跟进和文件。</figcaption>
+</figure>
+<p>这篇教程从头到尾跟着一个例子走：一次求职，从建项目一直到做完、归档。第 9 章是写给在代码仓库里干活的朋友的。你只需要一台 Mac 或 Windows 电脑；AI 不是必须的，但接上以后才是 Spool 最好用的时候。</p>
+</section>
+
+<section id="install" class="guide-chapter">
+<h2>1. 安装和第一次打开</h2>
+<p class="guide-lead">这一章：装好 Spool，给它开捕捉要用的两个权限，认识第一次打开时的样子。</p>
+<ol class="guide-steps">
+<li>到 <a href="https://spoolapp.org/zh/">spoolapp.org</a> 下载，免费。Mac 版经过苹果公证，打开时不会弹「来自身份不明的开发者」。
+<figure class="guide-shot">
+  <a href="../assets/guide/zh/c01-site.webp" title="打开原图"><img class="shot" src="../assets/guide/zh/c01-site.webp" width="800" height="250" alt="spoolapp.org 上的下载按钮。" loading="lazy" decoding="async"></a>
+  <figcaption class="shot-caption">spoolapp.org 上的下载按钮。</figcaption>
+</figure>
+</li>
+<li>打开下载的文件，把 Spool 拖到「Applications（应用程序）」上，再从「应用程序」里打开它。
+<figure class="guide-shot">
+  <a href="../assets/guide/zh/c01-dmg.webp" title="打开原图"><img class="shot" src="../assets/guide/zh/c01-dmg.webp" width="380" height="135" alt="Mac 版下载下来是这样：把 Spool 拖到 Applications 上。" loading="lazy" decoding="async"></a>
+  <figcaption class="shot-caption">Mac 版下载下来是这样：把 Spool 拖到 Applications 上。</figcaption>
+</figure>
+</li>
+<li>第一次打开，左边有一个「默认工作区」，里面是三个新手项目——「欢迎使用 Spool」「让 AI 用上你的 Spool」「示例项目：机器学习课」——还有一个「未分类」：没选项目之前，捕捉的东西先放这儿。新手项目读完随时可以删。
+<figure class="guide-shot">
+  <a href="../assets/guide/zh/c01-first.webp" title="打开原图"><img class="shot" src="../assets/guide/zh/c01-first.webp" width="1180" height="420" alt="第一次打开：几个新手项目，上面一条讲两个权限的横幅。" loading="lazy" decoding="async"></a>
+  <figcaption class="shot-caption">第一次打开：几个新手项目，上面一条讲两个权限的横幅。</figcaption>
+</figure>
+</li>
+<li>要在别的软件里捕捉，Spool 需要在系统设置里开两个开关。点横幅上的「打开「输入监控」」。第一次会先弹一张卡片，说明这两个开关是干什么的，点「继续」。系统设置会打开到那一页：把 Spool 旁边的开关打开（macOS 可能还会自己弹一个框问你）。再用「打开「辅助功能」」照做一遍。
+</li>
+<li>两个都打开之后，横幅会写「已授权 — 重启 Spool 后生效」。点「立即重启 Spool」。
+</li>
+<li>打开「设置」（⌘,）。「通用」里可以切换中文 / English、外观、深浅色、块里的正文字号、休息提醒，以及开机时要不要自动打开 Spool。
+<figure class="guide-shot">
+  <a href="../assets/guide/zh/c01-general.webp" title="打开原图"><img class="shot" src="../assets/guide/zh/c01-general.webp" width="472" height="522" alt="设置 → 通用。" loading="lazy" decoding="async"></a>
+  <figcaption class="shot-caption">设置 → 通用。</figcaption>
+</figure>
+</li>
+</ol>
+<aside class="guide-note"><h3>注意</h3>
+<ul>
+<li>「输入监控」让 Spool 认出你连按了两下 ⌥，以及按 ⌥ 之前是不是刚按了 ⌘C。你打的字一个都不存。
+</li>
+<li>「辅助功能」让捕捉卡一弹出来就能直接打字；别的软件如果也用双击 ⌥，也不会跟着一起弹出来。
+</li>
+<li>第一次从别的软件捕捉时，macOS 会问 Spool 能不能控制「System Events」。点同意，块上才记得是从哪个软件来的。
+</li>
+<li>两个开关都没开也能用：在 Spool 里写笔记，或者在 Spool 里复制后双击 ⌥。
+</li>
+<li>Spool 不联网。你存的东西都在自己电脑上，只有你打开会往外发的功能——接上 AI（第 5 章），或者让 Spool 替你调用 AI（第 7 章）——内容才会出去。
+</li>
+</ul>
+</aside>
+<aside class="guide-win"><h3>Windows 上</h3>
+<ul>
+<li>安装包目前没有代码签名，第一次运行会弹 SmartScreen 提示：点「更多信息」，再点「仍要运行」。
+<figure class="guide-shot">
+  <a href="../assets/guide/zh/w01-smartscreen.webp" title="打开原图"><img class="shot" src="../assets/guide/zh/w01-smartscreen.webp" width="534" height="500" alt="Windows：第一次运行安装包，点了「更多信息」之后（这台是英文系统，按钮是 More info / Run anyway）。" loading="lazy" decoding="async"></a>
+  <figcaption class="shot-caption">Windows：第一次运行安装包，点了「更多信息」之后（这台是英文系统，按钮是 More info / Run anyway）。</figcaption>
+</figure>
+</li>
+<li>不需要任何授权，所以也没有那条横幅。捕捉是双击 Ctrl，不是 ⌥。
+<figure class="guide-shot">
+  <a href="../assets/guide/zh/w01-first.webp" title="打开原图"><img class="shot" src="../assets/guide/zh/w01-first.webp" width="1000" height="558" alt="Windows：第一次打开。" loading="lazy" decoding="async"></a>
+  <figcaption class="shot-caption">Windows：第一次打开。</figcaption>
+</figure>
+</li>
+<li>关掉窗口不等于退出：Spool 还在后台跑着，因为捕捉快捷键要它活着才能用。第一次关的时候会弹一张卡片，告诉你图标在屏幕右下角的 ∧ 里面（把它拖到任务栏上，以后就一直看得见）。单击图标让它回来；右键图标 →「退出」才是真退出。
+<figure class="guide-shot">
+  <a href="../assets/guide/zh/w01-tray.webp" title="打开原图"><img class="shot" src="../assets/guide/zh/w01-tray.webp" width="378" height="216" alt="Windows：第一次关掉窗口时看到的。" loading="lazy" decoding="async"></a>
+  <figcaption class="shot-caption">Windows：第一次关掉窗口时看到的。</figcaption>
+</figure>
+</li>
+</ul>
+</aside>
+</section>
+
+<section id="projects" class="guide-chapter">
+<h2>2. 工作区和项目</h2>
+<p class="guide-lead">这一章：建一个工作区和一个项目，给项目写摘要、设截止日期，告诉 Spool 捕捉的东西放哪儿。</p>
+<p><strong>工作区</strong>是生活里的一大块——学习、工作、找工作。<strong>项目</strong>是其中具体的一件事——一门课、一次团建、一次求职。工作区里可以再分小工作区，项目下面不再分层。这是故意的：层越多越难找。</p>
+<ol class="guide-steps">
+<li>点左边最下面的「＋ 工作区」，输入名字——这里叫「找工作」。
+<figure class="guide-shot">
+  <a href="../assets/guide/zh/c02-workspace.webp" title="打开原图"><img class="shot" src="../assets/guide/zh/c02-workspace.webp" width="600" height="430" alt="新建的工作区「找工作」。" loading="lazy" decoding="async"></a>
+  <figcaption class="shot-caption">新建的工作区「找工作」。</figcaption>
+</figure>
+</li>
+<li>点它下面的「+ 创建第一个项目」（或者按 ⌘N），起名「求职」。
+</li>
+<li>点顶上的「写一句话摘要…」，写这个项目现在在做什么。AI 列出你的项目时，最先看到的就是这一句。
+</li>
+<li>点摘要下面的「截止日期」，选一个日子。左边的「聚焦」会把快到期的排在最前面。
+</li>
+<li>点「捕捉到此」，它会变成「捕捉中」：以后捕捉的东西都进这个项目。每一张捕捉卡上也随时能改投到别的项目（第 4 章）。
+<figure class="guide-shot">
+  <a href="../assets/guide/zh/c02-header.webp" title="打开原图"><img class="shot" src="../assets/guide/zh/c02-header.webp" width="590" height="150" alt="摘要、截止日期和「捕捉中」。" loading="lazy" decoding="async"></a>
+  <figcaption class="shot-caption">摘要、截止日期和「捕捉中」。</figcaption>
+</figure>
+</li>
+<li>左上角的「项目管理」把所有项目排成一张表——属于哪个工作区、多少块、还剩几天——可以按截止日期或按新建时间排。
+<figure class="guide-shot">
+  <a href="../assets/guide/zh/c02-projects.webp" title="打开原图"><img class="shot" src="../assets/guide/zh/c02-projects.webp" width="915" height="445" alt="项目管理。" loading="lazy" decoding="async"></a>
+  <figcaption class="shot-caption">项目管理。</figcaption>
+</figure>
+</li>
+</ol>
+<aside class="guide-win guide-inline"><p><strong>Windows 上</strong>：用 Ctrl+N，不是 ⌘N。</p>
+</aside>
+</section>
+
+<section id="folders" class="guide-chapter">
+<h2>3. 连文件夹、加文件</h2>
+<p class="guide-lead">这一章：把工作区连到电脑上的一个文件夹，把文件放进项目，看看文件挪了位置 Spool 会怎么做。</p>
+<ol class="guide-steps">
+<li>点左边工作区的名字「找工作」，打开它自己的页面。
+</li>
+<li>在「连接的文件夹」下面点「连接文件夹…」，选那个文件夹——这里是放简历和计划的那个。
+<figure class="guide-shot">
+  <a href="../assets/guide/zh/c03-connect.webp" title="打开原图"><img class="shot" src="../assets/guide/zh/c03-connect.webp" width="915" height="305" alt="还没连文件夹的工作区页面。" loading="lazy" decoding="async"></a>
+  <figcaption class="shot-caption">还没连文件夹的工作区页面。</figcaption>
+</figure>
+</li>
+<li>看一遍 Spool 会在那儿做什么，点「下一步」，然后勾一到三份「写着现状」的文件——计划、交接记录、README 都算。它们一改，Spool 就知道文件夹那边往前走了。
+<figure class="guide-shot">
+  <a href="../assets/guide/zh/c03-statefiles.webp" title="打开原图"><img class="shot" src="../assets/guide/zh/c03-statefiles.webp" width="458" height="310" alt="勾选写着现状的文件。" loading="lazy" decoding="async"></a>
+  <figcaption class="shot-caption">勾选写着现状的文件。</figcaption>
+</figure>
+</li>
+<li>最后一步是让在这个文件夹里干活的 AI 找得到 Spool，对代码仓库最有用（第 9 章）。点「连接」。文件夹卡片上会写：上次什么时候同步、那几份现状文件、别的改动，以及从这个文件夹写回来的东西默认进哪个项目（「主项目」）。
+<figure class="guide-shot">
+  <a href="../assets/guide/zh/c03-card.webp" title="打开原图"><img class="shot" src="../assets/guide/zh/c03-card.webp" width="615" height="230" alt="工作区页面上连好的文件夹。" loading="lazy" decoding="async"></a>
+  <figcaption class="shot-caption">工作区页面上连好的文件夹。</figcaption>
+</figure>
+</li>
+<li>打开项目。在右边「项目文件」那里点「加文件 +」，或者直接从访达里把文件拖进来。
+</li>
+<li>鼠标移到文件上，会看到两个开关：「AI 可读」（默认开）决定接上的 AI 能不能读到它的文字；「打包可读」（默认关）决定打包（第 5 章）时带不带上它的文字。
+<figure class="guide-shot">
+  <a href="../assets/guide/zh/c03-files.webp" title="打开原图"><img class="shot" src="../assets/guide/zh/c03-files.webp" width="330" height="230" alt="项目文件和它的两个开关。" loading="lazy" decoding="async"></a>
+  <figcaption class="shot-caption">项目文件和它的两个开关。</figcaption>
+</figure>
+</li>
+<li>在访达里把文件挪个地方或者改个名：Spool 会跟过去，标上「已跟到新位置」。连着的文件夹里，现状文件在上次同步之后改过的话，右边也会告诉你。
+<figure class="guide-shot">
+  <a href="../assets/guide/zh/c03-moved.webp" title="打开原图"><img class="shot" src="../assets/guide/zh/c03-moved.webp" width="330" height="230" alt="文件跟到了新位置；计划.md 在上次同步之后改过。" loading="lazy" decoding="async"></a>
+  <figcaption class="shot-caption">文件跟到了新位置；计划.md 在上次同步之后改过。</figcaption>
+</figure>
+</li>
+</ol>
+<aside class="guide-note"><h3>注意</h3>
+<ul>
+<li>连文件夹会在那里放一个文件 <strong>SPOOL.md</strong>，告诉在这个文件夹里干活的 AI：这里对应 Spool 里的哪些项目。代码仓库里，Spool 还可以在 <code>.git/info/exclude</code>、<code>CLAUDE.md</code>、<code>AGENTS.md</code> 里各加一行——你勾了哪个才加哪个（第 9 章）。
+</li>
+<li>Spool 只读你勾的那几份现状文件，其余的只看文件名、大小和修改时间。它不读你别的文件，也不在后台一直盯着文件夹。
+</li>
+</ul>
+</aside>
+</section>
+
+<section id="capture" class="guide-chapter">
+<h2>4. 捕捉：文字、截图、随手记</h2>
+<p class="guide-lead">这一章：在任何软件里把东西存下来，不用离开那个软件；认识捕捉卡上每个部分是干什么的。</p>
+<ol class="guide-steps">
+<li>在网页上选中一段，按 ⌘C，然后快速连按两下 ⌥。
+</li>
+<li>屏幕右上角弹出<strong>捕捉卡</strong>：你复制的内容、它要进的项目、它从哪儿来——浏览器的话就是那个网页。光标已经在框里了。
+<figure class="guide-shot">
+  <a href="../assets/guide/zh/c04-card.webp" title="打开原图"><img class="shot" src="../assets/guide/zh/c04-card.webp" width="340" height="197" alt="捕捉卡。" loading="lazy" decoding="async"></a>
+  <figcaption class="shot-caption">捕捉卡。</figcaption>
+</figure>
+</li>
+<li>打一句你为什么存它，按回车。这一句会变成这一块的标题；接上的 AI 会把你自己写的话当成最重要的那一句。
+</li>
+<li>回到 Spool，新的一块里有时间、来源、你写的那句和原文。整个过程你都没离开网页。
+<figure class="guide-shot">
+  <a href="../assets/guide/zh/c04-block.webp" title="打开原图"><img class="shot" src="../assets/guide/zh/c04-block.webp" width="590" height="395" alt="项目里新存的一块。" loading="lazy" decoding="async"></a>
+  <figcaption class="shot-caption">项目里新存的一块。</figcaption>
+</figure>
+</li>
+<li>不想写？按 Esc，或者点别处——照样存下来。存错了？点卡片上的「撤销」。
+</li>
+<li>想把这一条单独放到别的项目，点「改投」，选一个。
+<figure class="guide-shot">
+  <a href="../assets/guide/zh/c04-retarget.webp" title="打开原图"><img class="shot" src="../assets/guide/zh/c04-retarget.webp" width="340" height="478" alt="改投：把这一条放到别的项目。" loading="lazy" decoding="async"></a>
+  <figcaption class="shot-caption">改投：把这一条放到别的项目。</figcaption>
+</figure>
+</li>
+<li>卡片右上角三个小按钮：图钉是把这一块钉在项目最上面；锁是让卡片在你点别处时也不收起；× 是关掉。点「完成」也会关。
+</li>
+</ol>
+<h3>截图</h3>
+<ol class="guide-steps">
+<li>先把截图后的浮动缩略图关掉：按 ⌘⇧5，点「选项」，取消勾选「显示浮动缩略图」。那个缩略图挂着的时候，截图还没真的存下来，Spool 也就捕捉不到。
+</li>
+<li>截一张图（比如 ⌘⇧4），然后连按两下 ⌥。卡片上会显示这张图；写一句你的话，想说明图上是什么就点「+ 图片注释」。
+<figure class="guide-shot">
+  <a href="../assets/guide/zh/c04-image.webp" title="打开原图"><img class="shot" src="../assets/guide/zh/c04-image.webp" width="340" height="273" alt="捕捉一张截图。" loading="lazy" decoding="async"></a>
+  <figcaption class="shot-caption">捕捉一张截图。</figcaption>
+</figure>
+</li>
+<li>直接截到剪贴板的截图、复制的图片、在访达里复制的图片文件，都一样能捕捉。
+</li>
+</ol>
+<h3>随手记，以及在 Spool 里写</h3>
+<ol class="guide-steps">
+<li>在任何软件里按住 ⌥，就能直接往当前项目写一条笔记。如果两秒之内刚按过 ⌘C，复制的内容已经在框里了。不想要了点「放弃」。
+<figure class="guide-shot">
+  <a href="../assets/guide/zh/c04-hold.webp" title="打开原图"><img class="shot" src="../assets/guide/zh/c04-hold.webp" width="340" height="259" alt="按住 ⌥：在别的软件里直接写一条。" loading="lazy" decoding="async"></a>
+  <figcaption class="shot-caption">按住 ⌥：在别的软件里直接写一条。</figcaption>
+</figure>
+</li>
+<li>在 Spool 里，就写在项目底部的输入框：回车发送，Shift+回车换行，@ 可以引用别的项目，图片能直接粘贴或拖进来。
+</li>
+</ol>
+<aside class="guide-win"><h3>Windows 上</h3>
+<ul>
+<li>复制，然后连按两下 Ctrl。截图是 Win+Shift+S，再连按两下 Ctrl。
+</li>
+<li>来源记的是你复制时那个窗口的标题（Windows 不告诉 Spool 是哪个网页）。
+</li>
+<li>按住一个键写随手记，只有 Mac 上有。
+<figure class="guide-shot">
+  <a href="../assets/guide/zh/w02-card.webp" title="打开原图"><img class="shot" src="../assets/guide/zh/w02-card.webp" width="340" height="188" alt="Windows：在记事本里复制、双击 Ctrl 之后的捕捉卡。" loading="lazy" decoding="async"></a>
+  <figcaption class="shot-caption">Windows：在记事本里复制、双击 Ctrl 之后的捕捉卡。</figcaption>
+</figure>
+</li>
+</ul>
+</aside>
+</section>
+
+<section id="ai" class="guide-chapter">
+<h2>5. 接上你的 AI（MCP）</h2>
+<p class="guide-lead">这一章：让你已经在用的 AI 软件能读你的项目——你愿意的话，也能写回来。</p>
+<p>Spool 用 <strong>MCP</strong> 来接，这是 AI 软件接外部工具的一种通用方式。接上以后你只管跟 AI 说话，它会自己去 Spool 里查，不用再复制粘贴。</p>
+<ol class="guide-steps">
+<li>打开「设置 → MCP」。
+</li>
+<li>打开「MCP 服务」：AI 软件能读你的项目。
+</li>
+<li>如果也允许它往 Spool 里写，再打开「允许 AI 写入」。两个开关是分开的，可以只让它读。
+<figure class="guide-shot">
+  <a href="../assets/guide/zh/c05-mcp.webp" title="打开原图"><img class="shot" src="../assets/guide/zh/c05-mcp.webp" width="472" height="522" alt="设置 → MCP：两个开关，和这台电脑上的 AI 软件。" loading="lazy" decoding="async"></a>
+  <figcaption class="shot-caption">设置 → MCP：两个开关，和这台电脑上的 AI 软件。</figcaption>
+</figure>
+</li>
+<li>在列表里找到你的 AI 软件，点「一键接入」。Spool 会替你改好那个软件的设置，改之前先备份。把那个 AI 软件完全退出再打开；这一行就会显示「已接入」和它上次来问的时间。
+<p>列表里有 Claude Desktop、Claude Code、Cursor、Visual Studio Code、Windsurf 和 Codex（Codex 命令行、编辑器插件和 ChatGPT 软件里的 Codex 共用一份设置）。其他支持 MCP 的软件可以手动配。</p>
+</li>
+<li>现在不用回 Spool，直接问你的 AI。比如：「帮我梳理一下 Spool 里的〈求职〉项目，再给我两个汐木电话里可以问的问题。」第一次它会问能不能用 Spool 的工具——允许。
+<figure class="guide-shot">
+  <a href="../assets/guide/zh/c05-claude.webp" title="打开原图"><img class="shot" src="../assets/guide/zh/c05-claude.webp" width="860" height="820" alt="Claude 桌面版先读了项目，再回答。" loading="lazy" decoding="async"></a>
+  <figcaption class="shot-caption">Claude 桌面版先读了项目，再回答。</figcaption>
+</figure>
+</li>
+<li>换一个 AI 问同一个项目——ChatGPT 软件里的 Codex 也知道你存了什么。换 AI 不用从头再讲一遍。
+<figure class="guide-shot">
+  <a href="../assets/guide/zh/c05-codex.webp" title="打开原图"><img class="shot" src="../assets/guide/zh/c05-codex.webp" width="770" height="865" alt="ChatGPT 软件里的 Codex，问的是同一个项目。" loading="lazy" decoding="async"></a>
+  <figcaption class="shot-caption">ChatGPT 软件里的 Codex，问的是同一个项目。</figcaption>
+</figure>
+</li>
+</ol>
+<h3>连不上 Spool 的 AI</h3>
+<ul>
+<li>ChatGPT 网页版、Gemini、DeepSeek、Kimi 这类网页聊天，连不到你电脑上的 Spool。打开项目按 ⌘⇧P（或者点「打包」）：Spool 把整个项目整理成一份材料。点「复制」粘进对话框；或者点「导出文件夹」，连文件一起导出来。
+<figure class="guide-shot">
+  <a href="../assets/guide/zh/c05-pack.webp" title="打开原图"><img class="shot" src="../assets/guide/zh/c05-pack.webp" width="638" height="692" alt="⌘⇧P：整个项目打成一份材料。" loading="lazy" decoding="async"></a>
+  <figcaption class="shot-caption">⌘⇧P：整个项目打成一份材料。</figcaption>
+</figure>
+</li>
+</ul>
+<h3>私密项目</h3>
+<ul>
+<li>右键一个项目，选「设为私密…」。通过 Spool 接进来的 AI 读不到它，连它存在都不知道；Spool 自己的 AI 功能也不碰它。左边它的名字旁会多一个划掉的眼睛。
+<figure class="guide-shot">
+  <a href="../assets/guide/zh/c05-private.webp" title="打开原图"><img class="shot" src="../assets/guide/zh/c05-private.webp" width="480" height="285" alt="把一个项目设为私密。" loading="lazy" decoding="async"></a>
+  <figcaption class="shot-caption">把一个项目设为私密。</figcaption>
+</figure>
+</li>
+<li>「私密」只管通过 Spool 这条路，不加密，也拦不住你自己把文字复制出去。
+</li>
+</ul>
+</section>
+
+<section id="writeback" class="guide-chapter">
+<h2>6. AI 写回来的时候</h2>
+<p class="guide-lead">这一章：看看 AI 写进 Spool 的东西长什么样，哪些它提的建议要等你点头。</p>
+<ol class="guide-steps">
+<li>让 AI 把结论存下来：「把这个决定存进〈求职〉：先推汐木，电话里先讲流失看板，再问代码评审。」
+</li>
+<li>回到 Spool，项目旁边的绿点表示有 AI 写了新东西。这一块署着那个软件的名字（「Claude · MCP」）。右边会写最近是哪个 AI 来过，「AI 写的」列出它写的块。
+<figure class="guide-shot">
+  <a href="../assets/guide/zh/c06-written.webp" title="打开原图"><img class="shot" src="../assets/guide/zh/c06-written.webp" width="855" height="645" alt="Claude 写回来的块。" loading="lazy" decoding="async"></a>
+  <figcaption class="shot-caption">Claude 写回来的块。</figcaption>
+</figure>
+</li>
+<li>AI 可以加新的块，但改不了、也删不了你写的任何东西。
+</li>
+<li>旧笔记不对了，AI 只能<strong>提议</strong>。比如说：「汐木把电话改到周五了，帮我更新〈求职〉。」AI 会加一块新的，并提议它更正旧的那一块。点左下角带数字的小托盘：「AI 提的，等你过目」里列着旧的那句、新的那句，以及哪一句不再成立。
+<figure class="guide-shot">
+  <a href="../assets/guide/zh/c06-review.webp" title="打开原图"><img class="shot" src="../assets/guide/zh/c06-review.webp" width="558" height="459" alt="等你过目的提议：一条更正，一条跟进。" loading="lazy" decoding="async"></a>
+  <figcaption class="shot-caption">等你过目的提议：一条更正，一条跟进。</figcaption>
+</figure>
+</li>
+<li>三选一：
+<ul class="guide-sub"><li>「更正一处」——两块都留着，新的那块记下它更正了哪一句。</li><li>「整条取代」——旧的那块不再进打包，还在库里，能拿回来。</li><li>「不动」——这条建议划掉。</li></ul>
+</li>
+<li>AI 也可以建议这个项目以后盯着什么。上面那句话后面加一句「另外帮我盯着：汐木什么时候发 SQL 面的通知」，它就会提一条跟进，和更正放在同一处；点「加进去」。
+</li>
+<li>跟进清单在右边的「跟进内容」里。「单次跟进」查到答案就结束；「永久跟进」会一直查下去，只有你能结束它。第 7 章讲怎么让 AI 去查。
+<figure class="guide-shot">
+  <a href="../assets/guide/zh/c06-watching.webp" title="打开原图"><img class="shot" src="../assets/guide/zh/c06-watching.webp" width="330" height="368" alt="这个项目的跟进清单。" loading="lazy" decoding="async"></a>
+  <figcaption class="shot-caption">这个项目的跟进清单。</figcaption>
+</figure>
+</li>
+</ol>
+<aside class="guide-note guide-inline"><p><strong>注意</strong>：AI 加的新块会马上写进去、带署名，而且不会改动已有的东西。更正、取代、拆分项目、挂文件、新的跟进、连文件夹，都要等你点了才算。</p>
+</aside>
+</section>
+
+<section id="engine" class="guide-chapter">
+<h2>7. 让 Spool 替你调用 AI</h2>
+<p class="guide-lead">这一章：接一个 Spool 自己能调用的 AI，跑一次跟进，再让它每周自动跑。</p>
+<p>前面是你去找 AI 说话。从这里开始，是 Spool 调用 AI 替你干活：跟进、压缩、过期检测、周回顾。接的方式有两种。</p>
+<ol class="guide-steps">
+<li>打开「设置 → AI 引擎」，打开「显示 AI 功能」。关着的时候，所有用 AI 的按钮都藏起来，自动的事也都不跑。
+</li>
+<li><strong>本机 CLI</strong>：你 Mac 上已经登录好的 Claude Code 或 Codex。Spool 会自己找到（「已连接 Claude Code」）。用的是你自己的订阅，Spool 不存任何 key。
+</li>
+<li><strong>API key</strong>：你在 AI 厂商那里申请的 key——OpenAI、Claude、Gemini、DeepSeek、Kimi、通义千问、智谱 GLM、OpenRouter，或者自定义地址。粘进去。大多数 key 光看样子 Spool 就认得出是哪家；认不出时，它会让你点一下是哪家。
+<figure class="guide-shot">
+  <a href="../assets/guide/zh/c07-key.webp" title="打开原图"><img class="shot" src="../assets/guide/zh/c07-key.webp" width="472" height="522" alt="粘进去的 key 认不出是哪家：点一下。" loading="lazy" decoding="async"></a>
+  <figcaption class="shot-caption">粘进去的 key 认不出是哪家：点一下。</figcaption>
+</figure>
+</li>
+<li>连上之后，选模型和「思考力度」（默认 low，省钱）。key 存在这台电脑的系统钥匙串里，不进设置文件；用多少由厂商按量收费。最后一行写着这把 key 能做哪些事。
+<figure class="guide-shot">
+  <a href="../assets/guide/zh/c07-engine.webp" title="打开原图"><img class="shot" src="../assets/guide/zh/c07-engine.webp" width="478" height="522" alt="已连接：模型、思考力度，以及这把 key 能做什么。" loading="lazy" decoding="async"></a>
+  <figcaption class="shot-caption">已连接：模型、思考力度，以及这把 key 能做什么。</figcaption>
+</figure>
+</li>
+<li>两种都连上的话，每个用 AI 的按钮旁边都能选这次用哪个。
+</li>
+<li>回到项目，点右边「跟进内容」旁边的「定一个」（已经有了就是「编辑」）。一行写一件要盯的事。「让 AI 看看还缺什么」只读你的库、不联网，会再起草几行，你可以留、改、删。
+<figure class="guide-shot">
+  <a href="../assets/guide/zh/c07-drafted.webp" title="打开原图"><img class="shot" src="../assets/guide/zh/c07-drafted.webp" width="512" height="606" alt="AI 根据库里的内容起草的几行；每行可以选单次或永久。" loading="lazy" decoding="async"></a>
+  <figcaption class="shot-caption">AI 根据库里的内容起草的几行；每行可以选单次或永久。</figcaption>
+</figure>
+</li>
+<li>点「联网搜索」。Spool 的 AI 会照你定的那几行上网查。Spool 所有的 AI 功能里，只有跟进会联网。
+<figure class="guide-shot">
+  <a href="../assets/guide/zh/c07-running.webp" title="打开原图"><img class="shot" src="../assets/guide/zh/c07-running.webp" width="518" height="478" alt="跟进正在查。" loading="lazy" decoding="async"></a>
+  <figcaption class="shot-caption">跟进正在查。</figcaption>
+</figure>
+</li>
+<li>查到的东西会变成几块待你过目，每一块写着为什么跟你有关、出处链接是什么；点「都存进去」之前，什么都不会存。没有新东西，它就不出声。
+<figure class="guide-shot">
+  <a href="../assets/guide/zh/c07-result.webp" title="打开原图"><img class="shot" src="../assets/guide/zh/c07-result.webp" width="558" height="523" alt="跟进结果，每一块都带出处。" loading="lazy" decoding="async"></a>
+  <figcaption class="shot-caption">跟进结果，每一块都带出处。</figcaption>
+</figure>
+</li>
+<li>在同一个窗口里打开「每周自动查一次」，它大约每周查一次，有新东西才告诉你。默认关着，每个项目单独设。
+</li>
+</ol>
+<aside class="guide-note"><h3>注意</h3>
+<ul>
+<li>自动的事只在 Spool 开着的时候跑。
+</li>
+<li>用 API key 联网搜索，要厂商本身支持联网：DeepSeek 的 key 不行，界面上会写明。这时跟进就用本机 CLI。
+</li>
+<li>本机 CLI 要先打开「MCP 服务」和「允许 AI 写入」（第 5 章），不然结果存不进来。
+</li>
+</ul>
+</aside>
+<aside class="guide-win guide-inline"><p><strong>Windows 上</strong>：目前只能用 API key。</p>
+<figure class="guide-shot">
+  <a href="../assets/guide/zh/w03-engine.webp" title="打开原图"><img class="shot" src="../assets/guide/zh/w03-engine.webp" width="478" height="550" alt="Windows：设置 → AI 引擎里只有 API key 这一种。" loading="lazy" decoding="async"></a>
+  <figcaption class="shot-caption">Windows：设置 → AI 引擎里只有 API key 这一种。</figcaption>
+</figure>
+</aside>
+</section>
+
+<section id="upkeep" class="guide-chapter">
+<h2>8. 压缩，以及检查过期的笔记</h2>
+<p class="guide-lead">这一章：把一个很长的项目变短又不丢东西；找出被后来的笔记推翻了的旧笔记。</p>
+<h3>压缩</h3>
+<ol class="guide-steps">
+<li>打开一个很长的项目，切到「压缩」页签。这里的例子是一次团建，同一封邮件存了两遍。
+</li>
+<li>选「压缩强度」——「只删重复」「保留结论和数字」「压到最短」。一般选中间那个：结论、日期、数字、金额、人名一字不改。
+<figure class="guide-shot">
+  <a href="../assets/guide/zh/c08-compress.webp" title="打开原图"><img class="shot" src="../assets/guide/zh/c08-compress.webp" width="590" height="305" alt="「压缩」页签。" loading="lazy" decoding="async"></a>
+  <figcaption class="shot-caption">「压缩」页签。</figcaption>
+</figure>
+</li>
+<li>点右下角的「压缩」。这时库里什么都还没变：你会看到逐块对照——左边是没留下来的，右边是它改写成的。
+<figure class="guide-shot">
+  <a href="../assets/guide/zh/c08-compare.webp" title="打开原图"><img class="shot" src="../assets/guide/zh/c08-compare.webp" width="1175" height="320" alt="一块一块核对压短的版本。" loading="lazy" decoding="async"></a>
+  <figcaption class="shot-caption">一块一块核对压短的版本。</figcaption>
+</figure>
+</li>
+<li>压短的版本只要丢了一个数字或一个日期，就进不了你的库。
+</li>
+<li>没问题就点「用这一份」。原文会留着，随时能打开看，也能换回去。
+</li>
+<li>想让它自动做，勾「排进今晚自动压缩」：排上的项目会在夜里一个一个压，每份草稿在各自项目的「压缩」页签里等你。
+</li>
+</ol>
+<h3>过期检测</h3>
+<ol class="guide-steps">
+<li>打开「过期检测」页签。它找的是被后来的笔记、或者连着的文件夹推翻了的旧笔记。
+</li>
+<li>选范围：整个工作区（这样能跨项目对上）或者「只查这个项目」。完成的项目、私密项目都不会发出去。
+</li>
+<li>结果一对一对地列出来：旧的那句和后来的那句，都是原文。每一对选「更正一处」「整条取代」或「不动」。这一页只连线、标完成，不改任何一块的正文。
+<figure class="guide-shot">
+  <a href="../assets/guide/zh/c08-pair.webp" title="打开原图"><img class="shot" src="../assets/guide/zh/c08-pair.webp" width="590" height="495" alt="过期的一对：11 月 15 日截止，和后来的延期。这一次用的是 DeepSeek 的 key——9 秒，¥0.009。" loading="lazy" decoding="async"></a>
+  <figcaption class="shot-caption">过期的一对：11 月 15 日截止，和后来的延期。这一次用的是 DeepSeek 的 key——9 秒，¥0.009。</figcaption>
+</figure>
+</li>
+<li>它也会列出「可能已经结束的项目」，并引出是哪句话让它这么想。点「标完成」会打开那个项目的结论框（第 11 章）。
+</li>
+<li>打开「每月自动查一次」就能让它自己跑（默认关）。
+</li>
+<li>工作区连着文件夹的话，检测会把文件夹一起带上：拿你的笔记和那里的现状文件、最近的改动对一遍。
+</li>
+</ol>
+<aside class="guide-note guide-inline"><p><strong>注意</strong>：用 API key 是厂商收费，顶上一行会写这次花了多少；用本机 CLI 走的是你的订阅。一个工作区大到一次发不完时，Spool 会直说，不会偷偷截掉一部分。</p>
+</aside>
+</section>
+
+<section id="repo" class="guide-chapter">
+<h2>9. 在代码仓库里用</h2>
+<p class="guide-lead">这一章：把一个代码仓库连上，让在里面干活的 AI 永远知道它对应 Spool 里的哪个项目。</p>
+<p>仓库里放的是「现在是什么样」：代码、计划、做到哪一步。它放不下「为什么」——你读过什么、什么时候读的，和别的 AI 一起想出来的办法，被你否掉的方案，还没想清楚的问题。这些在 Spool 里。SPOOL.md 把两边连起来。</p>
+<ol class="guide-steps">
+<li>打开工作区页面（这里是「业余项目」），点「连接文件夹…」，选这个仓库。
+</li>
+<li>勾写着现状的文件——这里是 README 和 PLAN。
+</li>
+<li>因为这是一个 git 仓库，Spool 会问 SPOOL.md 要不要跟着提交。选「只留在这台电脑（推荐）」，Spool 会在 <code>.git/info/exclude</code> 里加一行——这是 git 自带的、只对这台电脑生效的忽略清单。
+<figure class="guide-shot">
+  <a href="../assets/guide/zh/c09-git.webp" title="打开原图"><img class="shot" src="../assets/guide/zh/c09-git.webp" width="458" height="360" alt="SPOOL.md 跟不跟 git。" loading="lazy" decoding="async"></a>
+  <figcaption class="shot-caption">SPOOL.md 跟不跟 git。</figcaption>
+</figure>
+</li>
+<li>在文件夹里干活的 AI 不会自己去读 SPOOL.md。勾「这个文件夹的 CLAUDE.md 加一行 @SPOOL.md」（给 Claude Code）和「这个文件夹的 AGENTS.md 加一句「开工前先读 SPOOL.md」」（给 Codex）。哪个文件不存在，Spool 就不会替你新建。两种都不读的 AI，就复制最下面那句话，开工时贴给它。
+<figure class="guide-shot">
+  <a href="../assets/guide/zh/c09-aifiles.webp" title="打开原图"><img class="shot" src="../assets/guide/zh/c09-aifiles.webp" width="458" height="447" alt="让文件夹里的 AI 去读 SPOOL.md。" loading="lazy" decoding="async"></a>
+  <figcaption class="shot-caption">让文件夹里的 AI 去读 SPOOL.md。</figcaption>
+</figure>
+</li>
+<li>点「连接」。SPOOL.md 告诉 AI：这个文件夹对应 Spool 里哪些项目、冲突时谁说了算、什么时候去 Spool 查、什么时候写回。摘一段：
+<pre class="guide-file"><code>### 谁说了算
+
+- **现在做什么、做到哪，以这个文件夹为准。** 现状文件：
+  - `README.md`
+  - `PLAN.md`
+- **Spool 里存的是这个文件夹装不下的**：调研来源和读到它的日期、在别的 AI 对话里想出来的东西、做决定时放弃了的选项、还没定的问题、要盯的外部事情。
+- **Spool 里和现状文件冲突的内容是历史，不是现状。** 不要照着它干活，也不要拿它去改现状文件。</code></pre>
+<p>Spool 只改 SPOOL.md 里它自己那一段，你写在下面的都归你。</p>
+</li>
+<li>在仓库里打开 Claude Code，问一个只有 Spool 知道的事：「为什么作品集只放三个案例？」它会读 SPOOL.md，去 Spool 里查，然后照实说记录里有什么——这里只记了这条规矩和哪天定的，没写为什么，它就直说没写，不会自己编一个理由。
+<figure class="guide-shot">
+  <a href="../assets/guide/zh/c09-claudecode.webp" title="打开原图"><img class="shot" src="../assets/guide/zh/c09-claudecode.webp" width="1203" height="760" alt="仓库里的 Claude Code，从 Spool 里找答案。" loading="lazy" decoding="async"></a>
+  <figcaption class="shot-caption">仓库里的 Claude Code，从 Spool 里找答案。</figcaption>
+</figure>
+</li>
+<li>改一下计划，提交。Spool 会发现：工作区页面上写着现状文件在上次同步之后改过。
+<figure class="guide-shot">
+  <a href="../assets/guide/zh/c09-changed.webp" title="打开原图"><img class="shot" src="../assets/guide/zh/c09-changed.webp" width="615" height="240" alt="仓库比 Spool 往前走了一步。" loading="lazy" decoding="async"></a>
+  <figcaption class="shot-caption">仓库比 Spool 往前走了一步。</figcaption>
+</figure>
+</li>
+<li>让 AI 把这个变化记下来：「我刚改了 PLAN.md 并提交了，帮我把这个变化记进 Spool。」它会在主项目里加一块，引用它依据的那条笔记，并告诉 Spool 这次带过来了什么——文件夹就又算同步好了。
+<figure class="guide-shot">
+  <a href="../assets/guide/zh/c09-claudecode2.webp" title="打开原图"><img class="shot" src="../assets/guide/zh/c09-claudecode2.webp" width="1203" height="462" alt="Claude Code 把变化写回 Spool。" loading="lazy" decoding="async"></a>
+  <figcaption class="shot-caption">Claude Code 把变化写回 Spool。</figcaption>
+</figure>
+<figure class="guide-shot">
+  <a href="../assets/guide/zh/c09-written.webp" title="打开原图"><img class="shot" src="../assets/guide/zh/c09-written.webp" width="915" height="645" alt="Spool 里新加的那一块，以及右边记下的这次带过来了什么。" loading="lazy" decoding="async"></a>
+  <figcaption class="shot-caption">Spool 里新加的那一块，以及右边记下的这次带过来了什么。</figcaption>
+</figure>
+</li>
+</ol>
+<aside class="guide-note"><h3>注意</h3>
+<ul>
+<li>AI 用它自己的文件工具读什么，Spool 管不了：Claude Code、Codex 这类软件能读仓库里的任何东西。Spool 只决定它自己交出去什么。
+</li>
+<li>私密项目不会写进 SPOOL.md，也不能连文件夹。
+</li>
+</ul>
+</aside>
+</section>
+
+<section id="weekly" class="guide-chapter">
+<h2>10. 周回顾</h2>
+<p class="guide-lead">这一章：一眼看清这一周，跑一次回顾，一键照着建议去做。</p>
+<ol class="guide-steps">
+<li>点左上的「周回顾」。
+</li>
+<li>「活动」不用 AI、不花钱：平均每天专注多久，哪些项目这周有新东西——捕捉的、你写的、AI 写回来的——以及什么快到期了。
+<figure class="guide-shot">
+  <a href="../assets/guide/zh/c10-activity.webp" title="打开原图"><img class="shot" src="../assets/guide/zh/c10-activity.webp" width="1175" height="495" alt="活动。" loading="lazy" decoding="async"></a>
+  <figcaption class="shot-caption">活动。</figcaption>
+</figure>
+</li>
+<li>在它上面选本机 CLI 或 API，点「回顾这一周」。
+</li>
+<li>每个项目一张卡片：「做了什么」「卡在哪」「看到的信号」和「建议动作」。凡是引你笔记的地方，都是你的原话。
+<figure class="guide-shot">
+  <a href="../assets/guide/zh/c10-card.webp" title="打开原图"><img class="shot" src="../assets/guide/zh/c10-card.webp" width="1175" height="640" alt="项目卡片和建议动作。" loading="lazy" decoding="async"></a>
+  <figcaption class="shot-caption">项目卡片和建议动作。</figcaption>
+</figure>
+</li>
+<li>建议动作点一下就做——比如加一条跟进，或者关掉已经有答案的单次跟进。不对的话 ⌘Z 撤回。
+</li>
+<li>碰到旧笔记的建议从不直接改，都进左下角的待审托盘，还是第 6 章那三个按钮。永久跟进不会被替你关掉。
+</li>
+<li>打开「每周自动回顾一次」，它大约每周自己跑一次（Spool 开着的时候）。新的回顾好了，捕捉卡那个位置会弹出一张小卡片，点它就打开回顾。
+</li>
+</ol>
+<aside class="guide-note guide-inline"><p><strong>注意</strong>：完成的项目和私密项目不进周回顾。</p>
+</aside>
+</section>
+
+<section id="finish" class="guide-chapter">
+<h2>11. 完成和归档</h2>
+<p class="guide-lead">这一章：用一句话收尾一个项目，以后还能找回来。</p>
+<ol class="guide-steps">
+<li>在做完的项目里，点顶上的「完成项目」。
+</li>
+<li>写一句话当结论，点「完成」。以后回头看，这往往是整个项目里最有用的一句。
+<figure class="guide-shot">
+  <a href="../assets/guide/zh/c11-complete.webp" title="打开原图"><img class="shot" src="../assets/guide/zh/c11-complete.webp" width="438" height="240" alt="写结论。" loading="lazy" decoding="async"></a>
+  <figcaption class="shot-caption">写结论。</figcaption>
+</figure>
+</li>
+<li>项目会变成一页「摘要」：结论、钉住的块和文件。「全记录」能看到每一块。
+<figure class="guide-shot">
+  <a href="../assets/guide/zh/c11-digest.webp" title="打开原图"><img class="shot" src="../assets/guide/zh/c11-digest.webp" width="735" height="305" alt="做完的项目。" loading="lazy" decoding="async"></a>
+  <figcaption class="shot-caption">做完的项目。</figcaption>
+</figure>
+</li>
+<li>一个工作区里的项目都做完了，这个工作区会自己移到左边最下面的「归档」里。也可以右键工作区手动归档；⌘Z 可以撤回。
+</li>
+<li>归档不是删除：⌘⇧F 照样搜得到。
+<figure class="guide-shot">
+  <a href="../assets/guide/zh/c11-search.webp" title="打开原图"><img class="shot" src="../assets/guide/zh/c11-search.webp" width="618" height="623" alt="归档了的项目照样搜得到。" loading="lazy" decoding="async"></a>
+  <figcaption class="shot-caption">归档了的项目照样搜得到。</figcaption>
+</figure>
+</li>
+<li>想重新捡起来，点「重新打开」——完成时间和结论会被清掉。
+</li>
+</ol>
+<aside class="guide-note guide-inline"><p><strong>注意</strong>：「完成」永远是你自己点的。过期检测和周回顾只会建议。</p>
+</aside>
+</section>
+
+<section id="recap" class="guide-chapter">
+<h2>12. 一句话总结</h2>
+<p class="guide-lead">建项目，放文件。看到有用的，复制，连按两下 ⌥，再写一句自己的话。接上你的 AI，让它读，也让它写回来。让 Spool 替你盯着，每周回顾一次。做完了，写一句结论，归档。</p>
+<p>下载和反馈：<a href="https://spoolapp.org/zh/">spoolapp.org</a>。</p>
+</section>
+
+</main>
+</div>
+</div>
+
+<footer>
+  <div class="wrap">
+    <div>Spool 思簿 · © 2026 · 保留所有权利</div>
+    <div>
+      <a href="./">首页</a> ·
+      <a href="guide.html">教程</a> ·
+      <a href="https://github.com/KIM-ocean-HZ/spool">GitHub</a> ·
+      <a href="privacy.html">隐私政策</a>
+    </div>
+  </div>
+</footer>
+
+<script src="../assets/lang.js" defer></script>
+<script src="../assets/main.js" defer></script>
+</body>
+</html>

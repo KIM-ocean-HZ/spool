@@ -1,0 +1,675 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Spool guide — from install to an archived project</title>
+<meta name="description" content="A step-by-step guide to Spool, with screenshots: install, projects and folders, capturing, connecting your AI, follow-ups, compression, the out-of-date check, code repositories, the weekly review, and archiving.">
+<link rel="canonical" href="https://spoolapp.org/guide.html">
+<link rel="alternate" hreflang="en" href="https://spoolapp.org/guide.html">
+<link rel="alternate" hreflang="zh-Hans" href="https://spoolapp.org/zh/guide.html">
+<link rel="alternate" hreflang="x-default" href="https://spoolapp.org/guide.html">
+<link rel="icon" href="assets/spool-icon-32.png" sizes="32x32" type="image/png">
+<link rel="icon" href="assets/spool-icon-192.png" sizes="192x192" type="image/png">
+<link rel="stylesheet" href="assets/site.css">
+</head>
+<body>
+
+<a class="skip-link" href="#guide">Skip to the guide</a>
+
+<div class="beta-banner">
+  <p class="wrap">Spool is looking for its first beta testers. <a href="./#beta">Sign up →</a></p>
+</div>
+
+<div class="nav-shell">
+  <header class="wrap nav">
+    <a class="nav-brand" href="./">
+      <img src="assets/spool-icon-28.png" srcset="assets/spool-icon-56.png 2x, assets/spool-icon-84.png 3x" alt="">
+      Spool <span class="zh">思簿</span>
+    </a>
+    <nav class="nav-links" aria-label="Primary">
+      <a href="./#video">Video</a>
+      <a href="guide.html" aria-current="page">Guide</a>
+      <a href="privacy.html">Privacy</a>
+      <a href="https://github.com/KIM-ocean-HZ/spool">GitHub</a>
+      <a class="lang-toggle" href="zh/guide.html" hreflang="zh-Hans" lang="zh">中文</a>
+      <a class="nav-cta" href="index.html#get">Download</a>
+    </nav>
+  </header>
+</div>
+
+<div class="wrap story-wrap">
+<div class="story-grid">
+
+<aside class="story-toc">
+  <nav aria-label="Guide contents">
+    <div class="toc-title">Contents</div>
+    <a href="#start">Before you start</a>
+    <a href="#install">1. Install and first launch</a>
+    <a href="#projects">2. Workspaces and projects</a>
+    <a href="#folders">3. Link a folder, add files</a>
+    <a href="#capture">4. Capture: text, screenshots and quick notes</a>
+    <a href="#ai">5. Connect your AI (MCP)</a>
+    <a href="#writeback">6. When your AI writes back</a>
+    <a href="#engine">7. Let Spool call an AI for you</a>
+    <a href="#upkeep">8. Compress and check for out-of-date notes</a>
+    <a href="#repo">9. Working in a code repository</a>
+    <a href="#weekly">10. The weekly review</a>
+    <a href="#finish">11. Finish and archive</a>
+    <a href="#recap">12. In short</a>
+  </nav>
+</aside>
+
+<main id="guide" class="article guide" tabindex="-1">
+
+<h1>The Spool guide</h1>
+<p class="lede">One example from start to finish — a job hunt — from installing Spool to archiving the finished project. Every picture is a screenshot of Spool 0.8.1 with example data. Click a picture to see it full size.</p>
+
+<details class="guide-mtoc">
+  <summary>Chapters</summary>
+  <nav aria-label="Guide contents">
+    <a href="#start">Before you start</a>
+    <a href="#install">1. Install and first launch</a>
+    <a href="#projects">2. Workspaces and projects</a>
+    <a href="#folders">3. Link a folder, add files</a>
+    <a href="#capture">4. Capture: text, screenshots and quick notes</a>
+    <a href="#ai">5. Connect your AI (MCP)</a>
+    <a href="#writeback">6. When your AI writes back</a>
+    <a href="#engine">7. Let Spool call an AI for you</a>
+    <a href="#upkeep">8. Compress and check for out-of-date notes</a>
+    <a href="#repo">9. Working in a code repository</a>
+    <a href="#weekly">10. The weekly review</a>
+    <a href="#finish">11. Finish and archive</a>
+    <a href="#recap">12. In short</a>
+  </nav>
+</details>
+
+<section id="start" class="guide-chapter">
+<h2>Before you start</h2>
+<p class="guide-lead">Spool is a small app for Mac and Windows that keeps what each of your projects needs: things you copy from the web, mail and documents, your own notes, files, and the conclusions your AI reaches. The AI apps you already use — Claude, Codex, Cursor and others — can read a project directly and write their conclusions back.</p>
+<figure class="guide-shot">
+  <a href="assets/guide/en/c00-main.webp" title="Open the full-size picture"><img class="shot" src="assets/guide/en/c00-main.webp" width="1180" height="760" alt="The main window: workspaces and projects on the left, the project&#x27;s notes in the middle, its folder, follow-ups and files on the right." loading="lazy" decoding="async"></a>
+  <figcaption class="shot-caption">The main window: workspaces and projects on the left, the project's notes in the middle, its folder, follow-ups and files on the right.</figcaption>
+</figure>
+<p>This guide follows one example the whole way: a job search, from creating the project to archiving it. Chapter 9 is for people who work in a code repository. You only need a Mac or a Windows PC; connecting an AI is optional, but it is where Spool is most useful.</p>
+</section>
+
+<section id="install" class="guide-chapter">
+<h2>1. Install and first launch</h2>
+<p class="guide-lead">You will: install Spool, give it the two permissions capture needs, and find your way around the first screen.</p>
+<ol class="guide-steps">
+<li>Download Spool from <a href="https://spoolapp.org">spoolapp.org</a>. It is free. The Mac version is notarised by Apple, so it opens without an "unidentified developer" warning.
+<figure class="guide-shot">
+  <a href="assets/guide/en/c01-site.webp" title="Open the full-size picture"><img class="shot" src="assets/guide/en/c01-site.webp" width="800" height="280" alt="The download buttons on spoolapp.org." loading="lazy" decoding="async"></a>
+  <figcaption class="shot-caption">The download buttons on spoolapp.org.</figcaption>
+</figure>
+</li>
+<li>Open the downloaded file and drag Spool onto Applications, then open Spool from Applications.
+<figure class="guide-shot">
+  <a href="assets/guide/en/c01-dmg.webp" title="Open the full-size picture"><img class="shot" src="assets/guide/en/c01-dmg.webp" width="380" height="135" alt="The Mac download: drag Spool onto Applications." loading="lazy" decoding="async"></a>
+  <figcaption class="shot-caption">The Mac download: drag Spool onto Applications.</figcaption>
+</figure>
+</li>
+<li>The first time, the left side holds a <strong>Default workspace</strong> with three starter projects — <strong>Welcome to Spool</strong>, <strong>Put your AI to work on Spool</strong> and <strong>Sample project: Machine learning course</strong> — and <strong>Unsorted</strong>, where captures go until you pick a project. Read the starters, then delete them whenever you like.
+<figure class="guide-shot">
+  <a href="assets/guide/en/c01-first.webp" title="Open the full-size picture"><img class="shot" src="assets/guide/en/c01-first.webp" width="1180" height="420" alt="First launch: the starter projects, and a banner about two permissions." loading="lazy" decoding="async"></a>
+  <figcaption class="shot-caption">First launch: the starter projects, and a banner about two permissions.</figcaption>
+</figure>
+</li>
+<li>To capture from other apps, Spool needs two switches in System Settings. Click <strong>Open Input Monitoring</strong> in the banner. The first time, a card explains what the two switches are for; click <strong>Continue</strong>. System Settings opens at the right page: turn on the switch next to Spool (macOS may also ask in a dialog of its own). Then do the same with <strong>Open Accessibility</strong>.
+</li>
+<li>When both are on, the banner says <strong>Granted — takes effect after Spool restarts</strong>. Click <strong>Restart Spool now</strong>.
+</li>
+<li>Open <strong>Settings</strong> (⌘,). Under <strong>General</strong> you choose the language (中文 or English), the look, light or dark, the text size inside blocks, a break reminder, and whether Spool starts when you log in.
+<figure class="guide-shot">
+  <a href="assets/guide/en/c01-general.webp" title="Open the full-size picture"><img class="shot" src="assets/guide/en/c01-general.webp" width="472" height="508" alt="Settings → General." loading="lazy" decoding="async"></a>
+  <figcaption class="shot-caption">Settings → General.</figcaption>
+</figure>
+</li>
+</ol>
+<aside class="guide-note"><h3>Good to know</h3>
+<ul>
+<li>Input Monitoring lets Spool notice the double-tap of ⌥, and whether you pressed ⌘C just before. Nothing you type is kept.
+</li>
+<li>Accessibility lets you type into the capture card the moment it appears, and stops another app that also listens for a double-tap of ⌥ from popping up at the same time.
+</li>
+<li>The first time you capture from another app, macOS asks whether Spool may control "System Events". Say yes, or blocks cannot record which app they came from.
+</li>
+<li>Without the two switches you can still write notes in Spool, and copy inside Spool and double-tap ⌥.
+</li>
+<li>Spool does not go online. What you save stays on your computer, and only leaves when you turn on something that sends it: connecting an AI (chapter 5) or letting Spool call an AI for you (chapter 7).
+</li>
+</ul>
+</aside>
+<aside class="guide-win"><h3>On Windows</h3>
+<ul>
+<li>The installer is not code-signed yet, so the first time Windows shows a SmartScreen warning: click <strong>More info</strong>, then <strong>Run anyway</strong>.
+<figure class="guide-shot">
+  <a href="assets/guide/en/w01-smartscreen.webp" title="Open the full-size picture"><img class="shot" src="assets/guide/en/w01-smartscreen.webp" width="534" height="500" alt="Windows: the first run of the installer, after clicking More info." loading="lazy" decoding="async"></a>
+  <figcaption class="shot-caption">Windows: the first run of the installer, after clicking More info.</figcaption>
+</figure>
+</li>
+<li>No permissions are needed, so there is no banner. You capture with a double-tap of Ctrl instead of ⌥.
+<figure class="guide-shot">
+  <a href="assets/guide/en/w01-first.webp" title="Open the full-size picture"><img class="shot" src="assets/guide/en/w01-first.webp" width="1000" height="558" alt="Windows: the first launch." loading="lazy" decoding="async"></a>
+  <figcaption class="shot-caption">Windows: the first launch.</figcaption>
+</figure>
+</li>
+<li>Closing the window does not quit Spool: it keeps running in the background, because the capture shortcut needs it. The first time, a card tells you where its icon is — under the ∧ at the bottom right of the screen (drag it onto the taskbar to keep it in sight). Click the icon to bring Spool back; right-click it → <strong>Quit</strong> to really quit.
+<figure class="guide-shot">
+  <a href="assets/guide/en/w01-tray.webp" title="Open the full-size picture"><img class="shot" src="assets/guide/en/w01-tray.webp" width="378" height="235" alt="Windows: what you see the first time you close the window." loading="lazy" decoding="async"></a>
+  <figcaption class="shot-caption">Windows: what you see the first time you close the window.</figcaption>
+</figure>
+</li>
+</ul>
+</aside>
+</section>
+
+<section id="projects" class="guide-chapter">
+<h2>2. Workspaces and projects</h2>
+<p class="guide-lead">You will: make a workspace and a project, give the project a summary and a deadline, and tell Spool where captures go.</p>
+<p>A <strong>workspace</strong> is a big area of your life — study, work, a job hunt. A <strong>project</strong> is one concrete thing inside it — a course, an offsite, a job search. Workspaces can hold smaller workspaces; projects do not nest. That is on purpose: the more levels, the harder things are to find.</p>
+<ol class="guide-steps">
+<li>Click <strong>+ Workspace</strong> at the bottom of the left side, and type its name — here, "Job hunt".
+<figure class="guide-shot">
+  <a href="assets/guide/en/c02-workspace.webp" title="Open the full-size picture"><img class="shot" src="assets/guide/en/c02-workspace.webp" width="600" height="430" alt="The new workspace &quot;Job hunt&quot;, on the left and on its own page." loading="lazy" decoding="async"></a>
+  <figcaption class="shot-caption">The new workspace "Job hunt", on the left and on its own page.</figcaption>
+</figure>
+</li>
+<li>Click <strong>+ Create the first project</strong> under it (or press ⌘N) and call it "Job search".
+</li>
+<li>Click <strong>+ Write a one-line summary</strong> at the top and write what the project is doing now. When an AI lists your projects, this is the first line it sees.
+</li>
+<li>Click <strong>Deadline</strong> under the summary and pick a date. <strong>Focus</strong> on the left lists whatever is due soonest first.
+</li>
+<li>Click <strong>Capture here</strong>. It turns into <strong>Capturing</strong>: from now on, everything you capture goes into this project. You can still send a single capture somewhere else from the capture card (chapter 4).
+<figure class="guide-shot">
+  <a href="assets/guide/en/c02-header.webp" title="Open the full-size picture"><img class="shot" src="assets/guide/en/c02-header.webp" width="590" height="150" alt="Summary, deadline and &quot;Capturing&quot;." loading="lazy" decoding="async"></a>
+  <figcaption class="shot-caption">Summary, deadline and "Capturing".</figcaption>
+</figure>
+</li>
+<li><strong>Projects</strong> at the top left shows every project in one table — workspace, size, time left — sorted by deadline or by date created.
+<figure class="guide-shot">
+  <a href="assets/guide/en/c02-projects.webp" title="Open the full-size picture"><img class="shot" src="assets/guide/en/c02-projects.webp" width="915" height="445" alt="The Projects page." loading="lazy" decoding="async"></a>
+  <figcaption class="shot-caption">The Projects page.</figcaption>
+</figure>
+</li>
+</ol>
+<aside class="guide-win guide-inline"><p><strong>On Windows</strong>: press Ctrl+N instead of ⌘N.</p>
+</aside>
+</section>
+
+<section id="folders" class="guide-chapter">
+<h2>3. Link a folder, add files</h2>
+<p class="guide-lead">You will: link a workspace to a folder on your computer, put files into a project, and see what Spool does when a file moves.</p>
+<ol class="guide-steps">
+<li>Click the workspace's name ("Job hunt") on the left. Its own page opens.
+</li>
+<li>Under <strong>Linked folder</strong>, click <strong>Connect a folder…</strong> and choose the folder — here, the one with the CV and the plan.
+<figure class="guide-shot">
+  <a href="assets/guide/en/c03-connect.webp" title="Open the full-size picture"><img class="shot" src="assets/guide/en/c03-connect.webp" width="915" height="305" alt="A workspace page, before it is linked." loading="lazy" decoding="async"></a>
+  <figcaption class="shot-caption">A workspace page, before it is linked.</figcaption>
+</figure>
+</li>
+<li>Read what Spool will do there, click <strong>Next</strong>, then tick one to three files that say where things stand — a plan, a hand-off note, a README. When one of them changes, Spool knows the folder has moved ahead.
+<figure class="guide-shot">
+  <a href="assets/guide/en/c03-statefiles.webp" title="Open the full-size picture"><img class="shot" src="assets/guide/en/c03-statefiles.webp" width="458" height="349" alt="Picking the files that say where things stand." loading="lazy" decoding="async"></a>
+  <figcaption class="shot-caption">Picking the files that say where things stand.</figcaption>
+</figure>
+</li>
+<li>The last step is about letting the AIs that work in that folder find Spool; it matters most for code repositories (chapter 9). Click <strong>Connect</strong>. The folder's card shows when it was last synced, those files, any other changes, and the project that AI write-backs from the folder go to (<strong>Main project</strong>).
+<figure class="guide-shot">
+  <a href="assets/guide/en/c03-card.webp" title="Open the full-size picture"><img class="shot" src="assets/guide/en/c03-card.webp" width="615" height="230" alt="The linked folder on the workspace page." loading="lazy" decoding="async"></a>
+  <figcaption class="shot-caption">The linked folder on the workspace page.</figcaption>
+</figure>
+</li>
+<li>Open the project. On the right, under <strong>Project files</strong>, click <strong>Add file +</strong>, or drag a file in from Finder.
+</li>
+<li>Point at a file to see its two switches: <strong>AI can read</strong> (on by default) decides whether connected AIs may read its text; <strong>In packs</strong> (off by default) decides whether a pack (chapter 5) carries the text along.
+<figure class="guide-shot">
+  <a href="assets/guide/en/c03-files.webp" title="Open the full-size picture"><img class="shot" src="assets/guide/en/c03-files.webp" width="330" height="230" alt="A project file and its two switches." loading="lazy" decoding="async"></a>
+  <figcaption class="shot-caption">A project file and its two switches.</figcaption>
+</figure>
+</li>
+<li>Move or rename the file in Finder: Spool follows it and marks it <strong>New place</strong>. The right side also tells you when one of the linked folder's state files has changed since the last sync.
+<figure class="guide-shot">
+  <a href="assets/guide/en/c03-moved.webp" title="Open the full-size picture"><img class="shot" src="assets/guide/en/c03-moved.webp" width="330" height="230" alt="The file followed to its new place; PLAN.md changed since the last sync." loading="lazy" decoding="async"></a>
+  <figcaption class="shot-caption">The file followed to its new place; PLAN.md changed since the last sync.</figcaption>
+</figure>
+</li>
+</ol>
+<aside class="guide-note"><h3>Good to know</h3>
+<ul>
+<li>Linking a folder puts one file there, <strong>SPOOL.md</strong>, which tells an AI working in that folder which Spool projects it belongs to. In a code repository Spool can also add a line to <code>.git/info/exclude</code>, <code>CLAUDE.md</code> and <code>AGENTS.md</code> — only the ones you tick (chapter 9).
+</li>
+<li>Spool reads the state files you tick and notices names, sizes and dates of the rest. It does not read your other files or watch the folder in the background.
+</li>
+</ul>
+</aside>
+</section>
+
+<section id="capture" class="guide-chapter">
+<h2>4. Capture: text, screenshots and quick notes</h2>
+<p class="guide-lead">You will: save something from any app without leaving it, and know what every part of the capture card does.</p>
+<ol class="guide-steps">
+<li>On a web page, select a passage and press ⌘C, then press ⌥ twice, quickly.
+</li>
+<li>The <strong>capture card</strong> appears at the top right of the screen: what you copied, the project it goes into, and where it came from — for a browser, the page. The cursor is already in the box.
+<figure class="guide-shot">
+  <a href="assets/guide/en/c04-card.webp" title="Open the full-size picture"><img class="shot" src="assets/guide/en/c04-card.webp" width="340" height="197" alt="The capture card." loading="lazy" decoding="async"></a>
+  <figcaption class="shot-caption">The capture card.</figcaption>
+</figure>
+</li>
+<li>Type one line about why you are keeping it and press Return. That line becomes the block's title, and connected AIs treat your own words as the most important line.
+</li>
+<li>Back in Spool, the new block holds the time, the source, your line and the original text. You never left the web page.
+<figure class="guide-shot">
+  <a href="assets/guide/en/c04-block.webp" title="Open the full-size picture"><img class="shot" src="assets/guide/en/c04-block.webp" width="590" height="395" alt="The captured block in the project." loading="lazy" decoding="async"></a>
+  <figcaption class="shot-caption">The captured block in the project.</figcaption>
+</figure>
+</li>
+<li>Rather not write anything? Press Esc, or click anywhere else — the capture is saved anyway. Saved the wrong thing? Click <strong>Undo</strong> on the card.
+</li>
+<li>To send one capture to a different project, click <strong>Redirect</strong> and pick another.
+<figure class="guide-shot">
+  <a href="assets/guide/en/c04-retarget.webp" title="Open the full-size picture"><img class="shot" src="assets/guide/en/c04-retarget.webp" width="340" height="478" alt="Redirect: sending one capture somewhere else." loading="lazy" decoding="async"></a>
+  <figcaption class="shot-caption">Redirect: sending one capture somewhere else.</figcaption>
+</figure>
+</li>
+<li>The three small buttons at the card's top right: the pin pins the block to the top of the project; the lock keeps the card open even when you click elsewhere; the × closes it. <strong>Done</strong> closes it too.
+</li>
+</ol>
+<h3>Screenshots</h3>
+<ol class="guide-steps">
+<li>First, turn off the floating thumbnail: press ⌘⇧5, open <strong>Options</strong>, and untick <strong>Show Floating Thumbnail</strong>. While that thumbnail is showing, the screenshot is not saved yet, so there is nothing to capture.
+</li>
+<li>Take a screenshot (for example ⌘⇧4), then press ⌥ twice. The card shows the picture; write your line, and click <strong>+ Image caption</strong> if you want to say what is in it.
+<figure class="guide-shot">
+  <a href="assets/guide/en/c04-image.webp" title="Open the full-size picture"><img class="shot" src="assets/guide/en/c04-image.webp" width="340" height="270" alt="Capturing a screenshot." loading="lazy" decoding="async"></a>
+  <figcaption class="shot-caption">Capturing a screenshot.</figcaption>
+</figure>
+</li>
+<li>Screenshots straight to the clipboard, copied images, and image files copied in Finder work the same way.
+</li>
+</ol>
+<h3>Quick notes and writing in Spool</h3>
+<ol class="guide-steps">
+<li>Hold down ⌥ to write a note straight into the current project, from any app. If you pressed ⌘C in the two seconds before, what you copied is already in the box. <strong>Discard</strong> throws the note away.
+<figure class="guide-shot">
+  <a href="assets/guide/en/c04-hold.webp" title="Open the full-size picture"><img class="shot" src="assets/guide/en/c04-hold.webp" width="340" height="259" alt="Holding ⌥: a note written from another app." loading="lazy" decoding="async"></a>
+  <figcaption class="shot-caption">Holding ⌥: a note written from another app.</figcaption>
+</figure>
+</li>
+<li>Inside Spool, write in the box at the bottom of a project. Return sends, Shift-Return starts a new line, @ refers to another project, and you can paste or drag in pictures.
+</li>
+</ol>
+<aside class="guide-win"><h3>On Windows</h3>
+<ul>
+<li>Copy, then press Ctrl twice. For a screenshot, press Win+Shift+S, then Ctrl twice.
+</li>
+<li>The source is the title of the window you copied from (Windows does not tell Spool which web page).
+</li>
+<li>Holding a key to write a quick note is Mac only.
+<figure class="guide-shot">
+  <a href="assets/guide/en/w02-card.webp" title="Open the full-size picture"><img class="shot" src="assets/guide/en/w02-card.webp" width="340" height="188" alt="Windows: the capture card after copying in Notepad and a double-tap of Ctrl." loading="lazy" decoding="async"></a>
+  <figcaption class="shot-caption">Windows: the capture card after copying in Notepad and a double-tap of Ctrl.</figcaption>
+</figure>
+</li>
+</ul>
+</aside>
+</section>
+
+<section id="ai" class="guide-chapter">
+<h2>5. Connect your AI (MCP)</h2>
+<p class="guide-lead">You will: let the AI apps you already use read your projects — and, if you want, write back.</p>
+<p>Spool connects through <strong>MCP</strong>, a common way for AI apps to plug into outside tools. Once connected, you just talk to your AI: it looks things up in Spool by itself. No copying and pasting.</p>
+<ol class="guide-steps">
+<li>Open <strong>Settings → MCP</strong>.
+</li>
+<li>Turn on <strong>MCP server</strong>: AI apps can read your projects.
+</li>
+<li>Turn on <strong>Allow AI writes</strong> if they may also write into Spool. The two switches are separate; you can allow reading only.
+<figure class="guide-shot">
+  <a href="assets/guide/en/c05-mcp.webp" title="Open the full-size picture"><img class="shot" src="assets/guide/en/c05-mcp.webp" width="472" height="522" alt="Settings → MCP: the two switches, and the AI apps on this computer." loading="lazy" decoding="async"></a>
+  <figcaption class="shot-caption">Settings → MCP: the two switches, and the AI apps on this computer.</figcaption>
+</figure>
+</li>
+<li>Find your AI app in the list and click <strong>Connect</strong>. Spool changes that app's settings for you, keeping a backup. Quit the AI app completely and open it again; the row then says <strong>Connected</strong>, with the time it last asked.
+<p>The list covers Claude Desktop, Claude Code, Cursor, Visual Studio Code, Windsurf and Codex (the Codex command line, editor extensions and Codex in the ChatGPT app share one setup). Other apps that support MCP can be set up by hand.</p>
+</li>
+<li>Now ask your AI, without going back to Spool. For example: "Help me review my Job search project in Spool, then ask me two interview questions." The first time, the app asks whether it may use Spool's tools — allow it.
+<figure class="guide-shot">
+  <a href="assets/guide/en/c05-claude.webp" title="Open the full-size picture"><img class="shot" src="assets/guide/en/c05-claude.webp" width="860" height="850" alt="Claude Desktop reads the project before answering." loading="lazy" decoding="async"></a>
+  <figcaption class="shot-caption">Claude Desktop reads the project before answering.</figcaption>
+</figure>
+</li>
+<li>Ask another AI about the same project — Codex in the ChatGPT app knows what you saved, too. You can switch AIs without explaining everything again.
+<figure class="guide-shot">
+  <a href="assets/guide/en/c05-codex.webp" title="Open the full-size picture"><img class="shot" src="assets/guide/en/c05-codex.webp" width="770" height="865" alt="Codex in the ChatGPT app, asked about the same project." loading="lazy" decoding="async"></a>
+  <figcaption class="shot-caption">Codex in the ChatGPT app, asked about the same project.</figcaption>
+</figure>
+</li>
+</ol>
+<h3>AIs that cannot reach Spool</h3>
+<ul>
+<li>The ChatGPT website, Gemini, DeepSeek, Kimi and other web chats cannot reach the Spool on your computer. Open the project and press ⌘⇧P (or click <strong>Pack</strong>): Spool puts the whole project into one brief. Click <strong>Copy</strong> and paste it into the chat, or <strong>Export folder</strong> to get the brief together with the files.
+<figure class="guide-shot">
+  <a href="assets/guide/en/c05-pack.webp" title="Open the full-size picture"><img class="shot" src="assets/guide/en/c05-pack.webp" width="638" height="580" alt="⌘⇧P: the whole project as one brief." loading="lazy" decoding="async"></a>
+  <figcaption class="shot-caption">⌘⇧P: the whole project as one brief.</figcaption>
+</figure>
+</li>
+</ul>
+<h3>Private projects</h3>
+<ul>
+<li>Right-click a project and choose <strong>Make private…</strong>. AIs connected through Spool cannot read it, or even tell it exists, and Spool's own AI features leave it alone. An eye with a line through it marks it on the left.
+<figure class="guide-shot">
+  <a href="assets/guide/en/c05-private.webp" title="Open the full-size picture"><img class="shot" src="assets/guide/en/c05-private.webp" width="480" height="280" alt="Making a project private." loading="lazy" decoding="async"></a>
+  <figcaption class="shot-caption">Making a project private.</figcaption>
+</figure>
+</li>
+<li>"Private" covers the path through Spool only. It does not encrypt anything, and it cannot stop you from copying text out yourself.
+</li>
+</ul>
+</section>
+
+<section id="writeback" class="guide-chapter">
+<h2>6. When your AI writes back</h2>
+<p class="guide-lead">You will: see what an AI's notes look like in Spool, and which of its suggestions wait for you.</p>
+<ol class="guide-steps">
+<li>Ask the AI to save its conclusion: "Which role should I prioritise? Save that decision to my Job search project, with a note on why it matters."
+</li>
+<li>In Spool, a green dot by the project means an AI wrote something new. The block is signed with the app's name ("Claude · MCP"), and an AI-written note is marked <strong>AI note</strong>. The right side shows which AI was last here, and <strong>Written by AI</strong> lists its blocks.
+<figure class="guide-shot">
+  <a href="assets/guide/en/c06-written.webp" title="Open the full-size picture"><img class="shot" src="assets/guide/en/c06-written.webp" width="855" height="645" alt="A block written back by Claude." loading="lazy" decoding="async"></a>
+  <figcaption class="shot-caption">A block written back by Claude.</figcaption>
+</figure>
+</li>
+<li>An AI can add new blocks, but it cannot change or delete anything you wrote.
+</li>
+<li>If an old note is no longer right, the AI can only <strong>propose</strong>. Say "Tidewick moved the call to Friday. Update my Job search project." The AI adds a new block and proposes that it corrects the old one. Click the tray with a number at the bottom left: <strong>Proposed by an AI, waiting for you</strong> shows the old line, the new line and what no longer holds.
+<figure class="guide-shot">
+  <a href="assets/guide/en/c06-review.webp" title="Open the full-size picture"><img class="shot" src="assets/guide/en/c06-review.webp" width="558" height="316" alt="A proposal waiting for you." loading="lazy" decoding="async"></a>
+  <figcaption class="shot-caption">A proposal waiting for you.</figcaption>
+</figure>
+</li>
+<li>Choose one of three:
+<ul class="guide-sub"><li><strong>Correct one point</strong> — both blocks stay, and the new one records which sentence it corrects.</li><li><strong>Replace in full</strong> — the old block leaves your packs; it stays in your library and can be taken back.</li><li><strong>Leave alone</strong> — the suggestion is dropped.</li></ul>
+</li>
+<li>An AI can also suggest something for the project to keep watching: "Add a follow-up to my Job search project: new junior data analyst openings at small London teams." It waits in the same place; click <strong>Add it</strong>.
+</li>
+<li>The list is on the right under <strong>Watching for</strong>. A <strong>one-off</strong> line ends once it has its answer; a <strong>permanent</strong> line keeps being checked until you end it. Chapter 7 is about letting an AI go and check them.
+<figure class="guide-shot">
+  <a href="assets/guide/en/c06-watching.webp" title="Open the full-size picture"><img class="shot" src="assets/guide/en/c06-watching.webp" width="330" height="390" alt="The project&#x27;s follow-up list." loading="lazy" decoding="async"></a>
+  <figcaption class="shot-caption">The project's follow-up list.</figcaption>
+</figure>
+</li>
+</ol>
+<aside class="guide-note guide-inline"><p><strong>Good to know</strong>: new blocks from an AI are written straight away, signed, and never change what is already there. Corrections, replacements, splitting a project, attaching files, new follow-up lines and linking folders all wait for your click.</p>
+</aside>
+</section>
+
+<section id="engine" class="guide-chapter">
+<h2>7. Let Spool call an AI for you</h2>
+<p class="guide-lead">You will: connect an AI that Spool itself can call, run a follow-up, and let it run every week.</p>
+<p>So far you talked to your AI. From here on, Spool calls an AI to do work for you: follow-ups, compression, the out-of-date check and the weekly review. There are two ways to connect one.</p>
+<ol class="guide-steps">
+<li>Open <strong>Settings → AI engine</strong> and turn on <strong>Show AI features</strong>. While it is off, every AI button is hidden and nothing automatic runs.
+</li>
+<li><strong>Local CLI</strong>: the Claude Code or Codex already signed in on your Mac. Spool finds it by itself ("Connected to Claude Code"). It uses your own subscription, and Spool stores no key.
+</li>
+<li><strong>API key</strong>: a key you create with an AI provider — OpenAI, Claude, Gemini, DeepSeek, Kimi, Qwen, Zhipu GLM, OpenRouter, or your own endpoint. Paste it in. Spool recognises most keys by their shape; if it cannot tell, it asks you to click the provider.
+<figure class="guide-shot">
+  <a href="assets/guide/en/c07-key.webp" title="Open the full-size picture"><img class="shot" src="assets/guide/en/c07-key.webp" width="472" height="507" alt="A pasted key Spool cannot place: click the provider." loading="lazy" decoding="async"></a>
+  <figcaption class="shot-caption">A pasted key Spool cannot place: click the provider.</figcaption>
+</figure>
+</li>
+<li>Once connected, choose the model and how hard it thinks (low is the default, and cheaper). The key is kept in your system's keychain, not in a settings file, and you pay the provider for what you use. The last line shows what this key can do.
+<figure class="guide-shot">
+  <a href="assets/guide/en/c07-engine.webp" title="Open the full-size picture"><img class="shot" src="assets/guide/en/c07-engine.webp" width="472" height="522" alt="Connected: the model, how hard it thinks, and what the key can do." loading="lazy" decoding="async"></a>
+  <figcaption class="shot-caption">Connected: the model, how hard it thinks, and what the key can do.</figcaption>
+</figure>
+</li>
+<li>If both are connected, each AI button lets you pick which one to use.
+</li>
+<li>Back in the project, click <strong>Set one</strong> (or <strong>Edit</strong>) next to <strong>Watching for</strong> on the right. Write what to watch, one thing per line. <strong>Let the AI see what is missing</strong> reads only your library — it does not go online — and drafts a few more lines. Keep, change or delete them.
+<figure class="guide-shot">
+  <a href="assets/guide/en/c07-drafted.webp" title="Open the full-size picture"><img class="shot" src="assets/guide/en/c07-drafted.webp" width="512" height="606" alt="Lines the AI drafted from the library; one-off or permanent for each." loading="lazy" decoding="async"></a>
+  <figcaption class="shot-caption">Lines the AI drafted from the library; one-off or permanent for each.</figcaption>
+</figure>
+</li>
+<li>Click <strong>Search the web</strong>. Spool's AI searches the web for those lines. Of all Spool's AI features, only follow-ups go to the web.
+<figure class="guide-shot">
+  <a href="assets/guide/en/c07-running.webp" title="Open the full-size picture"><img class="shot" src="assets/guide/en/c07-running.webp" width="518" height="494" alt="A follow-up searching." loading="lazy" decoding="async"></a>
+  <figcaption class="shot-caption">A follow-up searching.</figcaption>
+</figure>
+</li>
+<li>What it finds comes back as blocks for you to review, each with why it matters and its source links; nothing is stored until you click <strong>Store all</strong>. If there is nothing new, it stays quiet.
+<figure class="guide-shot">
+  <a href="assets/guide/en/c07-result.webp" title="Open the full-size picture"><img class="shot" src="assets/guide/en/c07-result.webp" width="552" height="675" alt="Follow-up results, each with its sources." loading="lazy" decoding="async"></a>
+  <figcaption class="shot-caption">Follow-up results, each with its sources.</figcaption>
+</figure>
+</li>
+<li>Turn on <strong>Search once a week by itself</strong> in the same window, and it checks about once a week, speaking up only when there is something new. It is off by default and set per project.
+</li>
+</ol>
+<aside class="guide-note"><h3>Good to know</h3>
+<ul>
+<li>Automatic jobs only run while Spool is open.
+</li>
+<li>To search the web with an API key, the provider must offer web search: with a DeepSeek key, Spool tells you it cannot. Use the local CLI for follow-ups then.
+</li>
+<li>The local CLI needs <strong>MCP server</strong> and <strong>Allow AI writes</strong> on (chapter 5), or the results cannot be saved.
+</li>
+</ul>
+</aside>
+<aside class="guide-win guide-inline"><p><strong>On Windows</strong>: for now the API key is the only way.</p>
+<figure class="guide-shot">
+  <a href="assets/guide/en/w03-engine.webp" title="Open the full-size picture"><img class="shot" src="assets/guide/en/w03-engine.webp" width="472" height="570" alt="Windows: Settings → AI engine has only the API key." loading="lazy" decoding="async"></a>
+  <figcaption class="shot-caption">Windows: Settings → AI engine has only the API key.</figcaption>
+</figure>
+</aside>
+</section>
+
+<section id="upkeep" class="guide-chapter">
+<h2>8. Compress and check for out-of-date notes</h2>
+<p class="guide-lead">You will: make a long project shorter without losing anything, and find old notes that newer ones replace.</p>
+<h3>Compress</h3>
+<ol class="guide-steps">
+<li>Open a long project and its <strong>Compress</strong> tab. Here: a team offsite where the same email was saved twice.
+</li>
+<li>Choose <strong>How hard?</strong> — <strong>Only drop repeats</strong>; <strong>Keep conclusions and numbers</strong>; or <strong>As short as it goes</strong>. The middle one is usually right: conclusions, dates, numbers, sums and names stay word for word.
+<figure class="guide-shot">
+  <a href="assets/guide/en/c08-compress.webp" title="Open the full-size picture"><img class="shot" src="assets/guide/en/c08-compress.webp" width="835" height="490" alt="The Compress tab." loading="lazy" decoding="async"></a>
+  <figcaption class="shot-caption">The Compress tab.</figcaption>
+</figure>
+</li>
+<li>Click <strong>Compress</strong> at the bottom right. Nothing changes yet: you get a block-by-block comparison — on the left what did not make it in, on the right what it wrote.
+<figure class="guide-shot">
+  <a href="assets/guide/en/c08-compare.webp" title="Open the full-size picture"><img class="shot" src="assets/guide/en/c08-compare.webp" width="1135" height="395" alt="Checking the shorter version block by block." loading="lazy" decoding="async"></a>
+  <figcaption class="shot-caption">Checking the shorter version block by block.</figcaption>
+</figure>
+</li>
+<li>A shorter version that has dropped a number or a date may never enter your library.
+</li>
+<li>Looks right? Click <strong>Use this version</strong>. The original is kept, so you can open it or switch back at any time.
+</li>
+<li>To do it automatically, tick <strong>Add to tonight's run</strong>: the queued projects are compressed overnight, one by one, and each draft waits in its project's Compress tab.
+</li>
+</ol>
+<h3>Out-of-date check</h3>
+<ol class="guide-steps">
+<li>Open the <strong>Out-of-date check</strong> tab. It looks for old notes that a later note, or the linked folder, has overturned.
+</li>
+<li>Choose the scope: all of the workspace (so it can match notes across projects) or just this project. Finished and private projects are never sent.
+</li>
+<li>Results come in pairs: the old line and the newer one, both word for word. For each pair choose <strong>Correct one point</strong>, <strong>Replace in full</strong> or <strong>Leave alone</strong>. This page only links notes and marks things done; it never rewrites a note.
+<figure class="guide-shot">
+  <a href="assets/guide/en/c08-pair.webp" title="Open the full-size picture"><img class="shot" src="assets/guide/en/c08-pair.webp" width="590" height="495" alt="An out-of-date pair: the 15 November deadline, and the later extension. This run used a DeepSeek key — 9 seconds, ¥0.009." loading="lazy" decoding="async"></a>
+  <figcaption class="shot-caption">An out-of-date pair: the 15 November deadline, and the later extension. This run used a DeepSeek key — 9 seconds, ¥0.009.</figcaption>
+</figure>
+</li>
+<li>It also lists <strong>projects that may be finished</strong>, quoting what made it think so. <strong>Mark done</strong> opens that project's completion box (chapter 11).
+</li>
+<li>Turn on <strong>Check all of "…" once a month</strong> to let it run by itself (off by default).
+</li>
+<li>If the workspace is linked to a folder, the check brings the folder along: it also compares your notes with the state files and the changes there.
+</li>
+</ol>
+<aside class="guide-note guide-inline"><p><strong>Good to know</strong>: with an API key you pay the provider — the top line shows what each run cost; with the local CLI it uses your subscription. When a workspace is too big to send in one go, Spool says so instead of quietly cutting it.</p>
+</aside>
+</section>
+
+<section id="repo" class="guide-chapter">
+<h2>9. Working in a code repository</h2>
+<p class="guide-lead">You will: link a repository so that the AI working in it always knows which Spool project it belongs to.</p>
+<p>A repository holds what things are now: the code, the plan, how far you have got. It has no place for the why — what you read and when, ideas worked out with other AIs, options you turned down, questions still open. That lives in Spool. SPOOL.md connects the two.</p>
+<ol class="guide-steps">
+<li>Open the workspace page ("Side projects" here), click <strong>Connect a folder…</strong> and choose the repository.
+</li>
+<li>Tick the files that say where things stand — README and PLAN here.
+</li>
+<li>Because it is a git repository, Spool asks whether SPOOL.md should be committed. <strong>Keep it on this computer only</strong> adds one line to <code>.git/info/exclude</code>, git's own ignore list that applies to this computer alone.
+<figure class="guide-shot">
+  <a href="assets/guide/en/c09-git.webp" title="Open the full-size picture"><img class="shot" src="assets/guide/en/c09-git.webp" width="458" height="395" alt="SPOOL.md and git." loading="lazy" decoding="async"></a>
+  <figcaption class="shot-caption">SPOOL.md and git.</figcaption>
+</figure>
+</li>
+<li>AIs working in the folder do not read SPOOL.md on their own. Tick <strong>Add the line @SPOOL.md to this folder's CLAUDE.md</strong> (Claude Code) and <strong>Add "read SPOOL.md before starting" to this folder's AGENTS.md</strong> (Codex). If one of those files does not exist, Spool does not create it. For an AI that reads neither, copy the sentence at the bottom and paste it when you start.
+<figure class="guide-shot">
+  <a href="assets/guide/en/c09-aifiles.webp" title="Open the full-size picture"><img class="shot" src="assets/guide/en/c09-aifiles.webp" width="458" height="546" alt="Telling the AIs in the folder to read SPOOL.md." loading="lazy" decoding="async"></a>
+  <figcaption class="shot-caption">Telling the AIs in the folder to read SPOOL.md.</figcaption>
+</figure>
+</li>
+<li>Click <strong>Connect</strong>. SPOOL.md tells an AI which Spool projects the folder belongs to, which side is the authority, when to read Spool and when to write back. An excerpt:
+<pre class="guide-file"><code>### Which side is the authority
+
+- **What is being done now, and how far it has got, is whatever this folder says.** The state files:
+  - `README.md`
+  - `PLAN.md`
+- **Spool holds what this folder has no place for**: sources and the day they were read, ideas worked out in conversations with other AIs, the options turned down when a decision was made, open questions, outside things to keep an eye on.
+- **Anything in Spool that conflicts with the state files is history, not the current state.** Do not act on it, and do not use it to edit the state files.</code></pre>
+<p>Spool only edits its own section of SPOOL.md; anything you add below it stays yours.</p>
+</li>
+<li>Start Claude Code in the repository and ask something only Spool could know: "Why did we decide on only three case studies?" It reads SPOOL.md, looks in Spool, and says what is on record — here, the rule and the day it was written, but no reason, so it says so instead of making one up.
+<figure class="guide-shot">
+  <a href="assets/guide/en/c09-claudecode.webp" title="Open the full-size picture"><img class="shot" src="assets/guide/en/c09-claudecode.webp" width="1203" height="760" alt="Claude Code in the repository, answering from Spool." loading="lazy" decoding="async"></a>
+  <figcaption class="shot-caption">Claude Code in the repository, answering from Spool.</figcaption>
+</figure>
+</li>
+<li>Change the plan and commit. Spool notices: the workspace page shows that a state file changed since the last sync, and lists new commits under <strong>Other changes</strong>.
+<figure class="guide-shot">
+  <a href="assets/guide/en/c09-changed.webp" title="Open the full-size picture"><img class="shot" src="assets/guide/en/c09-changed.webp" width="615" height="240" alt="The repository moved ahead of Spool." loading="lazy" decoding="async"></a>
+  <figcaption class="shot-caption">The repository moved ahead of Spool.</figcaption>
+</figure>
+</li>
+<li>Ask the AI to record the change: "I just changed PLAN.md and committed it. Record the change in Spool." It adds a block to the main project, citing the note it builds on, and tells Spool what it brought across — so the folder counts as synced again.
+<figure class="guide-shot">
+  <a href="assets/guide/en/c09-claudecode2.webp" title="Open the full-size picture"><img class="shot" src="assets/guide/en/c09-claudecode2.webp" width="1203" height="760" alt="Claude Code writing the change back." loading="lazy" decoding="async"></a>
+  <figcaption class="shot-caption">Claude Code writing the change back.</figcaption>
+</figure>
+<figure class="guide-shot">
+  <a href="assets/guide/en/c09-written.webp" title="Open the full-size picture"><img class="shot" src="assets/guide/en/c09-written.webp" width="915" height="645" alt="The new block, and what was brought across, in Spool." loading="lazy" decoding="async"></a>
+  <figcaption class="shot-caption">The new block, and what was brought across, in Spool.</figcaption>
+</figure>
+</li>
+</ol>
+<aside class="guide-note"><h3>Good to know</h3>
+<ul>
+<li>Spool cannot control what an AI reads with its own file tools: Claude Code, Codex and similar apps can read anything in the repository. Spool only decides what it hands over itself.
+</li>
+<li>Private projects are not written into SPOOL.md, and cannot be linked to a folder.
+</li>
+</ul>
+</aside>
+</section>
+
+<section id="weekly" class="guide-chapter">
+<h2>10. The weekly review</h2>
+<p class="guide-lead">You will: see your week at a glance, run a review, and act on its suggestions with one click.</p>
+<ol class="guide-steps">
+<li>Click <strong>Weekly review</strong> at the top left.
+</li>
+<li><strong>Activity</strong> uses no AI and costs nothing: your average focus per day, which projects got something new — captured, written by you, or written back by an AI — and what is due soon.
+<figure class="guide-shot">
+  <a href="assets/guide/en/c10-activity.webp" title="Open the full-size picture"><img class="shot" src="assets/guide/en/c10-activity.webp" width="1175" height="495" alt="Activity." loading="lazy" decoding="async"></a>
+  <figcaption class="shot-caption">Activity.</figcaption>
+</figure>
+</li>
+<li>Above it, choose the local CLI or the API, and click <strong>Review this week</strong>.
+</li>
+<li>Each project gets a card: <strong>What moved</strong>, <strong>Stuck on</strong>, <strong>Signals</strong> it noticed, and <strong>Suggested</strong> actions. Wherever it quotes your notes, the words are exactly yours.
+<figure class="guide-shot">
+  <a href="assets/guide/en/c10-card.webp" title="Open the full-size picture"><img class="shot" src="assets/guide/en/c10-card.webp" width="1175" height="640" alt="Project cards with suggested actions." loading="lazy" decoding="async"></a>
+  <figcaption class="shot-caption">Project cards with suggested actions.</figcaption>
+</figure>
+</li>
+<li>A suggested action takes one click — for example add a follow-up, or close a one-off follow-up that already has its answer. Not right? ⌘Z undoes it.
+</li>
+<li>Suggestions that touch an old note never change it directly; they go to the review tray, with the three buttons from chapter 6. Permanent follow-ups are never closed for you.
+</li>
+<li>Turn on <strong>Review automatically once a week</strong>, and it runs about once a week by itself, while Spool is open. When a new review is ready, a small card appears where the capture card does; click it to open the review.
+</li>
+</ol>
+<aside class="guide-note guide-inline"><p><strong>Good to know</strong>: finished and private projects are left out of the weekly review.</p>
+</aside>
+</section>
+
+<section id="finish" class="guide-chapter">
+<h2>11. Finish and archive</h2>
+<p class="guide-lead">You will: close a project with one line, and find it again later.</p>
+<ol class="guide-steps">
+<li>In the finished project, click <strong>Complete project</strong> at the top.
+</li>
+<li>Write one line as the conclusion and click <strong>Done</strong>. Later, it is the most useful line in the whole project.
+<figure class="guide-shot">
+  <a href="assets/guide/en/c11-complete.webp" title="Open the full-size picture"><img class="shot" src="assets/guide/en/c11-complete.webp" width="438" height="240" alt="Writing the conclusion." loading="lazy" decoding="async"></a>
+  <figcaption class="shot-caption">Writing the conclusion.</figcaption>
+</figure>
+</li>
+<li>The project becomes a summary page — <strong>Digest</strong>: the conclusion, pinned blocks and files. <strong>Full record</strong> shows every block.
+<figure class="guide-shot">
+  <a href="assets/guide/en/c11-digest.webp" title="Open the full-size picture"><img class="shot" src="assets/guide/en/c11-digest.webp" width="735" height="305" alt="A finished project." loading="lazy" decoding="async"></a>
+  <figcaption class="shot-caption">A finished project.</figcaption>
+</figure>
+</li>
+<li>When every project in a workspace is done, the workspace moves to <strong>Archive</strong> at the bottom of the left side. You can also right-click a workspace and archive it by hand; ⌘Z undoes it.
+</li>
+<li>Archiving is not deleting: ⌘⇧F still finds everything.
+<figure class="guide-shot">
+  <a href="assets/guide/en/c11-search.webp" title="Open the full-size picture"><img class="shot" src="assets/guide/en/c11-search.webp" width="618" height="623" alt="Search still finds archived projects." loading="lazy" decoding="async"></a>
+  <figcaption class="shot-caption">Search still finds archived projects.</figcaption>
+</figure>
+</li>
+<li>To pick a project up again, click <strong>Reopen</strong> — this clears the completion time and the conclusion.
+</li>
+</ol>
+<aside class="guide-note guide-inline"><p><strong>Good to know</strong>: "complete" is always your click. The out-of-date check and the weekly review only suggest it.</p>
+</aside>
+</section>
+
+<section id="recap" class="guide-chapter">
+<h2>12. In short</h2>
+<p class="guide-lead">Make a project and add its files. When you see something useful, copy, press ⌥ twice, and add a line of your own. Connect your AI, and let it read and write back. Let Spool keep watch, and review your week. When you are done, write one line and archive it.</p>
+<p>Downloads and feedback: <a href="https://spoolapp.org">spoolapp.org</a>.</p>
+</section>
+
+</main>
+</div>
+</div>
+
+<footer>
+  <div class="wrap">
+    <div>Spool 思簿 · © 2026 · All rights reserved</div>
+    <div>
+      <a href="./">Home</a> ·
+      <a href="guide.html">Guide</a> ·
+      <a href="https://github.com/KIM-ocean-HZ/spool">GitHub</a> ·
+      <a href="privacy.html">Privacy</a>
+    </div>
+  </div>
+</footer>
+
+<script src="assets/lang.js" defer></script>
+<script src="assets/main.js" defer></script>
+</body>
+</html>

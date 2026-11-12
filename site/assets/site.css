@@ -292,6 +292,19 @@ html[lang="zh-CN"] .ab-line.muted-line { font-style: normal; }
    button, and the way to the other language. Hiding the language toggle stranded a
    Chinese reader who landed on the English page from a phone — there was no other
    route to /zh/ anywhere on the page. */
+/* With the Guide link (2026-11) the home page's row no longer fits between the phone
+   breakpoint and ~900px: words wrapped inside a link and Download ran off the edge.
+   Links never wrap; in that band the two that are also reachable lower on the page
+   (MCP has its own section, GitHub sits in the footer) step out of the row. */
+.nav-links a,
+.nav-brand { white-space: nowrap; }
+@media (max-width: 900px) {
+  .nav-links a[href="#mcp"],
+  .nav-links a[href="https://github.com/KIM-ocean-HZ/spool"] { display: none; }
+}
+@media (max-width: 760px) {
+  .nav-links a[href="story.html"] { display: none; }
+}
 @media (max-width: 640px) {
   .nav-links a:not(.nav-cta):not(.lang-toggle) { display: none; }
   /* 44px minimum touch target (the pill is 0.28rem padding on a 0.85rem line otherwise) */
@@ -1555,4 +1568,78 @@ footer a { color: var(--ink-2); }
   margin: 2.25rem auto 0;
   font-size: 0.95rem;
   color: var(--ink-2);
+}
+
+/* =====================================================================
+   GUIDE PAGE (guide.html, zh/guide.html — P19, 2026-11)
+   Built on the story layout (.story-grid / .story-toc / .article). Every
+   picture is a 2x screen grab shown at half its pixel size, so its text
+   reads at the size it had on screen; a click opens the full picture.
+   ===================================================================== */
+.guide .guide-chapter { scroll-margin-top: 5rem; padding: 0; }
+.guide h2 { margin-top: 3.25rem; }
+.guide h3 {
+  font-size: 1rem;
+  margin: 1.6rem 0 0.5rem;
+}
+.guide .guide-lead { color: var(--ink-2); }
+.guide-steps { counter-reset: none; }
+.guide-steps > li { margin-bottom: 0.7rem; padding-left: 0.2rem; }
+.guide-steps > li > p { margin: 0.35rem 0 0; }
+.guide-sub { margin: 0.4rem 0 0 !important; }
+.guide-sub li { margin-bottom: 0.25rem; }
+.guide-shot { margin: 1.1rem 0 1.4rem; }
+.guide-shot a { display: block; width: fit-content; max-width: 100%; margin: 0 auto; }
+.guide-shot .shot { max-width: 100%; height: auto; box-shadow: var(--shadow-card); }
+.guide-shot .shot-caption { margin-top: 0.6rem; }
+.guide-file { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 0.78rem; }
+.guide-placeholder {
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--r-lg);
+  padding: 2.5rem 1rem;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+.guide-note,
+.guide-win {
+  margin: 1.4rem 0;
+  padding: 0.9rem 1.1rem 0.3rem;
+  border-radius: var(--r-md);
+  background: var(--paper-2);
+  border: 1px solid var(--line);
+}
+.guide-win { background: transparent; border-style: dashed; }
+.guide-note h3,
+.guide-win h3 { margin: 0 0 0.4rem; font-size: 0.92rem; color: var(--ink-2); }
+.guide-note ul,
+.guide-win ul { margin-bottom: 0.6rem; }
+.guide-note p,
+.guide-win p { margin: 0 0 0.6rem; }
+.guide-mtoc { display: none; }
+@media (max-width: 900px) {
+  .guide-mtoc {
+    display: block;
+    margin: -1.25rem 0 2rem;
+    border: 1px solid var(--line);
+    border-radius: var(--r-md);
+    background: var(--paper-2);
+  }
+  .guide-mtoc summary {
+    cursor: pointer;
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    padding: 0 1rem;
+    font-weight: 600;
+  }
+  .guide-mtoc nav { padding: 0 1rem 0.6rem; }
+  .guide-mtoc a {
+    display: flex;
+    align-items: center;
+    min-height: 44px;
+    border-top: 1px solid var(--line);
+    color: var(--ink-2);
+  }
 }

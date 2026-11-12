@@ -54,6 +54,7 @@ not implemented.
 - **Distribution — macOS**: Developer ID–signed, Apple-notarized `.dmg`, straight from [Releases](https://github.com/KIM-ocean-HZ/spool/releases/latest). Not on the Mac App Store — sandboxing conflicts structurally with the global capture trigger.
 - **Distribution — Windows**: an x64 NSIS installer built by CI, **not code-signed**, so SmartScreen warns once before it will install.
 - **Website**: [spoolapp.org](https://spoolapp.org), with a two-minute video of capture → pack → re-brief → MCP, in English and Chinese.
+- **Guide**: a step-by-step guide with screenshots, from install to an archived project — [English](https://spoolapp.org/guide.html) · [中文](https://spoolapp.org/zh/guide.html).
 - **No auto-update channel** yet: direct distribution means new versions are a manual download.
 
 ### New in v0.5.0
