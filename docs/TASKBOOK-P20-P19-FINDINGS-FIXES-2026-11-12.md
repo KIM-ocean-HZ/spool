@@ -1,8 +1,8 @@
 # 产品任务书 P20 —— 修 P19 拍摄时发现的问题（发版前全部修）
 
-> **状态：ACTIVE（2026-11-12 下发；§4 的问题等 Ocean 一次答完再动手）**
+> **状态：ACTIVE（2026-11-12 下发；§4 八件 11-12 已答，HANDOFF 第 337 – 342 条，可以动手）**
 >
-> **唯一交付**：附录 A 里的 `DISCOVERED-20261112-1` – `19`（第 12 条是本机环境、已处理，不修）和同根的 `20261030-1`、`20261103-1` 按 §1 的顺序修完、各自提交（不推送）；Mac 换装给 Ocean 验收；Windows 在虚拟机里验（**Parallels 11-20 到期，Windows 那一步要在 11-19 前做完**）；之后按 §4 第 7 题的答案发版或不发。
+> **唯一交付**：附录 A 里的 `DISCOVERED-20261112-1` – `19`（第 12 条是本机环境、已处理，不修）、同根的 `20261030-1`、`20261103-1`，以及并进来的 `20261111-1`、`-3`，按 §1 的顺序修完、各自提交（不推送）；Mac 换装给 Ocean 验收；Windows 在虚拟机里验（**Parallels 11-20 到期，Windows 那一步要在 11-19 前做完**）；然后**发 v0.8.2（Mac + Windows）**；**教程这次不换图**（第 342 条）。
 >
 > **来历**：P19（图文教程）拍摄时记下 18 条 + Windows 上又看到 1 条。Ocean 11-12（HANDOFF 第 334 条）原话「拍摄时看到的产品问题记了 18 条，我需要在发版之前全部修复，这窗教程做完提交之后直接做」；P19 11-12 上线并验收通过（第 335、336 条）。按方针 §3.2 这是 Ocean 明确插的一件，排在 §5.1「重构问卷」之前，方针没动。
 >
@@ -41,12 +41,20 @@
 | 条 | 现在（代码里查过） | 要做 |
 |---|---|---|
 | `-1` 新手块按钮名 | `src/lib/db/client.ts:1470`（中）、`:1562`（英）写「点顶部横幅的「打开捕捉」」/ "Turn on capture"，还写「输入监听」；`ThreadView/BlockFeed.tsx:509` + `i18n:528` 也写「输入监听」 | 按横幅现在的样子写（两个开关、「打开「输入监控」」「打开「辅助功能」」、授权后点「立即重启 Spool」）；「输入监听」全改「输入监控」。只改新种下的块，老库不动 |
-| `-5` 本机 CLI 的花费 | `Compress/CompressBoard.tsx:450` 不分路，CLI 跑完也写「认不出这个模型的价目…」 | 本机 CLI 那条路不显示花费（§4 第 3 题） |
+| `-5` 本机 CLI 的花费 | `Compress/CompressBoard.tsx:450` 不分路，CLI 跑完也写「认不出这个模型的价目…」 | 本机 CLI 那条路**不显示花费**（第 339 条） |
 | `-6` 英文里的「」 | 8 处写死在组件里：`Compress/EntryCard.tsx:170`、`Compress/StaleReview.tsx:250/254`、`Compress/WorkspaceStale.tsx:185/188`、`Compress/RepoCheckPanel.tsx`（同样两行）、`ReviewBoard/StructuredReview.tsx:185/211`、`ThreadView/CorrectionNote.tsx:87` | 抽一个按界面语言选引号的小函数（中文「」，英文 “ ”），这几处都用它；原话本身一字不改 |
 | `-14` 英文复数 | 词条里写死复数：`'{n} commit(s)'`（`i18n:2067`）、`'{n} blocks'`（`:1311`）、`'{n} projects'`（`:139`）等 | 给 `t()` 加最小的单复数办法（比如 `{n}` 为 1 时取单数词条），先改截图里看到的这三处，再全库搜同类 `{n}` 英文词条一起改；`scripts/i18n-check.mjs` 要认它 |
-| `-16` 英文 ‹项目名› | 全 App 英文统一用 ‹›（18 处词条） | 按 §4 第 5 题（推荐：保留，只改「」） |
-| `-17` 英文里的 ¥ | `src/lib/ai/compress.ts:899` `formatYuan` 一律写 `¥`（厂商按人民币算的价目表） | 按 §4 第 6 题 |
-| `-19` Windows 的 key 说法 | `AiSetup/ApiKey.tsx:284` 不分平台写「存在系统钥匙串里」；Windows 实际是 `app_data_dir/api-key`（`api_engine.rs` `api_key_save` 非 macOS 分支） | 按 §4 第 4 题（推荐：Windows 上那句说实话；`PRIVACY.md` 已经写对了，不用改） |
+| `-16` 英文 ‹项目名› | 全 App 英文统一用 ‹›（18 处词条） | **保留 ‹›**，只改「」（第 341 条）⇒ 这一条不改代码，回执里写一句 |
+| `-17` 英文里的 ¥ | `src/lib/ai/compress.ts:899` `formatYuan` 一律写 `¥`（厂商按人民币算的价目表） | 英文界面写 **CN¥**，中文照旧 ¥（第 341 条） |
+| `-19` Windows 的 key 说法 | `AiSetup/ApiKey.tsx:284` 不分平台写「存在系统钥匙串里」；Windows 实际是 `app_data_dir/api-key`（`api_engine.rs` `api_key_save` / `read_api_key` / `api_key_load` 非 macOS 分支） | **改存 Windows 凭据管理器**（第 340 条），单独成 **P20-1b**（见下） |
+
+### P20-1b · Windows 的 key 改存凭据管理器（`-19`，第 340 条）
+
+- **现在**：Mac 用 `security-framework` 存钥匙串（`api_engine.rs` 716 行起的 `keychain` 模块，`migrate_key_into_keychain` 会把旧的 `api-key` 文件挪进去再删）；非 macOS 写 `app_data_dir()/api-key` 明文文件。⛔ 旧决定（`Cargo.toml:63 – 73` 注释）：不用跨平台 `keyring` crate（会拖进 dbus / secret-service）。
+- **要做**：Windows 上照 Mac 的样子加一个 `wincred` 小模块，直接调 Win32 凭据 API（`CredWriteW` / `CredReadW` / `CredDeleteW`，`CRED_TYPE_GENERIC`，目标名用 identifier，比如 `com.oceanjin.spool/api-key`）；`windows-sys` 已经在依赖里，只加 `Win32_Security_Credentials` 这个 feature。`api_key_save` / `read_api_key` / `api_key_load` / `api_key_present` 的 Windows 分支都改；**启动时（或第一次读 key 时）把老的 `api-key` 文件迁进凭据管理器、迁成功再删文件**，和 Mac 的迁移一样；迁失败就留着文件照旧能用。「断开」要把凭据删掉。主进程不发网络请求这条护栏不变（凭据 API 不碰网络）。
+- **文案**：设置页那句改成分平台：Mac「存在系统钥匙串里」，Windows「存在 Windows 凭据管理器里」；后面「不进设置文件，也不跟着导出的库走」照旧。
+- **隐私说明三份一起改**：`docs/PRIVACY.md:19`、`site/privacy.html`、`scripts/site-zh-privacy.html`（然后 `node scripts/build-site-zh.mjs` 重生成中文页）——「Windows 上存在同一目录下一个单独的文件」改成「存在 Windows 凭据管理器」。
+- **验收**：Windows 单元测试（CI 上跑）：存 → 读 → 删；有老文件时迁进去、文件消失；迁移失败时还能从文件读。虚拟机里：粘一把假 key（不用真 key）→ 控制面板「凭据管理器 → Windows 凭据」里看得到那一条、数据目录里没有 `api-key` 文件 →「断开」后那一条没了。真 key 跑一次只在 Ocean 同意时做。
 
 ### P20-2 · 排版挤（`-2` `-3` `-15`）
 
@@ -62,7 +70,9 @@
 
 | 条 | 现在 | 要做 |
 |---|---|---|
-| `-7` 完成 / 归档后还是捕捉目标 | `src/lib/db/threads.ts:332` 标完成只改 `status` / `completed_at`，不动 `is_capture_target`；归档工作区同样 | 按 §4 第 2 题（推荐：完成或归档时，如果它是捕捉目标，就改回「未分类」并提示一句；⌘Z 撤回时连目标一起还原） |
+| `-7` 完成 / 归档后还是捕捉目标 | `src/lib/db/threads.ts:332` 标完成只改 `status` / `completed_at`，不动 `is_capture_target`；归档工作区同样 | 完成或归档时，如果它是捕捉目标，就**改回「未分类」并提示一句**（第 338 条）；⌘Z 撤回时连目标一起还原 |
+| `20261111-1` 英文 "Off" 按钮 | 见附录 A 原文（`RightRail/RunCard.tsx:228`、`Compress/WsRepoSection.tsx:120` 用了给开关的「关掉」词条） | 这两处按钮另起词条（比如 "Close it"），开关那处不动（第 337 条） |
+| `20261111-3` API 开关开着、key 没了 | 见附录 A 原文（`src/lib/engine/roads.ts` `roadsOf` 只看 `apiEngineEnabled`） | 开关和「key 在不在」一起判（和 P20-1b 一起做，key 的读法统一）；key 不在时所有 AI 入口都显示要粘 key（第 337 条） |
 | `-8` 周回顾记录行 | `ReviewBoard/index.tsx:587`、`RightRail/RunCard.tsx:168` 写模型 ID 和「花费未知」 | 记录行只留「谁跑的（本机 CLI / 厂商名）+ 什么时候」；本机 CLI 不写花费；API 有真实花费才写 |
 | `-13` 批准跟进后右栏不刷新 | `stores/proposalsStore.ts:302` `approveFollowUp` 只 `useThreadsStore.loadAll()`，右栏读的是 `useFollowUpStore` 的 `items` | 批准后重新加载那个项目的跟进清单 |
 
@@ -73,7 +83,7 @@
 | `-4` 压缩总长度对不上 | `CompressBoard.tsx:182` 总比例 = `audit.charsAfter / audit.charsBefore`；逐块的「短了 N%」另算；英文那次总 −2%、逐块 10% / 87% | 先在隔离库复现，查 `charsBefore/After` 算的是什么（是不是整包、含批注 / 说明）；改成和逐块同一个口径。查清前别动数 |
 | `-10` 同意框挂着时的捕捉没来源 | v0.8.1 等「自动化」同意框 120 秒（`capture.rs` `wait_for_consent`）；P19 那次第一块没来源 | 用隔离构建 + `tccutil reset AppleEvents <id>` 复现；复现得出再修（同意之后补取来源再写块），复现不出就记结论 |
 | `-11` 中文现状文件名 | `src-tauri/src/folder_link.rs:651` `PLAN_NAMES` 只有英文名 | 加中文常见名（计划、交接、进度、待办、说明、路线图）；带测试 |
-| `-18` DeepSeek key 认不出 | `src/lib/ai/vendors.ts:222` `detectVendor`：裸 `sk-…` DeepSeek / 通义 / Kimi / 老 OpenAI 都用，认不出就让用户点 | 按 §4 第 3 题（推荐：不拿 key 去试别家；只把提示和按钮顺序改清楚） |
+| `-18` DeepSeek key 认不出 | `src/lib/ai/vendors.ts:222` `detectVendor`：裸 `sk-…` DeepSeek / 通义 / Kimi / 老 OpenAI 都用，认不出就让用户点 | **不拿 key 去试别家**（第 339 条）；只把提示写清楚（比如「`sk-` 开头的 key DeepSeek、通义、Kimi、旧版 OpenAI 都在用，点一下是哪家」），这几家排在前面 |
 
 ### P20-5 · 多屏捕捉卡（`-9` = `20261030-1`，连同 `20261103-1`）
 
@@ -87,7 +97,10 @@
 
 - 推非 main 分支、`gh workflow run windows-build`（先问 Ocean）；虚拟机里装上，只验受影响的：`-19` 那句、`-6` / `-14` 英文、`-2` / `-3` / `-15` 排版、`-7`、`-13`。库照 P19 的办法改名放一边、拍完换回、哈希核对（脚本 `~/Desktop/Spool/P19-guide-20261111/scripts/vm/`）。
 
-### P20-8 · 发版和教程（按 §4 第 7、8 题）
+### P20-8 · 发版 v0.8.2（Mac + Windows），教程这次不换（第 342 条）
+
+- 照 P17 / P18 的发版步骤（版本号、隐私说明版本、发版说明、Mac 公证、Windows 走 GitHub Actions、两个固定下载地址、Registry 请 Ocean 跑）；每一步要推 / 要发布之前问 Ocean。
+- 教程不换图；发版说明里不提教程。教程里和新版对不上的地方（大约 10 张图：项目管理表、压缩页、过期检测那对、周回顾卡、仓库卡「1 commit(s)」、「1 blocks」、Windows 的 AI 引擎页、英文 ¥…）记进 HANDOFF，以后再说。
 
 ---
 
@@ -99,9 +112,11 @@
 
 ## 3. 不做
 
-- 不做 HANDOFF §5.3 里别的条目；不改库结构、不加 MCP 工具；不改 Windows 的 key 存储方式（除非 §4 第 4 题选了乙）。
+- 不做 HANDOFF §5.3 里别的条目；不改库结构、不加 MCP 工具；不用 `keyring` crate；不换教程的图。
 
-## 4. 开工前要 Ocean 定的（一次问完；不改就按推荐做）
+## 4. 开工前要 Ocean 定的（11-12 已答：HANDOFF 第 337 – 342 条）
+
+> **答复**：1 连同那两条一起修（推荐）· 2 自动改回「未分类」并提示（推荐）· 3 不拿 key 试别家（推荐）、本机 CLI 不显示花费（推荐）· 4 **改存 Windows 凭据管理器**（非推荐）· 5 只换「」、‹› 保留（推荐）· 6 英文写 CN¥（推荐）· 7 / 8 **发 v0.8.2，教程先不换**（非推荐的组合）。下面是当时的问题原文。
 
 1. **范围**：只修这 18 条（`-12` 不算）+ 同根的两条多屏；**还是连同类的 `DISCOVERED-20261111-1`（英文界面跟进结果卡上「关掉」按钮显示成 "Off"）和 `-3`（API 开关开着、key 却没了时两处说法对不上；P19 第一次拍 Windows 的 AI 引擎页就撞上了）一起修**（推荐）。好处：同一类小毛病，真实用户和教程里都会碰到；代价：多两条，各一个小提交。
 2. **`-7` 完成 / 归档了捕捉目标项目**：甲 自动改回「未分类」并提示一句（推荐）——好处：不会再有东西落进做完的项目；代价：用户回头捕捉时目标变了，靠那句提示知道。乙 目标不动，捕捉卡上提醒「这个项目已经完成」——好处：不替用户改设置；代价：每次捕捉都要自己改投。
@@ -285,3 +300,21 @@
 - 与当前任务关系：不挡视频（录制时换了松手点）
 - 建议：候选等待；可以和 `20261030-1` 一起修（都改成逻辑坐标和逻辑坐标比）；要 Ocean 点头
 - 验收标准：同样的摆法，Spool 窗口在 2 倍屏上，从 Finder 拖文件到某一块上，高亮框和落点都在光标正下方
+
+#### DISCOVERED-20261111-1 · 英文界面下，跟进结果卡上「关掉」那个按钮显示成 "Off"
+
+- 路线：P · 类型：界面细节 · 严重度：P3 · 状态：captured
+- 来源：P17 写发版说明、核按钮英文名时
+- 证据：`src/lib/i18n/index.ts` 里「关掉」一个词条译成 `'Off'`（给开关用的）；`RightRail/RunCard.tsx:228`、`Compress/WsRepoSection.tsx:120` 的「关掉 / 留着」按钮用的是同一个词条 ⇒ 英文界面是 "Off" / "Keep it"
+- 影响：英文用户看到「建议关掉这条跟进」底下一个 "Off" 按钮，读不出是「关掉这一行跟进」
+- 建议：候选等待；给这两处按钮另起词条（比如 "Close it"），开关那一处不动
+- 验收标准：英文界面下结果卡上两个按钮读得通；`i18n-check` 干净
+
+#### DISCOVERED-20261111-3 · API 开关开着、key 却没了时，界面两处说法对不上
+
+- 路线：P · 类型：非阻断 bug · 严重度：P3 · 状态：captured
+- 来源：P17 在虚拟机里验 `WINDOWS-CHECK` 第 62 条
+- 证据：「能不能走 API」只看设置里的 `apiEngineEnabled`（`src/lib/engine/roads.ts` `roadsOf`），不看 key 在不在；设置页（`AiSetup/ApiKey.tsx`）却要「开关开着且有 key」才显示「已连接 / 断开」，否则显示粘 key 的框。虚拟机里 P16-6 用脚本直接删了 Windows 的明文 `api-key` 文件、没经过界面，于是跟进面板显示「让 AI 看看还缺什么」能点、设置页却叫你粘 key
+- 影响：正常走界面碰不到（存 key 时打开、「断开」时关）；只有 key 文件被界面以外的办法删掉（手动删、同步工具、清理软件）时才出现，点了会在跑的时候才报没有 key
+- 建议：候选等待；开关和「key 在不在」一起判，或者启动时发现开关开着但没有 key 就把开关关掉
+- 验收标准：key 文件不在时，所有 AI 入口都显示「要用你自己的 API key」
