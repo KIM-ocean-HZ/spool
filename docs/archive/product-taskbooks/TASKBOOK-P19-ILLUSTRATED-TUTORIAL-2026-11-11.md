@@ -1,6 +1,6 @@
 # 产品任务书 P19 —— 图文教程（中英两版，放上官网）
 
-> **状态：ACTIVE —— 页面已做完、本地提交（`c84ef53`、`2b6e9da`，没推），等 Ocean 点头推送上线（P19-6）；进度看 §7.2**
+> **状态：COMPLETE — 待 Ocean 验收**（2026-11-12 上线：`main` 推 `5fe4c88..4e7e1cc`，官网部署成功；回执 §7.2 – §7.3；验收单 §6）
 >
 > **唯一交付**：官网上一页英文教程、一页中文教程（`spoolapp.org/guide.html`、`spoolapp.org/zh/guide.html`），从安装一直讲到项目做完归档；每一步配 **v0.8.1 正式版界面的真截图**，用演示数据拍；官网导航能点进去，手机上也能读。
 >
@@ -134,3 +134,9 @@
 - **工作文件**：`~/Desktop/Spool/P19-guide-20261111/`（`PLAN.md` 进度和发现、`scripts/` 拍摄 / 裁图 / 出页脚本、`shots/` 原图、`snapshots/` 快照、`text/guide-{en,zh}.md` 正文）。正文改了要 `python3 scripts/build_guide.py --strict` 重出页；图要换先改 `scripts/prep_images.py` 再跑。
 - **拍摄时看到的产品问题**：记成 HANDOFF `DISCOVERED-20261112-1` – `19`（附录 I）。Ocean 11-12：发版前全部修，教程提交后直接做（HANDOFF 第 334 条）。
 - **还没做**：P19-6 推送上线（等 Ocean 点头；推了 `site/` 会触发官网部署，部署后带 `?v=` 核两页和图）；P19-7 收尾（上线后把首屏改成 `COMPLETE — 待 Ocean 验收`、移进 `archive/product-taskbooks/`）。
+
+### 7.3 上线（2026-11-12，Ocean「推送上线，我来验收」）
+
+- 推前 fetch 核过：远端停在 `5fe4c88`，要推 6 个提交（11-11 的三笔文档 + P19 的 `c84ef53` / `2b6e9da` / `4e7e1cc`），作者都是 Ocean 本人、没有署名行。`main` 推 `5fe4c88..4e7e1cc`，Pages 部署（run `43202930078`）成功。
+- 线上核对（带 `?v=` 绕缓存）：`guide.html`、`zh/guide.html`、首页 / 中文首页 / story / privacy 都是 200；两个教程页和本地生成的逐字节一样；首页导航有「Guide」、中文首页有「教程」；两页引用的 100 张图逐个下载，和本地文件字节全一样。
+- 任务书首屏改 COMPLETE、移进 `archive/product-taskbooks/`；HANDOFF 光标改到 P20。验收单见 §6，等 Ocean 验。
