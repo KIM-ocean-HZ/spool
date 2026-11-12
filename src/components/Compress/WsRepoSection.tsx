@@ -1,5 +1,5 @@
 import type { RepoDropped } from '@/lib/ai/compress';
-import { useT } from '@/lib/i18n';
+import { useQuote, useT } from '@/lib/i18n';
 import type { WsBlockRef, WsRepoItems } from '@/lib/stale/wsItems';
 import type { WsAction } from '@/stores/compressStore';
 import { Choice } from './StaleParts';
@@ -38,6 +38,7 @@ export default function WsRepoSection({
   onDecide: (key: string, action: WsAction) => void;
 }) {
   const t = useT();
+  const q = useQuote();
   const item = 'rounded-md border border-line bg-paper px-3 py-2 text-[11px]';
   return (
     <>
@@ -57,10 +58,10 @@ export default function WsRepoSection({
                   </div>
                   <div className="mt-1.5 space-y-1 text-ink-2">
                     <div>
-                      <span className="text-muted">{t('旧的 {b} 里：', { b: oldL })}</span>「{p.quoteStale}」
+                      <span className="text-muted">{t('旧的 {b} 里：', { b: oldL })}</span>{q(p.quoteStale)}
                     </div>
                     <div>
-                      <span className="text-muted">{t('仓库（{from}）：', { from: repoSourceName(t, p.from) })}</span>「{p.quoteNew}」
+                      <span className="text-muted">{t('仓库（{from}）：', { from: repoSourceName(t, p.from) })}</span>{q(p.quoteNew)}
                     </div>
                   </div>
                   {done ? (
@@ -111,7 +112,7 @@ export default function WsRepoSection({
                     <span className="min-w-0 flex-1 text-ink-2">{f.why}</span>
                   </div>
                   <div className="mt-1.5 text-ink-2">
-                    <span className="text-muted">{t('{b} 里：', { b: where })}</span>「{f.quoteNew}」
+                    <span className="text-muted">{t('{b} 里：', { b: where })}</span>{q(f.quoteNew)}
                   </div>
                   {done ? (
                     <div className="mt-1.5 text-muted">{done === 'close' ? t('已关掉（⌘Z 能撤回）。') : t('留着了。')}</div>
@@ -161,6 +162,7 @@ export default function WsRepoSection({
 
 /** 闸挡掉的那几条，整条摆出来（工程护栏「闸挡住的那几条必须整条带回来」）。 */
 function RepoDroppedNote({ t, dropped }: { t: T; dropped: RepoDropped[] }) {
+  const q = useQuote();
   if (dropped.length === 0) return null;
   const reason = DROP_REASON(t);
   return (
@@ -171,7 +173,7 @@ function RepoDroppedNote({ t, dropped }: { t: T; dropped: RepoDropped[] }) {
           <li key={i}>
             {d.label ? `${d.label} · ` : ''}
             {d.why}
-            {d.quote ? `（「${d.quote}」）` : ''} — {reason[d.reason] ?? d.reason}
+            {d.quote ? t('（{q}）', { q: q(d.quote) }) : ''} — {reason[d.reason] ?? d.reason}
           </li>
         ))}
       </ul>

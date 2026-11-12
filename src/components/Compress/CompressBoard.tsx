@@ -16,7 +16,7 @@ import {
   type CompressLevel,
 } from '@/lib/ai/compress';
 import { compareByEntry } from '@/lib/ai/compressBlocks';
-import { useT } from '@/lib/i18n';
+import { useLanguage, useT } from '@/lib/i18n';
 import type { Block } from '@/lib/db/blocks';
 import { useBlocksStore } from '@/stores/blocksStore';
 import { useCompressStore } from '@/stores/compressStore';
@@ -41,6 +41,7 @@ import { selectThreadById, useThreadsStore } from '@/stores/threadsStore';
 // ⛔ 这一块每长高一行，能核对的地方就矮一行（上一轮挨骂的原话：「核对区域太窄」）。
 export default function CompressBoard({ threadId }: { threadId: string }) {
   const t = useT();
+  const lang = useLanguage();
   const thread = useThreadsStore(selectThreadById(threadId));
   const session = useCompressStore((s) => s.sessions[threadId] ?? null);
   // ⚠️ 只有**正在跑的那个项目、而且跑的是压缩**才显示进度条。
@@ -289,11 +290,12 @@ export default function CompressBoard({ threadId }: { threadId: string }) {
               value={pct === null ? '—' : pct >= 100 ? `+${pct - 100}%` : `−${100 - pct}%`}
             />
             {outcome?.ok && <Stat label={t('用时')} value={`${Math.round(outcome.ms / 1000)}s`} />}
-            {outcome?.ok && (
+            {/* DISCOVERED-20261112-5：本机 CLI 走的是用户自己的订阅，不按次计费 —— 那一格不写。 */}
+            {outcome?.ok && !outcome.viaCli && (
               <Stat
                 label={t('花费')}
                 // ⚠️ 缓存命中没报的时候只知道上限，所以是「≤」，不是一个确数。
-                value={cost ? `${cost.cacheUnknown ? '≤ ' : ''}${formatYuan(cost.yuan)}` : '—'}
+                value={cost ? `${cost.cacheUnknown ? '≤ ' : ''}${formatYuan(cost.yuan, lang)}` : '—'}
               />
             )}
           </div>
@@ -446,7 +448,7 @@ export default function CompressBoard({ threadId }: { threadId: string }) {
               </div>
             )}
             {/* ⚠️ 认不出价目的时候上面那格是「—」，这里才补一句为什么 —— ⛔ 不编一个价。 */}
-            {outcome?.ok && !cost && (
+            {outcome?.ok && !outcome.viaCli && !cost && (
               <div className="text-muted">{t('认不出这个模型的价目，算不出这次花了多少钱。')}</div>
             )}
 

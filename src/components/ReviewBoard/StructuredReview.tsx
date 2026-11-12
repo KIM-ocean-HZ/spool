@@ -8,7 +8,7 @@ import {
   type ActionContext,
 } from '@/lib/ai/weeklyActions';
 import type { WeeklyAction, WeeklyDropped, WeeklyReview } from '@/lib/ai/weeklyStructured';
-import { useT } from '@/lib/i18n';
+import { useQuote, useT } from '@/lib/i18n';
 import { IS_MAC } from '@/lib/platform';
 import type { Thread } from '@/lib/db/threads';
 import { useProposalsStore } from '@/stores/proposalsStore';
@@ -148,6 +148,7 @@ export default function StructuredReview({ review, client }: { review: WeeklyRev
  *  re-judged here. */
 function DroppedNote({ dropped }: { dropped: WeeklyDropped[] }) {
   const t = useT();
+  const q = useQuote();
   if (dropped.length === 0) return null;
   const why: Record<string, string> = {
     quote: t('它引的原话在发过去的材料里找不到。'),
@@ -182,7 +183,7 @@ function DroppedNote({ dropped }: { dropped: WeeklyDropped[] }) {
                 {why[d.reason] ?? t('少了要填的内容。')}
               </div>
               {said.map((s, j) => (
-                <div key={j}>「{s}」</div>
+                <div key={j}>{q(s)}</div>
               ))}
               {str(it.why) && <div className="text-muted/70">{t('它给的理由：{s}', { s: str(it.why)! })}</div>}
             </li>
@@ -208,7 +209,8 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
 }
 
 function Quote({ text }: { text: string }) {
-  return <span className="text-ink">「{text}」</span>;
+  const q = useQuote();
+  return <span className="text-ink">{q(text)}</span>;
 }
 
 /** One suggested action: the button (or, once the library has it, what became of it), then why

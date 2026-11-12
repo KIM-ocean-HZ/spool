@@ -10,7 +10,7 @@ import {
   type EntryPair,
 } from '@/lib/ai/compressBlocks';
 import type { Block } from '@/lib/db/blocks';
-import { useT } from '@/lib/i18n';
+import { useQuote, useT } from '@/lib/i18n';
 
 // 一对。左边原块，右边压缩稿，两边都是**渲染后**的样子（§9.6.5）。
 //
@@ -41,6 +41,7 @@ export default function EntryCard({
   onAddBack: (numbers: readonly string[]) => void;
 }) {
   const t = useT();
+  const q = useQuote();
   const band = block ? bandOf(block) : null;
   const pct = entryPercent(pair);
   const head = pair.before ?? pair.after!;
@@ -167,7 +168,7 @@ export default function EntryCard({
                 </div>
                 {lostLines.map((x) => (
                   <div key={x.line} className="flex items-start gap-2">
-                    <span className="min-w-0 flex-1">「{x.line}」</span>
+                    <span className="min-w-0 flex-1">{q(x.line)}</span>
                     <button
                       type="button"
                       onClick={() => onAddBack(x.numbers)}

@@ -506,7 +506,7 @@ export default function BlockFeed({ threadId, scrollRef }: Props) {
                 </p>
                 <p className="mt-2 text-xs italic text-muted/70">
                   {IS_MAC
-                    ? t('想在别的 app 里复制就能存？那一步需要打开输入监听权限。')
+                    ? t('想在别的 app 里复制就能存？那一步需要打开输入监控权限。')
                     : t('想在别的 app 里复制就能存？在设置里给捕捉定一个快捷键。')}
                 </p>
               </>

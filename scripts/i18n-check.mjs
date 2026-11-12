@@ -10,7 +10,7 @@
 // three strings were missing (found 2026-08-07). A checker that under-reports is worse than
 // no checker, and a checker that lives in a document cannot be fixed once.
 //
-//   node scripts/i18n-check.mjs          → missing keys, or "(none)"
+//   node scripts/i18n-check.mjs          → missing keys and bad plural forms, or "(none)"
 //   node scripts/i18n-check.mjs --dead   → also list dictionary keys nothing uses any more
 //
 // Exit code is 1 when something is missing, so it can gate a commit if that is ever wanted.
@@ -27,6 +27,31 @@ import { fileURLToPath } from 'node:url';
 const DICT = 'src/lib/i18n/index.ts';
 
 const hasChinese = (s) => /[一-鿿]/.test(s);
+
+// English singular / plural forms, `{n|block|blocks}` (lib/i18n `PLURAL_RE`, same pattern). A form
+// whose count is not a slot of its Chinese key never sees a number and always reads plural — and
+// nothing else would notice, since the sentence still renders. Same for a slot inside a form, and
+// for a `{x|` that the pattern does not take as a form at all (a third `|`, a stray brace).
+const PLURAL = /\{(\w+)\|((?:[^{}|]|\{\w+\})*)\|((?:[^{}|]|\{\w+\})*)\}/g;
+const ENTRY = /^\s*'((?:[^'\\]|\\.)*)':\s*\n?\s*('(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*")/gm;
+
+export function badPlurals(dict) {
+  const bad = [];
+  for (const [, key, quoted] of dict.matchAll(ENTRY)) {
+    const value = quoted.slice(1, -1);
+    if (!value.includes('|')) continue;
+    const slots = new Set([...key.matchAll(/\{(\w+)\}/g)].map((m) => m[1]));
+    for (const [form, count, one, other] of value.matchAll(PLURAL)) {
+      const inner = [...`${one}|${other}`.matchAll(/\{(\w+)\}/g)].map((m) => m[1]);
+      for (const name of [count, ...inner]) {
+        if (!slots.has(name)) bad.push([key, `${form}: {${name}} is not a slot of the key`]);
+      }
+    }
+    if (/\{\w+\|/.test(value.replace(PLURAL, ''))) bad.push([key, 'a {x|…} that is not one|other']);
+  }
+  return bad;
+}
+
 // Quoted key, either quote style, escapes honoured; `\s*` covers a call broken over lines.
 const CALL = /\bt[rs]?\(\s*(['"])((?:(?!\1)[^\\]|\\.)*)\1/g;
 
@@ -55,12 +80,13 @@ export function scan(root = 'src', dictFile = DICT) {
   }
 
   const missing = [...used].filter(([key]) => !inDict(key));
-  return { sources, dict, used, missing };
+  return { sources, dict, used, missing, plurals: badPlurals(dict) };
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const { sources, dict, missing } = scan();
+  const { sources, dict, missing, plurals } = scan();
   for (const [key, file] of missing) console.log(`MISSING  ${key}\t${file}`);
+  for (const [key, why] of plurals) console.log(`PLURAL   ${key}\t${why}`);
 
   if (process.argv.includes('--dead')) {
     const declared = [...dict.matchAll(/^\s*'((?:[^'\\]|\\.)*)':/gm)].map((m) => m[1]);
@@ -73,6 +99,6 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     }
   }
 
-  if (missing.length === 0) console.log('(none missing)');
-  process.exit(missing.length === 0 ? 0 : 1);
+  if (missing.length === 0 && plurals.length === 0) console.log('(none missing)');
+  process.exit(missing.length === 0 && plurals.length === 0 ? 0 : 1);
 }

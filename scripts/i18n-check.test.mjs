@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-import { scan } from './i18n-check.mjs';
+import { badPlurals, scan } from './i18n-check.mjs';
 
 describe('every Chinese t()/ts() literal is in the dictionary', () => {
   const { used, missing } = scan();
@@ -37,5 +37,30 @@ describe('a key only used through tr() is still checked', () => {
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
+  });
+});
+
+// DISCOVERED-20261112-14: English singular / plural forms. A form naming a count the key does not
+// pass would always read plural — the bug it exists to fix, back with nothing to show for it.
+describe('English plural forms', () => {
+  it('every form in the dictionary names a slot of its key', () => {
+    const { dict, plurals } = scan();
+    // …and there are forms to check, so this is not passing vacuously.
+    expect(dict.match(/\{\w+\|/g)?.length ?? 0).toBeGreaterThan(50);
+    expect(plurals).toEqual([]);
+  });
+
+  it('reports a form whose count, or a slot inside it, is not in the key', () => {
+    const dict = [
+      "  '{n} 块': '{n} {n|block|blocks}',",
+      "  '删 {n} 块': '{m|Delete this block|Delete these {n} blocks}',",
+      "  '{n} 个': '{n|one|{k} others}',",
+      "  '{n} 次': '{n} {n|time|times|ever}',",
+    ].join('\n');
+    expect(badPlurals(dict).map(([key, why]) => `${key} | ${why}`)).toEqual([
+      '删 {n} 块 | {m|Delete this block|Delete these {n} blocks}: {m} is not a slot of the key',
+      '{n} 个 | {n|one|{k} others}: {k} is not a slot of the key',
+      '{n} 次 | a {x|…} that is not one|other',
+    ]);
   });
 });

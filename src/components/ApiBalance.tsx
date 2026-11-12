@@ -1,6 +1,6 @@
 import { RefreshCw } from 'lucide-react';
 import { resolveVendor } from '@/lib/ai/vendors';
-import { useT } from '@/lib/i18n';
+import { useLanguage, useT } from '@/lib/i18n';
 import { useBalanceStore } from '@/stores/balanceStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 
@@ -16,6 +16,7 @@ import { useSettingsStore } from '@/stores/settingsStore';
  */
 export default function ApiBalance({ className = '' }: { className?: string }) {
   const t = useT();
+  const lang = useLanguage();
   const state = useBalanceStore((s) => s.state);
   const refresh = useBalanceStore((s) => s.refresh);
   // P9U-3：只有 DeepSeek（和不知道是谁的自定义地址）答余额 —— 别家不画这一行，⛔ 也不画「这家不报余额」：
@@ -32,7 +33,8 @@ export default function ApiBalance({ className = '' }: { className?: string }) {
             time: new Date(state.checkedAt).toLocaleTimeString(),
           })}
         >
-          {state.currency === 'CNY' ? '¥' : state.currency === 'USD' ? '$' : `${state.currency} `}
+          {/* DISCOVERED-20261112-17：英文界面写 CN¥，光一个 ¥ 分不出人民币还是日元。 */}
+          {state.currency === 'CNY' ? (lang === 'en' ? 'CN¥' : '¥') : state.currency === 'USD' ? '$' : `${state.currency} `}
           {state.total}
         </span>
       )}

@@ -53,7 +53,7 @@ import { useAppliedColorScheme } from '@/hooks/useColorScheme';
 import { colorSchemeOrDefault } from '@/lib/colorScheme';
 import { themeOrDefault } from '@/lib/theme';
 import { useSettingsStore } from '@/stores/settingsStore';
-import { t, useT } from '@/lib/i18n';
+import { t, useQuote, useT } from '@/lib/i18n';
 import { IS_MAC } from '@/lib/platform';
 
 // Note-first (2026-07-31, DESIGN_CAPTURE_NOTE_FIRST): the toast opens with the note
@@ -180,6 +180,7 @@ const noticeText = (n: OverlayNotice): string => {
 
 export default function CaptureOverlay() {
   const tr = useT();
+  const q = useQuote();
   // 情人节限定版 (2026-08-19) — the toast is a separate window with its own bundle, so it applies
   // the theme onto its own root. WHERE the theme comes from is the effect further down, not
   // this call: it is pushed in from Rust with every show, exactly like the language.
@@ -817,7 +818,7 @@ export default function CaptureOverlay() {
           <span className="shrink-0 font-ui text-[13px] text-ink">{label}</span>
           {u.op !== 'empty' && u.preview && (
             <span className="min-w-0 truncate font-ui text-[12px] text-muted">
-              「{u.preview}」
+              {q(u.preview)}
             </span>
           )}
         </div>

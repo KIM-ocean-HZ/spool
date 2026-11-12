@@ -1,7 +1,7 @@
 import { ContentRuns } from '@/lib/blocks/contentRuns';
 import { MarkdownContent } from '@/lib/blocks/MarkdownContent';
 import type { Block } from '@/lib/db/blocks';
-import { useT } from '@/lib/i18n';
+import { useQuote, useT } from '@/lib/i18n';
 import { formatBlockTime } from '@/lib/utils/time';
 import SeqBadge from './SeqBadge';
 
@@ -35,6 +35,7 @@ interface Props {
 // neither: it is simply theirs, and the warm rule says so without a badge.
 export default function CorrectionNote({ correction, quote, onRemove }: Props) {
   const t = useT();
+  const q = useQuote();
   // The one distinction that matters here. `source` is the client label MCP stamps
   // ('Codex · MCP'); a block written in this window has none.
   const byAi = !!correction.source?.trim();
@@ -84,7 +85,7 @@ export default function CorrectionNote({ correction, quote, onRemove }: Props) {
       {quote?.trim() && (
         <div className="mb-1 font-ui text-[11px] leading-snug text-muted">
           <span className="opacity-70">{t('划的是：')}</span>
-          <span className="text-ink-2">「{quote}」</span>
+          <span className="text-ink-2">{q(quote)}</span>
         </div>
       )}
       <div className="font-ui text-[13px] leading-[1.55] text-ink-2">

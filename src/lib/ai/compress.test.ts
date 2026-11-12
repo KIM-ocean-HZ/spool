@@ -420,9 +420,15 @@ describe('算钱', () => {
   // 一到三分钱这个量级，两位小数会把 0.0105 / 0.0297 全压成同一个数字，
   // 而用户要能拿价目表自己复算。
   it('一分钱上下的金额不会被四舍五入成看不出差别', () => {
-    expect(formatYuan(0.0105)).toBe('¥0.0105');
-    expect(formatYuan(0.0297)).toBe('¥0.0297');
-    expect(formatYuan(0.008)).toBe('¥0.00800');
+    expect(formatYuan(0.0105, 'zh')).toBe('¥0.0105');
+    expect(formatYuan(0.0297, 'zh')).toBe('¥0.0297');
+    expect(formatYuan(0.008, 'zh')).toBe('¥0.00800');
+  });
+
+  // DISCOVERED-20261112-17：英文界面光写 ¥ 分不出人民币还是日元。
+  it('英文界面把币种写清楚：CN¥', () => {
+    expect(formatYuan(0.00921, 'en')).toBe('CN¥0.00921');
+    expect(formatYuan(0.0297, 'en')).toBe('CN¥0.0297');
   });
 });
 

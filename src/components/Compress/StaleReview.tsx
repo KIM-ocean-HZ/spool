@@ -4,7 +4,7 @@ import { AlertTriangle, Loader2, ScanSearch } from 'lucide-react';
 import { splitPackEntries } from '@/lib/ai/compressBlocks';
 import { estimateCost, formatYuan, FAILURE_SENTENCE, type StaleDropped } from '@/lib/ai/compress';
 import { alreadyCorrects } from '@/lib/blocks/staleGuards';
-import { useT } from '@/lib/i18n';
+import { useLanguage, useQuote, useT } from '@/lib/i18n';
 import { retirementLineChars } from '@/lib/pack/assemble';
 import { useBlocksStore } from '@/stores/blocksStore';
 import { useCompressStore } from '@/stores/compressStore';
@@ -108,6 +108,8 @@ function ScopeButton({ active, onClick, children }: { active: boolean; onClick: 
 /** 只查这个项目 —— P9V 之前这个页签的全部。 */
 function ProjectStale({ threadId }: { threadId: string }) {
   const t = useT();
+  const q = useQuote();
+  const lang = useLanguage();
   const session = useCompressStore((s) => s.stale[threadId] ?? null);
   // ⚠️ **要同时问「哪个项目」和「哪一件事」。** 只问前者，压缩一跑这一页就跟着转圈；
   // 只问后者，别的项目在跑的时候这一页也会转。
@@ -179,10 +181,13 @@ function ProjectStale({ threadId }: { threadId: string }) {
             <Stat label={t('还没决定')} value={t('{n} 条', { n: left })} />
           )}
           <Stat label={t('用时')} value={`${Math.round(session.outcome.ms / 1000)}s`} />
-          <Stat
-            label={t('花费')}
-            value={cost ? `${cost.cacheUnknown ? '≤ ' : ''}${formatYuan(cost.yuan)}` : '—'}
-          />
+          {/* DISCOVERED-20261112-5：本机 CLI 不按次计费，那一格不写。 */}
+          {!session.outcome.viaCli && (
+            <Stat
+              label={t('花费')}
+              value={cost ? `${cost.cacheUnknown ? '≤ ' : ''}${formatYuan(cost.yuan, lang)}` : '—'}
+            />
+          )}
         </div>
       )}
 
@@ -247,11 +252,11 @@ function ProjectStale({ threadId }: { threadId: string }) {
                     <div className="mt-1.5 space-y-1 text-ink-2">
                       <div>
                         <span className="text-muted">{t('旧的 #{n} 里：', { n: p.staleSeq })}</span>
-                        「{p.quoteStale}」
+                        {q(p.quoteStale)}
                       </div>
                       <div>
                         <span className="text-muted">{t('新的 #{n} 里：', { n: p.bySeq })}</span>
-                        「{p.quoteNew}」
+                        {q(p.quoteNew)}
                       </div>
                     </div>
                     {!done && correctedNote && <div className="mt-1.5 text-muted">{correctedNote}</div>}

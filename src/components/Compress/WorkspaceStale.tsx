@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, Loader2, ScanSearch } from 'lucide-react';
 import { estimateCost, formatYuan, FAILURE_SENTENCE } from '@/lib/ai/compress';
 import { alreadyCorrects } from '@/lib/blocks/staleGuards';
-import { dateLocale, useT } from '@/lib/i18n';
+import { dateLocale, useLanguage, useQuote, useT } from '@/lib/i18n';
 import { wsRepoKeys, type WsBlockRef, type WsDroppedItem } from '@/lib/stale/wsItems';
 import { staleAutoNextAt, tenThousands, type WsStalePlan } from '@/lib/stale/workspace';
 import { resolveVendor, vendorName } from '@/lib/ai/vendors';
@@ -36,6 +36,8 @@ export default function WorkspaceStale({
   fromThreadId?: string;
 }) {
   const t = useT();
+  const q = useQuote();
+  const lang = useLanguage();
   const folder = useFolderStore((s) => (fromThreadId ? (s.views[fromThreadId] ?? null) : null));
   const session = useCompressStore((s) => s.staleWs[workspaceId] ?? null);
   const running = useCompressStore(
@@ -119,10 +121,13 @@ export default function WorkspaceStale({
           <Stat label={t('找到')} value={t('{n} 条', { n: found })} />
           {found > 0 && <Stat label={t('还没决定')} value={t('{n} 条', { n: left })} />}
           <Stat label={t('用时')} value={`${Math.round(session.outcome.ms / 1000)}s`} />
-          <Stat
-            label={t('花费')}
-            value={cost ? `${cost.cacheUnknown ? '≤ ' : ''}${formatYuan(cost.yuan)}` : '—'}
-          />
+          {/* DISCOVERED-20261112-5：本机 CLI 不按次计费，那一格不写。 */}
+          {!session.outcome.viaCli && (
+            <Stat
+              label={t('花费')}
+              value={cost ? `${cost.cacheUnknown ? '≤ ' : ''}${formatYuan(cost.yuan, lang)}` : '—'}
+            />
+          )}
           {session.auto && (
             <span className="text-muted">{t('每月自动查的（{d}）', { d: monthDay(session.startedAt) })}</span>
           )}
@@ -182,10 +187,10 @@ export default function WorkspaceStale({
                         </div>
                         <div className="mt-1.5 space-y-1 text-ink-2">
                           <div>
-                            <span className="text-muted">{t('旧的 {b} 里：', { b: oldL })}</span>「{p.quoteStale}」
+                            <span className="text-muted">{t('旧的 {b} 里：', { b: oldL })}</span>{q(p.quoteStale)}
                           </div>
                           <div>
-                            <span className="text-muted">{t('新的 {b} 里：', { b: byL })}</span>「{p.quoteNew}」
+                            <span className="text-muted">{t('新的 {b} 里：', { b: byL })}</span>{q(p.quoteNew)}
                           </div>
                         </div>
                         {!done && correctedNote && <div className="mt-1.5 text-muted">{correctedNote}</div>}
@@ -262,10 +267,10 @@ export default function WorkspaceStale({
                         </div>
                         <div className="mt-1.5 space-y-1 text-ink-2">
                           <div>
-                            <span className="text-muted">{t('它自己的原话：')}</span>「{p.quoteOld}」
+                            <span className="text-muted">{t('它自己的原话：')}</span>{q(p.quoteOld)}
                           </div>
                           <div>
-                            <span className="text-muted">{t('{b} 里：', { b: label(p.by) })}</span>「{p.quoteNew}」
+                            <span className="text-muted">{t('{b} 里：', { b: label(p.by) })}</span>{q(p.quoteNew)}
                           </div>
                         </div>
                         {gone ? (

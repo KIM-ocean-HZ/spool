@@ -518,7 +518,10 @@ const runCompress = async (
   const road = routeFor(s.compressRoute, roadsNow());
   const ask =
     road === 'cli'
-      ? () => compressPackViaCli(shielded.text, level, s.aiEngineTimeoutSecs, cliRouteNow())
+      ? async () => ({
+          ...(await compressPackViaCli(shielded.text, level, s.aiEngineTimeoutSecs, cliRouteNow())),
+          viaCli: true,
+        })
       : async () => {
           const call = apiCallFrom(s, reasoning);
           return compressPack({
@@ -1031,8 +1034,8 @@ export const useCompressStore = create<CompressState>((set, get) => ({
       const { text, blocks } = await buildThreadPack(thread);
       const s = useSettingsStore.getState();
       // P9U-1/2: 过期检测's own road (第 187 条); same rule as 压缩.
-      const scan =
-        routeFor(s.staleRoute, roadsNow()) === 'cli'
+      const viaCli = routeFor(s.staleRoute, roadsNow()) === 'cli';
+      const scan = viaCli
           ? await staleScanViaCli(text, s.aiEngineTimeoutSecs, cliRouteNow())
           : await (async () => {
               const call = apiCallFrom(s);
@@ -1076,7 +1079,7 @@ export const useCompressStore = create<CompressState>((set, get) => ({
             proposals: fresh,
             dropped: scan.dropped,
             already: scan.proposals.length - fresh.length,
-            outcome: scan.outcome,
+            outcome: { ...scan.outcome, viaCli },
             decided: {},
             startedAt: Date.now(),
           },
@@ -1260,7 +1263,7 @@ export const useCompressStore = create<CompressState>((set, get) => ({
       set((st) => ({
         staleWs: {
           ...st.staleWs,
-          [workspaceId]: { ...base, outcome: scan.outcome, tooBig: null, ...items },
+          [workspaceId]: { ...base, outcome: { ...scan.outcome, viaCli: road === 'cli' }, tooBig: null, ...items },
         },
         staleWsBlocks: { ...st.staleWsBlocks, [workspaceId]: live },
       }));

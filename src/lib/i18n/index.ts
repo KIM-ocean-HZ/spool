@@ -18,8 +18,21 @@ import { useSettingsStore } from '@/stores/settingsStore';
 
 export type Language = 'zh' | 'en';
 
+// English singular / plural (DISCOVERED-20261112-14): `{n|block|blocks}` reads `block` when n is
+// 1 and `blocks` otherwise. A form may hold a plain slot of its own — `{n|this block|these {n}
+// blocks}` — which is filled in after the form is picked. Only the English side ever uses it:
+// Chinese has no plural, so a key never contains one. scripts/i18n-check.mjs checks that every
+// form names a count its key actually passes.
+export const PLURAL_RE = /\{(\w+)\|((?:[^{}|]|\{\w+\})*)\|((?:[^{}|]|\{\w+\})*)\}/g;
+
 const interpolate = (s: string, vars?: Record<string, string | number>): string =>
-  vars ? s.replace(/\{(\w+)\}/g, (m, k: string) => (k in vars ? String(vars[k]) : m)) : s;
+  vars
+    ? s
+        .replace(PLURAL_RE, (m, k: string, one: string, other: string) =>
+          k in vars ? (Number(vars[k]) === 1 ? one : other) : m,
+        )
+        .replace(/\{(\w+)\}/g, (m, k: string) => (k in vars ? String(vars[k]) : m))
+    : s;
 
 // One pass, at the exit of the only function every visible string goes through. The copy
 // is written once with Mac symbols (they are the shortest way to write a chord, and this
@@ -47,6 +60,19 @@ export const useT = (): typeof t => {
 };
 
 export const useLanguage = (): Language => useSettingsStore((s) => s.language);
+
+// Quote marks around words quoted verbatim (a block's sentence, the AI's own words) follow the
+// UI language: 「」 in Chinese, “ ” in English. The quoted words themselves are never touched —
+// they are the user's or the AI's, in whatever language they were written
+// (DISCOVERED-20261112-6). Project names keep ‹› in English (Ocean 第 341 条).
+const quoteIn = (lang: Language, s: string): string => (lang === 'en' ? `“${s}”` : `「${s}」`);
+
+export const quote = (s: string): string => quoteIn(useSettingsStore.getState().language, s);
+
+export const useQuote = (): typeof quote => {
+  const lang = useSettingsStore((s) => s.language);
+  return useCallback((s: string) => quoteIn(lang, s), [lang]);
+};
 
 // BCP-47 locale for Intl date formatting (day dividers, block timestamps). Callers
 // sit inside components that already re-render on language change via useT.
@@ -135,15 +161,15 @@ const EN: Record<string, string> = {
   '删除工作区（连同里面的工作区）': 'Delete workspace (and the ones inside it)',
   '删除项目': 'Delete project',
   '删除多个项目': 'Delete projects',
-  '选中的 {n} 个项目': '{n} projects selected',
-  '{n} 个项目': '{n} projects',
-  '删除这 {n} 个项目': 'Delete these {n} projects',
+  '选中的 {n} 个项目': '{n} {n|project|projects} selected',
+  '{n} 个项目': '{n} {n|project|projects}',
+  '删除这 {n} 个项目': '{n|Delete this project|Delete these {n} projects}',
   // 归档 (Ocean 2026-09-30 #9) — the rail's bottom section, the right-click item and its
   // confirmation (Sidebar/ArchiveWorkspaceDialog).
   '归档': 'Archive',
   '归档「{name}」': 'Archive “{name}”',
   '这会把 {n} 个项目标为完成，结论留空。':
-    'This marks {n} project(s) as done, with the conclusion left blank.',
+    'This marks {n} {n|project|projects} as done, with the conclusion left blank.',
   '工作区会移到左栏最底下的「归档」里。按 ⌘Z 可以撤回。':
     'The workspace moves to Archive at the bottom of the sidebar. Press ⌘Z to undo.',
   '捕捉目标会从「{from}」换到「{to}」。': 'Capture moves from “{from}” to “{to}”.',
@@ -232,7 +258,7 @@ const EN: Record<string, string> = {
   // ⭐⭐ F2（Ocean 2026-08-30）—— 块级「来龙去脉」：**谁引用了我**，以及待审的三个动作。
   // ⚠️ 入向的三个动词是**方向相反的同一组事**，⛔ 不是上面那三个的重复：
   // 上面站在引用方说「我引用了 / 我整条取代了」，这里站在被引方说「谁引用了我」。
-  '{n} 处引用了这一块': '{n} blocks cite this one',
+  '{n} 处引用了这一块': '{n} {n|block cites|blocks cite} this one',
   '引用了这一块': 'cites this',
   '更正了这里的一处': 'corrects a point here',
   '整条取代了这一块': 'replaces this whole block',
@@ -271,7 +297,7 @@ const EN: Record<string, string> = {
   // ⚠️ 「这一周」在英文里是格子上的一个标签，不是句子 —— 'This week' 而不是 'this week'。
   '自动那次走 {engine}。': 'The automatic run uses {engine}.',
   'CLI': 'CLI',
-  '下次自动回顾：还有 {n} 天。': 'Next automatic review: {n} days away.',
+  '下次自动回顾：还有 {n} 天。': 'Next automatic review: {n} {n|day|days} away.',
   '还没成功回顾过，下一次检查时就会跑。': 'No review has succeeded yet — the next check will run one.',
   '该跑了——下一次检查时就跑（每十分钟看一次）。':
     'Due now — the next check will run it (Spool looks every ten minutes).',
@@ -359,10 +385,10 @@ const EN: Record<string, string> = {
   '至少选择两个 block 才能合并': 'Select at least two blocks to merge',
   '复制到…': 'Copy to…',
   '复制所选 block 到另一个项目': 'Copy selected blocks to another project',
-  '删除 {n} 个块？⌘Z 可逐个撤回': 'Delete {n} blocks? ⌘Z restores them one at a time',
+  '删除 {n} 个块？⌘Z 可逐个撤回': '{n|Delete this block? ⌘Z restores it|Delete {n} blocks? ⌘Z restores them one at a time}',
   '删除所选 block': 'Delete selected blocks',
   '删除中…': 'Deleting…',
-  '已删除 {n} 个块': 'Deleted {n} blocks',
+  '已删除 {n} 个块': 'Deleted {n} {n|block|blocks}',
   '复制到… 搜索项目': 'Copy to… search projects',
   '没有匹配的项目': 'No matching projects',
 
@@ -374,7 +400,7 @@ const EN: Record<string, string> = {
   // unticking it drops, not just what it is.
   '带上「怎么读这份上下文」的说明': 'Include the "how to read this" instructions',
   '告诉对方哪些是权威资料、哪些只是别的 AI 写的。会长 {n} 字符':
-    'Tells the other AI which parts are authoritative and which are just another AI’s writing. Adds {n} characters',
+    'Tells the other AI which parts are authoritative and which are just another AI’s writing. Adds {n} {n|character|characters}',
   '全部': 'All',
   '仅置顶': 'Pinned only',
   '近 7 天': 'Last 7 days',
@@ -416,11 +442,11 @@ const EN: Record<string, string> = {
   '这里要选一个文件夹': 'Choose a folder here',
   '这里要选一个文件': 'Choose a file here',
   '没改成，再试一次': 'That did not work. Try again',
-  '图片 {n} 张，共 {size}': '{n} images, {size} in all',
-  '一共 {n} 个文件，{size}': '{n} files in all, {size}',
+  '图片 {n} 张，共 {size}': '{n} {n|image|images}, {size} in all',
+  '一共 {n} 个文件，{size}': '{n} {n|file|files} in all, {size}',
   '已导出到 {path}': 'Exported to {path}',
   '已导出到 {path}（文件夹里的 {n} 个替身没有拷）':
-    'Exported to {path} ({n} aliases inside folders were not copied)',
+    'Exported to {path} ({n} {n|alias inside a folder was|aliases inside folders were} not copied)',
   '这些文件刚才还在，现在找不到了，所以什么都没导出：{names}':
     'These files were there a moment ago and can no longer be found, so nothing was exported: {names}',
   '有图片已经不在库里了，所以什么都没导出。关掉再打开一次试试。':
@@ -435,15 +461,15 @@ const EN: Record<string, string> = {
     'Assembled locally · exported as a folder — give the AI the whole folder',
   '（子工作区）': '(sub-workspace)',
   '{projects} 个项目 / {files} 个文件 · {chars} 字符':
-    '{projects} projects / {files} files · {chars} characters',
+    '{projects} {projects|project|projects} / {files} {files|file|files} · {chars} {chars|character|characters}',
   '导出文件夹': 'Export folder',
   '正在导出…': 'Exporting…',
   '导出到哪个文件夹？': 'Export into which folder?',
-  '已导出 {n} 个文件': 'Exported {n} files',
+  '已导出 {n} 个文件': 'Exported {n} {n|file|files}',
   '打开文件夹': 'Open folder',
   '读不出项目内容，导出取消了': 'Could not read the projects — export cancelled',
   '已复制': 'Copied',
-  '{packed} / {total} 块 · {chars} 字符': '{packed} / {total} blocks · {chars} chars',
+  '{packed} / {total} 块 · {chars} 字符': '{packed} / {total} {total|block|blocks} · {chars} {chars|char|chars}',
   // P14 (H3): the Pack dialog's line about files whose text the copy does not carry in full (+ hover list).
   '有 {n} 个文件的文字没全在这份里 —— 复制给别的 AI 时把文件本身也发过去，或者用「导出文件夹」':
     "Files whose text isn't all in this pack: {n} — send them along when you copy it, or use Export folder",
@@ -460,7 +486,7 @@ const EN: Record<string, string> = {
   '输入关键词，搜索任意项目里的内容与批注': 'Type keywords to search content and notes in any project',
   '没有找到 —— 换个关键词试试？': 'Nothing found — try other keywords?',
   '搜索出错：{msg}': 'Search failed: {msg}',
-  '{n} 条结果': '{n} results',
+  '{n} 条结果': '{n} {n|result|results}',
   '全文搜索 · 纯本地': 'Full-text search · fully local',
   '↑↓ 选择 · ↵ 跳转 · esc 关闭': '↑↓ select · ↵ jump · esc close',
   '上一个匹配 (⇧⌘G / ⇧↵)': 'Previous match (⇧⌘G / ⇧↵)',
@@ -508,7 +534,7 @@ const EN: Record<string, string> = {
   '留在项目里': 'Keep in project',
   '一起从项目里去掉': 'Remove from project too',
   '这次更新去掉了「附加链接」，你原来加的 {n} 个链接已经删掉了。':
-    'This update removed the \u201cattach link\u201d feature. The {n} link(s) you had added have been deleted.',
+    'This update removed the \u201cattach link\u201d feature. The {n} {n|link you had added has|links you had added have} been deleted.',
 
   // Digest / feed / misc
   '这个项目没有标记重点。要看完整记录吗？': 'No marked highlights in this project. Browse the full record?',
@@ -525,17 +551,17 @@ const EN: Record<string, string> = {
     "Try one below — type, press Enter, it's saved. No permission needed.",
   '想在别的 app 里复制就能存？在设置里给捕捉定一个快捷键。':
     'Want to save what you copy in other apps? Pick a capture shortcut in Settings.',
-  '想在别的 app 里复制就能存？那一步需要打开输入监听权限。':
+  '想在别的 app 里复制就能存？那一步需要打开输入监控权限。':
     'Want copying in any app to save here? That step needs the Input Monitoring permission.',
   '设置截止日期': 'Set deadline',
   '截止日期': 'Deadline',
-  '查看更早的 {n} 条': 'Show {n} earlier blocks',
+  '查看更早的 {n} 条': 'Show {n} earlier {n|block|blocks}',
   'Spool 渲染崩了': 'Spool hit a rendering error',
   '从左侧选一个项目，或按 ⌘N 新建': 'Pick a project on the left, or press ⌘N to create one',
   '{n}天后': 'in {n}d',
   // Thread content size footnote (2026-07-07)
-  '{n} 字': '{n} chars',
-  '{n} 字 · 内容较多': '{n} chars · getting long',
+  '{n} 字': '{n} {n|char|chars}',
+  '{n} 字 · 内容较多': '{n} {n|char|chars} · getting long',
   '内容过多可能导致打包不准确 — 点击打包，可选择范围':
     'This much content can make packs less accurate — click to pack with a range',
   '全部块内容 + 批注 + 已加入 Pack 的附件文本':
@@ -589,7 +615,7 @@ const EN: Record<string, string> = {
   '〈{title}〉里有一块上次没点「完成」，写的字还在':
     "You didn't press Done on a block in “{title}” last time — what you wrote is still there",
   '有 {n} 块上次没点「完成」，写的字还在':
-    "You didn't press Done on {n} blocks last time — what you wrote is still there",
+    "You didn't press Done on {n} {n|block|blocks} last time — what you wrote is still there",
   '去看': 'Show me',
   'AI 批注 · 你改过': 'AI note · you edited it',
   '改这条 AI 批注（不会变成你写的）': "Edit this AI note (it stays the AI's, not yours)",
@@ -597,7 +623,7 @@ const EN: Record<string, string> = {
   '去看这一块': 'Go to this block',
   '先收起 —— 两个月前、一个月前、一周前各提醒一次':
     'Hide for now — every date is raised at two months, one month and one week out',
-  '还有 {n} 个日子在这个项目里': '{n} more dates in this project',
+  '还有 {n} 个日子在这个项目里': '{n} more {n|date|dates} in this project',
   '逾期{n}天': '{n}d overdue',
   '刚刚': 'just now',
   '{n} 分钟前': '{n} min ago',
@@ -708,11 +734,11 @@ const EN: Record<string, string> = {
   '导入': 'Import',
   '已导出,{size}': 'Exported, {size}',
   '带进来 {workspaces} 个工作区、{threads} 个项目、{blocks} 条信息':
-    'Brought in {workspaces} workspaces, {threads} projects, {blocks} blocks',
+    'Brought in {workspaces} {workspaces|workspace|workspaces}, {threads} {threads|project|projects}, {blocks} {blocks|block|blocks}',
   '这个文件里的东西,这台机器上已经都有了': 'Everything in that file was already on this machine',
-  '有 {n} 条这台机器上已经有了,跳过了': '{n} rows were already here and were skipped',
+  '有 {n} 条这台机器上已经有了,跳过了': '{n} {n|row was|rows were} already here and {n|was|were} skipped',
   '有 {n} 个文件在这台机器上找不到 —— 文字都还在,只是点开会失败':
-    "{n} files are not on this machine — their text came across; only opening the file will fail",
+    "{n} {n|file is|files are} not on this machine — {n|its|their} text came across; only opening the file will fail",
   '重新载入,看带进来的东西': 'Reload to see what arrived',
   '这就是这台机器上正在用的那个库': 'That is the library this machine is already using',
   '这个文件不是 Spool 的库': 'That file is not a Spool library',
@@ -768,7 +794,7 @@ const EN: Record<string, string> = {
   // name a feature. The feature is named only in Settings, where a name is what you look for.
   '歇一会儿': 'Take a break',
   '你已经连着专注 {n} 分钟了。站起来活动一下——走两步，喝口水，看看窗外。':
-    "You've been focused for {n} minutes straight. Get up and move — walk a bit, get some water, look out a window.",
+    "You've been focused for {n} {n|minute|minutes} straight. Get up and move — walk a bit, get some water, look out a window.",
   // The one sentence out of the study that answers the objection people actually have.
   '「活动 5 分钟，心情会变好、疲劳会减轻，而工作效率并不会因此下降。」':
     '\u201cFive minutes of movement lifts your mood and eases fatigue \u2014 and your output does not drop for it.\u201d',
@@ -779,7 +805,7 @@ const EN: Record<string, string> = {
   // 休息提醒的浮窗 (Ocean 2026-08-22) — it floats over whatever app the user is in, so it
   // says the number rather than 「时间到了」: a card that interrupts has to be worth the
   // interruption in its first line.
-  '已经专注 {n} 分钟了，起来动一动': "That's {n} minutes straight — get up and move",
+  '已经专注 {n} 分钟了，起来动一动': "That's {n} {n|minute|minutes} straight — get up and move",
   '点一下回到 Spool 开始休息': 'Click to go back to Spool and start the break',
   '这次不休息': 'Skip this one',
   '{n} 分钟后歇一会儿': 'Break in {n} min',
@@ -836,7 +862,7 @@ const EN: Record<string, string> = {
   'AI 写回的': 'Written back by AI',
   '捕捉的 {a} · 自己写的 {b} · AI 写回的 {c}': 'Captured {a} · Written by you {b} · Written back by AI {c}',
   '这一周还没有加过块。': 'No blocks added this week.',
-  '另外 {n} 个项目': '{n} more projects',
+  '另外 {n} 个项目': '{n} more {n|project|projects}',
   '到期：': 'Due: ',
   '专注时间 = 你在电脑前（15 分钟内动过键盘或鼠标）的时间，和休息提醒是同一个计时；不是在某个项目上花的时间。':
     'Focus time = time at the computer (keyboard or mouse used within 15 minutes) — the same clock as the break reminder. It is not time spent on any one project.',
@@ -856,11 +882,11 @@ const EN: Record<string, string> = {
   '合上': 'Close',
   '手里有 {n} 块布 · 一共织好 {m} 块': 'Patches in hand: {n} · knitted in all: {m}',
   '{d} 织成': 'made {d}',
-  '要 {n} 块布': 'Takes {n} patches',
-  '还差 {n} 块布': '{n} patches short',
+  '要 {n} 块布': 'Takes {n} {n|patch|patches}',
+  '还差 {n} 块布': '{n} {n|patch|patches} short',
   '织成{item}': 'Knit the {item}',
   '一针 = 你自己的一块（捕捉的或自己写的，AI 写的不算）；{n} 针织成一块布。攒够了布，就能织下一件。':
-    'One stitch = one block of your own (captured or written by you; blocks written by an AI do not count). {n} stitches make a patch. Put by enough patches and you can knit the next thing.',
+    'One stitch = one block of your own (captured or written by you; blocks written by an AI do not count). {n} {n|stitch makes|stitches make} a patch. Put by enough patches and you can knit the next thing.',
   // 柜子里的东西，按难度四层（入门 / 简单 / 中级 / 熟练 —— 毛线行业通用的四档）。
   '入门': 'Beginner',
   '简单': 'Easy',
@@ -893,7 +919,7 @@ const EN: Record<string, string> = {
   '织成了{item}，放进柜子里了。': 'Knitted the {item} and put it in the cupboard.',
   '没存上，{item}没有织成。': 'Could not save — the {item} was not knitted.',
   '这一周织的布': 'Knitted this week',
-  '这周织了 {n} 针，织好 {m} 块布': 'Knitted this week: {n} stitches, {m} patches',
+  '这周织了 {n} 针，织好 {m} 块布': 'Knitted this week: {n} {n|stitch|stitches}, {m} {m|patch|patches}',
   '织成了': 'made',
   // DESIGN_FOLLOW_UP §3.2/§3.3 — the follow-up brief and the one action that goes outside.
   '跟进': 'Follow up',
@@ -910,10 +936,10 @@ const EN: Record<string, string> = {
   '这台电脑上没有本机 AI 引擎，所以 Spool 自己不会去查这几行。接了 MCP 的 AI（Claude、ChatGPT 里的 Codex 等）读得到它们，也能替你加一条、结束一条。':
     'No AI engine on this machine, so Spool will not go and check these lines itself. The AI you connected over MCP (Claude, Codex inside ChatGPT, …) can read them, add one, and close one for you.',
   '存不下来：{msg}': 'Could not save: {msg}',
-  '跟进：提了 {n} 条待你过目': 'Follow up: {n} item(s) waiting for you',
+  '跟进：提了 {n} 条待你过目': 'Follow up: {n} {n|item|items} waiting for you',
   '跟进：这次没有新东西': 'Follow up: nothing new this time',
   '跟进：提了 {n} 条待你过目，另有 {m} 条要你定（在右边）':
-    'Follow up: {n} item(s) waiting for you, and {m} for you to decide (on the right)',
+    'Follow up: {n} {n|item|items} waiting for you, and {m} for you to decide (on the right)',
   '跟进：有 {n} 条要你定，在右边': 'Follow up: {n} for you to decide, on the right',
 
   // M2 §1.2 — the running pill, and what the queue behind it says.
@@ -926,21 +952,21 @@ const EN: Record<string, string> = {
     'Click to stop. A stopped review cannot resume — the next click starts it over.',
   '这条脉络已经排上了，等它跑完': 'This project is already in the queue — let it finish',
   // §1.3 — how a finished run reports itself.
-  '{action}：AI 归档了 {n} 块': '{action}: the AI filed {n} block(s)',
+  '{action}：AI 归档了 {n} 块': '{action}: the AI filed {n} {n|block|blocks}',
   '{action}：跑完了，没有新增块': '{action}: finished, nothing new was written',
   '已停止 {action}': 'Stopped {action}',
   '已停止 {action}；已经写进去的 {n} 块留着（Spool 只追加，不回滚）':
-    'Stopped {action}. The {n} block(s) already written stay — Spool only appends, it never rolls back.',
+    'Stopped {action}. The {n} {n|block|blocks} already written {n|stays|stay} — Spool only appends, it never rolls back.',
   '{action} 没跑成': '{action} did not run',
   '{action} 没跑完；已经写进去的 {n} 块留着':
-    '{action} did not finish. The {n} block(s) already written stay.',
+    '{action} did not finish. The {n} {n|block|blocks} already written {n|stays|stay}.',
   // '详情' already has a key above (the permission banner's).
   '收起详情': 'Hide details',
 
   // DESIGN_AI_ENGINE M3 — the "AI 活动" fold.
   'AI 活动': 'AI activity',
-  '{source} · {when} · {n} 块': '{source} · {when} · {n} block(s)',
-  '归档了 {n} 块': 'filed {n} block(s)',
+  '{source} · {when} · {n} 块': '{source} · {when} · {n} {n|block|blocks}',
+  '归档了 {n} 块': 'filed {n} {n|block|blocks}',
   '没有新增块': 'nothing new',
   '被你停下了': 'you stopped it',
   '没跑成': 'did not run',
@@ -948,12 +974,12 @@ const EN: Record<string, string> = {
 
   // DESIGN_MCP_WRITE_ROLE §4.3 — the review screen for AI proposals.
   'AI 提了 {n} 条待你过目（还没进你的库）':
-    '{n} item(s) an AI proposed, waiting for you — not in your library yet',
+    '{n} {n|item|items} an AI proposed, waiting for you — not in your library yet',
   'AI 提的，等你过目': 'Proposed by an AI, waiting for you',
   '这些还没进你的库。你点头才存，点「都不要」就当没发生过。':
     'None of this is in your library yet. It is stored only if you say yes; "No thanks" makes it as if it never happened.',
   '没有待你过目的。': 'Nothing waiting for you.',
-  '{client} 提了 {n} 条': '{client} proposed {n} item(s)',
+  '{client} 提了 {n} 条': '{client} proposed {n} {n|item|items}',
   '{n} 天后作废': 'void in {n}d',
   '原文 — 会存进〈{title}〉，来源标着「{source}」':
     'Original passage — stored in ‹{title}›, labelled “{source}”',
@@ -972,24 +998,24 @@ const EN: Record<string, string> = {
   '两边对着看：左边划出的那一段，是不是正好就是右边更正的那一点？划宽了，没被更正的话也会跟着标上。':
     'Read the two side by side: is the span on the left exactly the point being corrected on the right? Mark too wide, and sentences nobody corrected get flagged too.',
   '更正已有的一块': 'corrects an existing block',
-  '都存进去（{n} 块）': 'Store all {n} blocks',
-  '存这 {n} 块': 'Store these {n} blocks',
+  '都存进去（{n} 块）': '{n|Store this block|Store all {n} blocks}',
+  '存这 {n} 块': '{n|Store this block|Store these {n} blocks}',
   '都不要': 'No thanks',
   '直接扔掉，不留痕迹': 'Throws it away and leaves no trace',
   '{n} 批已过期（超过 7 天没处理），已经作废。':
-    '{n} batch(es) expired after 7 days without review, and are void.',
+    '{n} {n|batch|batches} expired after 7 days without review, and {n|is|are} void.',
   '清掉': 'Clear',
-  '存进去了 {n} 块': 'Stored {n} block(s)',
+  '存进去了 {n} 块': 'Stored {n} {n|block|blocks}',
   '存不进去：{msg}': 'Could not store: {msg}',
   // DESIGN_PROJECT_FILES §3.4 — an AI asking to read files the user put in a project.
-  '{client} 想读〈{title}〉里的 {n} 个文件': '{client} wants to read {n} file(s) in ‹{title}›',
+  '{client} 想读〈{title}〉里的 {n} 个文件': '{client} wants to read {n} {n|file|files} in ‹{title}›',
   '它说要干什么': 'What it says it needs them for',
   '答应了就是长期的：以后它随时能读这几个文件。要收回，去这个项目右边的「项目文件」里点掉那一行。':
     'Saying yes is standing permission: it can read these files from now on. To take it back, untick the file under “Project files” on the right of this project.',
   '可以读': 'Let it read them',
   '不给': 'No',
   '{n} 个文件现在 AI 可以读了。随时可以在项目文件那一栏点掉。':
-    '{n} file(s) are now readable by an AI. You can untick them under Project files at any time.',
+    '{n} {n|file is|files are} now readable by an AI. You can untick {n|it|them} under Project files at any time.',
   '没能打开权限：{msg}': 'Could not grant it: {msg}',
   // P6-3 — an AI proposing a file from the user's computer: attach it, or a newer version of one.
   '{client} 提议把一个文件挂进〈{title}〉': '{client} proposes attaching a file to ‹{title}›',
@@ -1109,7 +1135,7 @@ const EN: Record<string, string> = {
     'Add one more. For example: whether the tool I depend on has shipped a new version, and whether anything in it breaks.',
   '加上': 'Add',
   '回车＝加一条；⇧回车在同一条里换行。': 'Enter adds it; ⇧Enter breaks a line inside one.',
-  'AI 加了 {n} 条，你可以改也可以删': 'The AI added {n} line(s) — edit or delete any of them',
+  'AI 加了 {n} 条，你可以改也可以删': 'The AI added {n} {n|line|lines} — edit or delete {n|it|any of them}',
   // The kind picker. Both options are always on screen: a lone chip naming the current one
   // reads as a label rather than a control (Ocean 2026-08-17).
   '这一条跟进到什么时候': 'How long to follow this one up',
@@ -1184,28 +1210,28 @@ const EN: Record<string, string> = {
   '捕捉失败：{msg}': 'Capture failed: {msg}',
   '双击 ⌥ 捕捉已停止 — 请重启 Spool 重新启用。':
     'Double-tap ⌥ capture stopped — restart Spool to re-enable.',
-  '已复制 {n} 个块到「{target}」': 'Copied {n} blocks to “{target}”',
+  '已复制 {n} 个块到「{target}」': 'Copied {n} {n|block|blocks} to “{target}”',
   // P2 · B4 —— 复制到…之前查重、复制完可以变成移动
   '查重没做成，这次没有复制': "Couldn't check for duplicates — nothing was copied",
   '这 {n} 块和「{target}」里已有的很像，一条一条选：':
-    'These {n} blocks look like ones already in “{target}”. Choose for each:',
-  '另有 {k} 块和那里的一模一样，会直接跳过。': '{k} more are identical to blocks already there and will be skipped.',
+    '{n|This block looks like one|These {n} blocks look like ones} already in “{target}”. Choose for each:',
+  '另有 {k} 块和那里的一模一样，会直接跳过。': '{k} more {k|is identical to a block|are identical to blocks} already there and will be skipped.',
   '像那里的 #{seq}：': 'Looks like #{seq} there: ',
   '跳过': 'Skip',
   '照样复制': 'Copy anyway',
-  '一块都没复制：{k} 块都跳过了': 'Nothing copied — all {k} were skipped',
-  '已复制 {n} 个块到「{target}」，{k} 块重复，已跳过': 'Copied {n} blocks to “{target}”, {k} duplicates skipped',
+  '一块都没复制：{k} 块都跳过了': 'Nothing copied — {k|it was skipped|all {k} were skipped}',
+  '已复制 {n} 个块到「{target}」，{k} 块重复，已跳过': 'Copied {n} {n|block|blocks} to “{target}”, {k} {k|duplicate|duplicates} skipped',
   '原项目里的这 {m} 块要删掉吗？（删掉就等于移动）':
-    'Delete these {m} blocks from this project? (Deleting them makes it a move)',
+    '{m|Delete this block|Delete these {m} blocks} from this project? (Deleting {m|it|them} makes it a move)',
   '其中 {r} 块被别的块引用着，删掉后那些引用会指向一块不存在的块。':
     '{r} of them are cited by other blocks — those citations would point at a block that no longer exists.',
   '删掉原块': 'Delete originals',
   '只删没被引用的': 'Only delete the uncited ones',
   '两边都留': 'Keep both',
-  '已移动 {n} 个块到「{target}」': 'Moved {n} blocks to “{target}”',
+  '已移动 {n} 个块到「{target}」': 'Moved {n} {n|block|blocks} to “{target}”',
   '已移动 {n} 个块到「{target}」，原项目里 {d} 块重复的已删掉':
-    'Moved {n} blocks to “{target}”; {d} duplicates deleted from this project',
-  '原项目里 {d} 块重复的已删掉': '{d} duplicates deleted from this project',
+    'Moved {n} {n|block|blocks} to “{target}”; {d} {d|duplicate|duplicates} deleted from this project',
+  '原项目里 {d} 块重复的已删掉': '{d} {d|duplicate|duplicates} deleted from this project',
   '没移动成：{msg}': 'Move failed: {msg}',
   // ⚠️ 撤销浮窗上的动作名，经 UNDO_OP_LABEL 现翻 —— i18n-check 看不见常量表，手加手核。
   '移动': 'Move',
@@ -1308,7 +1334,7 @@ const EN: Record<string, string> = {
 
   // 项目管理 — the pinned sidebar entry and its project matrix (§9.4).
   '项目管理': 'Projects',
-  '{n} 块': '{n} blocks',
+  '{n} 块': '{n} {n|block|blocks}',
   '今天到期': 'due today',
   '还有 {n} 天': '{n}d left',
   '{when} 完成': 'done {when}',
@@ -1319,8 +1345,8 @@ const EN: Record<string, string> = {
   '按截止日期': 'By deadline',
   '按新建时间': 'By date created',
   '迟 {n} 天': '{n}d late',
-  '{n} 块 · {chars} 字': '{n} blocks · {chars} chars',
-  '{n} 块重复': '{n} duplicate(s)',
+  '{n} 块 · {chars} 字': '{n} {n|block|blocks} · {chars} {chars|char|chars}',
+  '{n} 块重复': '{n} {n|duplicate|duplicates}',
   '这个项目里有一模一样的块。打开项目自己处理——Spool 不会替你合并或删除。':
     'This project has byte-identical blocks. Open it and decide yourself — Spool never merges or deletes for you.',
   '跳转': 'Open',
@@ -1341,7 +1367,7 @@ const EN: Record<string, string> = {
   '这次什么也没回来': 'nothing came back this time',
 
   // Run cards (§3.1) and the inbox (§3.3 / §9.2 R2).
-  '提了 {n} 条待你过目': 'proposed {n} item(s) for you to review',
+  '提了 {n} 条待你过目': 'proposed {n} {n|item|items} for you to review',
   '有回话，等你过目': 'replied, waiting for you',
   '这次没有新东西': 'nothing new this time',
   '花费未知': 'cost unknown',
@@ -1484,8 +1510,8 @@ const EN: Record<string, string> = {
   '有 {n} 条要你定': '{n} for you to decide',
   // P16-8: a correction / a batch written in one go, drawn as one line in the timeline.
   '#{n} 更正了 #{m} 里的一句': '#{n} corrects a sentence in #{m}',
-  '{n} 处更正': '{n} corrections',
-  '跟进带回 {n} 块': 'Follow-up brought back {n} blocks',
+  '{n} 处更正': '{n} {n|correction|corrections}',
+  '跟进带回 {n} 块': 'Follow-up brought back {n} {n|block|blocks}',
   '建议关掉这条跟进：{line}': 'Suggested closing: {line}',
   '这条要你自己答：{line}': 'Only you can answer this one: {line}',
   '#{n} 复查过了，还成立：{head}': '#{n} rechecked, still holds: {head}',
@@ -1549,6 +1575,8 @@ const EN: Record<string, string> = {
   '没换': 'Not replaced',
   '换成这句': 'Use this',
   '另有 {n} 条原话对不上，没摆出来': '{n} more whose quotes did not match, not shown',
+  // A quote tacked onto the end of a line; {q} already carries its quote marks (useQuote).
+  '（{q}）': ' ({q})',
   '都处理完了，记成对过了。': 'All dealt with — recorded as in sync.',
   '「{folder}」最近的一笔提交，说明写着：\n\n{quote}': 'A recent commit in “{folder}” says:\n\n{quote}',
   '「{folder}」上次对过之后改动的文件：\n\n{quote}': 'Files changed in “{folder}” since the last check:\n\n{quote}',
@@ -1587,8 +1615,8 @@ const EN: Record<string, string> = {
   '再压一次': 'Compress again',
   '正在启动联网的那个小程序…': 'Starting the program that does the networking…',
   '请求已经发出去了，正在等它开口…': 'The request is out — waiting for it to start…',
-  '模型在思考…已经想了 {n} 字，还没开始写': 'Thinking… {n} characters of reasoning so far, nothing written yet',
-  '正在写压缩稿…已经写了 {n} 字': 'Writing the briefing… {n} characters so far',
+  '模型在思考…已经想了 {n} 字，还没开始写': 'Thinking… {n} {n|character|characters} of reasoning so far, nothing written yet',
+  '正在写压缩稿…已经写了 {n} 字': 'Writing the briefing… {n} {n|character|characters} so far',
   '压缩稿写到一半连接断了，没拿到完整的一份。⚠️ 半份稿子看起来和「删得很狠」一模一样，所以没有交给你。把设置里的「单次最长等待」调大，或者换个小一点的打包范围。':
     'The briefing was cut off partway, so no complete version came back. ⚠️ A half-written briefing looks exactly like an aggressively compressed one, so it is not shown. Raise “Longest wait per run” in Settings, or pack a smaller range.',
   '已经等了 {n} 秒（最长等 {max} 秒）': 'Waited {n}s so far (it gives up after {max}s)',
@@ -1605,7 +1633,7 @@ const EN: Record<string, string> = {
   // D4-a：结论行。⚠️ D5-b：整块屏幕上只有这一句里允许出现 ⚠️。
   // D4-b：改写是第三类 —— 同一条被改写,不是「丢了一条」加「编了一条」。
   '有 {n} 条批注被改写了 —— 下面按块列出了改之前和改之后。':
-    '{n} annotation(s) were rewritten — before and after are listed block by block below.',
+    '{n} {n|annotation was|annotations were} rewritten — before and after are listed block by block below.',
   '它把一条批注改写了：': 'It rewrote an annotation:',
   '改之前：{s}': 'Before: {s}',
   '改之后：{s}': 'After: {s}',
@@ -1615,12 +1643,12 @@ const EN: Record<string, string> = {
   '反而长了 {d}%': '{d}% longer',
   '没变短': 'no shorter',
   '少了整节：{s}': 'A whole section is gone: {s}',
-  '少了 {n} 条你自己写的内容': '{n} things you wrote yourself are gone',
-  '少了 {n} 处你划的重点': '{n} of your highlights are gone',
+  '少了 {n} 条你自己写的内容': '{n} {n|thing you wrote yourself is|things you wrote yourself are} gone',
+  '少了 {n} 处你划的重点': '{n|1 of your highlights is|{n} of your highlights are} gone',
   '你的批注、你自己写的内容、你划的重点，一条都没少，也没有多。':
     'Your annotations, the things you wrote and your highlights all survived — and nothing was invented.',
   '它凭空写了 {n} 条你没写过的批注：{s}':
-    'It invented {n} annotation(s) you never wrote: {s}',
+    'It invented {n} {n|annotation|annotations} you never wrote: {s}',
   // ⛔ 「停下」不是一个错误 —— ⚠️ 而且不许写成「没花钱」：已经吐出来的那一段照样算。
   '已经停下了。已经跑出去的那一段，模型厂商那边可能照样算钱。':
     'Stopped. Whatever the model had already produced may still be billed by the vendor.',
@@ -1710,7 +1738,7 @@ const EN: Record<string, string> = {
     'Replaced: packs now carry #{n} only; #{m} is left out.',
   // ⭐⭐ 2026-08-23（Ocean 第 8 条「不允许」Spool 知道而不告诉他）：没过闸的那几条也要摆出来。
   'AI 还说了 {n} 条，但它引的原话在你的块里对不上，所以 Spool 没敢照着做。这是 AI 记错了，不是你的项目有问题。下面是它的原话，你自己看一眼：':
-    'The AI said {n} more thing(s), but the wording it quoted does not match your blocks, so Spool did not act on them. That is the AI misremembering \u2014 nothing is wrong with your project. Here is what it said, so you can judge for yourself:',
+    'The AI said {n} more {n|thing|things}, but the wording it quoted does not match your blocks, so Spool did not act on {n|it|them}. That is the AI misremembering \u2014 nothing is wrong with your project. Here is what it said, so you can judge for yourself:',
   '它给的理由：{s}': 'Its reason: {s}',
   '它没说清是哪两块。': 'It did not say which two blocks it meant.',
   '它说的是第 {m} 块和第 {n} 块，而这个项目里没有这个编号。':
@@ -1721,7 +1749,7 @@ const EN: Record<string, string> = {
   '新的 #{n} 里：': 'In the newer #{n}:',
   // T4/T6（2026-08-23，第五轮实测）
   '另有 {n} 条你已经处理过了 —— 库里记着，这里不再问一遍。':
-    '{n} more are already settled — your library records them, so they are not asked again here.',
+    '{n} more {n|is|are} already settled — your library records {n|it|them}, so {n|it is|they are} not asked again here.',
   '第 {n} 块已经指着另一块了，一块只记得住一条这样的关系。要改的话先在那一块上撤掉原来那条。':
     'Block #{n} already points at a different block, and a block only holds one relation like this. To change it, clear the existing one on that block first.',
   '这一条没动。': 'Left alone.',
@@ -1748,7 +1776,7 @@ const EN: Record<string, string> = {
   '这条建议说的两块里有一块已经不在了，清掉了。': 'One of the two blocks this suggestion was about is gone, so it was cleared.',
   '这张图读不出来': 'This image could not be read',
   '图片': 'image',
-  '有 {n} 张图片没能放回原来的位置 —— 图还在这一块里，排到了正文后面。': '{n} image(s) could not be put back in place — they are still in the block, after the text.',
+  '有 {n} 张图片没能放回原来的位置 —— 图还在这一块里，排到了正文后面。': '{n} {n|image|images} could not be put back in place — {n|it is|they are} still in the block, after the text.',
   '点一下看大图，双击编辑': 'Click to view, double-click to edit',
   '上一张': 'Previous',
   '下一张': 'Next',
@@ -1774,17 +1802,17 @@ const EN: Record<string, string> = {
   '这一份丢了数字或日期，不能进库 —— 先用上面那个「加回去」。':
     'This version has dropped a number or a date, so it may not enter your library \u2014 use \u201cAdd back\u201d above first.',
   '{n} 块换成了压缩稿。压缩前的原文留在每一块上，块的工具条上有个入口能打开看，也能换回去。':
-    '{n} block(s) replaced with the compressed version. Each keeps its pre-compression original: the block\u2019s toolbar can open it, and switch back to it.',
+    '{n} {n|block|blocks} replaced with the compressed version. Each keeps its pre-compression original: the block\u2019s toolbar can open it, and switch back to it.',
   '{n} 块换成了压缩稿。⚠️ 你关掉了「备份压缩前的原文」，原来的字没有了。':
-    '{n} block(s) replaced with the compressed version. \u26a0\ufe0f You turned off \u201ckeep the pre-compression original\u201d, so the original words are gone.',
+    '{n} {n|block|blocks} replaced with the compressed version. \u26a0\ufe0f You turned off \u201ckeep the pre-compression original\u201d, so the original words are gone.',
   // S7①（2026-08-24）：压缩稿把 Spool 自己印的骨架行抄进了块正文 —— 真库里发生过两次。
   '压缩稿里有 {n} 行是 Spool 自己印的说明，不是你的字 —— 没有写进库。':
-    '{n} line(s) in the compressed version were Spool\u2019s own printed notes rather than your words \u2014 they were not written to your library.',
+    '{n} {n|line|lines} in the compressed version {n|was|were} Spool\u2019s own printed {n|note|notes} rather than your words \u2014 {n|it was|they were} not written to your library.',
   // ⭐ S3（2026-08-24）：⛔ 这两句是「不许无声」那条的全部落点。
   '#{c} 更正的是 #{b} 里的一句话 —— #{b} 压完之后那句话找不回来了。更正还留着，只是不再划出是哪一句。':
     '#{c} corrects one sentence inside #{b} \u2014 after compressing #{b}, that sentence can no longer be found. The correction stays; it just no longer marks which sentence.',
   '有 {n} 条更正指的那句话，压完之后找不回来了。更正都还留着，只是不再划出是哪一句。':
-    '{n} correction(s) point at a sentence that can no longer be found after compression. They all stay; they just no longer mark which sentence.',
+    '{n} {n|correction points|corrections point} at a sentence that can no longer be found after compression. {n|It stays; it just no longer marks|They all stay; they just no longer mark} which sentence.',
   '已还原成压缩前的原文': 'Restored to the pre-compression original',
   '这一块压缩时没有留原文，还原不了。': 'No original was kept when this block was compressed, so it cannot be restored.',
   '备份压缩前的原文': 'Keep the pre-compression original',
@@ -1799,7 +1827,7 @@ const EN: Record<string, string> = {
   '把上面那段正文换成这一份原文。这一块从此当作没压过，以后还会被排进压缩。':
     'Replaces the text above with this original. The block then counts as never compressed, so it goes back into future compression runs.',
   '这个项目里 {n} 块已经压过了，这一次跳过它们 —— 压过一次就不再花第二笔钱。':
-    '{n} block(s) here have already been compressed and are skipped this time — no second charge for the same block.',
+    '{n} {n|block|blocks} here {n|has|have} already been compressed and {n|is|are} skipped this time — no second charge for the same block.',
   '这个项目里每一块都压过了，没有新的可压。': 'Every block here has already been compressed; there is nothing new to compress.',
   '丢了数字或日期的压缩稿不许进库，以后开了写入这条也不放宽。':
     'A compressed version that has dropped a number or a date may never enter your library — that holds even once writing is unlocked.',
@@ -1870,12 +1898,12 @@ const EN: Record<string, string> = {
   '这个项目里没找到重复的内容。压缩干的主要活是合并重复 —— 这一次大概压不短多少，钱可以省下来。':
     'No repeated content found in this project. Merging repeats is what compression mainly does — this run would not make it much shorter, so you can keep the money.',
   '这个项目里有 {n} 组内容重复，{b} 块可以并掉 —— 压缩合并的就是这些。':
-    '{n} group(s) of repeated content here, {b} block(s) that could be merged away — that is what compression merges.',
+    '{n} {n|group|groups} of repeated content here, {b} {b|block|blocks} that could be merged away — that is what compression merges.',
   '你从原文加回去了 {n} 处数字/日期 —— 那几行是你原文里的原话。':
-    'You added back {n} number(s)/date(s) from the original — those lines are your own words, verbatim.',
-  '从原文加回去了 {n} 处数字/日期': 'Added back {n} number(s)/date(s) from the original',
+    'You added back {n} {n|number/date|numbers/dates} from the original — those lines are your own words, verbatim.',
+  '从原文加回去了 {n} 处数字/日期': 'Added back {n} {n|number/date|numbers/dates} from the original',
   '从原文加回去了 {n} 处数字/日期，其中 {m} 行接在了它原来所在的那一节末尾（不在块里）':
-    'Added back {n} number(s)/date(s) from the original; {m} line(s) went to the end of the section they came from, not inside a block',
+    'Added back {n} {n|number/date|numbers/dates} from the original; {m} {m|line|lines} went to the end of the section they came from, not inside a block',
   '这几处已经在压缩稿里了，不用再加。': 'These are already in the compressed version — nothing to add back.',
   '这 {n} 个补不回去：在压缩稿里找不到该把它们插在哪儿。重压一次吧。':
     'These {n} cannot be added back: there is nowhere in the compressed version to put them. Run the compression again.',
@@ -1901,24 +1929,24 @@ const EN: Record<string, string> = {
 
   // §9.6.5 ④：按块配对，配不上要明说。
   '有 {n} 块在压缩稿里找不到 —— 下面按块标了出来。':
-    '{n} block(s) are nowhere in the compressed version — marked block by block below.',
-  '有 {n} 块是它自己编出来的编号。': '{n} block(s) carry numbers the original never had.',
+    '{n} {n|block is|blocks are} nowhere in the compressed version — marked block by block below.',
+  '有 {n} 块是它自己编出来的编号。': '{n} {n|block carries|blocks carry} numbers the original never had.',
   '有 {n} 块在压缩稿里出现了不止一次（#{s}）—— 它把同样的内容写了两遍。':
-    '{n} block(s) appear more than once (#{s}) — it wrote the same content twice.',
+    '{n} {n|block appears|blocks appear} more than once (#{s}) — it wrote the same content twice.',
   '你的批注、你划的重点、引用关系不会发给 AI —— 压完由 Spool 原样放回。':
     'Your annotations, highlights and citation links are never sent to the AI — Spool puts them back verbatim afterwards.',
   // R5（2026-08-22）：摘下来的批注/高亮没能原样放回去。⛔ 必须报，不能静默。
   '有 {n} 条批注/关系行没能放回去 —— 它们原来那一块在压缩稿里找不到了。':
-    '{n} annotation/relation line(s) could not be put back — the block they belong to is nowhere in the compressed version.',
+    '{n} annotation/relation {n|line|lines} could not be put back — the block {n|it belongs|they belong} to is nowhere in the compressed version.',
   '有 {n} 处你划的重点没能放回去 —— 它所在那句话被改写了。':
-    '{n} highlight(s) could not be put back — the sentence holding them was rewritten.',
+    '{n} {n|highlight|highlights} could not be put back — the sentence holding {n|it|them} was rewritten.',
   '有本来要求一字不改保留的东西不见了 —— 下面按块标了出来：':
     'Something that had to survive word for word did not — marked block by block below:',
-  '少了 {n} 条批注': '{n} annotation(s) are gone',
+  '少了 {n} 条批注': '{n} {n|annotation is|annotations are} gone',
   '少了 {n} 条引用/替代关系 —— 这一块引的是哪一条、替代了哪一条，没了':
-    '{n} citation/supersession link(s) are gone — which block this one cites or replaces is no longer recorded',
+    '{n} citation/supersession {n|link is|links are} gone — which block this one cites or replaces is no longer recorded',
   '有 {n} 处成对引号被换成了直引号 —— 内容没变，「一字不改」这条破了。':
-    'Curly quotes swapped for straight ones in {n} place(s) — content unchanged, but \u201cword for word\u201d is broken.',
+    'Curly quotes swapped for straight ones in {n} {n|place|places} — content unchanged, but \u201cword for word\u201d is broken.',
   '这一份没法按块对照 —— 压缩稿里切不出 pack 的条目格式（模型没照 #编号 那一行写）。退回整份文本对照。':
     'This one cannot be compared block by block — the compressed version has no pack entry lines (the model did not keep the #number format). Falling back to whole-text comparison.',
   '原文': 'Original',
@@ -1935,7 +1963,7 @@ const EN: Record<string, string> = {
   '少了你划的重点：{s}': 'A highlight of yours is gone: {s}',
   '少了一条引用/替代关系：{s}': 'A citation/supersession link is gone: {s}',
   '有 {n} 个数字/日期没了 —— 下面按块指出了是哪几句话。':
-    '{n} number(s)/date(s) are gone — the sentences they were in are marked block by block below.',
+    '{n} {n|number/date is|numbers/dates are} gone — the {n|sentence it was in is|sentences they were in are} marked block by block below.',
   '全部加回去': 'Add all back',
   '这几句话里的数字/日期，压缩稿里没有了：':
     'The numbers/dates in these sentences are gone from the compressed version:',
@@ -1962,7 +1990,7 @@ const EN: Record<string, string> = {
   '这个项目已经不在了': 'that project is gone',
   '这个项目的上下文组不出来：{msg}': 'Could not assemble this project\u2019s context: {msg}',
   // P9V-2（10-24 第 192、196 – 202 条）：过期检测查整个工作区。⚠️ 三个按钮的名字和只查一个项目那一页一样。
-  '整个〈{ws}〉（{n} 个项目）': 'All of “{ws}” ({n} projects)',
+  '整个〈{ws}〉（{n} 个项目）': 'All of “{ws}” ({n} {n|project|projects})',
   '只查这个项目': 'Just this project',
   '〈{name}〉#{n}': '“{name}” #{n}',
   '〈{name}〉': '“{name}”',
@@ -2002,8 +2030,8 @@ const EN: Record<string, string> = {
   '查完了，这个工作区里没有旧块被整条取代，也没有看起来已经结束的项目。':
     'Done — no block in this workspace has been replaced outright, and no project looks finished.',
   '它会把这个工作区里 {n} 个没完成的项目一起发给 AI 看一遍，问两件事：有没有旧块被别的块整条取代了（可以跨项目），有没有项目看起来已经结束了。这一步要花钱。':
-    'It sends the {n} unfinished projects in this workspace to the AI together and asks two things: has any old block been replaced outright by another block (across projects too), and does any project look finished. This step costs money.',
-  '私密项目 {n} 个不发。': '{n} private project(s) are not sent.',
+    'It sends the {n} unfinished {n|project|projects} in this workspace to the AI together and asks two things: has any old block been replaced outright by another block (across projects too), and does any project look finished. This step costs money.',
+  '私密项目 {n} 个不发。': '{n} private {n|project is|projects are} not sent.',
   '这一页只连线、标完成，不改任何一块的正文。': 'This page only links blocks and marks projects done; it never changes any block’s text.',
   '它写的编号「{a}」「{b}」不是 Spool 发过去的那种写法，认不出是哪两块。':
     'It wrote “{a}” and “{b}”, which are not numbers in the form Spool sent, so there is no telling which blocks it meant.',
@@ -2034,7 +2062,7 @@ const EN: Record<string, string> = {
   '上次同步 {day} · 还没选现状文件':
     'Last synced {day} · no state files picked yet',
   '上次同步 {day} · 之后改了 {n} 份现状文件':
-    'Last synced {day} · {n} state file(s) changed since',
+    'Last synced {day} · {n} state {n|file|files} changed since',
   '上次同步 {day} · 现状文件没变':
     'Last synced {day} · state files unchanged',
   '更多':
@@ -2062,9 +2090,9 @@ const EN: Record<string, string> = {
   '没有别的改动':
     'None',
   '另外 {n} 个文件有改动':
-    '{n} other file(s) changed',
+    '{n} other {n|file|files} changed',
   '{n} 次提交':
-    '{n} commit(s)',
+    '{n} {n|commit|commits}',
   '新增':
     'new',
   '删了':
@@ -2212,7 +2240,7 @@ const EN: Record<string, string> = {
   '那个位置上已经没有这个文件夹了':
     'That folder is no longer there',
   '现状文件最多选 {n} 份':
-    'Pick {n} state files at most',
+    'Pick {n} state {n|file|files} at most',
   'Spool 现在找不到这个文件夹':
     'Spool cannot find this folder right now',
   '没改成：{msg}':
@@ -2314,7 +2342,7 @@ const EN: Record<string, string> = {
   '这一步没做成': 'That step did not go through',
   '{key} 可以撤销。': '{key} undoes it.',
   '周回顾更新了': 'Weekly review updated',
-  '{p} 个项目 · {a} 条建议动作 · 点一下打开': '{p} projects · {a} suggested actions · click to open',
+  '{p} 个项目 · {a} 条建议动作 · 点一下打开': '{p} {p|project|projects} · {a} suggested {a|action|actions} · click to open',
   '已改好。': 'Done.',
   '已加进跟进。': 'Added to follow-ups.',
   '这个项目已经标完成了，周回顾不碰它。': 'This project is marked done; the weekly review leaves it alone.',

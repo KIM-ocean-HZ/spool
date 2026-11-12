@@ -94,6 +94,9 @@ export interface CompressOutcome {
   reasoningTokens: number | null;
   ms: number;
   model: string | null;
+  /** 走的是本机 CLI（用户自己的订阅，不按次计费）。⚠️ 只在前端打上，Rust 那边不发这一项：
+   *  这一次跑哪条路是 store 定的。DISCOVERED-20261112-5：CLI 跑完那一格不写花费。 */
+  viaCli?: boolean;
 }
 
 // ---------------------------------------------------------------------------------------
@@ -895,9 +898,12 @@ export const estimateCost = (o: CompressOutcome, at: Date = new Date()): CostBre
  *  ⚠️ 跑完之后的那个钱**不是**估算，是拿接口回报的真实用量算的 —— 见上面 `estimateCost`。 */
 
 /** 界面上的钱。一到三分钱这个量级，两位小数会全变成 0.01/0.02/0.03，
- *  所以保留四位——用户要能自己拿价目表复算。 */
-export const formatYuan = (yuan: number): string =>
-  yuan >= 0.01 ? `¥${yuan.toFixed(4)}` : `¥${yuan.toFixed(5)}`;
+ *  所以保留四位——用户要能自己拿价目表复算。
+ *
+ *  ⚠️ 价目表是厂商按人民币定的，钱就是人民币。英文界面写 `CN¥`（DISCOVERED-20261112-17，
+ *  Ocean 第 341 条）：光一个 `¥` 英文用户分不出是人民币还是日元。 */
+export const formatYuan = (yuan: number, lang: 'zh' | 'en'): string =>
+  `${lang === 'en' ? 'CN¥' : '¥'}${yuan >= 0.01 ? yuan.toFixed(4) : yuan.toFixed(5)}`;
 
 // ---------------------------------------------------------------------------------------
 // 实测记录（WORKPLAN §9 第 5 步）
@@ -952,7 +958,7 @@ export const measurementRecord = (args: {
       o.reasoningTokens === null ? '未报' : `${o.reasoningTokens} token（按输出价计费）`
     }`,
     `耗时      ${(o.ms / 1000).toFixed(1)}s`,
-    `估算      ${cost ? `${formatYuan(cost.yuan)}${cost.cacheUnknown ? '（按全未命中算，上限）' : ''}` : '认不出这个模型的价目'}`,
+    `估算      ${cost ? `${formatYuan(cost.yuan, 'zh')}${cost.cacheUnknown ? '（按全未命中算，上限）' : ''}` : '认不出这个模型的价目'}`,
     `一字不改  ${losses.length ? `⚠️ ${losses.join('、')}` : '通过'}`,
     `它说删了  ${o.cuts ? o.cuts.replace(/\s*\n\s*/g, ' / ') : '（它没说）'}`,
   ].join('\n');

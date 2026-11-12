@@ -1,5 +1,5 @@
 import { Loader2, ScanSearch } from 'lucide-react';
-import { useT } from '@/lib/i18n';
+import { useQuote, useT } from '@/lib/i18n';
 import { repoKeys, type RepoAction } from '@/lib/stale/repoCheck';
 import RoadPicker from '@/components/AiSetup/RoadPicker';
 import { useCompressStore } from '@/stores/compressStore';
@@ -16,6 +16,7 @@ import { repoSourceName } from './WsRepoSection';
 
 export default function RepoCheckPanel({ threadId }: { threadId: string }) {
   const t = useT();
+  const q = useQuote();
   const folder = useFolderStore((s) => s.views[threadId] ?? null);
   const session = useCompressStore((s) => s.repoCheck[threadId] ?? null);
   const error = useCompressStore((s) => s.repoCheckErrors[threadId] ?? null);
@@ -75,10 +76,10 @@ export default function RepoCheckPanel({ threadId }: { threadId: string }) {
             </div>
             <div className="mt-1.5 space-y-1 text-ink-2">
               <div>
-                <span className="text-muted">{t('旧的 {b} 里：', { b: `#${b.staleSeq}` })}</span>「{b.quoteStale}」
+                <span className="text-muted">{t('旧的 {b} 里：', { b: `#${b.staleSeq}` })}</span>{q(b.quoteStale)}
               </div>
               <div>
-                <span className="text-muted">{t('{b} 里：', { b: newSide(b.from) })}</span>「{b.quoteNew}」
+                <span className="text-muted">{t('{b} 里：', { b: newSide(b.from) })}</span>{q(b.quoteNew)}
               </div>
             </div>
             <div className="mt-2 flex flex-wrap items-center gap-1.5">
@@ -100,7 +101,7 @@ export default function RepoCheckPanel({ threadId }: { threadId: string }) {
               <span className="min-w-0 flex-1 text-ink-2">{f.why}</span>
             </div>
             <div className="mt-1.5 text-ink-2">
-              <span className="text-muted">{t('{b} 里：', { b: newSide(f.from) })}</span>「{f.quoteNew}」
+              <span className="text-muted">{t('{b} 里：', { b: newSide(f.from) })}</span>{q(f.quoteNew)}
             </div>
             <div className="mt-2 flex flex-wrap items-center gap-1.5">
               {done(`f${i}`, { close: t('已关掉'), keep: t('留着了') }) ?? (
@@ -136,7 +137,7 @@ export default function RepoCheckPanel({ threadId }: { threadId: string }) {
                 <li key={i}>
                   {d.label ? `${d.label} · ` : ''}
                   {d.why}
-                  {d.quote ? `（「${d.quote}」）` : ''} — {reason[d.reason] ?? d.reason}
+                  {d.quote ? t('（{q}）', { q: q(d.quote) }) : ''} — {reason[d.reason] ?? d.reason}
                 </li>
               ))}
             </ul>

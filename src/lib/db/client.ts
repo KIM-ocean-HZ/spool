@@ -1467,8 +1467,14 @@ const TUTORIAL: Record<SeedLanguage, { source: string; gesture: SeedThread; mcp:
         },
         {
           content:
-            '捕捉：在任何应用选中文字按 ⌘C，再快速双击 ⌥（Option）——内容自动落进「捕捉目标」项目。这一步需要「输入监听」权限：点顶部横幅的「打开捕捉」开启，授权后完全退出 Spool 再打开。',
-          // Windows 有自己的双击手势——双击 Ctrl（double_tap_win.rs），但没有「输入监听」这类
+            '捕捉：在任何应用选中文字按 ⌘C，再快速双击 ⌥（Option）——内容自动落进「捕捉目标」项目。这一步要在系统设置里开两个开关：点顶部横幅上的两个按钮，打开「输入监控」和「辅助功能」，两个都打开之后点横幅上的「重启 Spool」。',
+          // v0.8.2 (DISCOVERED-20261112-1): the banner never had an「打开捕捉」button — it has one
+          // button per switch, and offers the restart once the user has been to System Settings.
+          formerly: {
+            content:
+              '捕捉：在任何应用选中文字按 ⌘C，再快速双击 ⌥（Option）——内容自动落进「捕捉目标」项目。这一步需要「输入监听」权限：点顶部横幅的「打开捕捉」开启，授权后完全退出 Spool 再打开。',
+          },
+          // Windows 有自己的双击手势——双击 Ctrl（double_tap_win.rs），但没有「输入监控」这类
           // 权限要开，所以这一句是重写的而不是替词：手势和 Mac 一样是双击一个修饰键，只是键不同，
           // 而且不需要那句授权说明。第一条教程里的动作，读完就能做。
           offMac:
@@ -1559,7 +1565,11 @@ const TUTORIAL: Record<SeedLanguage, { source: string; gesture: SeedThread; mcp:
         },
         {
           content:
-            'Capture: select text in any app and press ⌘C, then quickly double-tap ⌥ (Option) — it lands in your capture-target project. This needs the Input Monitoring permission: press "Turn on capture" in the banner at the top, then fully quit Spool and reopen.',
+            'Capture: select text in any app and press ⌘C, then quickly double-tap ⌥ (Option) — it lands in your capture-target project. This needs two switches in System Settings: press "Open Input Monitoring" and "Open Accessibility" in the banner at the top, and once both are on, press "Restart Spool" there.',
+          formerly: {
+            content:
+              'Capture: select text in any app and press ⌘C, then quickly double-tap ⌥ (Option) — it lands in your capture-target project. This needs the Input Monitoring permission: press "Turn on capture" in the banner at the top, then fully quit Spool and reopen.',
+          },
           offMac:
             'Capture: select text in any app and press ⌘C, then quickly double-tap Ctrl — it lands in your capture-target project. You can also add a shortcut in Settings → Shortcuts.',
         },
