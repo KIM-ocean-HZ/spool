@@ -439,6 +439,35 @@ it to the reviewed ICNS. Xcode 26.1 and later offer no switch to leave it out, s
 now removes it with CoreUI's private storage API; earlier systems then fall back to the ICNS. The app
 itself is unchanged and contains no private API; the catalog is 1.87 MB smaller.
 
+---
+
+| Field | v0.8.2 |
+|---|---|
+| Published | **2026-11-12** |
+| Tagged commit | tag `v0.8.2` → `e78961d`, the commit both installers were built from (the commits after it on `main` change documentation and the website guide only) |
+| Signing identity — macOS | Developer ID Application (Apple Developer Program, Team `Q5Y5JRXZ58`) |
+| **Notarisation — `.app`** | submission `106d1a0f-e2d9-4592-9bf1-ab865a5a8f75` · **Accepted** |
+| **Notarisation — `.dmg`** | submission `a6011233-40b7-47d4-84ac-50ac3e3cb82c` · **Accepted** |
+| Artefact — macOS | `Spool_0.8.2_aarch64.dmg`, 13,778,695 bytes |
+| sha256 — macOS | `a627b11458b2c63ccabe7b65ef702922a300b452eb2c61956f314e9aa1107c58` |
+| Gatekeeper verdict — macOS | `accepted` · `source=Notarized Developer ID` on **both** artefacts, and re-verified on the copy downloaded back through the fixed-name link (byte-identical sha256, staple intact); `--verify --deep --strict` passes |
+| Artefact — Windows | `Spool_0.8.2_x64-setup.exe`, 10,197,656 bytes — NSIS, per-user, **not code-signed**; built by GitHub Actions run `43258250819` (`windows-latest`, x64) from the tagged commit |
+| sha256 — Windows | `a9e948c051869d88c563deb597d64932a91263a39488069aac6b2fec97133ea5` |
+| Windows checks | the same CI run: vitest 1,389 passed, `cargo test` 307 passed / 0 failed / 17 ignored — including the three new Credential Manager tests (store, read and delete; an old key file moved in and removed; a failed move keeps the file readable) |
+| Fixed-name assets | `Spool-macOS-arm64.dmg` and `Spool-windows-x64-setup.exe` — **HTTP 200** through `releases/latest/download/`, redirecting to `download/v0.8.2/`, byte-identical to the versioned assets |
+| Database schema | unchanged (**v39**) |
+| MCP surface (release binary) | unchanged: 30 tools (15 read-only, 15 write); 22 under `--engine-run`. Counted from the release binary against a copy of the library; the server reports version 0.8.2 |
+| The fixes, as checked | on a demo build of the same source (macOS): each of the listed fixes walked through in English and Chinese at 1180 pt wide; the capture card and drag-and-drop checked on a real 1× main display with a 2× display beside it. In the Windows 11 virtual machine, on a build of the same code one commit earlier: an old-style key file moved into Credential Manager at first launch and the file was gone; with the key deleted from outside the app, every AI entry asked for a key |
+| MCP Registry | not yet published for 0.8.2 when this row was written (the publish step needs the owner to run it); the registry's latest was still 0.7.4 |
+
+**What this row adds: fixes found while writing the illustrated guide.** On Windows the API key
+moves from a file in the data folder to Windows Credential Manager. Finishing or archiving the
+project that receives captures now sends capture to "Unsorted". The rest are fixes: the capture
+card and drag-and-drop on two displays with different scaling, the source of a capture made while
+macOS was still asking for Automation, the compression "Length" figure (it had counted Spool's own
+pack header), no cost line for local-CLI runs, English singular/plural and quote marks, and a few
+layout and wording problems. The privacy policy changed in one sentence: where the Windows key is kept.
+
 ## 2. Measured findings
 
 These are the rows that matter most: results obtained by measuring a running system, not

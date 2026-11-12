@@ -1,6 +1,6 @@
 # 产品任务书 P20 —— 修 P19 拍摄时发现的问题（发版前全部修）
 
-> **状态：ACTIVE（2026-11-12 下发；§4 八件 11-12 已答，HANDOFF 第 337 – 342 条，可以动手）**
+> **状态：COMPLETE — 待 Ocean 验收（2026-11-12 做完：21 条 + 并进来的 2 条全修；Mac 换装、Windows 虚拟机验过；v0.8.2 Mac + Windows 已发；MCP Registry 等 Ocean 跑命令）**
 >
 > **唯一交付**：附录 A 里的 `DISCOVERED-20261112-1` – `19`（第 12 条是本机环境、已处理，不修）、同根的 `20261030-1`、`20261103-1`，以及并进来的 `20261111-1`、`-3`，按 §1 的顺序修完、各自提交（不推送）；Mac 换装给 Ocean 验收；Windows 在虚拟机里验（**Parallels 11-20 到期，Windows 那一步要在 11-19 前做完**）；然后**发 v0.8.2（Mac + Windows）**；**教程这次不换图**（第 342 条）。
 >
@@ -254,6 +254,20 @@
 **收尾**：Spool 停了 → 假凭据删了（`cmdkey` 查无）→ 测试库删掉、真库改名换回，**17 个文件和清单逐个哈希一致** → 不带调试口重启（9222 关着）→ 在跑的是新版 `66d344e6…`。没碰干净虚拟机「Spool-clean-P13」。
 
 **还剩**：Ocean 按 §6.1 验 Mac（§6.2 想看再看）；然后 P20-8 发 v0.8.2（每一步先问：改版本号、Mac 公证、推送、tag、Windows 打包、Release、两个固定下载地址、Registry、台账、本机换成公证版）。
+
+### 7.4 P20-8 v0.8.2 发版（2026-11-12，Ocean「发版」，第 348 – 350 条）
+
+- 版本号 `e78961d`（package.json、package-lock.json 两行、tauri.conf.json、Cargo.toml、Cargo.lock、server.json；隐私说明三份 P20-1b 已经写成 11-12 / v0.8.2）。发版前 tsc / i18n 干净，vitest 1389、`cargo test --lib` 328 / 18 ignored、sidecar 31。
+- 发版说明 `docs/RELEASE_NOTES_v0.8.2.md`（英文，Ocean「可以」，第 349 条）。
+- **Mac**（代码 `e78961d`）：公证变量从 `~/.spool-release-env` 读进那两条命令的环境（没打印、没写进别处）+ `APPLE_SIGNING_IDENTITY` + `CI=true` + strip 关；`BUILD EXIT 0`。`.app` 公证 `106d1a0f-e2d9-4592-9bf1-ab865a5a8f75` · Accepted；dmg 补公证 `a6011233-40b7-47d4-84ac-50ac3e3cb82c` · Accepted，staple 成功。两份 `spctl` = `Notarized Developer ID`，`--deep --strict` 过，`CFBundleShortVersionString` 0.8.2。dmg 13,778,695 字节，`a627b114…7c58`；`spool` `379d4027…`、`spool-ai` `f8019968…`。副本 `~/Desktop/Spool/P20-release-20261112/`。
+- **Windows**：临时分支 `release-0.8.2`（= `e78961d`），run 43258250819 全绿（`cargo test` 307 过），`Spool_0.8.2_x64-setup.exe` 10,197,656 字节，`a9e948c0…3ea5`（重下一次核过同一个）。这次没再装进虚拟机：同样的代码前一个提交（`a4308c1`）已经在虚拟机里验过（§7.3），两者只差版本号。
+- **发布五步**：① 附注标签 `v0.8.2` → `e78961d`；② `gh release create v0.8.2 --verify-tag --latest`，标题「Spool 0.8.2 (macOS + Windows)」，四个资产，列表里是 Latest；③ 两个固定名 `releases/latest/download/…` 都是 200、先跳到 `download/v0.8.2/…`，四个文件下回来哈希一致，下回来的 dmg staple 还在、`Notarized Developer ID`；④ `main` 推 `4e7e1cc..6416f58`（23 笔，快进；推前扫过新增行：没有邮箱、没有 key 样的串），`git update-ref`；Pages 部署 run 43262419204 成功，线上中英教程页、中英隐私页都是新说法；⑤ 远端临时分支 `release-0.8.2`、`p20-windows` 删了。
+- **教程那一句**（第 350 条，`DISCOVERED-20261112-23`）：第 7 章 Windows 那句中英各改一句（存凭据管理器；「断开」只关、key 留着），图不动，`build_guide.py --strict` 两页 13 章 50 图缺 0；P19 工作目录里改之前的正文留了 `.before-p20`。
+- **MCP 面**（发布二进制 + 库副本）：30 个工具（15 只读 / 15 写），`--engine-run` 下 22 个，服务报 0.8.2 —— 和 v0.8.1 一样。
+- **MCP Registry**：`mcp-publisher validate` 过；线上最新还是 0.7.4。要 Ocean 在对话里跑 `! cd ~/Desktop/Knote && mcp-publisher login github --token "$(gh auth token)" && mcp-publisher publish`，跑完查线上 isLatest。
+- **台账** `CASE_STUDY_LEDGER.md` §1.2 加 v0.8.2 一段；`RELEASE.md` §0.0 改成「最新发布是 v0.8.2」。
+- **本机**：装的还是 13:47 换上的 `a4308c1` Developer ID 包（界面写 0.8.1，代码和 0.8.2 只差版本号）。要换成公证版 0.8.2 时先问有没有没点「完成」的编辑。
+- **虚拟机清理**（Ocean「做完帮我清理一下没用的 vm 磁盘空间」，第 351 条勾了两项）：干净虚拟机「Spool-clean-P13」删了（27 GB，Mac 剩余从 12 GB 到 39 GB）；「Windows 11」关机后 `prl_disk_tool compact` 跑完但没省下空间（还是 106 GB）—— 5 个快照（11-06 – 11-11）锁着下面几层，只有最上面一层能压；快照这次按 Ocean 的选择留着。「Windows 11」现在是关机状态。
 
 ---
 
