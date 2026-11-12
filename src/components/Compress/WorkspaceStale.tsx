@@ -396,11 +396,11 @@ export default function WorkspaceStale({
         </div>
       )}
 
-      <footer className="flex flex-none items-center justify-between gap-3 border-t border-line bg-paper-2/40 px-5 py-3 text-xs">
-        {/* DISCOVERED-20261112-15: the note wraps, the controls on the right stay on one line. */}
-        <span className="min-w-0 flex-1 text-muted">{t('这一页只连线、标完成，不改任何一块的正文。')}</span>
+      <footer className="flex flex-none flex-wrap items-center justify-between gap-x-3 gap-y-2 border-t border-line bg-paper-2/40 px-5 py-3 text-xs">
+        {/* DISCOVERED-20261112-15: no control breaks inside itself; when the note and the controls do not fit side by side, the controls take their own row on the right (CompressBoard footer, same rule). */}
+        <span className="min-w-[16rem] flex-1 basis-[20rem] text-muted">{t('这一页只连线、标完成，不改任何一块的正文。')}</span>
         {enabled && (
-          <span className="flex flex-none items-center gap-3 whitespace-nowrap">
+          <span className="ml-auto flex max-w-full flex-wrap items-center justify-end gap-3 whitespace-nowrap">
             <RoadPicker setting="staleRoute" disabled={running || busy} />
             <button
               type="button"

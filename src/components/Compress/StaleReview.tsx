@@ -359,9 +359,9 @@ function ProjectStale({ threadId }: { threadId: string }) {
       </div>
 
       {/* ④ 右下角一个动作按钮 —— 和压缩那一页同一个位置。 */}
-      <footer className="flex flex-none items-center justify-between gap-3 border-t border-line bg-paper-2/40 px-5 py-3 text-xs">
-        {/* DISCOVERED-20261112-15: the note wraps, the controls on the right stay on one line. */}
-        <span className="min-w-0 flex-1 text-muted">
+      <footer className="flex flex-none flex-wrap items-center justify-between gap-x-3 gap-y-2 border-t border-line bg-paper-2/40 px-5 py-3 text-xs">
+        {/* DISCOVERED-20261112-15: no control breaks inside itself; when the note and the controls do not fit side by side, the controls take their own row on the right (CompressBoard footer, same rule). */}
+        <span className="min-w-[16rem] flex-1 basis-[20rem] text-muted">
           {t('这一页只连线，不改任何一块的正文。')}
         </span>
         {/* ⛔ 2026-08-23（Ocean:「过期检测跑起来无法取消」）：这一页原来**没有停下**。
@@ -369,7 +369,7 @@ function ProjectStale({ threadId }: { threadId: string }) {
             少的只是这个按钮。⭐ 一个按钮两种身份，和压缩那一页逐字一样的写法。
             ⚠️ 引擎没开就不出这个按钮 —— 它要花钱。 */}
         {enabled && (
-        <span className="flex flex-none items-center gap-3 whitespace-nowrap">
+        <span className="ml-auto flex max-w-full flex-wrap items-center justify-end gap-3 whitespace-nowrap">
         {/* P9U-2（第 187 条）：这一次用哪条路。两条都连上才是开关。 */}
         <RoadPicker setting="staleRoute" disabled={running || busy} />
         <button
