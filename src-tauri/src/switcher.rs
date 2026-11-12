@@ -114,9 +114,15 @@ pub fn show_target_switcher<R: Runtime>(app: AppHandle<R>, payload: serde_json::
         work.size.width as f64 / scale,
         work.size.height as f64 / scale,
     );
+    // macOS: the cursor is in the primary display's scale, not this one's (capture::cursor_logical, P20-5).
     let cursor = tauri::Manager::get_webview_window(&app, "main")
         .and_then(|w| w.cursor_position().ok())
-        .map(|c| (c.x / scale, c.y / scale))
+        .map(|c| {
+            #[cfg(target_os = "macos")]
+            return crate::capture::cursor_logical(&app, c);
+            #[cfg(not(target_os = "macos"))]
+            return (c.x / scale, c.y / scale);
+        })
         .unwrap_or((work.0 + work.2 / 2.0, work.1 + work.3 / 2.0));
     let (x, y) = place(cursor, work);
     *FRAME.lock().unwrap() = Some((x, y, PANEL_WIDTH, PANEL_HEIGHT));

@@ -1039,8 +1039,8 @@ pub struct WebviewPoint {
 // `position`: that position's reference frame (whole window vs. content area; physical
 // vs. logical) varies across Tauri/wry versions and is offset by the native title bar,
 // which left block hit-testing landing above the real cursor. cursor_position() and
-// inner_position() are both unambiguous — global desktop space, physical px — so this
-// subtraction is exact regardless of decorations or display scaling.
+// inner_position() are both global desktop space — but on macOS not in the same scale when the
+// displays differ (`cursor_logical`), so there each is taken back to logical points first.
 #[tauri::command]
 pub fn cursor_in_main_webview<R: Runtime>(app: AppHandle<R>) -> Option<WebviewPoint> {
     let win = app.get_webview_window("main")?;
@@ -1050,6 +1050,14 @@ pub fn cursor_in_main_webview<R: Runtime>(app: AppHandle<R>) -> Option<WebviewPo
     if scale <= 0.0 {
         return None;
     }
+    // macOS: the cursor is in the primary display's scale, the window's origin in its own
+    // (`cursor_logical`) — each back to logical points first (DISCOVERED-20261103-1).
+    #[cfg(target_os = "macos")]
+    {
+        let (cx, cy) = cursor_logical(&app, cursor);
+        Some(WebviewPoint { x: cx - origin.x as f64 / scale, y: cy - origin.y as f64 / scale })
+    }
+    #[cfg(not(target_os = "macos"))]
     Some(WebviewPoint {
         x: (cursor.x - origin.x as f64) / scale,
         y: (cursor.y - origin.y as f64) / scale,
@@ -1190,21 +1198,65 @@ pub(crate) fn active_monitor<R: Runtime>(app: &AppHandle<R>) -> Option<Monitor> 
     let cursor = probe.cursor_position().ok();
     let monitors = app.available_monitors().ok()?;
     if let Some(c) = cursor {
-        let x = c.x as i32;
-        let y = c.y as i32;
-        for m in &monitors {
-            let pos: PhysicalPosition<i32> = m.position().clone();
-            let size = m.size();
-            if x >= pos.x
-                && x < pos.x + size.width as i32
-                && y >= pos.y
-                && y < pos.y + size.height as i32
-            {
-                return Some(m.clone());
-            }
+        // macOS: compare in logical points (see `cursor_logical`) — in tao's physical numbers a
+        // pointer on a 2× screen beside a 1× primary fell outside every monitor (DISCOVERED-20261030-1).
+        #[cfg(target_os = "macos")]
+        let hit = {
+            let rects: Vec<Rect> = monitors
+                .iter()
+                .map(|m| logical_rect(*m.position(), *m.size(), m.scale_factor()))
+                .collect();
+            rect_at(cursor_logical(app, c), &rects)
+        };
+        // Windows: cursor and monitors are physical pixels of one virtual desktop — compare as they are.
+        #[cfg(not(target_os = "macos"))]
+        let hit = {
+            let rects: Vec<Rect> = monitors
+                .iter()
+                .map(|m| logical_rect(*m.position(), *m.size(), 1.0))
+                .collect();
+            rect_at((c.x, c.y), &rects)
+        };
+        if let Some(i) = hit {
+            return Some(monitors[i].clone());
         }
     }
     app.primary_monitor().ok().flatten().or_else(|| monitors.into_iter().next())
+}
+
+/// x, y, width, height.
+type Rect = (f64, f64, f64, f64);
+
+/// A monitor's frame divided back by `scale` (1.0 = leave it physical).
+fn logical_rect(pos: PhysicalPosition<i32>, size: tauri::PhysicalSize<u32>, scale: f64) -> Rect {
+    let s = if scale > 0.0 { scale } else { 1.0 };
+    (pos.x as f64 / s, pos.y as f64 / s, size.width as f64 / s, size.height as f64 / s)
+}
+
+/// The first of `rects` that holds `p` (all in one coordinate space).
+fn rect_at(p: (f64, f64), rects: &[Rect]) -> Option<usize> {
+    rects.iter().position(|&(x, y, w, h)| p.0 >= x && p.0 < x + w && p.1 >= y && p.1 < y + h)
+}
+
+/// macOS: the pointer in global logical points.
+///
+/// ⚠️ P20-5 (DISCOVERED-20261030-1 / 20261103-1 / 20261112-9): tao's `cursor_position` is
+/// NSEvent.mouseLocation × the PRIMARY display's scale (tao `util::cursor_position`), while a
+/// monitor's position and size, and a window's `inner_position`, are logical × THAT display's (that
+/// window's) own scale. While every display has the same scale the two agree; with a 1× external
+/// display as primary and the 2× laptop screen beside it they do not — the pointer on the laptop
+/// screen landed outside every monitor (capture card on the wrong screen) and drag-and-drop hit
+/// points went up and to the right. Each number goes back to logical points by its own scale.
+#[cfg(target_os = "macos")]
+pub(crate) fn cursor_logical<R: Runtime>(app: &AppHandle<R>, cursor: PhysicalPosition<f64>) -> (f64, f64) {
+    let primary = app
+        .primary_monitor()
+        .ok()
+        .flatten()
+        .map(|m| m.scale_factor())
+        .filter(|s| *s > 0.0)
+        .unwrap_or(1.0);
+    (cursor.x / primary, cursor.y / primary)
 }
 
 // Anchor the overlay at the top-right of the active monitor — bottom-right is
@@ -2058,6 +2110,30 @@ pub fn system_idle_ms() -> Option<u64> {
 #[cfg(all(test, desktop))]
 mod tests {
     use super::*;
+
+    // P20-5 (DISCOVERED-20261030-1): a 2560×1440 1× display as primary, the 2× laptop screen
+    // (1512×982 points) beside it — tao's numbers as tao produces them on macOS.
+    #[test]
+    fn the_pointer_on_a_2x_screen_beside_a_1x_primary_finds_that_screen() {
+        let primary_scale = 1.0;
+        let external = logical_rect(PhysicalPosition::new(0, 0), tauri::PhysicalSize::new(2560, 1440), 1.0);
+        // Laptop to the right: origin 2560 pt → tao position 5120 px, size 3024×1964 px.
+        let laptop = logical_rect(PhysicalPosition::new(5120, 0), tauri::PhysicalSize::new(3024, 1964), 2.0);
+        assert_eq!(laptop, (2560.0, 0.0, 1512.0, 982.0));
+        // The pointer at (3000, 500) pt on the laptop: tao reports it × the primary's scale.
+        let cursor = (3000.0 * primary_scale, 500.0 * primary_scale);
+        let to_logical = |c: (f64, f64)| (c.0 / primary_scale, c.1 / primary_scale);
+        assert_eq!(rect_at(to_logical(cursor), &[external, laptop]), Some(1));
+        // The old comparison, physical against physical, found no screen (→ primary).
+        let physical = [(0.0, 0.0, 2560.0, 1440.0), (5120.0, 0.0, 3024.0, 1964.0)];
+        assert_eq!(rect_at(cursor, &physical), None);
+
+        // Laptop to the left (origin −1512 pt → −3024 px), pointer at (−700, 300) pt.
+        let left = logical_rect(PhysicalPosition::new(-3024, 0), tauri::PhysicalSize::new(3024, 1964), 2.0);
+        assert_eq!(rect_at(to_logical((-700.0, 300.0)), &[external, left]), Some(1));
+        assert_eq!(rect_at(to_logical((100.0, 100.0)), &[external, left]), Some(0));
+        assert_eq!(rect_at((5000.0, 5000.0), &[external, left]), None);
+    }
 
     // P13 (DISCOVERED-20261106-8): the browser's tail goes, the page title stays whole.
     #[test]
