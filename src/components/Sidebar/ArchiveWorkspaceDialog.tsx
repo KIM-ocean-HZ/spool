@@ -59,11 +59,12 @@ export default function ArchiveWorkspaceDialog() {
           <p>{t('这会把 {n} 个项目标为完成，结论留空。', { n: plan.toComplete.length })}</p>
           <p>{t('工作区会移到左栏最底下的「归档」里。按 ⌘Z 可以撤回。')}</p>
           {plan.captureFrom &&
-            (plan.captureTo ? (
+            (plan.captureTo || plan.captureNewIn ? (
               <p>
+                {/* DISCOVERED-20261112-7: to 「未分类」 — the one there is, or a new one under that name. */}
                 {t('捕捉目标会从「{from}」换到「{to}」。', {
                   from: plan.captureFrom.title.trim() || t('无标题'),
-                  to: plan.captureTo.title.trim() || t('无标题'),
+                  to: plan.captureTo ? plan.captureTo.title.trim() || t('无标题') : t('未分类'),
                 })}
               </p>
             ) : (

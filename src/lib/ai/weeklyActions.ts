@@ -16,6 +16,7 @@ import { listPendingSupersedeProposals, queueSupersedeProposal } from '@/lib/db/
 import { setThreadCompletion, type Thread } from '@/lib/db/threads';
 import { followUpFingerprint } from '@/lib/engine/followUp';
 import { scheduleProtocolRefresh } from '@/lib/folders/refresh';
+import { sendCaptureHome } from '@/lib/threads/sendCaptureHome';
 import { useFollowUpStore } from '@/stores/followUpStore';
 import { useProposalsStore } from '@/stores/proposalsStore';
 import { selectThreadById, useThreadsStore } from '@/stores/threadsStore';
@@ -104,6 +105,11 @@ export const applyWeeklyAction = async (a: WeeklyAction, threadId: string, clien
       if (thread.status === 'done') return;
       const doneAt = Date.now();
       await setThreadCompletion(threadId, { status: 'done', completedAt: doneAt, updatedAt: doneAt });
+      // P9Y: a finished project leaves its folder's SPOOL.md.
+      scheduleProtocolRefresh();
+      await useThreadsStore.getState().loadAll();
+      // DISCOVERED-20261112-7: if it was the capture target, capture goes to 「未分类」 — and ⌘Z puts it back.
+      const moved = await sendCaptureHome([threadId]);
       undo.pushUndo(
         buildReviewActionUndo({
           op: 'mark_done',
@@ -111,11 +117,9 @@ export const applyWeeklyAction = async (a: WeeklyAction, threadId: string, clien
           title: thread.title,
           before: { status: thread.status, completedAt: thread.completedAt, updatedAt: thread.updatedAt },
           doneAt,
+          captureTo: moved?.to ?? null,
         }),
       );
-      // P9Y: a finished project leaves its folder's SPOOL.md.
-      scheduleProtocolRefresh();
-      await useThreadsStore.getState().loadAll();
       return;
     }
     case 'set_deadline': {

@@ -24,6 +24,7 @@ import {
 import { t } from '@/lib/i18n';
 import { useBlocksStore } from './blocksStore';
 import { useFolderStore } from './folderStore';
+import { useFollowUpStore } from './followUpStore';
 import { useThreadsStore } from './threadsStore';
 import { toast } from './toastStore';
 import { buildSplitUndo, useUndoStore } from './undoStore';
@@ -301,6 +302,9 @@ export const useProposalsStore = create<ProposalsState>((set, get) => ({
     try {
       await followUp.approveFollowUpProposal(itemId);
       await useThreadsStore.getState().loadAll();
+      // DISCOVERED-20261112-13: the right rail's 「跟进内容」 reads useFollowUpStore, which nothing
+      // re-read — the approved line only showed up after switching projects and back.
+      await useFollowUpStore.getState().refresh();
       toast.notice(t('加进跟进清单了'));
     } catch (e) {
       console.error('[follow-up] approve failed', e);

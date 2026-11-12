@@ -44,8 +44,16 @@ const interpolate = (s: string, vars?: Record<string, string | number>): string 
 // mentioning the double-tap ⌥ trigger or a macOS permission needs its own copy, chosen at
 // the call site by IS_MAC — a mechanical substitution there would produce a fluent
 // instruction for something that cannot be done.
+//
+// Same Chinese, different English (DISCOVERED-20261111-1): a key may end in `@context`. 「关掉」 on a
+// setting is "Off"; on the button that closes a follow-up line it is "Close it" — so that button asks
+// for `关掉@followup`. The suffix is never shown: Chinese, and an English miss, drop it.
+const CONTEXT_RE = /@[a-z-]+$/;
+
 const render = (key: string, lang: Language, vars?: Record<string, string | number>): string =>
-  localizeKeyCaps(interpolate(lang === 'en' ? (EN[key] ?? key) : key, vars));
+  localizeKeyCaps(
+    interpolate(lang === 'en' ? (EN[key] ?? key.replace(CONTEXT_RE, '')) : key.replace(CONTEXT_RE, ''), vars),
+  );
 
 export const t = (key: string, vars?: Record<string, string | number>): string =>
   render(key, useSettingsStore.getState().language, vars);
@@ -173,6 +181,8 @@ const EN: Record<string, string> = {
   '工作区会移到左栏最底下的「归档」里。按 ⌘Z 可以撤回。':
     'The workspace moves to Archive at the bottom of the sidebar. Press ⌘Z to undo.',
   '捕捉目标会从「{from}」换到「{to}」。': 'Capture moves from “{from}” to “{to}”.',
+  // DISCOVERED-20261112-7: a finished project stops being the capture target.
+  '〈{from}〉已经完成，捕捉目标改回了〈{to}〉。': '‹{from}› is done, so capture now goes to ‹{to}›.',
   '没有别的没完成的项目，捕捉目标仍留在「{from}」。':
     'No other unfinished project is left, so capture stays on “{from}”.',
   '展开': 'Expand',
@@ -1370,7 +1380,6 @@ const EN: Record<string, string> = {
   '提了 {n} 条待你过目': 'proposed {n} {n|item|items} for you to review',
   '有回话，等你过目': 'replied, waiting for you',
   '这次没有新东西': 'nothing new this time',
-  '花费未知': 'cost unknown',
   '存成一块': 'Store as a block',
   '从这里去掉（记录和花费仍然留着）':
     'Remove from here (the record and its cost stay)',
@@ -1594,6 +1603,9 @@ const EN: Record<string, string> = {
   '思考力度': 'How hard it thinks',
   // '默认' 上面第 930 行已经有了，不重复。
   '关掉': 'Off',
+  // The button that closes a follow-up line (the weekly / follow-up run card, the repository check):
+  // not the setting above. DISCOVERED-20261111-1 — it read "Off" next to "Keep it".
+  '关掉@followup': 'Close it',
   '模型': 'Model',
   '单次最长等待（秒）': 'Longest wait per run (seconds)',
   '必须是 https 开头 —— 用普通 http 的话，你的 key 会明文发出去。':

@@ -193,6 +193,10 @@ export type ReviewActionPayload =
       /** The project as it was, put back exactly (same columns workspace_archive restores). */
       before: { status: ThreadStatus; completedAt: number | null; updatedAt: number };
       doneAt: number;
+      /** DISCOVERED-20261112-7: it was the capture target, and capture went here (「未分类」). ⌘Z puts the
+       *  target back — only if it is still there: a target picked since is the user's latest word.
+       *  Absent in entries written before v0.8.2. */
+      captureTo?: string | null;
     }
   | { op: 'set_deadline'; threadId: string; title: string; before: number | null; after: number }
   | { op: 'add_follow_up'; threadId: string; title: string; item: FollowUpItem }

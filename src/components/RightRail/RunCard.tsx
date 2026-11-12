@@ -4,7 +4,8 @@ import { dateLocale, useT } from '@/lib/i18n';
 import { MarkdownContent } from '@/lib/blocks/MarkdownContent';
 import type { EngineRun } from '@/lib/db/engineRuns';
 import type { FollowUpReviewItem } from '@/lib/engine/followUpReview';
-import { ACTION_LABEL, ENGINE_LABEL, type EngineKind } from '@/stores/engineStore';
+import { ranBy } from '@/lib/engine/ranBy';
+import { ACTION_LABEL } from '@/stores/engineStore';
 
 // DESIGN_WORKBENCH §3.1 — one finished run, and the answer to Ocean's #6/#8.
 //
@@ -53,7 +54,7 @@ export default function RunCard({ run, onDismiss, onStore, busy, review = [], on
     hour: '2-digit',
     minute: '2-digit',
   });
-  const engineName = ENGINE_LABEL[run.engine as EngineKind] ?? run.engine;
+  const ran = ranBy(run, t);
   const cost = money(run.usage.costUsd);
   const answered = run.reviewedAt !== null;
 
@@ -160,12 +161,12 @@ export default function RunCard({ run, onDismiss, onStore, busy, review = [], on
       )}
 
       {/* The engine line. Ocean 2026-08-06: "我在使用过程中对使用了什么模型花了多少额度
-          毫不知情，但这不是免费的". Model and cost sit on every card because every card is
-          a thing that was paid for. */}
+          毫不知情，但这不是免费的". DISCOVERED-20261112-8 (11-12): who ran it, by a name the user
+          knows — never the model id, never 「花费未知」; a cost only when there is a real one, and
+          never on the local CLI (it goes on the user's own subscription). */}
       <div className="mt-1.5 flex flex-wrap items-center gap-x-1.5 text-[12px] text-muted">
-        <span>{engineName}</span>
-        {run.usage.model && <span>· {run.usage.model}</span>}
-        <span>· {cost ?? t('花费未知')}</span>
+        <span>{ran.who}</span>
+        {!ran.viaCli && cost && <span>· {cost}</span>}
       </div>
 
       {/* The one thing left worth a button: turning what it wrote into a block. Dismissal
@@ -225,7 +226,7 @@ function ReviewEntry({
             onClick={() => onAct('close')}
             className={`${button} border-accent/60 text-accent enabled:hover:bg-accent/15`}
           >
-            {t('关掉')}
+            {t('关掉@followup')}
           </button>
         )}
         {item.kind === 'block' && item.verdict === 'still_holds' && item.nextRecheck && (

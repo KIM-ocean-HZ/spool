@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { ensureBaseData } from '@/lib/db/client';
-import { setCaptureTarget, setThreadCompletion } from '@/lib/db/threads';
+import { createThread, setCaptureTarget, setThreadCompletion } from '@/lib/db/threads';
+import { t } from '@/lib/i18n';
 import { noticeRenamed } from '@/lib/names/renameNotice';
 import * as db from '@/lib/db/workspaces';
 import type { Workspace } from '@/lib/db/workspaces';
@@ -149,7 +150,11 @@ export const useWorkspacesStore = create<WorkspacesState>((set, get) => ({
         updatedAt: archivedAt,
       });
     }
-    if (plan.captureTo) await setCaptureTarget(plan.captureTo.id);
+    // DISCOVERED-20261112-7: capture goes to 「未分类」 — the one there is, or a new one (see archivePlan).
+    // ⚠️ From the db layer: the store's `create` would also open it.
+    const captureTo =
+      plan.captureTo ?? (plan.captureNewIn ? await createThread(plan.captureNewIn, t('未分类')) : null);
+    if (captureTo) await setCaptureTarget(captureTo.id);
     useUndoStore.getState().pushUndo(
       buildWorkspaceArchiveUndo({
         workspaceTitle: get().workspaces.find((w) => w.id === id)?.title ?? '',
@@ -160,8 +165,8 @@ export const useWorkspacesStore = create<WorkspacesState>((set, get) => ({
           completedAt: th.completedAt,
           updatedAt: th.updatedAt,
         })),
-        captureFrom: plan.captureTo ? (plan.captureFrom?.id ?? null) : null,
-        captureTo: plan.captureTo?.id ?? null,
+        captureFrom: captureTo ? (plan.captureFrom?.id ?? null) : null,
+        captureTo: captureTo?.id ?? null,
       }),
     );
     await useThreadsStore.getState().loadAll();

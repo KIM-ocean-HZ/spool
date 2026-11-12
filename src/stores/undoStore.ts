@@ -519,13 +519,21 @@ const reverseAndBuildRedo = async (
     case 'review_action': {
       const p = entry.payload;
       switch (p.op) {
-        case 'mark_done':
+        case 'mark_done': {
+          // DISCOVERED-20261112-7: the target moves back with the project, the same rule as
+          // workspace_archive — only if it is still where the completion put it.
+          const moveTarget = async (from: string, to: string): Promise<void> => {
+            if ((await getCaptureTargetThread())?.id === from) await setCaptureTarget(to);
+          };
           await setThreadCompletion(p.threadId, p.before);
+          if (p.captureTo) await moveTarget(p.captureTo, p.threadId);
           scheduleProtocolRefresh();
           return async () => {
             await setThreadCompletion(p.threadId, { status: 'done', completedAt: p.doneAt, updatedAt: p.doneAt });
+            if (p.captureTo) await moveTarget(p.threadId, p.captureTo);
             scheduleProtocolRefresh();
           };
+        }
         case 'set_deadline':
           await updateThread(p.threadId, { deadline: p.before });
           return async () => {

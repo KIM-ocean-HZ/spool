@@ -106,7 +106,7 @@ export default function RepoCheckPanel({ threadId }: { threadId: string }) {
             <div className="mt-2 flex flex-wrap items-center gap-1.5">
               {done(`f${i}`, { close: t('已关掉'), keep: t('留着了') }) ?? (
                 <>
-                  <Choice label={t('关掉')} hint={t('这一行不再跟进；关掉的还在跟进编辑里，点一下能重新打开。')} onClick={act(`f${i}`, 'close')} />
+                  <Choice label={t('关掉@followup')} hint={t('这一行不再跟进；关掉的还在跟进编辑里，点一下能重新打开。')} onClick={act(`f${i}`, 'close')} />
                   <Choice label={t('留着')} hint={t('照旧跟进，这一条从单子上划掉。')} onClick={act(`f${i}`, 'keep')} />
                 </>
               )}

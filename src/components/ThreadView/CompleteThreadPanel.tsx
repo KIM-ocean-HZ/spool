@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { isImeComposing } from '@/lib/utils/ime';
 import type { Thread } from '@/lib/db/threads';
+import { sendCaptureHome } from '@/lib/threads/sendCaptureHome';
 import { useThreadsStore } from '@/stores/threadsStore';
 import { useT } from '@/lib/i18n';
 
@@ -34,6 +35,8 @@ export default function CompleteThreadPanel({ thread, onClose }: Props) {
       completedAt: Date.now(),
       digest: conclusion.trim() || null,
     });
+    // DISCOVERED-20261112-7: a finished project stops taking captures — they go to 「未分类」.
+    await sendCaptureHome([thread.id]);
     onClose();
   };
 

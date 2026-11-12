@@ -160,30 +160,41 @@ describe('archivePlan (right-click 归档)', () => {
     expect(plan.captureTo).toBeNull();
   });
 
-  it('moves the capture target to the most recently updated unfinished project outside', () => {
+  // DISCOVERED-20261112-7 (Ocean 第 338 条): to 「未分类」, the same place a single 「完成」 sends it —
+  // not, as until v0.8.1, the most recently updated unfinished project.
+  it('moves the capture target to the unfinished 未分类 outside', () => {
     const target = th('w1', 'active', { isCaptureTarget: true });
-    const older = th('other', 'active', { updatedAt: 10 });
+    const unsorted = th('other', 'active', { title: '未分类', updatedAt: 10 });
     const newer = th('other', 'parked', { updatedAt: 20 });
-    const newestButDone = th('other', 'done', { updatedAt: 30 });
-    const plan = archivePlan(tree, [target, older, newer, newestButDone], 'w');
+    const plan = archivePlan(tree, [target, unsorted, newer], 'w');
     expect(plan.captureFrom?.id).toBe(target.id);
-    expect(plan.captureTo?.id).toBe(newer.id);
+    expect(plan.captureTo?.id).toBe(unsorted.id);
+    expect(plan.captureNewIn).toBeNull();
   });
 
-  // An already-finished project can hold the target too; after archiving it is still in a
-  // finished workspace, so it moves all the same.
-  it('moves a capture target that was already on a done project in the subtree', () => {
+  it('makes a new 未分类 outside when there is none, rather than picking another project', () => {
     const target = th('w', 'done', { isCaptureTarget: true });
     const out = th('other', 'active');
     const plan = archivePlan(tree, [target, th('w', 'active'), out], 'w');
-    expect(plan.captureTo?.id).toBe(out.id);
+    expect(plan.captureTo).toBeNull();
+    expect(plan.captureNewIn).toBe('other');
   });
 
-  it('has nowhere to send captures when nothing unfinished is left outside', () => {
+  it('does not send capture to a 未分类 inside the subtree being archived', () => {
     const target = th('w', 'active', { isCaptureTarget: true });
-    const plan = archivePlan(tree, [target, th('other', 'done')], 'w');
+    const inside = th('w1', 'active', { title: 'Unsorted' });
+    const plan = archivePlan(tree, [target, inside], 'w');
+    expect(plan.captureTo).toBeNull();
+    expect(plan.captureNewIn).toBe('other');
+  });
+
+  it('has nowhere to send captures when no workspace is left outside', () => {
+    const only = buildWorkspaceTree([ws('w'), ws('w1', 'w')]);
+    const target = th('w', 'active', { isCaptureTarget: true });
+    const plan = archivePlan(only, [target, th('w1', 'active', { title: '未分类' })], 'w');
     expect(plan.captureFrom?.id).toBe(target.id);
     expect(plan.captureTo).toBeNull();
+    expect(plan.captureNewIn).toBeNull();
   });
 
   it('subtreeWorkspaceIds covers the workspace and everything inside it', () => {

@@ -5,11 +5,13 @@ import { createBlock, type Block } from '@/lib/db/blocks';
 import { __setTestDb } from '@/lib/db/client';
 import { addFollowUpItem, listFollowUpItems } from '@/lib/db/followUpItems';
 import schemaSql from '@/lib/db/schema.sql?raw';
-import { createThread, type Thread } from '@/lib/db/threads';
+import { createThread, getCaptureTargetThread, setCaptureTarget, type Thread } from '@/lib/db/threads';
 import { createWorkspace } from '@/lib/db/workspaces';
 import { useProposalsStore } from '@/stores/proposalsStore';
 import { selectThreadById, useThreadsStore } from '@/stores/threadsStore';
 import { useUndoStore } from '@/stores/undoStore';
+import { useWorkspacesStore } from '@/stores/workspacesStore';
+import { UNSORTED_TITLES } from '@/lib/threads/captureHome';
 import * as undoLog from '@/lib/undo/undoLog';
 import { actionState, applyWeeklyAction, dayOf, loadActionContext } from './weeklyActions';
 import { WEEKLY_FORMAT, type WeeklyAction, type WeeklyReview } from './weeklyStructured';
@@ -95,6 +97,38 @@ describe('周回顾的建议动作 (P10-3)', () => {
     await useUndoStore.getState().redo();
     await useThreadsStore.getState().loadAll();
     expect(thread().status).toBe('done');
+  });
+
+  // DISCOVERED-20261112-7 (Ocean 第 338 条): finishing the capture target sends capture to 「未分类」,
+  // and the ⌘Z that reopens the project puts the target back on it.
+  it('标完成 on the capture target: capture goes to 未分类, and ⌘Z brings it back', async () => {
+    const inbox = await createWorkspace('Inbox');
+    const unsorted = await createThread(inbox.id, '未分类');
+    await setCaptureTarget(th.id);
+    await useWorkspacesStore.getState().load();
+    await useThreadsStore.getState().loadAll();
+
+    await applyWeeklyAction(action({ kind: 'mark_done' }), th.id, '周回顾 · m');
+    expect((await getCaptureTargetThread())?.id).toBe(unsorted.id);
+    expect(useThreadsStore.getState().captureTargetId).toBe(unsorted.id);
+
+    await useUndoStore.getState().undo();
+    expect((await getCaptureTargetThread())?.id).toBe(th.id);
+    await useUndoStore.getState().redo();
+    expect((await getCaptureTargetThread())?.id).toBe(unsorted.id);
+  });
+
+  it('标完成 on the capture target with no 未分类 left: a new one takes the captures', async () => {
+    await setCaptureTarget(th.id);
+    await useWorkspacesStore.getState().load();
+    await useThreadsStore.getState().loadAll();
+
+    await applyWeeklyAction(action({ kind: 'mark_done' }), th.id, '周回顾 · m');
+    const target = await getCaptureTargetThread();
+    expect(target?.id).not.toBe(th.id);
+    // Named in the UI language, like first launch's (tests run in English).
+    expect(UNSORTED_TITLES.has(target?.title ?? '')).toBe(true);
+    expect(target?.status).toBe('active');
   });
 
   it('改截止日期: set to that day; ⌘Z puts the old one back', async () => {

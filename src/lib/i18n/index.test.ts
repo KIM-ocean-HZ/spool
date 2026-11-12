@@ -37,3 +37,13 @@ describe('quote marks follow the UI language', () => {
     expect(quote('申请 11 月 15 日截止')).toBe('“申请 11 月 15 日截止”');
   });
 });
+
+// DISCOVERED-20261111-1: the follow-up 「关掉」 button read "Off" — the setting's word.
+describe('a key with an @context', () => {
+  it('shows the same Chinese and its own English', () => {
+    expect(t('关掉@followup')).toBe('关掉');
+    useSettingsStore.setState({ language: 'en' });
+    expect(t('关掉@followup')).toBe('Close it');
+    expect(t('关掉')).toBe('Off');
+  });
+});

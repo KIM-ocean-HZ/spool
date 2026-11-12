@@ -1,4 +1,5 @@
 import type { Thread } from '@/lib/db/threads';
+import { captureHome } from '@/lib/threads/captureHome';
 import type { Workspace } from '@/lib/db/workspaces';
 import type { WorkspaceNode } from './tree';
 
@@ -99,10 +100,14 @@ export interface ArchivePlan {
   /** Set when the capture target sits in the subtree — after archiving it would point at a
    *  finished project. */
   captureFrom: Thread | null;
-  /** Where the capture target moves: the most recently updated unfinished project outside
-   *  the subtree. Null when there is none — the target then stays where it is (the
-   *  confirmation says so), because there is nowhere unfinished left to send captures. */
+  /** Where the capture target moves: the unfinished 「未分类」 outside the subtree
+   *  (DISCOVERED-20261112-7, Ocean 第 338 条 — the same place a single 「完成」 sends it;
+   *  lib/threads/captureHome). Until v0.8.1 it was the most recently updated unfinished project. */
   captureTo: Thread | null;
+  /** No 「未分类」 left outside: a new one is made in this workspace. Null when `captureTo` is set —
+   *  and when there is no workspace outside the subtree at all, in which case the target stays
+   *  where it is (the confirmation says so). */
+  captureNewIn: string | null;
 }
 
 // The right-click 「归档」, worked out before anything is written — the confirmation reads
@@ -113,11 +118,11 @@ export const archivePlan = (roots: WorkspaceNode[], threads: Thread[], id: strin
   const toComplete = threads.filter((th) => ids.has(th.workspaceId) && th.status !== 'done');
   const target = threads.find((th) => th.isCaptureTarget) ?? null;
   if (!target || !ids.has(target.workspaceId)) {
-    return { toComplete, captureFrom: null, captureTo: null };
+    return { toComplete, captureFrom: null, captureTo: null, captureNewIn: null };
   }
-  const captureTo =
-    threads
-      .filter((th) => !ids.has(th.workspaceId) && th.status !== 'done')
-      .sort((a, b) => b.updatedAt - a.updatedAt)[0] ?? null;
-  return { toComplete, captureFrom: target, captureTo };
+  const home = captureHome(roots, threads, {
+    threads: new Set(toComplete.map((th) => th.id)),
+    workspaces: ids,
+  });
+  return { toComplete, captureFrom: target, captureTo: home.to, captureNewIn: home.newIn };
 };

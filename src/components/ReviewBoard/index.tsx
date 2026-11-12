@@ -32,6 +32,7 @@ import {
   endOfWeek,
   WEEKLY_REVIEW_PERIOD_MS,
 } from '@/lib/weeks';
+import { ranBy } from '@/lib/engine/ranBy';
 import { ACTION_LABEL, ENGINE_LABEL, useEngineStore, type EngineKind } from '@/stores/engineStore';
 import { useApiReady } from '@/stores/apiKeyStore';
 import { useSettingsStore } from '@/stores/settingsStore';
@@ -574,6 +575,7 @@ function Review({ run, onDelete }: { run: EngineRun; onDelete?: (id: string) => 
     minute: '2-digit',
   });
   const engineName = ENGINE_LABEL[run.engine as EngineKind] ?? run.engine;
+  const ran = ranBy(run, t);
   const cost = money(run.usage.costUsd);
   const text = (run.resultText ?? '').trim();
   // P10: a review stored as data; anything else is prose from before, split the P9S-5 way.
@@ -584,9 +586,9 @@ function Review({ run, onDelete }: { run: EngineRun; onDelete?: (id: string) => 
     <li className="border-b border-line pb-4 last:border-b-0">
       <div className="flex flex-wrap items-baseline gap-x-2 text-[10px] text-muted">
         <span className="font-mono text-ink-2">{when}</span>
-        <span>· {engineName}</span>
-        {run.usage.model && run.usage.model !== run.engine && <span>· {run.usage.model}</span>}
-        <span>· {cost ?? t('花费未知')}</span>
+        {/* DISCOVERED-20261112-8: who ran it and when — no model id, no 「花费未知」 (ranBy). */}
+        <span>· {ran.who}</span>
+        {!ran.viaCli && cost && <span>· {cost}</span>}
         {onDelete && (
           <button
             type="button"

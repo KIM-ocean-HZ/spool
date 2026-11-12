@@ -434,7 +434,8 @@ describe('undoStore reversal against a real SQLite engine (§9.13)', () => {
     const active = await createThread(w.id, 'active');
     const parked = await createThread(inner.id, 'parked');
     const wasDone = await createThread(w.id, 'was done');
-    const elsewhere = await createThread(other.id, 'elsewhere');
+    // DISCOVERED-20261112-7: capture goes to 「未分类」 outside the archived workspace.
+    const elsewhere = await createThread(other.id, '未分类');
     await updateThread(parked.id, { status: 'parked' });
     await updateThread(wasDone.id, { status: 'done', completedAt: 1, digest: 'kept' });
     await setCaptureTarget(active.id);

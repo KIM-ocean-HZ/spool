@@ -118,7 +118,7 @@ export default function WsRepoSection({
                     <div className="mt-1.5 text-muted">{done === 'close' ? t('已关掉（⌘Z 能撤回）。') : t('留着了。')}</div>
                   ) : (
                     <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                      <Choice label={t('关掉')} hint={t('这一行不再跟进；关掉的还在跟进编辑里，点一下能重新打开。')} onClick={() => onDecide(`f${i}`, 'close')} />
+                      <Choice label={t('关掉@followup')} hint={t('这一行不再跟进；关掉的还在跟进编辑里，点一下能重新打开。')} onClick={() => onDecide(`f${i}`, 'close')} />
                       <Choice label={t('留着')} hint={t('照旧跟进，这一条从单子上划掉。')} onClick={() => onDecide(`f${i}`, 'keep')} />
                     </div>
                   )}

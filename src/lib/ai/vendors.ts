@@ -203,6 +203,30 @@ export const vendorName = (v: Vendor, t: (key: string) => string): string =>
 
 export const vendorById = (id: string): Vendor | null => BY_ID.get(id as VendorId) ?? null;
 
+/** Whose model this is, from the name the endpoint reported — for a past run's 「谁跑的」 line, which
+ *  must not show the model id itself (DISCOVERED-20261112-8; a run records the model, not the vendor).
+ *  `vendor/model` is OpenRouter's naming. Null = cannot tell (a custom endpoint): say 「API」. */
+export const vendorOfModel = (model: string): Vendor | null => {
+  const m = model.trim().toLowerCase();
+  if (m.includes('/')) return vendorById('openrouter');
+  const id: VendorId | null = m.startsWith('deepseek')
+    ? 'deepseek'
+    : m.startsWith('claude')
+      ? 'anthropic'
+      : m.startsWith('gemini')
+        ? 'gemini'
+        : /^(gpt|chatgpt|o\d)/.test(m)
+          ? 'openai'
+          : /^(kimi|moonshot)/.test(m)
+            ? 'kimi'
+            : /^(qwen|qwq)/.test(m)
+              ? 'qwen'
+              : m.startsWith('glm')
+                ? 'zhipu'
+                : null;
+  return id ? vendorById(id) : null;
+};
+
 const norm = (url: string): string => url.trim().replace(/\/+$/, '').toLowerCase();
 
 /** The vendor an address belongs to; anything else is 'custom'. */

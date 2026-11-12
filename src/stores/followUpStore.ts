@@ -23,6 +23,8 @@ interface FollowUpState {
   threadId: string | null;
   items: FollowUpItem[];
   load: (threadId: string) => Promise<void>;
+  /** Re-read the open project's lines, without blanking them first (a line was approved elsewhere). */
+  refresh: () => Promise<void>;
   add: (text: string, standing: boolean) => Promise<void>;
   edit: (id: string, text: string) => Promise<void>;
   setStanding: (id: string, standing: boolean) => Promise<void>;
@@ -64,6 +66,8 @@ export const useFollowUpStore = create<FollowUpState>((set, get) => {
       // top of the one they are looking at now.
       if (get().threadId === threadId) set({ items, run });
     },
+
+    refresh: reload,
 
     loadRun: async () => {
       const id = get().threadId;
