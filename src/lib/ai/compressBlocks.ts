@@ -329,6 +329,20 @@ export const entryPercent = (p: EntryPair): number | null => {
   return Math.round((p.after.raw.length / Math.max(1, p.before.raw.length)) * 100);
 };
 
+/** The 「长度」 at the top, on the same footing as each card's `entryPercent`: all the blocks' own text,
+ *  before and after — so the cards add up to it.
+ *
+ *  ⚠️ DISCOVERED-20261112-4: it used to be the whole pack, and most of a pack is Spool's own 「how to
+ *  read this」 header, which the model hands back as it was. P19's 〈Team offsite〉 pack was 10,430
+ *  characters, 8,414 of them header and 2,016 the nine blocks — so a block 87% shorter and another 10%
+ *  shorter read 「−2%」 at the top. A block that is gone counts as nothing after; one it invented counts
+ *  in full. Null when there are no blocks before. */
+export const entriesPercent = (pairs: EntryPair[]): number | null => {
+  const before = pairs.reduce((n, p) => n + (p.before?.raw.length ?? 0), 0);
+  const after = pairs.reduce((n, p) => n + (p.after?.raw.length ?? 0), 0);
+  return before === 0 ? null : Math.round((after / before) * 100);
+};
+
 // ---------------------------------------------------------------------------------------
 // D7 · 把丢掉的数字/日期加回去（2026-08-22，Ocean）
 // ---------------------------------------------------------------------------------------

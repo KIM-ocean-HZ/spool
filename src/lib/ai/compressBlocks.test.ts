@@ -5,6 +5,7 @@ import {
   worthRetrying,
   auditEntry,
   compareByEntry,
+  entriesPercent,
   entryPercent,
   missingNumberLines,
   splitPackEntries,
@@ -54,6 +55,29 @@ describe('splitPackEntries', () => {
   it('小节标题结束一块 —— Output Language 不会被吸进最后一条', () => {
     const es = splitPackEntries(PACK);
     expect(es[2].raw).not.toContain('Answer in Chinese');
+  });
+});
+
+// DISCOVERED-20261112-4: the top 「长度」 used to divide the whole pack, header and all — the header is
+// most of a small project's pack and comes back unchanged, so 87% off one block read −2% at the top.
+describe('entriesPercent', () => {
+  it('counts the blocks only, so a long header that comes back as it was does not water it down', () => {
+    const header = '# How to read this\n' + 'Spool rules. '.repeat(400) + '\n';
+    const before = `${PACK}\n${header}`;
+    const after = before.replace('一段很长的引文，里面有 ==划出来的重点== 和别的话。\n第二行也属于这一块。', '短了。');
+    const c = compareByEntry(before, after)!;
+    const blocksBefore = c.pairs.reduce((n, p) => n + p.before!.raw.length, 0);
+    const blocksAfter = c.pairs.reduce((n, p) => n + p.after!.raw.length, 0);
+    expect(entriesPercent(c.pairs)).toBe(Math.round((blocksAfter / blocksBefore) * 100));
+    expect(entriesPercent(c.pairs)).toBeLessThan(90);
+    // The whole text barely moves — what the top used to say.
+    expect(Math.round((after.length / before.length) * 100)).toBeGreaterThan(95);
+  });
+
+  it('a block that is gone counts as nothing; no blocks at all is no figure', () => {
+    const c = compareByEntry(PACK, PACK.split('\n').filter((l) => !l.startsWith('💭 #3')).join('\n'))!;
+    expect(entriesPercent(c.pairs)).toBeLessThan(100);
+    expect(entriesPercent([])).toBeNull();
   });
 });
 

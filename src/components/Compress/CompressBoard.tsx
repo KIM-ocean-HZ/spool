@@ -15,7 +15,7 @@ import {
   numbersGateOpen,
   type CompressLevel,
 } from '@/lib/ai/compress';
-import { compareByEntry } from '@/lib/ai/compressBlocks';
+import { compareByEntry, entriesPercent } from '@/lib/ai/compressBlocks';
 import { useLanguage, useT } from '@/lib/i18n';
 import type { Block } from '@/lib/db/blocks';
 import { useBlocksStore } from '@/stores/blocksStore';
@@ -180,7 +180,13 @@ export default function CompressBoard({ threadId }: { threadId: string }) {
 
   const structureOk =
     !byEntry || (byEntry.dropped === 0 && byEntry.invented === 0 && byEntry.duplicated.length === 0);
-  const pct = audit ? Math.round((audit.charsAfter / Math.max(1, audit.charsBefore)) * 100) : null;
+  // DISCOVERED-20261112-4: the blocks' own text, the same footing as each card (entriesPercent). The
+  // whole-text figure stays only for a draft that could not be split into blocks — then there are no cards.
+  const pct = byEntry
+    ? entriesPercent(byEntry.pairs)
+    : audit
+      ? Math.round((audit.charsAfter / Math.max(1, audit.charsBefore)) * 100)
+      : null;
 
   // ⛔ 2026-08-22（Ocean 第 6 条）：这里原来还算出一句结论，印在顶上 ——
   // 「⚠️ 这一份别用 —— 它改写了 1 条批注的信息」。**那一句撤掉了**，两个理由，他都说了：
