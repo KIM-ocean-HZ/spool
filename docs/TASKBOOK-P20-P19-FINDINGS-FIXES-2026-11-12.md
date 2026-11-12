@@ -51,10 +51,10 @@
 ### P20-1b · Windows 的 key 改存凭据管理器（`-19`，第 340 条）
 
 - **现在**：Mac 用 `security-framework` 存钥匙串（`api_engine.rs` 716 行起的 `keychain` 模块，`migrate_key_into_keychain` 会把旧的 `api-key` 文件挪进去再删）；非 macOS 写 `app_data_dir()/api-key` 明文文件。⛔ 旧决定（`Cargo.toml:63 – 73` 注释）：不用跨平台 `keyring` crate（会拖进 dbus / secret-service）。
-- **要做**：Windows 上照 Mac 的样子加一个 `wincred` 小模块，直接调 Win32 凭据 API（`CredWriteW` / `CredReadW` / `CredDeleteW`，`CRED_TYPE_GENERIC`，目标名用 identifier，比如 `com.oceanjin.spool/api-key`）；`windows-sys` 已经在依赖里，只加 `Win32_Security_Credentials` 这个 feature。`api_key_save` / `read_api_key` / `api_key_load` / `api_key_present` 的 Windows 分支都改；**启动时（或第一次读 key 时）把老的 `api-key` 文件迁进凭据管理器、迁成功再删文件**，和 Mac 的迁移一样；迁失败就留着文件照旧能用。「断开」要把凭据删掉。主进程不发网络请求这条护栏不变（凭据 API 不碰网络）。
+- **要做**：Windows 上照 Mac 的样子加一个 `wincred` 小模块，直接调 Win32 凭据 API（`CredWriteW` / `CredReadW` / `CredDeleteW`，`CRED_TYPE_GENERIC`，目标名用 identifier，比如 `com.oceanjin.spool/api-key`）；`windows-sys` 已经在依赖里，只加 `Win32_Security_Credentials` 这个 feature。`api_key_save` / `read_api_key` / `api_key_load` / `api_key_present` 的 Windows 分支都改；**启动时（或第一次读 key 时）把老的 `api-key` 文件迁进凭据管理器、迁成功再删文件**，和 Mac 的迁移一样；迁失败就留着文件照旧能用。「断开」要把凭据删掉 ⇒ **第 343 条改了：「断开」照旧只关开关、key 留着（两个平台一样），清空 key 才删凭据**。主进程不发网络请求这条护栏不变（凭据 API 不碰网络）。
 - **文案**：设置页那句改成分平台：Mac「存在系统钥匙串里」，Windows「存在 Windows 凭据管理器里」；后面「不进设置文件，也不跟着导出的库走」照旧。
 - **隐私说明三份一起改**：`docs/PRIVACY.md:19`、`site/privacy.html`、`scripts/site-zh-privacy.html`（然后 `node scripts/build-site-zh.mjs` 重生成中文页）——「Windows 上存在同一目录下一个单独的文件」改成「存在 Windows 凭据管理器」。
-- **验收**：Windows 单元测试（CI 上跑）：存 → 读 → 删；有老文件时迁进去、文件消失；迁移失败时还能从文件读。虚拟机里：粘一把假 key（不用真 key）→ 控制面板「凭据管理器 → Windows 凭据」里看得到那一条、数据目录里没有 `api-key` 文件 →「断开」后那一条没了。真 key 跑一次只在 Ocean 同意时做。
+- **验收**：Windows 单元测试（CI 上跑）：存 → 读 → 删；有老文件时迁进去、文件消失；迁移失败时还能从文件读。虚拟机里：粘一把假 key（不用真 key）→ 控制面板「凭据管理器 → Windows 凭据」里看得到那一条、数据目录里没有 `api-key` 文件 →「断开」后那一条**还在**、点「连接」能连回（第 343 条）；有老 `api-key` 文件的库装上新版后，文件搬进凭据、文件消失。真 key 跑一次只在 Ocean 同意时做。
 
 ### P20-2 · 排版挤（`-2` `-3` `-15`）
 
