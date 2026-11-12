@@ -1478,6 +1478,8 @@ const EN: Record<string, string> = {
   '自定义地址': 'Custom endpoint',
   '正在连 {vendor}…': 'Connecting to {vendor}…',
   '认不出这是哪一家的 key —— 点一下是哪家：': 'Can\u2019t tell whose key this is \u2014 click the vendor:',
+  '「sk-」开头的 key，DeepSeek、通义、Kimi 和旧版 OpenAI 都在用，光看 key 分不出是哪家 —— 点一下是哪家：':
+    'Keys that start with \u201csk-\u201d are used by DeepSeek, Qwen, Kimi and older OpenAI keys alike, so the key alone does not say whose it is \u2014 click the vendor:',
   '{vendor} 不认这个 key。是别家的 key 的话，点一下是哪家：':
     '{vendor} does not accept this key. If it is another vendor\u2019s, click which one:',
   '连不上 {vendor}。检查一下网络，或者点一家再试：': 'Could not reach {vendor}. Check the network, or click a vendor to try again:',

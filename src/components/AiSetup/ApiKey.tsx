@@ -3,7 +3,15 @@ import { useEffect, useRef, useState } from 'react';
 import ApiBalance from '@/components/ApiBalance';
 import { loadApiKey, saveApiKey, sidecarPresent } from '@/lib/ai/compress';
 import { connectedPatch, probeVendor, useModelListStore } from '@/lib/ai/connectKey';
-import { detectVendor, resolveVendor, vendorById, vendorName as nameOf, VENDORS, type Vendor } from '@/lib/ai/vendors';
+import {
+  detectVendor,
+  isSharedSkKey,
+  resolveVendor,
+  vendorById,
+  vendorName as nameOf,
+  vendorsForPick,
+  type Vendor,
+} from '@/lib/ai/vendors';
 import { useT } from '@/lib/i18n';
 import { IS_WINDOWS } from '@/lib/platform';
 import { useApiKeyStore } from '@/stores/apiKeyStore';
@@ -24,7 +32,8 @@ import { useSettingsStore } from '@/stores/settingsStore';
 
 type Phase =
   | { at: 'idle' }
-  | { at: 'pick' }
+  // `sk`: the key is a bare `sk-…` one (vendors.ts `isSharedSkKey`) — say why it cannot be told apart.
+  | { at: 'pick'; sk?: boolean }
   | { at: 'connecting'; vendor: Vendor }
   | { at: 'refused'; vendor: Vendor; message: string }
   | { at: 'failed'; vendor: Vendor; message: string };
@@ -89,7 +98,7 @@ export default function ApiKey({ onConnected }: { onConnected?: () => void }) {
       setHasKey(true);
       const id = detectVendor(key);
       if (id) await connect(vendorById(id)!, key);
-      else setPhase({ at: 'pick' });
+      else setPhase({ at: 'pick', sk: isSharedSkKey(key) });
     } finally {
       committing.current = false;
     }
@@ -127,7 +136,7 @@ export default function ApiKey({ onConnected }: { onConnected?: () => void }) {
   const vendorList = (
     <div className="space-y-1.5">
       <div className="flex flex-wrap gap-1">
-        {VENDORS.map((v) => (
+        {vendorsForPick(phase.at === 'pick' && phase.sk === true).map((v) => (
           <button
             key={v.id}
             type="button"
@@ -170,7 +179,11 @@ export default function ApiKey({ onConnected }: { onConnected?: () => void }) {
     return (
       <div className="space-y-1.5 text-xs">
         {phase.at === 'pick' ? (
-          <p className="text-ink-2">{t('认不出这是哪一家的 key —— 点一下是哪家：')}</p>
+          <p className="text-ink-2">
+            {phase.sk
+              ? t('「sk-」开头的 key，DeepSeek、通义、Kimi 和旧版 OpenAI 都在用，光看 key 分不出是哪家 —— 点一下是哪家：')
+              : t('认不出这是哪一家的 key —— 点一下是哪家：')}
+          </p>
         ) : (
           <p style={urgent} title={phase.message}>
             {phase.at === 'refused'
@@ -253,7 +266,7 @@ export default function ApiKey({ onConnected }: { onConnected?: () => void }) {
             onClick={() =>
               void loadApiKey().then((k) => {
                 const id = apiVendor ? vendor.id : detectVendor(k);
-                return id ? connect(vendorById(id)!, k) : setPhase({ at: 'pick' });
+                return id ? connect(vendorById(id)!, k) : setPhase({ at: 'pick', sk: isSharedSkKey(k) });
               })
             }
             className="rounded-md border border-accent bg-accent/10 px-2.5 py-1 text-xs text-accent transition-colors hover:bg-accent/20"

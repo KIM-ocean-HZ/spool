@@ -4,6 +4,8 @@ import {
   baseFor,
   chatModels,
   detectVendor,
+  isSharedSkKey,
+  vendorsForPick,
   pickModel,
   resolveVendor,
   vendorById,
@@ -158,5 +160,22 @@ describe('连接', () => {
       apiEngineEnabled: true,
     });
     expect(connectedPatch(v('openai'), probe, 'openai', 'high').apiReasoning).toBe('high');
+  });
+});
+
+// DISCOVERED-20261112-18 (Ocean 第 339 条): a bare sk- key is not tried on anyone — the picker says which
+// vendors use that shape and lists them first.
+describe('a bare sk- key', () => {
+  it('is the shared shape only when nothing else claims it', () => {
+    expect(isSharedSkKey(' sk-0123456789abcdef ')).toBe(true);
+    expect(isSharedSkKey('sk-ant-api03-abc')).toBe(false);
+    expect(isSharedSkKey('sk-proj-abc')).toBe(false);
+    expect(isSharedSkKey('AIzaSyabc')).toBe(false);
+  });
+
+  it('puts DeepSeek, 通义, Kimi and OpenAI first, and leaves nobody out', () => {
+    const ids = vendorsForPick(true).map((v) => v.id);
+    expect(ids.slice(0, 4)).toEqual(['deepseek', 'qwen', 'kimi', 'openai']);
+    expect([...ids].sort()).toEqual(vendorsForPick(false).map((v) => v.id).sort());
   });
 });

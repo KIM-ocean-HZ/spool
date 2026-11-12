@@ -254,6 +254,23 @@ export const detectVendor = (key: string): VendorId | null => {
   return null;
 };
 
+/** DISCOVERED-20261112-18 (Ocean 第 339 条): a bare `sk-…` key is the shape DeepSeek, 通义, Kimi and OpenAI's
+ *  older keys all have, so the key alone cannot say whose it is — and Spool does not find out by trying it
+ *  on each of them (a key goes only to the vendor it belongs to). The picker says so and lists these first. */
+export const SHARED_SK_VENDORS: readonly VendorId[] = ['deepseek', 'qwen', 'kimi', 'openai'];
+
+export const isSharedSkKey = (key: string): boolean =>
+  key.trim().startsWith('sk-') && detectVendor(key) === null;
+
+/** The vendor buttons in the order to show them: the four `sk-` vendors first for such a key. */
+export const vendorsForPick = (sharedSk: boolean): Vendor[] =>
+  sharedSk
+    ? [
+        ...SHARED_SK_VENDORS.map((id) => vendorById(id)!),
+        ...VENDORS.filter((v) => !SHARED_SK_VENDORS.includes(v.id)),
+      ]
+    : VENDORS;
+
 /** The address to call: the saved one when it is one of this vendor's (the region that answered),
  *  the vendor's first otherwise; a custom vendor keeps whatever the user typed. */
 export const baseFor = (v: Vendor, apiBaseUrl: string): string =>
