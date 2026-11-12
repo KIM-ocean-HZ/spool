@@ -2018,8 +2018,8 @@ const EN: Record<string, string> = {
   '被取代的旧块（{n}）': 'Replaced blocks ({n})',
   '库里已经记着 {by} 更正了 {old}。再点「更正一处」只会把引文重写一遍；想让 {old} 不再进打包，点「整条取代」。':
     'The library already records {by} correcting {old}. Clicking “Correct one point” again only rewrites the quote; to keep {old} out of packs, click “Replace in full”.',
-  '旧的 {b} 里：': 'In the older {b}:',
-  '新的 {b} 里：': 'In the newer {b}:',
+  '旧的 {b} 里：': 'In the older {b}: ',
+  '新的 {b} 里：': 'In the newer {b}: ',
   '已更正一处：两块都留着，{by} 上记了一句「它更正了 {old}」。':
     'Corrected one point: both blocks stay, and {by} now carries a note saying it corrects {old}.',
   '已换：以后打包只带 {by}，{old} 不再放进去。': 'Replaced: packs now carry {by} only; {old} is left out.',
@@ -2031,8 +2031,8 @@ const EN: Record<string, string> = {
     'From now on packs carry {by} only; {old} is left out (it is not deleted — it stays in its project and is still searchable).',
   '可能已经结束的项目（{n}）': 'Projects that may be finished ({n})',
   '〈{name}〉看起来已经结束了': '“{name}” looks finished',
-  '它自己的原话：': 'In its own words:',
-  '{b} 里：': 'In {b}:',
+  '它自己的原话：': 'In its own words: ',
+  '{b} 里：': 'In {b}: ',
   '这个项目已经不在了。': 'That project is gone.',
   '已标完成。': 'Marked done.',
   '标完成': 'Mark done',
