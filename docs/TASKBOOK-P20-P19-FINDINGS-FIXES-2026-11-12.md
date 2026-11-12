@@ -151,7 +151,12 @@
 
 在演示版上验过、你的库里看不到的：新手教程那一块的说法（只在全新安装时种下）、「自动化」同意框挂着时的那一下捕捉有来源、粘 `sk-` key 的提示、待审里批了跟进之后右栏马上出现（任务书 §7.2）。
 
-### 6.2 Windows（虚拟机里验，见 §7.3）
+### 6.2 Windows（虚拟机里验过，见 §7.3）
+
+虚拟机「Windows 11」现在装的是 `a4308c1` 的 CI 包（run 43230376752），用的是它自己原来的测试库（换回来了、逐个哈希一致）。想亲眼看的话：
+
+1. 在虚拟机里打开 Spool → 设置 → AI 引擎：API key 那块最后一句写「key 存在这台电脑的 Windows 凭据管理器里…」。
+2. 想看凭据管理器：在那块粘一把假的 `sk-` 开头的 key（随便打，比如 `sk-test-123`）→ Windows 的「控制面板 → 凭据管理器 → Windows 凭据」里出现 `com.oceanjin.spool/api-key`。看完在那里把它删掉。
 
 ## 7. 回执（执行窗填写）
 
@@ -228,6 +233,27 @@
 **Windows CI**：`p20-windows`（= `9d3eef5`）run 43226029453 全绿：vitest、sidecar、`cargo test` 307 过 / 17 ignored（含凭据那三条 `wincred_tests` 都过）、NSIS 安装包（`spool-windows-nsis`，约 10 MB）。⚠️ 这个包不含后来的 `086e05e`、`a86e89d`、`1999746`。
 
 **测试**：vitest 1389 · `cargo test --lib` 328 / 18 ignored · `tsc -b`、i18n 干净。
+
+### 7.3 第一窗（续）：Mac 换装、Windows 虚拟机验过
+
+**Mac 换装**（第 346 条）：13:47 装上 `a4308c1` 编的 Developer ID 包（`spool` `3392ad64…`，`codesign --deep --strict` 过；GUI 当时没在跑，不用停）。备份 `~/Desktop/Spool/db/spool.before-p20-install-20261112-134700.db`（`VACUUM INTO`，integrity ok，v39）+ 7 个 json；旧 App `~/Desktop/Spool/spool-pre-install/Spool-0.8.1-ded630cf-before-p20-20261112-134700.app`；日志 `~/Desktop/Spool/db/p20-run-20261112-134700.*.log`：`[overlay] helper started`、`[double-tap] installed at HID/active`（两个授权都在）；库前后六个数一样（1465 块 · 80 项目 · 21 工作区 · 66 跟进行 · 89 文件 · 正文 950,928 字）；`--mcp` 一个没碰；「暂停捕捉手势」仍关。验收单 §6.1。
+
+**Windows**（第 347 条）：`p20-windows` 推到 `a4308c1`，run 43230376752 全绿（`cargo test` 307 过，凭据三条都过），包 `Spool_0.8.1_x64-setup.exe` `a06c620f…`。虚拟机「Windows 11」（原来是关机的，这次开了，验完让它开着跑新版）：用 `P20-verify-20261112/scripts/vm/` 里的脚本（照 P19 改：真库改名 `com.oceanjin.spool.p20-keep`、逐文件哈希清单、测试库带 `.p20-demo`、`$env:APPDATA` 写死成用户路径），换上 P19 的 `win-en` 快照，静默装包，调试口驱动，截图在 `P20-verify-20261112/shots/win/`：
+
+| 条 | 怎么验的 | 结果 |
+|---|---|---|
+| `-19` 搬家 | 测试库里先放一个旧式 `api-key` 文件（假 key）+ 开关开着，装新版后第一次启动 | 文件没了；`cmdkey /list` 里出现 `com.oceanjin.spool/api-key`（Generic、User api-key、Local machine persistence）；设置页「✓ Connected to DeepSeek」（读的就是凭据）✓ |
+| `-19` 说法 | 设置 → AI engine | 「The key is kept in Windows Credential Manager on this computer, never in the settings file or an exported library.」✓ |
+| 第 343 条 | 点「Disconnect」 | 凭据还在，界面「A key is already saved · Connect」✓ |
+| `20261111-3` | 停 Spool，`cmdkey /delete` 删掉凭据，开关开着，再起 | Compress / Out-of-date check 都上锁，面板叫你粘 key（带凭据管理器那句）✓；粘一把假的 `sk-` key（不认识的不发出去）后两个页签当场解锁 |
+| `-3` / `-15` | 压缩页、过期检测页（还没跑的状态） | 「With API」和按钮都在一行 ✓（没真跑：虚拟机只有 API 一条路，不拿假 key 去打厂商） |
+| `-2` / `-14` | 项目管理 | 列对齐、「1 duplicate」单独一列、「1 block」✓；右栏「2 blocks」✓ |
+| `-7` | 把捕捉目标 Job search 标完成 | 提示「‹Job search› is done, so capture now goes to ‹Unsorted›.」，侧栏 Unsorted 标 Capturing ✓ |
+| `-13` | 往测试库塞一条 AI 提的跟进，点「Add it」 | 右栏当场出现 ✓ |
+
+**收尾**：Spool 停了 → 假凭据删了（`cmdkey` 查无）→ 测试库删掉、真库改名换回，**17 个文件和清单逐个哈希一致** → 不带调试口重启（9222 关着）→ 在跑的是新版 `66d344e6…`。没碰干净虚拟机「Spool-clean-P13」。
+
+**还剩**：Ocean 按 §6.1 验 Mac（§6.2 想看再看）；然后 P20-8 发 v0.8.2（每一步先问：改版本号、Mac 公证、推送、tag、Windows 打包、Release、两个固定下载地址、Registry、台账、本机换成公证版）。
 
 ---
 
