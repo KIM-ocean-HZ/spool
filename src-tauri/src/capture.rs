@@ -155,7 +155,12 @@ fn browser_caption(exe: &str, caption: &str) -> String {
 
 #[cfg(target_os = "macos")]
 fn macos_frontmost_via_osascript() -> Option<ForegroundApp> {
-    let (app, pid) = macos_frontmost_process()?;
+    // DISCOVERED-20261112-10: System Events does not answer while macOS's 「Spool wants to control
+    // System Events」 dialog is still up (or at all, once refused) — and wait_for_consent below keeps
+    // the capture on its 1 s, so the first capture after a fresh install used to land with no source.
+    // The window server names the app whose window is in front without any grant (owner names need
+    // none; only window titles are Screen Recording's), so that block now carries the app's name.
+    let (app, pid) = macos_frontmost_process().or_else(frontmost_window_owner)?;
     // Browser tab title when available, else the app name. A failed/absent tab read
     // (no window, Automation permission not yet granted, unsupported app) just falls
     // back — capture still gets a usable source.
@@ -1440,12 +1445,21 @@ fn frontmost_window_owner_pid() -> Option<i32> {
     onscreen_windows().first().map(|w| w.pid)
 }
 
+/// The same window's app, by name — the source a capture falls back to when System Events gives none.
+#[cfg(target_os = "macos")]
+fn frontmost_window_owner() -> Option<(String, Option<i32>)> {
+    let w = onscreen_windows().into_iter().next()?;
+    (!w.owner.is_empty()).then(|| (w.owner, Some(w.pid)))
+}
+
 /// An ordinary (layer 0) window on screen, as the window server describes it.
 #[cfg(target_os = "macos")]
 struct OnscreenWindow {
     pid: i32,
     number: u32,
     bounds: Frame,
+    /// The owning app's name (kCGWindowOwnerName — no grant needed, unlike the window's title).
+    owner: String,
 }
 
 /// The ordinary windows on screen, front to back — the reading frontmost_window_owner_pid
@@ -1459,7 +1473,7 @@ fn onscreen_windows() -> Vec<OnscreenWindow> {
     use core_foundation::string::CFString;
     use core_graphics::window::{
         copy_window_info, kCGNullWindowID, kCGWindowBounds, kCGWindowLayer,
-        kCGWindowListOptionOnScreenOnly, kCGWindowNumber, kCGWindowOwnerPID,
+        kCGWindowListOptionOnScreenOnly, kCGWindowNumber, kCGWindowOwnerName, kCGWindowOwnerPID,
     };
 
     let Some(info) = copy_window_info(kCGWindowListOptionOnScreenOnly, kCGNullWindowID) else {
@@ -1469,6 +1483,7 @@ fn onscreen_windows() -> Vec<OnscreenWindow> {
     let pid_key = unsafe { CFString::wrap_under_get_rule(kCGWindowOwnerPID) };
     let number_key = unsafe { CFString::wrap_under_get_rule(kCGWindowNumber) };
     let bounds_key = unsafe { CFString::wrap_under_get_rule(kCGWindowBounds) };
+    let owner_key = unsafe { CFString::wrap_under_get_rule(kCGWindowOwnerName) };
     let num = |d: &CFDictionary<CFString, CFType>, k: &CFString| -> Option<f64> {
         d.find(k).and_then(|v| v.downcast::<CFNumber>()).and_then(|n| n.to_f64())
     };
@@ -1493,7 +1508,12 @@ fn onscreen_windows() -> Vec<OnscreenWindow> {
             })
             .unwrap_or((0.0, 0.0, 0.0, 0.0));
         let number = num(&dict, &number_key).map(|n| n as u32).unwrap_or(0);
-        out.push(OnscreenWindow { pid, number, bounds });
+        let owner = dict
+            .find(&owner_key)
+            .and_then(|v| v.downcast::<CFString>())
+            .map(|s| s.to_string())
+            .unwrap_or_default();
+        out.push(OnscreenWindow { pid, number, bounds, owner });
     }
     out
 }
