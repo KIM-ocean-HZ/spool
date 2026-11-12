@@ -621,7 +621,9 @@ export default function CompressBoard({ threadId }: { threadId: string }) {
             那条锁**他明说解了**（R2 §1）。留下来的是它的两半：
             数字硬闸门照旧（⛔ 解锁之后也不放宽），以及「关掉留原文 = 改不回去」这句话
             —— ⚠️ 它必须写在**按下按钮的那一刻**看得见的地方，不能只写在设置里。 */}
-        <span className="text-muted">
+        {/* DISCOVERED-20261112-3: the note gives way and wraps; the buttons on the right keep one line
+            each (at 1180 wide with the right rail open 「开始压缩」 used to stand on end). */}
+        <span className="min-w-0 flex-1 text-muted">
           {t('丢了数字或日期的压缩稿不许进库，以后开了写入这条也不放宽。')}
           {audit && !numbersGateOpen(audit) && (
             <> {t('这一份现在就卡在这条上 —— 先用上面那个「加回去」。')}</>
@@ -635,7 +637,7 @@ export default function CompressBoard({ threadId }: { threadId: string }) {
             ? t('压缩前的原文会留在每一块上：随时打开来看，也随时换得回去。')
             : t('⚠️ 你在设置里关掉了「备份压缩前的原文」—— 这一次换过去，原来的字就没有了。')}
         </span>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-none items-center gap-2 whitespace-nowrap">
           {/* ⭐ R1 · 「用这一份」。⛔ 三道闸都在 store 里（数字硬闸门 / 结构没坏 / 真的变了）——
               ⛔ 别在这儿放行，界面上的判断会被绕过。这里只负责**不假装它能点**：
               闸门关着的时候按钮是灰的，而理由就印在左边那句话里。 */}

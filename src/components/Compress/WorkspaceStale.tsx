@@ -397,9 +397,10 @@ export default function WorkspaceStale({
       )}
 
       <footer className="flex flex-none items-center justify-between gap-3 border-t border-line bg-paper-2/40 px-5 py-3 text-xs">
-        <span className="text-muted">{t('这一页只连线、标完成，不改任何一块的正文。')}</span>
+        {/* DISCOVERED-20261112-15: the note wraps, the controls on the right stay on one line. */}
+        <span className="min-w-0 flex-1 text-muted">{t('这一页只连线、标完成，不改任何一块的正文。')}</span>
         {enabled && (
-          <span className="flex items-center gap-3">
+          <span className="flex flex-none items-center gap-3 whitespace-nowrap">
             <RoadPicker setting="staleRoute" disabled={running || busy} />
             <button
               type="button"

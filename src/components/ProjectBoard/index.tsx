@@ -157,6 +157,12 @@ export default function ProjectBoard() {
     };
   }, [byWorkspace, sort, now]);
 
+  // DISCOVERED-20261112-2: the 「N 块重复」 hint used to be an extra cell on only the rows that had
+  // one, which pushed that row's 工作区 / 块数 columns left of every other row's. It is a column of its
+  // own now, of fixed width, on every row — and only when some project on the board has repeats, so a
+  // board with none does not give up the room.
+  const dupeColumn = [...live, ...done].some((th) => (dupeCounts[th.id] ?? 0) > 0);
+
   const row = (th: Thread) => {
     const days = dueInDays(th, now);
     const colour =
@@ -205,19 +211,21 @@ export default function ProjectBoard() {
           <span className="w-24 flex-none truncate text-[11px] text-muted">
             {wsTitleById.get(th.workspaceId) ?? ''}
           </span>
-          <span className="flex-none font-mono text-[10px] text-muted">
+          {/* Fixed width too: 「9 块」 and 「120 块」 are different widths, and a cell that sizes to its
+              text moves the 工作区 column's edge from one row to the next. */}
+          <span className="w-[4.5rem] flex-none whitespace-nowrap text-right font-mono text-[10px] text-muted">
             {t('{n} 块', { n: s.blocks })}
           </span>
           {/* §11.2-B — what the 去重 button turned into. Free, local, exact matches only, and
               on the row rather than in a paid run's prose: the disposal was always the user's
-              to make, so the finding belongs where they can act on it. Absent at zero. */}
-          {dupes > 0 && (
+              to make, so the finding belongs where they can act on it. Empty at zero. */}
+          {dupeColumn && (
             <span
-              className="flex-none text-[10px]"
+              className="w-[5.5rem] flex-none truncate whitespace-nowrap text-[10px]"
               style={{ color: 'var(--status-parked)' }}
-              title={t('这个项目里有一模一样的块。打开项目自己处理——Spool 不会替你合并或删除。')}
+              title={dupes > 0 ? t('这个项目里有一模一样的块。打开项目自己处理——Spool 不会替你合并或删除。') : undefined}
             >
-              {t('{n} 块重复', { n: dupes })}
+              {dupes > 0 ? t('{n} 块重复', { n: dupes }) : ''}
             </span>
           )}
           <span className="w-20 flex-none text-right font-mono text-[10px]" style={{ color: colour }}>

@@ -27,7 +27,8 @@ export default function RoadPicker({
   if (road === null) return null;
   const label = (k: 'cli' | 'api') => (k === 'cli' ? t('本机 CLI') : 'API');
   return (
-    <span className="flex items-center gap-1.5">
+    // DISCOVERED-20261112-15: one line, always — next to a long note it used to wrap 「Local CLI」 in two.
+    <span className="flex flex-none items-center gap-1.5 whitespace-nowrap">
       <span className="text-xs text-muted">{t('用')}</span>
       {roads.cli && roads.api ? (
         <span className="inline-flex overflow-hidden rounded border border-line">
