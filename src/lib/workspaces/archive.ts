@@ -82,6 +82,22 @@ const findNode = (roots: WorkspaceNode[], id: string): WorkspaceNode | null => {
   return null;
 };
 
+/** Every workspace that counts as archived — the ones `splitArchived` moves out, with all inside them.
+ *  Pass the threads as they will be after a change (finished ones marked done) to ask what that change
+ *  archives. DISCOVERED-20261112-7: a new 「未分类」 must not be made in one of these — an unfinished
+ *  project there would quietly take the workspace back out of 归档. */
+export const archivedWorkspaceIds = (roots: WorkspaceNode[], threads: Thread[]): Set<string> => {
+  const byWs: Record<string, Thread[]> = {};
+  for (const th of threads) (byWs[th.workspaceId] ??= []).push(th);
+  const ids = new Set<string>();
+  const walk = (n: WorkspaceNode): void => {
+    ids.add(n.workspace.id);
+    n.children.forEach(walk);
+  };
+  splitArchived(roots, byWs).archived.forEach((e) => walk(e.node));
+  return ids;
+};
+
 /** The workspace `id` and every workspace drawn inside it. */
 export const subtreeWorkspaceIds = (roots: WorkspaceNode[], id: string): Set<string> => {
   const ids = new Set<string>();
@@ -120,9 +136,12 @@ export const archivePlan = (roots: WorkspaceNode[], threads: Thread[], id: strin
   if (!target || !ids.has(target.workspaceId)) {
     return { toComplete, captureFrom: null, captureTo: null, captureNewIn: null };
   }
+  const done = new Set(toComplete.map((th) => th.id));
+  const after = threads.map((th) => (done.has(th.id) ? { ...th, status: 'done' as const } : th));
   const home = captureHome(roots, threads, {
-    threads: new Set(toComplete.map((th) => th.id)),
-    workspaces: ids,
+    threads: done,
+    // The subtree being archived, and any workspace already in 归档.
+    workspaces: new Set([...ids, ...archivedWorkspaceIds(roots, after)]),
   });
   return { toComplete, captureFrom: target, captureTo: home.to, captureNewIn: home.newIn };
 };

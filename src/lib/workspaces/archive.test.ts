@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Thread, ThreadStatus } from '@/lib/db/threads';
 import type { Workspace } from '@/lib/db/workspaces';
-import { archivePlan, splitArchived, subtreeWorkspaceIds } from './archive';
+import { archivedWorkspaceIds, archivePlan, splitArchived, subtreeWorkspaceIds } from './archive';
 import { buildWorkspaceTree, type WorkspaceNode } from './tree';
 
 const ws = (id: string, parentId: string | null = null): Workspace => ({
@@ -195,6 +195,19 @@ describe('archivePlan (right-click 归档)', () => {
     expect(plan.captureFrom?.id).toBe(target.id);
     expect(plan.captureTo).toBeNull();
     expect(plan.captureNewIn).toBeNull();
+  });
+
+  it('does not make the new 未分类 in a workspace already in 归档', () => {
+    const t3 = buildWorkspaceTree([ws('w'), ws('old'), ws('other')]);
+    const target = th('w', 'active', { isCaptureTarget: true });
+    const plan = archivePlan(t3, [target, th('old', 'done'), th('other', 'active')], 'w');
+    expect(plan.captureNewIn).toBe('other');
+  });
+
+  it('archivedWorkspaceIds: workspaces whose projects are all done, with everything inside', () => {
+    expect([...archivedWorkspaceIds(tree, [th('w', 'done'), th('w1', 'done'), th('other', 'active')])].sort()).toEqual(['w', 'w1']);
+    // An empty workspace is not archived; one open project keeps it out.
+    expect([...archivedWorkspaceIds(tree, [th('w', 'done'), th('w1', 'active')])]).toEqual([]);
   });
 
   it('subtreeWorkspaceIds covers the workspace and everything inside it', () => {
