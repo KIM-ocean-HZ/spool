@@ -8,6 +8,7 @@ const base = {
   mcpWriteEnabled: true,
   actionsEnabled: true,
   apiEngineEnabled: true,
+  apiKeyPresent: true,
   isMac: true,
 };
 
@@ -17,6 +18,14 @@ describe('roadsOf', () => {
     expect(roadsOf({ ...base, mcpEnabled: false })).toEqual({ cli: false, api: true });
     expect(roadsOf({ ...base, isMac: false })).toEqual({ cli: false, api: true });
     expect(roadsOf({ ...base, apiEngineEnabled: false })).toEqual({ cli: true, api: false });
+  });
+
+  // DISCOVERED-20261111-3: a switch left on over a key that is gone is not a road — every AI entry
+  // then asks for a key, the way Settings does. Not asked yet (null) counts as there.
+  it('the API road also needs the key to be there', () => {
+    expect(roadsOf({ ...base, apiKeyPresent: false })).toEqual({ cli: true, api: false });
+    expect(roadsOf({ ...base, apiKeyPresent: null })).toEqual({ cli: true, api: true });
+    expect(roadsOf({ ...base, isMac: false, apiKeyPresent: false })).toEqual({ cli: false, api: false });
   });
 
   it('「显示 AI 功能」 off closes both', () => {

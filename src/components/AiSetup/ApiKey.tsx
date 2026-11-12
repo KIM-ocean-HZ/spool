@@ -1,10 +1,12 @@
 import { RefreshCw } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import ApiBalance from '@/components/ApiBalance';
-import { apiKeyPresent, loadApiKey, saveApiKey, sidecarPresent } from '@/lib/ai/compress';
+import { loadApiKey, saveApiKey, sidecarPresent } from '@/lib/ai/compress';
 import { connectedPatch, probeVendor, useModelListStore } from '@/lib/ai/connectKey';
 import { detectVendor, resolveVendor, vendorById, vendorName as nameOf, VENDORS, type Vendor } from '@/lib/ai/vendors';
 import { useT } from '@/lib/i18n';
+import { IS_WINDOWS } from '@/lib/platform';
+import { useApiKeyStore } from '@/stores/apiKeyStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 
 // P9U-3 (Ocean 2026-10-24 第 188 条: 「粘 key 自动认，认不出再从列表里选」) — the API key, as the twin of
@@ -39,7 +41,10 @@ export default function ApiKey({ onConnected }: { onConnected?: () => void }) {
   const vendor = resolveVendor(apiVendor, apiBaseUrl);
   const vendorName = (v: Vendor): string => nameOf(v, t);
 
-  const [hasKey, setHasKey] = useState<boolean | null>(null);
+  // DISCOVERED-20261111-3: the key answer lives in apiKeyStore, so this page and every AI entry read
+  // the same one (they used to ask separately and could disagree).
+  const hasKey = useApiKeyStore((s) => s.present);
+  const setHasKey = useApiKeyStore((s) => s.setPresent);
   const [sidecar, setSidecar] = useState<boolean | null>(null);
   const [draft, setDraft] = useState('');
   const [phase, setPhase] = useState<Phase>({ at: 'idle' });
@@ -50,7 +55,7 @@ export default function ApiKey({ onConnected }: { onConnected?: () => void }) {
   const committing = useRef(false);
 
   useEffect(() => {
-    void apiKeyPresent().then(setHasKey, () => setHasKey(false));
+    void useApiKeyStore.getState().refresh();
     void sidecarPresent().then(setSidecar, () => setSidecar(false));
   }, []);
 
@@ -280,8 +285,12 @@ export default function ApiKey({ onConnected }: { onConnected?: () => void }) {
           className={input}
         />
       )}
+      {/* 存放的地方按平台说（DISCOVERED-20261112-19）：macOS 钥匙串、Windows 凭据管理器 —— 和
+          api_engine.rs `api_key_save` 两个分支一一对上，还有隐私说明那一句。 */}
       <p className="text-[11px] leading-relaxed text-muted">
-        {t('OpenAI、Claude、Gemini、DeepSeek、Kimi、通义、智谱、OpenRouter 的 key 都行，粘进来就认。key 存在这台电脑的系统钥匙串里，不进设置文件，也不跟着导出的库走。')}
+        {IS_WINDOWS
+          ? t('OpenAI、Claude、Gemini、DeepSeek、Kimi、通义、智谱、OpenRouter 的 key 都行，粘进来就认。key 存在这台电脑的 Windows 凭据管理器里，不进设置文件，也不跟着导出的库走。')
+          : t('OpenAI、Claude、Gemini、DeepSeek、Kimi、通义、智谱、OpenRouter 的 key 都行，粘进来就认。key 存在这台电脑的系统钥匙串里，不进设置文件，也不跟着导出的库走。')}
       </p>
     </div>
   );

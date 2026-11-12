@@ -723,8 +723,11 @@ pub fn forward_duplicate_check(
 // 仍然成立。⛔ 每次动 `Cargo.toml` 都要再跑一次：
 //   cargo tree -e normal | grep -iE "ureq|rustls|reqwest|hyper|openssl"   # 必须是空的
 //
-// ⛔ **只有 macOS 走钥匙串。** Windows 继续用 0600 文件（那边还没签名，不是当前战场），
-// 换跨平台的 `keyring` 会把 dbus/secret-service 拖进依赖树 —— 那一档被明确否了。
+// ⭐ **2026-11-12：Windows 挪进凭据管理器了**（P20-1b，Ocean 第 340 条）。在此之前 Windows 是
+// 数据目录里一个明文 `api-key` 文件，设置页却对所有平台都说「存在系统钥匙串里」
+// （DISCOVERED-20261112-19）。直接调 Win32 凭据 API（`CredWriteW` / `CredReadW` /
+// `CredDeleteW`，`windows-sys` 本来就在依赖里，只多开一个 feature）—— ⛔ 不用跨平台的
+// `keyring`：它会把 dbus/secret-service 拖进依赖树，那一档被明确否了。凭据 API 也不碰网络。
 
 /// 钥匙串里那一条的名字。⚠️ 两个都别改：改了等于用户的 key 凭空消失，
 /// 而钥匙串里还躺着一条谁也读不到的旧记录。
@@ -732,6 +735,11 @@ pub fn forward_duplicate_check(
 const KEYCHAIN_SERVICE: &str = "com.oceanjin.spool";
 #[cfg(target_os = "macos")]
 const KEYCHAIN_ACCOUNT: &str = "api-key";
+
+/// Windows 凭据管理器里那一条的名字（「控制面板 → 凭据管理器 → Windows 凭据」里就叫这个）。
+/// ⚠️ 别改，理由和上面两个一样。
+#[cfg(windows)]
+const WINCRED_TARGET: &str = "com.oceanjin.spool/api-key";
 
 fn key_path(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
     let dir = tauri::Manager::path(app).app_config_dir().map_err(|e| e.to_string())?;
@@ -766,6 +774,97 @@ mod keychain {
 
     pub fn delete() {
         let _ = pw::delete_generic_password(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT);
+    }
+}
+
+#[cfg(windows)]
+mod wincred {
+    use windows_sys::Win32::Security::Credentials::{
+        CredDeleteW, CredFree, CredReadW, CredWriteW, CREDENTIALW, CRED_PERSIST_LOCAL_MACHINE,
+        CRED_TYPE_GENERIC,
+    };
+
+    fn wide(s: &str) -> Vec<u16> {
+        s.encode_utf16().chain(std::iter::once(0)).collect()
+    }
+
+    /// 存成一条「普通凭据」，只在这台电脑上（`CRED_PERSIST_LOCAL_MACHINE`：同一账号登录别的
+    /// 电脑时不漫游过去）。key 按 UTF-8 字节存。
+    pub fn save(target: &str, key: &str) -> Result<(), String> {
+        let mut target_w = wide(target);
+        let mut user_w = wide("api-key");
+        let mut blob = key.as_bytes().to_vec();
+        let cred = CREDENTIALW {
+            Type: CRED_TYPE_GENERIC,
+            TargetName: target_w.as_mut_ptr(),
+            CredentialBlobSize: blob.len() as u32,
+            CredentialBlob: blob.as_mut_ptr(),
+            Persist: CRED_PERSIST_LOCAL_MACHINE,
+            UserName: user_w.as_mut_ptr(),
+            ..Default::default()
+        };
+        // SAFETY: every pointer in `cred` points into a buffer above that outlives the call;
+        // CredWriteW copies what it needs before returning.
+        if unsafe { CredWriteW(&cred, 0) } == 0 {
+            return Err(format!("CredWriteW: {}", std::io::Error::last_os_error()));
+        }
+        Ok(())
+    }
+
+    /// 没存过、读失败，都当成「没有」——和钥匙串那边一样，界面上那句「你还没填 key」已经够了。
+    pub fn load(target: &str) -> Option<String> {
+        let target_w = wide(target);
+        let mut p: *mut CREDENTIALW = std::ptr::null_mut();
+        // SAFETY: target_w is NUL-terminated; on success the system hands back a CREDENTIALW
+        // it allocated, whose blob is CredentialBlobSize bytes. Copied out, then CredFree.
+        let bytes = unsafe {
+            if CredReadW(target_w.as_ptr(), CRED_TYPE_GENERIC, 0, &mut p) == 0 || p.is_null() {
+                return None;
+            }
+            let c = &*p;
+            let b = if c.CredentialBlob.is_null() {
+                Vec::new()
+            } else {
+                std::slice::from_raw_parts(c.CredentialBlob, c.CredentialBlobSize as usize).to_vec()
+            };
+            CredFree(p as *const core::ffi::c_void);
+            b
+        };
+        let s = String::from_utf8(bytes).ok()?.trim().to_string();
+        if s.is_empty() { None } else { Some(s) }
+    }
+
+    pub fn delete(target: &str) {
+        let target_w = wide(target);
+        // SAFETY: target_w is NUL-terminated. Deleting one that is not there just fails.
+        unsafe { CredDeleteW(target_w.as_ptr(), CRED_TYPE_GENERIC, 0) };
+    }
+}
+
+/// Windows 读 key：凭据管理器优先，读不到再回落到老那个文件 —— 搬家失败时文件是**故意留着**的，
+/// 产品照样该能用（和 macOS 的 `read_api_key` 同一条规矩）。
+#[cfg(windows)]
+fn read_key_windows(target: &str, file: &std::path::Path) -> String {
+    wincred::load(target)
+        .unwrap_or_else(|| std::fs::read_to_string(file).unwrap_or_default().trim().to_string())
+}
+
+/// Windows 的一次性搬家，规矩和下面 macOS 那一份完全一样：凭据里已经有了 → 老文件是残留，删；
+/// 没有 → 搬进去，**写成功才删文件**；写失败就留着文件，宁可两份都在也不能把唯一那把钥匙弄丢。
+/// 拆成带路径和名字的函数，是为了在 CI 的 Windows 上测得到（不碰真的那一条凭据）。
+#[cfg(windows)]
+fn migrate_file_into_wincred(file: &std::path::Path, target: &str) {
+    if wincred::load(target).is_some() {
+        let _ = std::fs::remove_file(file);
+        return;
+    }
+    let Ok(raw) = std::fs::read_to_string(file) else { return };
+    let key = raw.trim();
+    if key.is_empty() {
+        return;
+    }
+    if wincred::save(target, key).is_ok() {
+        let _ = std::fs::remove_file(file);
     }
 }
 
@@ -815,7 +914,21 @@ pub fn api_key_save(app: tauri::AppHandle, key: String) -> Result<(), String> {
         }
         Ok(())
     }
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(windows)]
+    {
+        // 清空（「断开」）= 把凭据管理器里那一条删掉。
+        if key.is_empty() {
+            wincred::delete(WINCRED_TARGET);
+        } else {
+            wincred::save(WINCRED_TARGET, key)?;
+        }
+        // 老文件不该再存在（P20-1b 之前的版本写的就是它）。
+        if let Ok(path) = key_path(&app) {
+            let _ = std::fs::remove_file(path);
+        }
+        Ok(())
+    }
+    #[cfg(all(not(target_os = "macos"), not(windows)))]
     {
         let path = key_path(&app)?;
         if key.is_empty() {
@@ -850,6 +963,10 @@ pub(crate) fn read_api_key() -> String {
     if let Some(k) = keychain::load() {
         return k;
     }
+    #[cfg(windows)]
+    if let Some(k) = wincred::load(WINCRED_TARGET) {
+        return k;
+    }
     let Some(dir) = crate::mcp::app_data_dir() else {
         return String::new();
     };
@@ -865,7 +982,13 @@ pub fn api_key_load(app: tauri::AppHandle) -> Result<String, String> {
         // 万一钥匙串那一下写失败了，老文件是**故意没删**的，产品照样该能用。
         Ok(read_api_key())
     }
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(windows)]
+    {
+        let path = key_path(&app)?;
+        migrate_file_into_wincred(&path, WINCRED_TARGET);
+        Ok(read_key_windows(WINCRED_TARGET, &path))
+    }
+    #[cfg(all(not(target_os = "macos"), not(windows)))]
     {
         let path = key_path(&app)?;
         Ok(std::fs::read_to_string(&path).unwrap_or_default().trim().to_string())
@@ -884,9 +1007,75 @@ pub fn api_key_present(app: tauri::AppHandle) -> bool {
         migrate_key_into_keychain(&app);
         keychain::load().is_some()
     }
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(windows)]
+    {
+        // ⚠️ 和 `api_key_load` 读同一处（凭据优先、回落到搬家失败时留下的文件）——
+        // 「填没填」和「拿得到」不许各说各的（DISCOVERED-20261111-3 就是两处说法对不上）。
+        let Ok(path) = key_path(&app) else { return false };
+        migrate_file_into_wincred(&path, WINCRED_TARGET);
+        !read_key_windows(WINCRED_TARGET, &path).is_empty()
+    }
+    #[cfg(all(not(target_os = "macos"), not(windows)))]
     {
         key_path(&app).map(|p| p.is_file()).unwrap_or(false)
+    }
+}
+
+// P20-1b 的验收（任务书 §1）：存 → 读 → 删；有老文件时搬进去、文件消失；搬家失败时还能从文件读。
+// ⚠️ 只在 Windows 上编（CI 的 windows-build 跑）；用测试自己的名字，⛔ 不碰真的那一条凭据。
+#[cfg(all(test, windows))]
+mod wincred_tests {
+    use super::{migrate_file_into_wincred, read_key_windows, wincred};
+
+    fn target(tag: &str) -> String {
+        format!("com.oceanjin.spool.test/{tag}-{}", std::process::id())
+    }
+
+    fn temp_file(tag: &str, body: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("spool-wincred-{tag}-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("api-key");
+        std::fs::write(&file, body).unwrap();
+        file
+    }
+
+    #[test]
+    fn saves_reads_and_deletes_a_key() {
+        let t = target("roundtrip");
+        wincred::delete(&t);
+        assert_eq!(wincred::load(&t), None);
+        wincred::save(&t, "sk-test-123").unwrap();
+        assert_eq!(wincred::load(&t).as_deref(), Some("sk-test-123"));
+        wincred::save(&t, "sk-test-456").unwrap();
+        assert_eq!(wincred::load(&t).as_deref(), Some("sk-test-456"));
+        wincred::delete(&t);
+        assert_eq!(wincred::load(&t), None);
+    }
+
+    #[test]
+    fn moves_an_old_key_file_in_and_removes_the_file() {
+        let t = target("migrate");
+        wincred::delete(&t);
+        let file = temp_file("migrate", "  sk-old-file\n");
+        migrate_file_into_wincred(&file, &t);
+        assert_eq!(wincred::load(&t).as_deref(), Some("sk-old-file"));
+        assert!(!file.exists(), "the plain-text file must be gone once the key is in");
+        assert_eq!(read_key_windows(&t, &file), "sk-old-file");
+        wincred::delete(&t);
+    }
+
+    #[test]
+    fn a_failed_move_keeps_the_file_and_the_key_still_reads() {
+        let t = target("migrate-fail");
+        wincred::delete(&t);
+        // Longer than CRED_MAX_CREDENTIAL_BLOB_SIZE (5 × 512 bytes): CredWriteW refuses it.
+        let long = "k".repeat(3000);
+        let file = temp_file("migrate-fail", &long);
+        migrate_file_into_wincred(&file, &t);
+        assert_eq!(wincred::load(&t), None);
+        assert!(file.exists(), "a key that did not make it in must not be deleted");
+        assert_eq!(read_key_windows(&t, &file), long);
+        let _ = std::fs::remove_file(&file);
     }
 }
 

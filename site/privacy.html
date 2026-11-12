@@ -39,7 +39,7 @@
 <main class="wrap article measure" style="margin: 0 auto;" data-zh-body="privacy">
 
 <h1>Privacy Policy</h1>
-<p class="lede">Last updated: 2026-11-11 (Spool v0.8.1). This English translation is provided for convenience;
+<p class="lede">Last updated: 2026-11-12 (Spool v0.8.2). This English translation is provided for convenience;
 the <a href="zh/privacy.html" hreflang="zh-Hans" lang="zh">Chinese original</a> is authoritative.</p>
 
 <h2>The one-sentence version</h2>
@@ -73,8 +73,7 @@ involve a third party at all.</p>
       SQLite database: <code>~/Library/Application Support/com.oceanjin.spool/spool.db</code></li>
   <li>Interface settings live in <code>settings.json</code> in the same directory. Your API-engine
       key is <strong>not</strong> in it: on macOS it is stored in the system Keychain, on Windows in
-      a separate <code>0600</code> file in the same directory. It is never written to a log or an
-      error message.</li>
+      Windows Credential Manager. It is never written to a log or an error message.</li>
   <li>Files you add to a project are never copied or uploaded. Spool records three things: the
       path; a small piece of identity the system recognises the file by (so that Spool can follow
       it when you move or rename it); and, optionally, text extracted locally. PDF/Word text

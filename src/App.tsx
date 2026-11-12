@@ -37,6 +37,7 @@ import { loadDrafts } from '@/lib/db/drafts';
 import { loadStaleFile } from '@/lib/db/staleFile';
 import { startDraftPrompt } from '@/stores/draftPrompt';
 import { useAiUpdatesStore } from '@/stores/aiUpdatesStore';
+import { useApiKeyStore } from '@/stores/apiKeyStore';
 import { t } from '@/lib/i18n';
 import { toast } from '@/stores/toastStore';
 import { useAutoFollowUp } from '@/hooks/useAutoFollowUp';
@@ -160,6 +161,9 @@ export default function App() {
     void (async () => {
       await loadSettings();
       setSeedLanguage(useSettingsStore.getState().language);
+      // DISCOVERED-20261111-3: is the key behind an API switch that is on still there? Asked once here
+      // so every AI entry agrees with Settings from the start. Not awaited; switch off = nothing to ask.
+      if (useSettingsStore.getState().apiEngineEnabled) void useApiKeyStore.getState().refresh();
       await loadWorkspaces();
       // P9S-2: citations still pointing at a block that no longer counts are released — the ones
       // this version used to hold in 「关系待审」, and any retired while the window was closed.

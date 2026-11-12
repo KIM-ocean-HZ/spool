@@ -4,11 +4,12 @@ import { createPortal } from 'react-dom';
 import { useMenuPosition } from '@/components/ui/useMenuPosition';
 import ApiKey from './ApiKey';
 import LocalEngine from './LocalEngine';
-import { apiKeyPresent, sidecarPresent } from '@/lib/ai/compress';
+import { sidecarPresent } from '@/lib/ai/compress';
 import { aiSetupPlan, type AiRoute } from '@/lib/engine/gate';
 import { useT } from '@/lib/i18n';
 import { IS_MAC } from '@/lib/platform';
 import { ENGINE_LABEL, useEngineStore } from '@/stores/engineStore';
+import { useApiKeyStore, useApiReady } from '@/stores/apiKeyStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 
 // P9C (Ocean HANDOFF §9.2 第 93 – 95 条) — the 「AI 引擎」 piece of Settings, brought to wherever an
@@ -34,17 +35,20 @@ export function AiSetupPanel({ route, onDone }: PanelProps) {
   const t = useT();
   const mcpEnabled = useSettingsStore((s) => s.mcpEnabled);
   const mcpWriteEnabled = useSettingsStore((s) => s.mcpWriteEnabled);
-  const apiOn = useSettingsStore((s) => s.apiEngineEnabled);
+  // DISCOVERED-20261111-3: switch on and key there. A switch left on over a missing key lands here
+  // as 「not on」, so this panel offers the key box like Settings does.
+  const apiOn = useApiReady();
   const status = useEngineStore((s) => s.status);
 
-  const [hasKey, setHasKey] = useState<boolean | null>(null);
+  // The same key answer as Settings and every entry (apiKeyStore), asked again when this opens.
+  const hasKey = useApiKeyStore((s) => s.present);
   // null = still asking; counted as present until it says otherwise, as Settings does.
   const [sidecar, setSidecar] = useState<boolean | null>(null);
 
   const wantsApi = route !== 'cli' && !apiOn;
   useEffect(() => {
     if (!wantsApi) return;
-    void apiKeyPresent().then(setHasKey, () => setHasKey(false));
+    void useApiKeyStore.getState().refresh();
     void sidecarPresent().then(setSidecar, () => setSidecar(false));
   }, [wantsApi]);
 

@@ -1,6 +1,7 @@
 import { resolveVendor } from '@/lib/ai/vendors';
 import { canShowEngineActions, effectiveAutoRoute } from '@/lib/engine/gate';
 import { IS_MAC } from '@/lib/platform';
+import { apiReadyOf, useApiKeyStore } from '@/stores/apiKeyStore';
 import { engineSupportsWeb, useEngineStore } from '@/stores/engineStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 
@@ -24,6 +25,8 @@ interface RoadInputs {
   mcpWriteEnabled: boolean;
   actionsEnabled: boolean;
   apiEngineEnabled: boolean;
+  /** null = not asked yet, counted as there (apiKeyStore). */
+  apiKeyPresent: boolean | null;
   isMac: boolean;
 }
 
@@ -37,7 +40,8 @@ export const roadsOf = (i: RoadInputs): Roads => ({
       mcpWriteEnabled: i.mcpWriteEnabled,
       actionsEnabled: i.actionsEnabled,
     }),
-  api: i.actionsEnabled && i.apiEngineEnabled,
+  // DISCOVERED-20261111-3: the switch AND the key — a switch left on over a key that is gone is not a road.
+  api: i.actionsEnabled && apiReadyOf(i.apiEngineEnabled, i.apiKeyPresent),
 });
 
 /** Which road a feature takes: its own pick when both are ready, the ready one otherwise, null if none. */
@@ -53,6 +57,7 @@ export const roadsNow = (): Roads => {
     mcpWriteEnabled: s.mcpWriteEnabled,
     actionsEnabled: s.aiEngineActionsEnabled,
     apiEngineEnabled: s.apiEngineEnabled,
+    apiKeyPresent: useApiKeyStore.getState().present,
     isMac: IS_MAC,
   });
 };
@@ -63,7 +68,16 @@ export const useRoads = (): Roads => {
   const mcpWriteEnabled = useSettingsStore((s) => s.mcpWriteEnabled);
   const actionsEnabled = useSettingsStore((s) => s.aiEngineActionsEnabled);
   const apiEngineEnabled = useSettingsStore((s) => s.apiEngineEnabled);
-  return roadsOf({ cliAvailable, mcpEnabled, mcpWriteEnabled, actionsEnabled, apiEngineEnabled, isMac: IS_MAC });
+  const apiKeyPresent = useApiKeyStore((s) => s.present);
+  return roadsOf({
+    cliAvailable,
+    mcpEnabled,
+    mcpWriteEnabled,
+    actionsEnabled,
+    apiEngineEnabled,
+    apiKeyPresent,
+    isMac: IS_MAC,
+  });
 };
 
 /** P9U-4 — 跟进's own two roads, narrower than the others: the CLI one also needs a CLI that can search

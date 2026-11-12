@@ -4,6 +4,7 @@ import { WEEKLY_REVIEW_PERIOD_MS } from '@/lib/weeks';
 import { runWeeklyReviewViaApi } from '@/lib/ai/weeklyReview';
 import { canShowEngineActions, effectiveAutoRoute } from '@/lib/engine/gate';
 import { useEngineStore } from '@/stores/engineStore';
+import { useApiReady } from '@/stores/apiKeyStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { useThreadsStore } from '@/stores/threadsStore';
 import { useBalanceStore } from '@/stores/balanceStore';
@@ -45,7 +46,8 @@ export function useAutoMaintain(): void {
   // to travel. ⚠️ The API road has NO model setting of its own: `apiModel` is the same box
   // the manual button reads, on purpose (settingsStore's `autoReviewRoute` note).
   const route = useSettingsStore((s) => s.autoReviewRoute);
-  const apiOn = useSettingsStore((s) => s.apiEngineEnabled);
+  // DISCOVERED-20261111-3: switch on and key there — never start a paid run with no key to send.
+  const apiOn = useApiReady();
   const apiVendor = useSettingsStore((s) => s.apiVendor);
   const apiBaseUrl = useSettingsStore((s) => s.apiBaseUrl);
   const apiModel = useSettingsStore((s) => s.apiModel);

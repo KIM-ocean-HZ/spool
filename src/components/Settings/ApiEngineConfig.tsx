@@ -2,6 +2,7 @@ import ApiKey from '@/components/AiSetup/ApiKey';
 import Toggle from '@/components/ui/Toggle';
 import { resolveVendor, vendorName } from '@/lib/ai/vendors';
 import { useT } from '@/lib/i18n';
+import { useApiReady } from '@/stores/apiKeyStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 import RoadCard from './RoadCard';
 
@@ -21,7 +22,7 @@ import RoadCard from './RoadCard';
 // P9U-5：和本机 CLI 那一块同样的框（RoadCard）、同样的分量。
 export default function ApiEngineConfig() {
   const t = useT();
-  const enabled = useSettingsStore((s) => s.apiEngineEnabled);
+  const enabled = useApiReady();
   const timeoutSecs = useSettingsStore((s) => s.apiTimeoutSecs);
   const vendor = useSettingsStore((s) => resolveVendor(s.apiVendor, s.apiBaseUrl));
   const update = useSettingsStore((s) => s.update);

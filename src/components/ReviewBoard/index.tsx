@@ -33,6 +33,7 @@ import {
   WEEKLY_REVIEW_PERIOD_MS,
 } from '@/lib/weeks';
 import { ACTION_LABEL, ENGINE_LABEL, useEngineStore, type EngineKind } from '@/stores/engineStore';
+import { useApiReady } from '@/stores/apiKeyStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { useThreadsStore } from '@/stores/threadsStore';
 import { useBalanceStore } from '@/stores/balanceStore';
@@ -115,7 +116,8 @@ export default function ReviewBoard() {
   // ⚠️ **两条路并存，不是替换。** CLI 那条（形态 B）一分钱不花、一个 key 不填；
   // 这一条（形态 C）用用户自己填的端点和模型 —— 设置里那个「模型」框本来就是他的，
   // ⛔ 这里不再发明第二套模型设置。
-  const apiOn = useSettingsStore((s) => s.apiEngineEnabled);
+  // DISCOVERED-20261111-3: the switch AND the key (apiKeyStore), the same answer as every other entry.
+  const apiOn = useApiReady();
   const apiVendor = useSettingsStore((s) => s.apiVendor);
   const apiBaseUrl = useSettingsStore((s) => s.apiBaseUrl);
   const apiModel = useSettingsStore((s) => s.apiModel);

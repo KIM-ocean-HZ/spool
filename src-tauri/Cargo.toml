@@ -69,8 +69,8 @@ foreign-types = "0.5"
 # 加完之后那条护栏照旧验得过，⛔ 每次动这个文件都要再跑一次：
 #   cargo tree -e normal | grep -iE "ureq|rustls|reqwest|hyper|openssl"   # 必须是空的
 #
-# ⛔ 只加 macOS 这一档。Windows 继续用 0600 文件（那边本来就还没签名，不是当前战场），
-# 换成跨平台的 `keyring` 会把 dbus/secret-service 拖进依赖树 —— Ocean 明确否了那一档。
+# ⛔ 不换成跨平台的 `keyring`：会把 dbus/secret-service 拖进依赖树 —— Ocean 明确否了那一档。
+# Windows 那边 2026-11-12 起走凭据管理器，用的是下面 windows-sys 的 Win32_Security_Credentials。
 security-framework = "2"
 
 # Windows-only: the two things the port cannot fake (see win32.rs).
@@ -101,4 +101,7 @@ windows-sys = { version = "0.61", features = [
     # string it returns freed with CoTaskMemFree (images.rs screenshot_dir). Same crate.
     "Win32_UI_Shell",
     "Win32_System_Com",
+    # P20-1b（Ocean 第 340 条）：API key 存进 Windows 凭据管理器 —— CredWriteW / CredReadW /
+    # CredDeleteW（api_engine.rs `wincred`）。系统 API，不碰网络。
+    "Win32_Security_Credentials",
 ] }

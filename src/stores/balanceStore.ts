@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { invoke } from '@tauri-apps/api/core';
 import { loadApiKey } from '@/lib/ai/compress';
+import { apiReadyNow } from '@/stores/apiKeyStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { baseFor, resolveVendor } from '@/lib/ai/vendors';
 
@@ -48,7 +49,8 @@ export const useBalanceStore = create<BalanceStore>((set, get) => ({
     if (get().state.at === 'checking') return;
     const s = useSettingsStore.getState();
     // 总开关关着的时候一个请求都不发 —— 那个开关的意思就是「什么都不许出去」。
-    if (!s.apiEngineEnabled) return;
+    // 开关开着但 key 不在了（DISCOVERED-20261111-3）也不发：没有 key 的请求只会白跑一趟。
+    if (!apiReadyNow()) return;
     // P9U-3：只有 DeepSeek（和不知道是谁的自定义地址）答 `/user/balance` —— 别家问了也只会 404，
     // 那就别问：一次本来不必要的出网。界面那一行在这些家也不画（ApiBalance）。
     const vendor = resolveVendor(s.apiVendor, s.apiBaseUrl);

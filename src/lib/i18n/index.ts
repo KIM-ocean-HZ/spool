@@ -1482,6 +1482,8 @@ const EN: Record<string, string> = {
   '粘贴你的 API key': 'Paste your API key',
   'OpenAI、Claude、Gemini、DeepSeek、Kimi、通义、智谱、OpenRouter 的 key 都行，粘进来就认。key 存在这台电脑的系统钥匙串里，不进设置文件，也不跟着导出的库走。':
     'A key from OpenAI, Claude, Gemini, DeepSeek, Kimi, Qwen, Zhipu or OpenRouter all work \u2014 paste it and Spool tells whose it is. The key is kept in this computer\u2019s system keychain, never in the settings file or an exported library.',
+  'OpenAI、Claude、Gemini、DeepSeek、Kimi、通义、智谱、OpenRouter 的 key 都行，粘进来就认。key 存在这台电脑的 Windows 凭据管理器里，不进设置文件，也不跟着导出的库走。':
+    'A key from OpenAI, Claude, Gemini, DeepSeek, Kimi, Qwen, Zhipu or OpenRouter all work \u2014 paste it and Spool tells whose it is. The key is kept in Windows Credential Manager on this computer, never in the settings file or an exported library.',
   '模型下笔之前会先想一会儿，这一段也按字数收费。默认 low：想得短一点，压出来的东西不比想得久的差，钱和时间都省下大半。':
     'The model thinks for a while before it writes, and that is billed per word too. Low by default: thinking less compresses just as well and saves most of the money and the wait.',
   '模型下笔之前会先想一会儿，这一段也按字数收费。不认的值会被接口顶回来，那一次不收费。':
