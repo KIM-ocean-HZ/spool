@@ -648,7 +648,15 @@ fn state_file_choice(root: &str, selected: &str) -> Result<Candidate, String> {
     Ok(Candidate { spec: rel.clone(), path: rel, recommended: false, modified })
 }
 
-const PLAN_NAMES: [&str; 8] = ["README", "HANDOFF", "WORK_PLAN", "WORKPLAN", "PLAN", "STATUS", "ROADMAP", "TODO"];
+// DISCOVERED-20261112-11: the Chinese names a status file goes by, each next to its English one so the
+// order (and so which is recommended first) means the same thing in both — a folder with only 「计划.md」
+// used to have nothing recommended at all.
+const PLAN_NAMES: &[&str] = &[
+    "README", "说明", "HANDOFF", "交接", "WORK_PLAN", "WORKPLAN", "工作计划", "PLAN", "计划", "STATUS", "进度",
+    "状态", "ROADMAP", "路线图", "TODO", "待办",
+];
+/// The folder's own read-me: only the top one speaks for the folder (every package has one of its own).
+const README_NAMES: [&str; 2] = ["README", "说明"];
 
 /// Which of PLAN_NAMES a file is named after: (0 = exactly that name, 1 = that name and more —
 /// `HANDOFF_PROPOSAL` —, its position in PLAN_NAMES).
@@ -672,7 +680,7 @@ fn plan_rank(rel: &str) -> Option<(u8, usize)> {
         None => (1, PLAN_NAMES.iter().position(|n| key.starts_with(&format!("{n}_")))?),
     };
     // Only the top README speaks for the folder; every package has one of its own.
-    (rank != 0 || dir.is_empty()).then_some((exact, rank))
+    (!README_NAMES.contains(&PLAN_NAMES[rank]) || dir.is_empty()).then_some((exact, rank))
 }
 
 pub(crate) fn candidates(listing: &Listing) -> Vec<Candidate> {
@@ -2537,6 +2545,28 @@ mod tests {
         assert_eq!(resolve_spec(&root, spec).as_deref(), Some("plans/dissertation/HANDOFF_2026-10-30.md"));
         assert_eq!(resolve_spec(&root, "README.md").as_deref(), Some("README.md"));
         assert_eq!(resolve_spec(&root, "gone.md"), None);
+    }
+
+    // DISCOVERED-20261112-11: a Chinese folder whose status file is 「计划.md」 gets it recommended, in
+    // the same order as the English names; a 「说明.md」 down in a subfolder is that package's, not the folder's.
+    #[test]
+    fn chinese_status_file_names_are_recommended_too() {
+        // Right after its English name, ahead of the next one.
+        assert!(plan_rank("PLAN.md") < plan_rank("计划.md") && plan_rank("计划.md") < plan_rank("STATUS.md"));
+        assert!(plan_rank("交接.md") < plan_rank("计划.md"));
+        assert!(plan_rank("计划_2026-11-12.md").is_some());
+        assert!(plan_rank("进度.md").is_some() && plan_rank("待办.md").is_some() && plan_rank("路线图.md").is_some());
+        assert!(plan_rank("说明.md").is_some());
+        assert_eq!(plan_rank("docs/说明.md"), None);
+        assert_eq!(plan_rank("archive/计划.md"), None);
+        assert_eq!(plan_rank("笔记.md"), None);
+
+        let _home = crate::home_lock();
+        let root = flux_like("chinese-plan");
+        write(&root, "计划.md", "下一步");
+        let c = candidates(&list_folder(&root));
+        let plan = c.iter().find(|c| c.path == "计划.md").expect("计划.md is listed");
+        assert!(plan.recommended, "{c:?}");
     }
 
     #[test]
