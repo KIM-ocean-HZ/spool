@@ -1,6 +1,6 @@
 # 产品任务书 P19 —— 图文教程（中英两版，放上官网）
 
-> **状态：ACTIVE（2026-11-11 下发，同一窗接着执行）**
+> **状态：ACTIVE —— 页面已做完、本地提交（`c84ef53`、`2b6e9da`，没推），等 Ocean 点头推送上线（P19-6）；进度看 §7.2**
 >
 > **唯一交付**：官网上一页英文教程、一页中文教程（`spoolapp.org/guide.html`、`spoolapp.org/zh/guide.html`），从安装一直讲到项目做完归档；每一步配 **v0.8.1 正式版界面的真截图**，用演示数据拍；官网导航能点进去，手机上也能读。
 >
@@ -120,3 +120,17 @@
 - 讲稿里要按 v0.8.1 改的已经查到两处：「In sync now / 已经对过了」按钮没了（P16-4）；「+ Workspace」不是这个说法了。界面字符串都在 `src/lib/i18n/index.ts`（中文原文 → 英文）。
 - 工作计划（章节截图清单、快照方案、拍摄铁律、中文数据怎么做）在 `~/Desktop/Spool/P19-guide-20261111/PLAN.md`；英文数据导出在本窗 scratchpad（会没，重导很快：`snapshots/C11/spool.db` 里读 workspaces / threads / blocks / follow_up_items / attachments / block_images）。
 - **还没做**：中文示例数据（映射、四张块内图片的中文版、`~/spool-video-zh/` 文件夹和简历 / 求职信、中文演示仓库、中文网页）；拍摄脚本；全部截图（每段前问 Ocean）；Windows 虚拟机那几张（**11-20 前**）；P19-1 正文；P19-4 页面；推送上线。
+
+### 7.2 进度（2026-11-11 23:04 – 11-12 01:55，第二窗）
+
+- **P19-1 – P19-5 做完**：`site/guide.html`、`site/zh/guide.html`，13 章一页带目录，**50 张图 × 中英两套，一张不缺**（`build_guide.py --strict` 过）。图片只用无损 WebP（比 PNG 小约 4 倍），按一半像素显示、点开看原图，共约 6.3 MB，放 `site/assets/guide/{en,zh}/`。导航和页脚加「Guide / 教程」，README 加一行链接。按钮名按 `src/lib/i18n/index.ts` 逐条核过；第 9 章的 SPOOL.md 用原文摘录（中英各取自己那份仓库，脚本核过逐字一致），不截图。1280 / 390 宽整页渲染看过、站内链接和锚点全在、`npx vitest run scripts/build-site-zh.test.mjs` 14 过。
+- **提交**：`c84ef53`（页面 + 图 + 导航 + README）、`2b6e9da`（Windows AI 引擎那张重拍成正常的「还没有 key」样子，第 7 章补 Windows 上 key 存在数据文件夹的 `api-key` 文件里）。**都没推。**
+- **拍摄**（Ocean 23:11 – 01:35 不在；Windows 那段 Ocean 01:35 同意这段时间不用虚拟机）：
+  - Mac：演示版 v0.8.1（`com.oceanjin.spool.demo074`），中英两套快照；捕捉卡跑到主屏的老问题用「把自带屏临时挪到左边」绕开，拍完挪回；输入法拍摄时切 ABC、拍完切回。
+  - AI 真跑：Claude 桌面版和 Codex（ChatGPT 的 Work）临时把 `spool` 指到演示版 —— 先备份，拍完改回；Claude 桌面版设置逐项一致（91 项，只是它自己重写时换了键的顺序），Codex 多的两行是 ChatGPT 自己升级写的版本号。终端里的 Claude Code 只用 `--strict-mcp-config --mcp-config <只接演示版>`。本机 CLI 中英各 7 次 + 终端 2 次（上限 10）。
+  - API：DeepSeek（Ocean 当场给的 key），中英各真跑一次过期检测，合计约 ¥0.019；key 用完从演示版钥匙串删掉，扫了 964 个文件零命中，剪贴板清空。⚠️ key 还在那次对话记录里，建议 Ocean 到 DeepSeek 后台作废。
+  - 连仓库：中英各连一次演示仓库，只勾仓库里的 CLAUDE.md / AGENTS.md，**全局那一项没勾**（前后核了 `~/.claude/CLAUDE.md`、`~/.codex/AGENTS.md` 的哈希没变）；英文用的是拍宣传片那份的克隆 `~/spool-demo-en/portfolio-site`，原仓库没动。
+  - Windows（「Windows 11」虚拟机，v0.8.1）：SmartScreen、首启、关窗进托盘的提示、记事本里复制 + 双击 Ctrl 的捕捉卡、AI 引擎页；中英各 5 张（SmartScreen 共用一张英文系统的）。虚拟机自己的库**改名放一边、换演示数据、拍完换回**，17 个文件逐个哈希和拍之前一致；Spool 已普通启动（调试口关了）；放进去的安装包副本和两份示例文字已删，开的两个记事本标签已关，Ocean 自己的标签没动。
+- **工作文件**：`~/Desktop/Spool/P19-guide-20261111/`（`PLAN.md` 进度和发现、`scripts/` 拍摄 / 裁图 / 出页脚本、`shots/` 原图、`snapshots/` 快照、`text/guide-{en,zh}.md` 正文）。正文改了要 `python3 scripts/build_guide.py --strict` 重出页；图要换先改 `scripts/prep_images.py` 再跑。
+- **拍摄时看到的产品问题**：记成 HANDOFF `DISCOVERED-20261112-1` – `19`（附录 I）。Ocean 11-12：发版前全部修，教程提交后直接做（HANDOFF 第 334 条）。
+- **还没做**：P19-6 推送上线（等 Ocean 点头；推了 `site/` 会触发官网部署，部署后带 `?v=` 核两页和图）；P19-7 收尾（上线后把首屏改成 `COMPLETE — 待 Ocean 验收`、移进 `archive/product-taskbooks/`）。
