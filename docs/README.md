@@ -14,6 +14,7 @@
 | 文件 | 干什么用 | 谁在改 |
 |---|---|---|
 | `EXECUTION_POLICY.md` | **长期顺序的唯一权威**，LOCKED。产品 / 记忆研究 / 营销的主次、交替节奏、任务准入 | 只有 Ocean 明确同意才能改，其他一律禁止 |
+| `STRATEGY-2026-11-13.md` | **方向和一年计划**（Ocean 2026-11-13 定）：「想清楚了，再问 AI」、三样长处、一年四季和三个检查点、这一年不做的、还没查清的事。它不决定今天做哪一件：顺序看上一行，光标看下一行 | 方向变了才改，要 Ocean 明说 |
 | `HANDOFF-2026-11-09.md` | **唯一 active HANDOFF**：产品线的现状和唯一下一步（P20 已做完、v0.8.2 已发，等验收；之后是重构问卷）、发版二之后的全部待办、一直生效的规矩；实验线在 Knote 这边的约束在它的附录 A（实验线的光标仍只看 Codex handoff）。2026-11-09 取代 `archive/HANDOFF-2026-09-04.md` | 每窗结束时更新 |
 | `CODEX-HANDOFF-STAGE0A-D2-REVIEW-2026-09-03.md` | **实验线（Stage 0-a）的唯一滚动入口**；GR15R3 已 `Redo`，当前光标为 ACTIVE GR15R4。文件名里的日期和 D2 只是历史，内容是最新的 | Codex |
 | `TASKBOOK-STAGE0A-GR15R4-DEVELOPMENT-TRACE-CALLS-MADE-PRE-PRODUCT-READ-CLOSURE-CORRECTION-2026-09-24.md` | **当前唯一 ACTIVE 实验任务书**；只纠正实际 product read / rebuild 顺序自保护，保留既有语义绑定与科学结果，完成即归档 | Codex 下发；Claude Code 执行 |
