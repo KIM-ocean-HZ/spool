@@ -1,6 +1,6 @@
 # 产品任务书 P20 —— 修 P19 拍摄时发现的问题（发版前全部修）
 
-> **状态：COMPLETE — 待 Ocean 验收（2026-11-12 做完：21 条 + 并进来的 2 条全修；Mac 换装、Windows 虚拟机验过；v0.8.2 Mac + Windows 已发；MCP Registry 等 Ocean 跑命令）**
+> **状态：COMPLETE（2026-11-15 Ocean 验收通过，HANDOFF 第 364 条）**。原来写的：COMPLETE — 待 Ocean 验收（2026-11-12 做完：21 条 + 并进来的 2 条全修；Mac 换装、Windows 虚拟机验过；v0.8.2 Mac + Windows 已发；MCP Registry 等 Ocean 跑命令）**
 >
 > **唯一交付**：附录 A 里的 `DISCOVERED-20261112-1` – `19`（第 12 条是本机环境、已处理，不修）、同根的 `20261030-1`、`20261103-1`，以及并进来的 `20261111-1`、`-3`，按 §1 的顺序修完、各自提交（不推送）；Mac 换装给 Ocean 验收；Windows 在虚拟机里验（**Parallels 11-20 到期，Windows 那一步要在 11-19 前做完**）；然后**发 v0.8.2（Mac + Windows）**；**教程这次不换图**（第 342 条）。
 >

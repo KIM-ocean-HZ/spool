@@ -18,7 +18,7 @@
 | `HANDOFF-2026-11-09.md` | **唯一 active HANDOFF**：产品线的现状和唯一下一步（2026-11-14 起是 P21 重构问卷和报名表筛选；这一年的顺序在 §5.0）、全部待办、一直生效的规矩；实验线在 Knote 这边的约束在它的附录 A（实验线的光标仍只看 Codex handoff）。2026-11-09 取代 `archive/HANDOFF-2026-09-04.md` | 每窗结束时更新 |
 | `CODEX-HANDOFF-STAGE0A-D2-REVIEW-2026-09-03.md` | **实验线（Stage 0-a）的唯一滚动入口**；GR15R3 已 `Redo`，当前光标为 ACTIVE GR15R4。文件名里的日期和 D2 只是历史，内容是最新的 | Codex |
 | `TASKBOOK-STAGE0A-GR15R4-DEVELOPMENT-TRACE-CALLS-MADE-PRE-PRODUCT-READ-CLOSURE-CORRECTION-2026-09-24.md` | **当前唯一 ACTIVE 实验任务书**；只纠正实际 product read / rebuild 顺序自保护，保留既有语义绑定与科学结果，完成即归档 | Codex 下发；Claude Code 执行 |
-| `TASKBOOK-P<n>-*.md` | **当前 ACTIVE 的产品任务书是 `TASKBOOK-P21-SURVEY-REBUILD-2026-11-14.md`**（重构问卷和报名表筛选，11-14 下发）；还没下发的 P22 – P31 是草稿，在 `taskbook-drafts/`（首屏 `DRAFT — 未下发`，不授权施工；下发规矩在 HANDOFF 附录 H 第 6 条）。P1 – P20 的任务书和回执都在 `archive/product-taskbooks/`（P20 修 P19 拍摄时发现的问题、v0.8.2 已发，11-12，待验收）；这一窗做什么、按什么顺序、怎么验。做完移进 `archive/product-taskbooks/`。产品线的任务库与红线在 `HANDOFF-2026-11-09.md` §5 和附录 B – G | 下发窗写；执行窗执行 |
+| `TASKBOOK-P<n>-*.md` | **当前 ACTIVE 的产品任务书是 `TASKBOOK-P21-SURVEY-REBUILD-2026-11-14.md`**（重构问卷和报名表筛选，11-14 下发）；还没下发的 P22 – P31 是草稿，在 `taskbook-drafts/`（首屏 `DRAFT — 未下发`，不授权施工；下发规矩在 HANDOFF 附录 H 第 6 条）。P1 – P20 的任务书和回执都在 `archive/product-taskbooks/`（P20 修 P19 拍摄时发现的问题、v0.8.2 已发，11-12；11-15 验收通过）；这一窗做什么、按什么顺序、怎么验。做完移进 `archive/product-taskbooks/`。产品线的任务库与红线在 `HANDOFF-2026-11-09.md` §5 和附录 B – G | 下发窗写；执行窗执行 |
 
 两份 handoff 的分工，别搞混：**实验线的执行光标只在 Codex 那一份**（它的 §8 列了所有不许恢复的旧光标）；
 **产品线的光标和唯一下一步只在 `HANDOFF-2026-11-09.md` §2**（2026-09-30 起产品线就在 HANDOFF 里），那里不写实验线的「下一步」。
