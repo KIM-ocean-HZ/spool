@@ -28,7 +28,7 @@
 - 本任务书附录 A：11-05 的原文、报名表第二版那两段。
 - `~/Movies/Spool-video/review/promo-v4/23-beta-signup-form.md`：报名表第二版 12 题、表头、筛选理由、当时「要你定的」四条。
 - `docs/archive/FEEDBACK-FORM-2026-08-22.md`：官网反馈区那份八题问卷的原稿。§4「两份故意不一样的三处」、§5「想过但故意没放进去的题」写之前要看。
-- 附录 A 里 11-05 列的 11-04 那几份商业分析是旧方向写的，**只作参考**；讲法以 11-13 的方向为准（§4 第 1 问）。
+- 附录 A 里 11-05 列的 11-04 那几份商业分析是旧方向写的，**不读**（11-15 Ocean 定，HANDOFF 第 370 条）；讲法以 11-13 的方向为准。
 
 **官网**
 - `site/index.html`、`site/zh/index.html`：`#beta` 那一块（`beta-p`、`beta-cta`、`beta-note`）和 `#feedback` 那一块（`fb-q-cta`、`fb-q-note`）。
@@ -38,7 +38,7 @@
 
 | 东西 | 现在 |
 |---|---|
-| 报名表 | 中文在问卷星 `https://v.wjx.cn/vm/r7aA0kE.aspx`，英文在 SurveyMars `https://surveymars.com/q/TJhQU73c2`（两页 `beta-cta` 里的链接）。第二版 12 题写在 `23-beta-signup-form.md`。**11-15 Ocean 贴了线上英文那份**（原样存在 `~/Movies/Spool-video/review/survey-2026-11/00-signup-v2-live-en-2026-11-15.md`）：已经是第二版，和 23 号文件比改了四处——奖金分法改成 3 × £20 + 2 × £10（认真反馈奖 £60、随机抽奖 £20）、第 2 题加了 WhatsApp、第 4 题 Intel Mac 没写「暂时不支持」、第 6 题题干改成 "Which AI apps do you use?"。**中文那份没贴，没核**（开工时请 Ocean 贴一下或确认和英文一致） |
+| 报名表 | 中文在问卷星 `https://v.wjx.cn/vm/r7aA0kE.aspx`，英文在 SurveyMars `https://surveymars.com/q/TJhQU73c2`（两页 `beta-cta` 里的链接）。第二版 12 题写在 `23-beta-signup-form.md`。**11-15 Ocean 贴了线上英文那份**（原样存在 `~/Movies/Spool-video/review/survey-2026-11/00-signup-v2-live-en-2026-11-15.md`）：已经是第二版，和 23 号文件比改了四处——奖金分法改成 3 × £20 + 2 × £10（认真反馈奖 £60、随机抽奖 £20）、第 2 题加了 WhatsApp、第 4 题 Intel Mac 没写「暂时不支持」、第 6 题题干改成 "Which AI apps do you use?"。**中文那份 Ocean 11-15 说和英文一样**（第 369 条；中文原文没贴） |
 | 第二版怎么挑人 | 按旧讲法：AI 用得多（第 5 题）、常常要重讲背景（第 7 题）的优先。11-13 方向换了，这套要换 |
 | 第二版表头 | 有「内测期间记下的东西本来就是你自己的笔记」（新讲法不自称笔记）、「帮你把……存进项目，再交给你用的 AI 接着做」（旧讲法） |
 | 反馈问卷 | 中文在问卷星 `https://v.wjx.cn/vm/hy3KvuB.aspx`，英文在 SurveyMars `https://surveymars.com/q/eXk1aRDgW`；八题，问的是「用到哪一步、为什么停下」。两页按钮写「回答八个问题」/「Answer eight questions」。（HANDOFF 旧 5.1.1 写的「SurveyMars 上的八题问卷」只说了英文那一边） |
@@ -136,7 +136,7 @@
 
 ## 4. 开工前要 Ocean 定的
 
-> **11-15 已答三问**（HANDOFF 第 362、363 条）：第 2 问——英文线上已是第二版（见 §0.2），对照表以线上英文版为基准，中文版开工时再核；第 3 问——**两份**，而且中英两份的题目要分开写（不是互译）；第 4 问——线上英文版留着「I use it myself every day」，按线上版：**留**。还没答的只剩第 1 问（开工时问）。
+> **11-15 四问都答了，开工不用再问**（HANDOFF 第 362、363、369、370 条）：第 1 问——**不参考**，只用规划 `07`；第 2 问——中英线上都已是第二版（见 §0.2），对照表以线上版为基准；第 3 问——**两份**，而且中英两份的题目要分开写（不是互译）；第 4 问——线上版留着「I use it myself every day」，按线上版：**留**。
 
 1. **11-04 那几份商业分析还要不要读**（附录 A 里 11-05 列的五份）。
    - 甲（推荐）：不读，只用 `07`。好处：讲法不会混进旧方向（「不用再解释一遍项目」）。代价：那几份里内测问卷的四个问题不参考了。
