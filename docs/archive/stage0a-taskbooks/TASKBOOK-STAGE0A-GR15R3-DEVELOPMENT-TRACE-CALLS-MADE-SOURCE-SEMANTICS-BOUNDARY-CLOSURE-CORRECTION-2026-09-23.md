@@ -3,8 +3,8 @@
 > **状态：COMPLETE — 2026-09-24 验收 verdict：Redo。留档不开工。**
 >
 > source-semantics binding 与科学结果已闭合；实际 product read 前移的顺序自保护仍有缺口。
-> 验收证据以 canonical handoff §4.21 为准。后续唯一任务书：
-> `docs/TASKBOOK-STAGE0A-GR15R4-DEVELOPMENT-TRACE-CALLS-MADE-PRE-PRODUCT-READ-CLOSURE-CORRECTION-2026-09-24.md`。
+> 验收证据以 canonical handoff §4.21 为准。当时后续任务书（现已归档；当前入口见 canonical handoff）：
+> `docs/archive/stage0a-taskbooks/TASKBOOK-STAGE0A-GR15R4-DEVELOPMENT-TRACE-CALLS-MADE-PRE-PRODUCT-READ-CLOSURE-CORRECTION-2026-09-24.md`。
 >
 > **唯一交付：** 从 accepted GR14 独立重建 GR15 同一单 primitive、development-only、零费用
 > separability envelope；不重开字段选择或科学问题。只纠正 rejected GR15R2 的一处 canonical factual

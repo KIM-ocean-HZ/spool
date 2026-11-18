@@ -7,17 +7,12 @@
 >
 > **Codex 角色：** 独立实验评测指导员——验收 Claude Code 的上一任务，给出 verdict，再在既有 owner 授权内下发下一项最小任务。
 >
-> **当前光标：ACTIVE GR15R4 — trace-calls-made pre-product read closure correction。**
-> GR15R3 `4d6a419cae875d3c8595c890056791d75203097a` 已于 2026-09-24 验收为 `Redo`，不进入
-> accepted chain。accepted-source narrative / AST binding、P1、五面 identity、direct-integer 与科学
-> 结果均已闭合；退回只因顺序自证仅跟踪包装函数名，实际 JSON read 提前到 source-semantics 前时
-> 仍会被静态审计判为 clean。当前正常执行顺序正确，没有发现科学结果漂移。现只授权 GR15R4 从
-> accepted GR14 独立纠正实际 product read / rebuild 的顺序自保护，不重开科学实验或扩大权限。
+> **当前光标：GR16R5 正式 Redo — 等待 owner decision。**
 >
-> **当前唯一任务书：**
-> `docs/TASKBOOK-STAGE0A-GR15R4-DEVELOPMENT-TRACE-CALLS-MADE-PRE-PRODUCT-READ-CLOSURE-CORRECTION-2026-09-24.md`
->
-> **最后更新：** 2026-09-24（Europe/London）
+> GR16R5 独立验收 findings 与最小纠正范围见 §4.43；完整执行回执与最终六 SHA 保留在 §4.42。
+> accepted head 保持 GR15R8；GR16/R1/R2/R3/R4/R5 均不进入 accepted chain，不创建 GR17。
+> **无 ACTIVE 实验任务。** GR16R5 原执行合同已裁决并归档至 `docs/archive/stage0a-taskbooks/TASKBOOK-STAGE0A-GR16R5-DEVELOPMENT-TRACE-FAILURE-PATHS-FIRED-METHOD-CALLABLE-ORIGIN-CLOSURE-CORRECTION-2026-10-13.md`，仅供历史审计。
+> **最后更新：** 2026-10-14（Europe/London）
 
 ## 1. 每个新 Codex 窗口的固定工作循环
 
@@ -103,6 +98,11 @@ Claude 回执与文档都不能覆盖实验 artifact。`docs/HANDOFF-2026-09-04.
 - GR14：`0120c5e1e3d6c20a7b8e997cd8d47c9fc557df17`；唯一 parent 为 GR13R2；development-only、
   zero-cost trace-invalid-tool-calls exact-count separability envelope 已接受。相对 GR13R2 恰六个新增、
   0 个修改；34 个 GR9 class 无一被切分，16 格逐格与 GR9 相同，Layer A / B 均为 `0/16`。
+- GR15R8：`7f3826f42a7ecdb0d4e1099b805cb0d271ce5959`；唯一 parent 为 GR14；development-only、
+  zero-cost trace-calls-made exact-count separability envelope 及 R1–R8 限定纠正，以
+  `Accept with non-blocking note` 接受。相对 GR14 恰六个新增、0 个修改；58 classes、split/unsplit
+  `16/18`、collision 7、Layer A `0/16`、Layer B `16/16`。完整 pytest 未独立复跑，owner 明确免于重跑；
+  证据归属与三条说明见 §4.26。GR15 / R1–R7 均不进入 accepted chain。
 
 GR13 `f206463d9cebc3081d2ad4bde189569d4aa3217f` 已验收但 verdict 为 `Redo`，不进入 accepted
 chain。其 `len(trace.satisfied)` 科学读数、P0–P8、六产物与三条目标命令闭合；退回只因 canonical
@@ -150,6 +150,28 @@ chain。两套实现已将 narrative 逐字绑定到 pinned source 的 `.get` co
 到 source-semantics 前时，被审计的相对顺序仍不变。既有负测只提前整个 `_preflight`，没有关闭此类
 actual-read relocation。GR15R4 只纠正这一自保护缺口，仍从 accepted GR14 独立交付。
 
+GR15R4 `a7413a4d594bd862c98b461ce94ddc0f04b7a707` 已验收但 verdict 为 `Redo`，不进入 accepted
+chain。runtime guard、实际 reader / helper / alias 闭包、读取计数 spy、六 SHA、87/11/3 与科学结果均闭合。
+但 release 前赋值只要求 RHS 的 AST 含 source-semantics 调用；用非空合格计数字典 `or` 原调用时，真实
+调用被短路，引用与调用位置保持不变，guard 仍接受字典并放行。Codex 只作源码与内存 AST 对照，未
+执行变异版。GR15R5 只纠正必要语义阶段的实际完成证明，不重开科学实验。
+
+GR15R5 `87be12f9c39eff50c037aeb7e5ca17675bdc76cb` 已验收但 verdict 为 `Redo`，不进入 accepted
+chain。source-semantics audit / binding 完成报告、同一对象放行与新八族检查本体正确；但 boundary
+preflight 内的 `closure = <八族全零非空字典> or 原 closure 调用` 会短路整个保护层，而两套
+invocation 自证仍只检查 AST 调用存在性，`prove()` 仍接受伪造摘要。GR15R6 只关闭 boundary proof
+自身的完成证明，不重开科学实验。
+
+GR15R6 `64f173b44cbfdea9e020ec8df0f39962f31dc8d9` 已验收但 verdict 为 `Redo`，不进入 accepted
+chain。guard 已独立核对三函数 AST、实际帧与同一对象，关闭整段 closure 绕过；但 validator 21 项 /
+analyzer 22 项 controls 登记表不在保护范围，删项或清空后仍可走到完成报到。GR15R7 只关闭固定
+controls 清单与实际完成的绑定，不重开科学实验。
+
+GR15R7 `fc281526fd24efde89ccd006853343748d0b72d5` 已验收但 verdict 为 `Redo`，不进入 accepted
+chain。原 21/22 controls、八族 probes、guard 独立 pins 与逐项报到本体正确；但新 inventory 的
+expected / observed 可在未保护 provenance helper 内被间接改写，与 runtime 清单清空组合后，
+空循环仍可交出 proof。这属于 R7 §4(3) 的新状态自保护要求；GR15R8 只纠正此项，不重开科学实验。
+
 GR6 `a76a2c675046628445ee98243fe138c0b4d819f2` 已验收但 verdict 为 `Redo`，不进入 accepted chain。
 其 readiness 科学结论没有被推翻；退回只因 independent validator 未完整独立重建 canonical JSON /
 REPORT，且会接受缺失 failure-policy blocker 或普通 REPORT 事实篡改。GR6R1 已从 GR5 独立纠正并验收为
@@ -194,7 +216,8 @@ development evidence。其 128 格、G1 不可能性证书与三条目标命令�
 - 私有远端 `KIM-ocean-HZ/spool-memory-research` 已保存恰 21 条 accepted heads；逐条 SHA 闭合，GR8
   远端 tip 为 `a4320c8428f94b304dcf097c7d55acd8e6eae6f8`；远端 tag 为 0，十条 Redo / 未接受分支未推送。
   后续接受的 GR9 `48b9f720…`、GR10 `2231eb66…`、GR11 `04ffebe8…`、GR12R3 `0ecd8d15…` 与
-  GR13R2 `9b8b1e2…` 仍只在本地，未获新的远端操作授权。
+  GR13R2 `9b8b1e2…`、GR14 `0120c5e1…` 与 GR15R8 `7f3826f4…` 未获新的远端操作授权；
+  本次下发不刷新远端现场、不执行备份。
 - 2026-09-10，31 个实验 worktree 目录曾被整体挪入 `~/Desktop/Spool/spool- research/`，导致 git
   worktree 指针暂时指向旧路径；目录已原样移回 `~/Desktop/` 顶层，git 历史与文件无损失。这是操作性
   路径事件，不是数据事故，不写 `EXECUTION_POLICY` §8 中断；一条上个会话遗留的 prunable 临时
@@ -355,7 +378,13 @@ candidate、hidden 或样本外；只按 accepted `check_trace()` source 语义�
 仍为 GR9；前三个已检验 primitive 不重读、不组合，其余三个继续未检验。完成后必须返回 owner，不得
 自动创建 GR15。
 
-## 4. 最近验收 —— GR6 / GR12 / GR12R1 / GR12R2 / GR13 / GR13R1 / GR15 / GR15R1 / GR15R2 / GR15R3 `Redo`、GR6R1 / GR7 / GR8 / GR9 / GR10 / GR11 / GR12R3 / GR13R2 `Accept`、GR14 `Accept with non-blocking note`
+owner 于 2026-09-29 提供 GR15R8 的完整验收裁决与三条非阻断说明，并明确“验收通过了，不需要
+再跑一次，下发下一个任务”。GR15 至此收口。新授权只收敛为 GR16：按 accepted source 的诊断列表
+发布语义预注册 `len(trace.failure_paths_fired)`，仍单独追加到 GR9，不与前五项组合。
+`len(suppressed_wrong_actions)` 保持未检验；proof 后到 release 前的相邻观察只作 captured 记录。
+完成 GR16 后返回 owner decision，不自动创建 GR17、selector/candidate、hidden、样本外或 repair。
+
+## 4. 最近验收 —— GR16R4 `Redo`（§4.38）
 
 ### 4.1 已核现场与通过项
 
@@ -1001,73 +1030,1135 @@ GR15R3 不进入 accepted chain。只开放 GR15R4：从 accepted GR14 重建同
 观测；保留 source-semantics、P1、identity、direct-integer 与全部科学结果。不得扩大到第二 primitive、
 组合、selector、candidate、hidden、样本外或 GR16。GR15R3 任务书已验收归档。
 
-## 5. 当前状态 —— ACTIVE GR15R4
+### 4.22 GR15R4 findings 与 verdict
 
-GR15R3 已验收为 `Redo` 并归档；当前唯一 ACTIVE 任务书：
+- 现场与回执一致：commit `a7413a4d594bd862c98b461ce94ddc0f04b7a707` 唯一 parent 为 accepted
+  GR14；恰一笔 commit、六个 `A` / 0 个 `M`。branch / worktree / message 精确，reflog 只含从 GR14
+  新建与本笔提交；所有列明 rejected commits 与 GR6R1 均不在 ancestry。tag 0、status clean，主仓仍为
+  `67cf84c9…`、main、clean。定向检查的两个 `__pycache__` 均不存在。
+- 六件工作树 SHA 与 `HEAD:path` 及回执一致：validator `95c6aed2…`、analyzer `5725eb4b…`、tests
+  `749b0c1f…`、JSON `e658e3ab…`、REPORT `0d51b68c…`、CHECKSUMS `af024a91…`。posthoc 恰五项，
+  CHECKSUMS 恰登记四项且不自列；GR15R3 六 scaffold object raw-byte SHA 与任务书逐项一致。
+  本窗目标命令结束后，HEAD / status / 六 SHA 无漂移，两个精确 cache 目录仍不存在。
+- 两套实现各自加入模块顶部 audit guard、实际读点 / helper / callable alias 的引用闭包与六族自证。
+  新 spy 在 `io.open` / `os.open` 成功后才计数，经匿名管道返回两类计数；25 / 19 条新边界 mutations
+  及两套六族删除/恒真化均复用同一 control→mutation 机制。这里是实现审查结果，非本窗完整跑完负测。
+- 旧 preflight 前移、P1 / identity / semantics stage 删除与 P0 移除 P1 调用，改由最先运行的
+  `product-boundary` 报错合理：共用调用链已断开，原测试保留并增加零读取证据。此改动不是 finding。
+- Codex 用 Python 3.12.2 独立复跑 analyzer `--check-existing` 与 validator 均 rc 0 / PASS；三产品
+  byte-identical，validator 输出 `pinned objects=87 generations=11 siblings=3`。pytest 在静态阻断
+  finding 确认后主动中止：`50 passed in 227.83s (0:03:47)`；中断 rc 2 不代表测试失败或 mutation
+  拒绝。回执的完整 `881 passed in 13499.37s` 本窗未独立重现，不登记为三条独立复跑全绿。
+- JSON / REPORT 相对 R3 的原始文本 diff 只涉及轮次、标题、rejected provenance、scaffold 与 older
+  raw-byte closure；无科学字段新增或读数漂移。仍为 58 classes、support 1…25、singleton 28、
+  split/unsplit 16/18、collision 7、reduction 35、final 47…53、Layer A 0/16、Layer B 16/16、
+  minimum final 76 / padding 23，source-semantics 六计数保持 2/1/1/1/0/9。
+- **blocking finding（P1）：** validator `_invokes()`（3992–3994）与 `_main_order_holds()`
+  （4006–4022）按 `ast.walk` 中调用的存在性计顺序；`_product_boundary_provenance()`（4634–4640）
+  只要求 release 前赋值 RHS 含 semantics 调用。将 `main` 第 10300 行改为
+  `semantics = <五族数值合格的非空字典> or _assert_source_semantics_is_enforced()`，调用被短路，
+  但 AST Name/ctx、Call target、Attribute 多重集、赋值名、语句位置与 guard 摘要不变。
+  `open_after()`（174–178）只核 proven 与计数，因此第 10302 行可在真实 semantics 完成前打开
+  边界，接着 `_preflight()` 读产品。analyzer `_calls_named()`（3929–3931）、迁移检查
+  （4551–4557）、`release()`（187–192）及 `build_blobs()` 第 10426 行同构，可提前放行 rebuild。
+  原 skip mutation 只换成空字典，未覆盖死调用 + 合格结果。违反任务书 §4(3–4) 的完成后放行与
+  invocation-bypass 自保护要求。
+  本 finding 来自源码与内存 AST 对照：未 import / 执行变异实现、未写变异文件，不声称变异版
+  已实测 rc 0。正常交付顺序仍正确，未发现真实提前读取或科学污染。
+- **执行过程说明（不另列 blocking）：** 回执披露单独计时、性能分析、计数器试跑、pytest 子集，
+  超出原 §9 命令白名单；临时 sandbox 不自动扩大命令授权。这不是 hidden 接触或科学污染的证据。
+  回执另披露 `py_compile` 曾产生三份 pyc 后清理，现两个目标 cache 目录不存在。本轮不追溯认可
+  额外命令；下一纠正任务明确只走完整三命令与不落 cache 的语法检查。
 
-`docs/TASKBOOK-STAGE0A-GR15R4-DEVELOPMENT-TRACE-CALLS-MADE-PRE-PRODUCT-READ-CLOSURE-CORRECTION-2026-09-24.md`
+`Redo`
 
-- parent / accepted development head：GR14 `0120c5e1e3d6c20a7b8e997cd8d47c9fc557df17`。
-- rejected scaffold：GR15R3 `4d6a419cae875d3c8595c890056791d75203097a`；R2 / R1 / GR15 为 older
-  rejected raw-byte closure；projected scientific baseline 仍为 GR9。
-- branch：`stage0a-wave2-trace-calls-made-pre-product-read-closure-gr15r4`。
-- worktree：`/Users/hzjin/Desktop/spool-research/worktrees/spool-research-wave2-trace-calls-made-pre-product-read-closure-gr15r4`。
-- 唯一纠正面：实际 product read / rebuild 提前时必须在边界前 rc 2，不能只看包装函数名或失败 stage。
-- 保留 GR15R3 已闭合的 source-semantics / P1 / identity / direct-integer / science；五面 delivery round
-  更新为 GR15R4 correction，科学问题仍为 GR15。
-- 六个新增路径、一笔固定 message commit、Python 3.12.2 三条目标验证命令；定向路径检查。
-- 不授权第二 primitive、组合、排名、selector/candidate、hidden、样本外、模型/API、费用、正式运行、
-  promotion、freeze、G0、远端操作或 GR16。
+GR15R4 不进入 accepted chain。只开放 GR15R5：从 accepted GR14 独立纠正 source-semantics 的实际完成
+证明与 guard 放行绑定，补死调用、假合格结果及 completion enforcement 自身绕开负测；保留已有实际
+reader / rebuild 防护与全部科学结果。不得自动创建 GR16。GR15R4 任务书已验收归档。
 
-## 6. 下一窗验收方法与工作重点
+### 4.23 GR15R5 findings 与 verdict
 
-1. 完整读取本文件与 GR15R4 ACTIVE 任务书；已归档的 GR15R3 及更早任务书只供审计，不当作 ACTIVE 重跑。
-2. 收到交付后先核 commit / 唯一 parent / branch / worktree / changed paths / 六 SHA / status / tag；
-   不因旧回执的测试全绿跳过实现级审查。
-3. 重点核实际 JSON / REPORT / CHECKSUMS reader 的前置可达闭包；检查搬移真实读取、helper / alias
-   委托与搬入 preflight helper 的 mutations，以及“拒绝前真实 I/O / rebuild 为零”的观测。
-4. 核 source-semantics 的九条 controls 与六个计数、P1 / round identity / direct-integer / science 无回退；
-   只运行任务书 §9 的三条目标验证命令，不添加 runtime probe。
-5. 给出唯一 verdict，归档任务书并维护当前入口；不得自动创建 GR16。
+- 现场与回执一致：commit `87be12f9c39eff50c037aeb7e5ca17675bdc76cb` 唯一 parent 为 accepted
+  GR14；恰一笔 commit、六个 `A` / 0 个 `M`。固定 branch / worktree / commit message 精确，message
+  无正文/尾注；所有列明的 13 个 rejected / sibling commits 均不在 ancestry。status clean、tag 0。
+- 六件工作树 SHA 与 `HEAD:path` 及回执逐项一致：validator `eb4efff2…`、analyzer `6ffbbc37…`、
+  tests `b5b6278f…`、JSON `8b3045a1…`、REPORT `13c5c53c…`、CHECKSUMS `8315b174…`；posthoc
+  恰五项、CHECKSUMS 恰四条且不自列；GR15R4 六 scaffold raw-byte SHA 全部闭合。目标命令结束后
+  HEAD / status / 六 blob 无漂移，两个精确 cache 目录均不存在。
+- 两套实现已正确把 source-semantics 自证末尾报到、binding 同一对象交接与 release 连起来；入口
+  五 stage direct-call 白名单及三函数 completion digest 均已加入。tests 保留 R4 边界 mutations，
+  新增两套各 17 类 completion mutations、四类 forged-pin variants；spy 用 `sys.monitoring` 只
+  观察返回/入口事件，不调用 guard、不写 guard 状态。这是实现审查，非本窗完整负测复跑结果。
+- Codex 用 Python 3.12.2 独立运行 analyzer `--check-existing` 与 validator，均 rc 0 / PASS；三份
+  analyzer 产品 byte-identical，validator 为 `87 objects / 11 generations / 3 siblings` 且 canonical
+  JSON / REPORT byte-identical。完整 pytest 因下述静态 finding 主动中止：`47 passed in 157.17s
+  (0:02:37)`，中断 rc 2；没有测试失败。回执 `952 passed in 16200.88s` 未独立重现，不登记为
+  三条独立复跑全绿。
+- 科学结果由正常版两套实现独立重建：58 classes、support 1…25、singleton 28、split/unsplit 16/18、
+  collision 7、reduction 35、final 47…53、Layer A 0/16、Layer B 16/16、minimum final 76 / padding 23；
+  固定 conclusion 未漂移。
+- **blocking finding（P1）：** validator `_assert_product_boundary_is_enforced()` 第 5068 行与
+  analyzer `_assert_pre_product_boundary_is_enforced()` 第 5012 行，可将 closure 赋值 RHS 换成
+  `<本实现八族全零的非空字典> or 原 closure 调用`。这会跳过八族 closure、guard / completion
+  digest、controls 与 probes；validator `_enforcement_audit()` 第 4142 / 4163–4165 行仍用
+  `_invokes()`，analyzer `enforcement_provenance()` 第 4103 / 4137 行仍用 `_calls_named()`，
+  都只认这条内部调用存在。新 direct-call / 白名单只约束入口 stage，未闭合 preflight→closure。
+  validator `prove()` 第 182–185 行只验数值后置 `proven=True`，analyzer 第 190–193 行同样接受
+  字典为 proof；后续正常 source-semantics audit / binding 仍能完成并放行。因此新增完成路径的
+  自保护仍依赖可被跳过的检查，违反任务书 §4(3–4)。已有删整个 stage / 删族 / 删 prove 负测不
+  覆盖这份“死调用 + 合格闭包”输入。
+  证据限源码与内存 AST 对照：两套变异仅改变上述一个函数，Name/ctx、Call target、Attribute/ctx
+  多重集、其它函数/类 AST、入口顺序与模块常量不变，字典经 literal_eval 确认为非空且八值全零。
+  未 import / 执行变异实现，未写变异文件，不声称变异版实测 rc 0；晚期源码 CHECKSUMS mismatch
+  也不能满足 fail-before-read。正常版本未发现真实提前读取或科学污染。
+- 回执另提 P1 / round-identity preflight 的相邻调用存在性模式，本窗仅静态确认其仍沿用该模式，
+  未单独运行 mutation，不将其升级为本轮另一 finding 或新 repair 授权。遗留系统临时目录未进入/清理。
 
-`docs/HANDOFF-2026-09-04.md` 继续保持历史现场，不补入 D / GR 系列当前光标。
+`Redo`
+
+GR15R5 不进入 accepted chain。只开放 GR15R6：从 accepted GR14 独立纠正 boundary proof 自身的
+实际完成与 `prove` / release 绑定，补内部短路、提前返回、同名/alias 及新 enforcement 绕开负测；
+保留已闭合的 source-semantics、实际 reader / rebuild 与科学结果。不得自动创建 GR16。
+GR15R5 任务书已验收归档。
+
+### 4.24 GR15R6 findings 与 verdict
+
+- 现场与回执一致：commit `64f173b44cbfdea9e020ec8df0f39962f31dc8d9` 唯一 parent 为 accepted
+  GR14；恰一笔 commit、六个 `A` / 0 个 `M`。branch / worktree / message 精确，无正文/尾注；
+  reflog 只含从 GR14 新建和本笔提交；列明的 14 个 rejected / sibling commits 均不在 ancestry。
+  status clean、tag 0；主仓仍为 `67cf84c9…`、main、clean。
+- 六件工作树 SHA 与 `HEAD:path` 及回执一致：validator `05bf9994…`、analyzer `d465fb08…`、
+  tests `178475c2…`、JSON `91dc3adc…`、REPORT `e85cd661…`、CHECKSUMS `f7d336ec…`；posthoc
+  恰五项、CHECKSUMS 恰四条且不自列；R5 六 scaffold raw-byte SHA 全部闭合。复跑后 HEAD / status /
+  六 blob 无漂移，两个精确 cache 目录不存在。
+- R5 finding 本体已纠正：guard 自行读取源文件，钉住 boundary preflight / self-audit / closure 三函数
+  AST，核对实际执行帧、同一次 preflight、同一 provenance 对象及放行入口帧；两条 invocation 链
+  改为顶层 direct call。21 类新增 mutations、R5 负测迁移与只读 spy 的实现已审查，未称完整负测复跑。
+- Codex 用 Python 3.12.2 独立复跑 analyzer `--check-existing` 与 validator，均 rc 0 / PASS；三产品
+  byte-identical，validator 为 `87 objects / 11 generations / 3 siblings`。pytest 因静态阻断 finding
+  主动中止：`51 passed in 223.07s (0:03:43)`，中断 rc 2，无测试失败。执行者回执
+  `1010 passed in 34195.78s` 未独立完整重现，不登记为三条独立复跑全绿。
+- 科学结果无漂移：58 classes、support 1…25、singleton 28、split/unsplit 16/18、collision 7、
+  reduction 35、final 47…53、Layer A 0/16、Layer B 16/16、minimum final 76 / padding 23；固定
+  conclusion 保持不变。
+- **blocking finding（P1）：固定 controls 清单可以缩减，完成报告仍可被接受。** validator 第 4592 行
+  `_BOUNDARY_CONTROL_SPECS` 的 21 项和 analyzer 第 4507 行 `PRE_PRODUCT_CONTROL_SPECS` 的
+  22 项都在 guard 的三函数 proof pin 之外。只把赋值 RHS 改为 `()`，第 5182 / 5147 行的 controls
+  循环就零次执行；删去单项则漏跑该项。两套 closure 仍在第 5193 / 5158 行报到并返回同一对象。
+  validator `_enforcement_audit()` 第 4229–4242 行与 analyzer `enforcement_provenance()` 第
+  4210–4221 行仅检查循环 iterable 名与 predicate 结构；不核对固定完整清单。登记表的运行时读取
+  仅在 control helper 和 closure 循环中。清空/删项不改变任何函数或 guard AST、名字引用、I/O /
+  transition 计数、proof / semantic-completion digest；因此不触发现有边界前拒绝。
+  这违反任务书 §4(1) 对真实 controls / probes 完成必须先于 proof 接受的要求。既有 spy 只观察
+  完成方法返回，不观察 controls 清单和逐项完成；21 类新 mutations 也没有变异登记表。
+  证据限源码审查与内存 AST 对照：两套各核对删一项/全部清空，只改一个赋值节点，其余顶层
+  AST 与所有函数/类不变，原 proof digest 与源码匹配。未 import / 执行变异实现、未写变异文件，
+  不声称变异版实测 rc 0；晚期源码 CHECKSUMS mismatch 不代替 fail-before-read。正常版未发现
+  提前读取或科学污染。
+- **Codex 本窗复核过程偏差（不归责于执行者）：** 初始查约束时误运行
+  `find .. -name AGENTS.md -print`，从 Knote 父目录递归查找，超出精确路径限制。命令未返回匹配项；
+  随后发出中断，工具返回 exit 0，不能据此证明未曾遍历哪些目录。没有正文输出，亦无内容读取/
+  科学污染证据；但本窗不得声称整个复核过程零目录接触。后续只作点名路径检查，未清理任何
+  hidden/raw/遗留临时目录。本项与上面的实现级 Redo 理由分别记录。
+
+`Redo`
+
+GR15R6 不进入 accepted chain。只开放 GR15R7：从 accepted GR14 独立闭合固定 controls 清单与实际
+完成的绑定，补清空、逐项删除、等长替换、重绑与新完整性 gate 绕开负测；保留 R4/R5/R6 已闭合
+路径与科学结果。不得自动创建 GR16。GR15R6 任务书已验收归档：
+`docs/archive/stage0a-taskbooks/TASKBOOK-STAGE0A-GR15R6-DEVELOPMENT-TRACE-CALLS-MADE-BOUNDARY-PROOF-COMPLETION-CORRECTION-2026-09-26.md`。
+
+### 4.25 GR15R7 findings 与 verdict
+
+- 独立核实 commit `fc281526fd24efde89ccd006853343748d0b72d5` 唯一 parent 为 GR14
+  `0120c5e1e3d6c20a7b8e997cd8d47c9fc557df17`，相对 GR14 恰一笔、六 A / 零 M。
+  branch / worktree / 固定 message 精确，无正文/尾注，作者与提交者相同；15 个列明 rejected /
+  sibling commits 均不在 ancestry。交付 status clean、tag 0，实验主仓仍是 main `67cf84c9…`、clean。
+  Knote 本身原有未提交文档改动，不能与实验主仓混同；本窗保留既有改动。
+- 六件工作树 SHA 与 `HEAD:path` 一致：validator
+  `5b54f3a159f01ebf5f401f7e087789583eafe4c3f85dfeae9f489122f4d2e4cd`；analyzer
+  `c9427b6df28cc6ef04d57aac1602e6725d1b05a6000f4fdf1910e10d22444dec`；tests
+  `1122e3ea21aac38938b22d80654b35c2527636b2a807a0c3708fcb1c67da7f4a`；JSON
+  `4244692b1e2ea8f0db096ac9a571716257311ae37f72cec2b5fe4b2bfeee43ae`；REPORT
+  `86fc33cc15c09a4b70121763198c4667438cf345e4920fd11ef6b44a2c3b118f`；CHECKSUMS
+  `366356691192b276cbbfa957ce036cc97c41f62285a69929e78bad229dff8a8b`。回执 analyzer 的缩略尾缀
+  不准确，所附完整值正确。posthoc 恰五项、CHECKSUMS 恰四项且不自列，R6 六 scaffold raw-byte
+  pins 全部独立匹配。复跑后 HEAD / status / 六 blob 无漂移，两个精确 cache 目录不存在。
+- 原 controls 赋值 AST digest 与任务书一致，21/22 项及八族 probes 保留；guard 自读源码、唯一
+  绑定计数、pinned driver 内逐项报到、proof 按序相等核验均已审查。93 条新 mutation 的构造及
+  同一 spy 的 control→mutation / 零 proof、零读取、零放行判据已审查，不称独立完整跑完负测。
+- Codex 用 Python 3.12.2 独立复跑 analyzer `--check-existing` 与 validator 均 rc 0 / PASS。
+  三产品 byte-identical，validator 为 87 objects / 11 generations / 3 siblings。因静态 finding
+  已阻断，本窗未启动 pytest；执行者 `1151 passed in 20638.58s (5:43:58)` 仅列为回执。
+- 科学结果仍为 58 classes、support 1…25、singleton 28、split/unsplit 16/18、collision 7、reduction
+  35、final 47…53、Layer A 0/16、Layer B 16/16、minimum final 76 / padding 23；固定 conclusion 不变。
+- **blocking finding（P1）：新 inventory 可由 guard 外的间接写入伪造。** validator 第 295–306 行与
+  analyzer 第 312–323 行的 `prove` 从同一可变 `inventory` 取 expected / observed。validator
+  第 4901–4903 行及 analyzer 第 4859–4861 行的状态扫描只认 `Attribute(Store)`，漏过
+  `guard.__dict__["inventory"]` 的 `Subscript(Store)`。在未钉住的 provenance helper（validator
+  第 5057 行 / analyzer 第 5047 行）加入两条 namespace 写入，把实际 controls / probes 清空，
+  再写 `guard.__dict__["inventory"] = (((), ()), (), ())`，即可在自证已真实钉出清单之后换掉
+  expected。原 guard、drivers、canonical 表及各 pin 均不变；两循环零次执行，真实 closure
+  driver 仍交出同一对象，`prove` 的帧 / 对象 / 清单相等条件仍成立。这违反 R7 §4(2–3)，并非
+  相邻 P1 / round-identity repair；与 R6 防护水平相同不能覆盖本轮明确的新状态自保护要求。
+  两套纯 AST 对照各只改该 helper，其余 752 / 764 顶层节点不变；新增已识别 I/O token、
+  transition call、state write、清单名字绑定均为 0。未 import / 执行变异实现、未写变异文件，
+  不声称变异实测 rc 0 或读取计数；晚期 CHECKSUMS 拒绝不能补足零 proof 接受。正常版没有提前
+  读取或科学污染证据。93 条已有 mutations 未覆盖 namespace 清单改写与新 guard 状态伪造组合。
+- 本窗只作精确路径 / git object 检查、纯 AST 对照及两条允许的正常目标命令；未运行额外 runtime
+  probe / pytest 子集，未联网、调用 subagent 或接触 sibling worktree / hidden / raw 正文。
+  执行者历史过程中的零费用 / 无越界自查仍属回执，不从最终 artifact 倒推完整历史过程。
+
+`Redo`
+
+GR15R7 不进入 accepted chain。只开放 GR15R8：从 accepted GR14 独立保护本轮 inventory 状态的
+产生、记录、消费与检查，补未保护 helper 的间接写入及新保护层绕开负测；保留 R4/R5/R6/R7 覆盖
+与科学结果。不创建 GR16。GR15R7 任务书已归档：
+`docs/archive/stage0a-taskbooks/TASKBOOK-STAGE0A-GR15R7-DEVELOPMENT-TRACE-CALLS-MADE-BOUNDARY-CONTROL-INVENTORY-CORRECTION-2026-09-27.md`。
+
+### 4.26 GR15R8 验收裁决与非阻断说明（2026-09-29）
+
+**裁决来源：** owner 本轮提供的验收记录，明确逐条核过回执，只有完整 pytest 未独立复跑。
+本窗按该明确裁决维护文档，不重新开启验收或把提供的记录写成本窗独立实验。
+
+- 提交 `7f3826f42a7ecdb0d4e1099b805cb0d271ce5959` 唯一 parent 为 GR14；相对 GR14 恰一笔、
+  六 A / 零 M，固定一行 message，无正文、trailer 或工具署名；status clean、tag 0、两个精确 cache
+  目录不存在。六 SHA 与验收回执一致，posthoc 恰五项、CHECKSUMS 恰四项且逐项匹配。
+- guard 启动与 `prove` 接受前各核 fingerprint；提交后源码的两份 pin 可由内存重算复现。
+  executable comprehensions 已从两套“不运行代码”集合移除，属性/下标目标两种遗漏均补齐。
+- 新负测 48 条（两套各 24），覆盖原样攻击与间接写入组合、清单缺项/等长替换加伪造 expected /
+  observed、guard 外检查者/记录者替换、两条 comprehension 反例及新保护层删/恒真/跳过/挪后/
+  换常量/提前报告。另有 helper-only 对照证明只动一个顶层语句，原 guard、drivers、清单、pin 不动；
+  tests 的独立判别器可复现两 pin。这里只登记所提供的实现核验，不声称本窗运行 48 条 mutation。
+- 与 R7 的改动限于 guard、轮次/scaffold 表、被退回轮次闭包、产物键、身份文字与 pin；科学代码未改。
+  所提供记录中的独立快命令为 validator rc 0/PASS、analyzer `--check-existing` rc 0/PASS，三产物
+  byte-identical；87 objects / 11 generations / 3 siblings 闭合。
+- 科学读数保持 split/unsplit 16/18、classes 58、support 1…25、singleton 28、collision 7、reduction
+  35、final 47…53；Layer A 0/16、Layer B 16/16、minimum final 76、minimum padding 23。
+  只证明 development 单 primitive envelope；没有可部署 selector，也不改变 §3.2 四红闸。
+- 本窗为绑定下一任务，另只读核实完整 commit、唯一 parent、固定 message、六 A、六个 committed
+  blobs 的 SHA 与交付工作树一致、交付 HEAD/status/tag；该六 SHA 已钉在 GR16 任务书 §5。
+  本窗未运行 analyzer、validator 或 pytest，未创建实验 branch/worktree、未改交付分支。
+
+**三条 non-blocking notes：**
+
+1. 执行回执的完整 pytest 只留下 rc 0，没有条数/耗时；验收记录也未独立复跑。owner 已明确无需再跑，
+   不补造 summary、不安排后台补跑、不把它改写为“三条命令已独立全绿”。
+2. 旧 mutation 的双跑只覆盖原 static self-proof / closure / proof 拒绝项，第二轮在 sandbox 重算新
+   pin 后验证原防线。原 runtime read hooks（提前开产物/重建/子进程）及 R5 release forged-pin
+   只验证更早启动拒绝；另有进程内测试。R8 §4(6) 明确允许更早正确 stage，故不阻断。
+3. proof 之后、release 之前若干 stage 仍执行未钉 fingerprint 的代码，R5 release 状态依赖原有机制。
+   R8 §4(3) 不要求扩修相邻 completion；正常版未报告提前读取/科学污染，不能把源码观察写成已实测
+   bypass。独立发现按下一小节登记，当前不授权修复。
+
+`Accept with non-blocking note`
+
+GR15R8 进入 accepted development evidence，GR15 授权用尽；随后依据 owner 明确新指令下发 GR16。
+R8 任务书已归档：
+`docs/archive/stage0a-taskbooks/TASKBOOK-STAGE0A-GR15R8-DEVELOPMENT-TRACE-CALLS-MADE-INVENTORY-STATE-INTEGRITY-CORRECTION-2026-09-27.md`。
+
+### DISCOVERED-20260929-1 · proof 到 release 之间的状态保护范围
+
+- 路线/类型：MEM / 非阻断实现观察；来源为 owner 提供的 GR15R8 验收说明第 3 条。
+- 证据：pre-proof fingerprint 不覆盖全部后续 stage；R5 release 状态仍依赖原有 completion 机制。
+  未在本窗执行 mutation，不声称已证实成功绕过或产品污染。
+- 影响：不能把 GR15R8 的 inventory 完整性接受扩大为全部阶段/任意进程内写入安全证明。
+- 与当前任务关系：不属于 R8 必须纠正面；GR16 仅迁移已接受保护，不自动扩成全阶段修复。
+- 依赖/建议：需要 owner 单独决定是否限定复核或 repair；状态 `captured`，未排期，严重度待核。
+- 若另获授权，验收须围绕明确可达路径、实际 completion/release/read 观测与最小反例确定；当前没有
+  可执行 repair 任务书，不新增权限。
+
+### 本窗文档续派过程说明
+
+开头误用 `find .. -name AGENTS.md -print` 从 Knote 父目录递归查约束；命令无匹配输出，随后中止，
+工具最终返回 exit 0。不能据此证明未遍历哪些目录；无正文输出或内容读取/科学污染证据。后续仅作
+点名祖先文件、git objects 与精确路径检查。此项属于本窗维护过程，不归责于 GR15R8 执行者，不改变
+owner 的验收裁决，也不声称本窗全程零目录接触。
+
+### 4.27 GR16 findings 与 verdict（2026-10-01）
+
+- 独立核实 commit `9ba469caa4d4fc3e0e49e9cf9547042e86232bdb`，唯一 parent 为 accepted
+  GR15R8 `7f3826f42a7ecdb0d4e1099b805cb0d271ce5959`，parent 的 parent 仍为 GR14；相对
+  parent 恰一笔、六 A / 零 M。精确 branch/worktree、固定一行 message、作者/提交者、clean status、
+  tag 总数 0 均与回执相符；16 个列明 rejected/sibling 排除项均不在交付 ancestry。
+- 六件工作树 SHA 与 `HEAD:path` 及回执逐项一致；完整 SHA 钉在 GR16R1 §5。
+  posthoc 恰五项、CHECKSUMS 恰四条且逐项匹配、不自列；两个精确 cache 均不存在。
+  两条完整命令和 pytest 中止后，HEAD、clean status、六件 HEAD/worktree bytes、tag 0 与 cache 状态均未漂移。
+  两套 GR15R8 parent 六对象 pins 均由 full git objects 独立核实；12 代各六对象与三 sibling
+  21 对象的总数为 93。检查限点名路径，未遍历实验目录树。
+- 正常代码的 P4 accessor 取一次 direct literal list、同一容器 exact-type 检查及一次 built-in len；
+  raw integer / scalar sentinel / drop-last 正确。accepted source SHA、fired 五处引用/三 append、
+  MU scorer 本字段 literal 零出现均独立静态核实。两份 guard 类 AST 相对 accepted GR15R8 除
+  pins 外不变；21/22 controls 与八族 probes 保留，独立纯 AST 计算复现两份 pre-proof pin。
+- Codex 以 Python 3.12.2 独立复跑 analyzer `--check-existing` 与 validator，均 rc 0/PASS；
+  analyzer 三产物 byte-identical，validator `93 objects / 12 generations / 3 siblings`，canonical
+  JSON/REPORT byte-identical。正常版重建为 split/unsplit 3/31、37 classes、support 1…27、
+  singleton 13、collision 42、reduction 0、final 82…88、Layer A/B 均 0/16；G1/G2/G3/G4
+  通过数 16/0/0/16；containment 16/16，identical-to-GR9 0/16，k=2 arm blocks 16 发布/0 抑制。
+- **blocking finding（P1 优先级）：P4 前未知键读取的保守拒绝只覆盖 P1 schema 闭包。**
+  analyzer `assert_single_runtime_value_read_site()` 第 3809–3816 行、validator 同功能第
+  3769–3774 行过滤掉 `definite/sure=False` 的读点；未知点只由 analyzer 第 4138–4161 行与
+  validator 第 4080–4119 行的两个 `P1_GATE_FUNCTIONS` 可达闭包消费。P3 baseline 不在该闭包。
+  在 analyzer `baseline_signature_index()` 第 7942 行、validator `_baseline_signature_index()`
+  第 7784 行的正常 loop 中，于 `direct = ...` 前加入：
+
+  ```python
+  if verdict["trace"] is not None:
+      verdict["trace"]["".join(("failure_", "paths_fired"))]
+  ```
+
+  就会在 P3 读取本轮字段。key AST 为 `Call`，两套 domain 分析器将其归为未知，whole-module
+  确定读点计数不因此增加；既有 P0–P3 reachability 只查 canonical accessor，这条读取不经过它。
+  两套各只改这一个 baseline 函数的纯 AST 对照确认：名字引用图、直接调用图不变，新增名字绑定
+  为 0，baseline 不在 P1 闭包，也不在 pre-proof fingerprint 内，两份原 pin 均不变。
+  canonical accessor / ledger 未改，结果被丢弃；因此 accessor 194 次计数不能证明此前无其它读取。
+  这违反原 GR16 §3 第 99–102 行的全 pre-P4 / 未知路径 fail-closed 合同；tests 第 4832–4847 行
+  的 P3 mutation 仅覆盖可静态展开的 `GR10_TRACE_KEYS` loop，第 5152–5158 行的未知 key 测试
+  只证明 scanner 收集，并明确交给 P1 可达性闸，未证明 P3 拒绝。
+  本证据仅为源码审查和内存 AST 对照：未写变异文件、未 import/执行变异实现，不声称已实测
+  mutation rc 0、读取次数或正常版发生污染。它不是 §4.26 captured 的 proof→release 状态修复。
+- 完整 GR16 pytest 已启动，确认静态阻断后由 Codex 主动中止：`43 passed in 240.66s (0:04:00)`，
+  中断 rc 2；无测试失败。这不是 mutation 拒绝证据。执行者完整回执为
+  `1287 passed in 30576.76s (8:29:36)`、rc 0，本窗未独立跑至 summary。
+  中途询问的是否免重复长测试偏好尚未收到答复即因阻断停止，不能记录为 owner 豁免。
+- 回执披露的 G3 detail 改为机械 pass/fail、移除无须使用的旧 rejected scaffold closures、修正
+  no-op forgery 与重复 NARRATIVE_LINE 锚点，未发现构成本 finding 的问题。其 pyflakes 和为 pins
+  单独 in-process imports 不在原 §11 的额外构建命令白名单；记录过程偏差，不推断 hidden 接触
+  或科学污染。R1 明确只允许 generate、内存 parse/compile、精确 git/SHA 与三条完整目标命令。
+
+`Redo`
+
+GR16 不进入 accepted chain。仅下发 GR16R1：从 accepted GR15R8 独立交付同一六路径，把未知
+读取点的拒绝覆盖到实际 pre-primitive 分析闭包，补原样 P3 反例及新 enforcement 自保护、
+零读取/零 release 负测；保留正常版科学结果与其它保护，不创建 GR17、不扩修 captured 相邻问题。
+原 GR16 任务书已归档至 `docs/archive/stage0a-taskbooks/TASKBOOK-STAGE0A-GR16-DEVELOPMENT-TRACE-FAILURE-PATHS-FIRED-EXACT-COUNT-SEPARABILITY-ENVELOPE-2026-09-29.md`。
+
+### 4.28 GR16R1 执行交付与验收任务下发（2026-10-07；不是 verdict）
+
+owner 在执行完成回执后要求“下发下一任务”。本窗将下一项收敛为 GR16R1 独立验收；没有把完成
+回执解释为 Accept，也没有开始 GR17。原执行任务书仅更新首屏路由为 SUPERSEDED，原合同正文
+保持，待 verdict 后归档；当时将新的验收任务书设为唯一开工入口。
+
+随后 owner 要求“给我验收提示词，不必要的文件你现在归档”。重复验收任务书已撤销并移至
+`docs/archive/stage0a-taskbooks/TASKBOOK-STAGE0A-GR16R1-INDEPENDENT-ACCEPTANCE-2026-10-07.md`，仅保留历史，未执行也未产生 verdict。
+原 GR16R1 执行任务书现在明确标为 COMPLETE（执行交付）、待正式验收；本 handoff 仍是唯一滚动
+入口，验收直接对照原合同，不再新建一份验收任务书。本次只整理文档、提供提示词，不启动验收。
+
+- 待验 commit：`0b3d497cdc87286ca3153a4a939b58fabdaeb960`；唯一 parent GR15R8
+  `7f3826f42a7ecdb0d4e1099b805cb0d271ce5959`。固定 message：
+  `posthoc(stage0a): close pre-primitive unresolved reads (GR16R1)`。
+- 本次路由只读核实 HEAD、branch、parent、六 A、clean status、HEAD 无 tag，以及六 committed blobs
+  的 SHA 与工作树 bytes 一致；六 SHA 留存在上述归档记录 §2，仅作下发时的核查记录。本次没有运行三条目标命令、没有
+  独立审查源码闭包，不据此给出 acceptance verdict。
+- 执行阶段最终三条命令的日志及 rc 已在本次路由只读核实：pytest
+  `1357 passed in 45508.18s (12:38:28)`，rc 0；analyzer `--check-existing` PASS，rc 0；
+  validator canonical JSON/REPORT byte-identical、PASS，rc 0。它们仍是执行证据。
+  原始记录为 `/tmp/gr16r1-construction/` 下点名的 `pytest-full-5.log` / `.rc`、
+  `analyzer-full-5.log` / `.rc`、`validator-full-5.log` / `.rc`；是已有临时日志，不是新增交付物。
+  后续不得遍历该临时目录，日志失效须如实说明。
+- 执行回执：保留原 1287 测试并新增 70 条；新闭包覆盖实际 P0–P3、helper/alias 及未知 key，
+  包含原 P3 str.join 反例与新 gate 自保护。所称 40 条新增黑盒 control rc 0 → mutation rc 2、
+  零读取/零 release 等，需要由下一验收独立核实，不以这些陈述代替实现证据。
+- 执行回执的科学读数保持 split/unsplit 3/31、classes 37、support 1…27、singleton 13、collision 42、
+  reduction 0、final 82…88、Layer A/B 0/16、G1/G2/G3/G4 16/0/0/16、containment 16/16、
+  identical-to-GR9 0/16、k=2 发布/抑制 16/0；accepted input inventory 仍为 93/12/3，
+  rejected GR16 六对象分列。上述科学声明仍待独立验收。
+- 执行过程偏差按回执保留：新 gate 的 lexical-scope 误拒绝在构建期修复；generator 拒绝覆盖时只删
+  自建三产品再生成；早期一轮为静态加固主动中止（40 passed / 610.08s / rc 2）；另一次会话丢失，
+  无最终 summary，不计完成；nohup 未持久化后改用受管理会话及外部日志。owner 关机暂停一轮
+  （353 passed / 9358.30s / rc 2）；恢复后的完整运行因旧 GR16 标题锚未迁移，出现
+  `3 failed, 812 passed in 22893.99s (6:21:33)` 并主动中止。随后只改五处标题锚到 GR16R1，
+  重生成并重跑完整三命令取得最终通过；JSON/REPORT 科学 bytes 未变。中止 rc 2 不作负测拒绝证据。
+
+此前重复验收任务书把三条完整命令设为默认再次运行，该路由安排随文件撤销而失效。验收先做
+实现级审查与 analyzer/validator 快验证，核对已有完整 pytest 的日志、版本对应关系及测试实现。
+只有存在具体证据缺口或复现需要时，才运行原 GR16R1 §8 允许的完整 pytest，说明目的；不因补写
+验收裁决或新建文档而无条件重复长跑。不把本次整理称为 owner 已豁免测试，也不把执行回执写成
+独立复跑。原 §8 仍限定允许的命令集合，禁止额外 subset/probe。captured 相邻问题不扩大为 repair。
+
+### 4.29 GR16R1 正式验收 findings 与 verdict（2026-10-07）
+
+**Blocking finding（P1 优先级）：默认参数捕获使 pre-primitive trace 来源丢失。**
+
+- analyzer `pre_primitive_read_closure()` 第 5566–5582 行为 lambda 参数创建独立 lexical table，
+  第 5677–5682 行只传播调用的显式 args/kwargs 和 Attribute receiver，第 5724–5743 行只为
+  已解析的顶层 callable 绑定这些参数；第 5774–5787 行没有默认参数到形参的绑定。
+  validator 对应第 5733–5749、5844–5849、5891–5910、5941–5954 行同构。
+- 在 analyzer `baseline_signature_index()` 第 8304 行 / validator `_baseline_signature_index()`
+  第 8146 行的 `direct = ...` 前加入以下两行，即是原合同 §4(1–2) 范围内的 P3 未知键读取：
+
+  ```python
+  if verdict["trace"] is not None:
+      (lambda _r1_t=verdict["trace"]: _r1_t["".join(("failure_", "paths_fired"))])()
+  ```
+
+  Python 会在本次调用中以捕获的 trace 作为 `_r1_t`，随后读取本轮字段，结果被丢弃。新检查访问
+  默认值时没有将来源绑定到形参；lambda 的 lexical table 因此为空。调用没有显式参数或 receiver，
+  `_r1_t[...]` 的 receiver 又被当成空来源，不能进入 `pick()` 的受保护读取拒绝分支。
+  未知表达式仍不被旧 whole-module 确定读点计数消费（analyzer 3813–3819；validator 3774–3781），
+  P3 baseline 仍不在旧 P1 两 gate 的闭包；canonical accessor 的 194 次 ledger 不能观察这次早读。
+- **本次独立纯 AST 证据：** 只在内存替换这一个 baseline 函数，两套其余 769 / 756 个顶层节点
+  全部不变；未改变 guard、driver、controls、accessor 或 pin。独立静态重算正常与变异树的
+  pre-proof digest，两者均匹配各自原 pin：analyzer
+  `831101b9274533b10d48410429204305682e19d0d5f1b98dade52c08b9151a5f`；validator
+  `0b4714aef88ae8f4559125a3b1a5d21a81a0d8704938dc90317cb258a48b18e2`。
+  两个 baseline 均不在该 pin 的选中集合。因此不能依赖 pin mismatch 提前拒绝此例。
+  没有写变异文件、import 或执行变异实现，也没有调用交付 predicate 作额外 probe；
+  不声称 mutation 实测 rc 0、实测读取次数、已发生的提前 release 或正常版科学污染。
+- **影响与最小纠正范围：** 原 P3 str.join 反例虽已关闭，仍未兑现全部 P0–P3 未知读取 fail-closed。
+  只需在同一读取合同中保留 callable 默认参数/形参的来源，或对无法证明安全的该路径保守拒绝，
+  并补正常对照与真实 mutation 的零读取、零 release、零被放行 rebuild 证据。保留六路径、原科学
+  结果及 R4–R8；不要求通用 Python 沙箱、全阶段 pin 或 captured proof→release 相邻修复。
+
+**其它独立核验与证据归属：**
+
+- 独立核实 HEAD `0b3d497cdc87286ca3153a4a939b58fabdaeb960`、精确 branch/worktree、唯一 parent
+  `7f3826f42a7ecdb0d4e1099b805cb0d271ce5959`、parent 的 parent GR14、恰一笔固定单行 message、
+  六 A / 零 M；17 个明确排除项全部不在 ancestry。六 SHA 与 §4.28 引用的完整值、`HEAD:path`
+  和工作树 bytes 全部一致；posthoc 恰五项、CHECKSUMS 恰四项且逐项一致、不自列。
+  tracked status 与授权精确路径 status 均为空、tag 总数 0、两个指定 cache 不存在。
+  没有为检查 untracked 而遍历其它实验路径。
+- 新 gate 确实在 boundary preflight 的 prove 之前被直接调用（analyzer 5806–5811；validator
+  5973–5978）。源码上，原样 P3 反例的 trace 来源能传到 `pick()`，未知 key 会成为 violation。
+  tests 228–298 明确验证该反例、helper/alias 等 14 类 × 两套 predicate，并对原样等类别核 pin
+  不变；302–309 保留合法动态 baseline 索引对照。314–322 的 28 条读取黑盒 mutation 与
+  325–358 的 12 条删/恒真/跳过/移晚自保护 mutation 均有命中断言。
+  `_spied_control` 6239–6268 核正常真实读取、21/22 controls、8 probes、proof 和 release 的顺序；
+  `_assert_spied_refusal` 6454–6470 要求 rc 2、零 product/rebuild-input reads、零 release/admitted
+  rebuild、必要时零 proof 和单行净化 stderr。上述是测试实现审查，**不是本次执行 40 条 mutation**。
+  现有 14 类没有覆盖本 finding 的默认参数捕获。
+- 独立静态核实两套仍保留 22/21 controls 与八族 probes、startup/prove 的两份 pre-proof pin；
+  正常 P4 accessor（analyzer 1507–1524；validator 1468–1485）仍为 phase guard → 一次 direct
+  literal read → 同一容器 exact-list 检查 → 一次 built-in len → event。analyzer 1527–1540 保留
+  raw integer/scalar sentinel。发现阻断后未继续把这些局部核对扩大为 R4–R8 全部迁移或科学闭包已接受。
+- 只读打开 §4.28 点名的六份外部日志/rc 文件，未遍历临时目录。完整 pytest 日志确为
+  `1357 passed in 45508.18s (12:38:28)`、rc 0；analyzer 三产品 byte-identical/PASS、rc 0；
+  validator 93/12/3、canonical JSON/REPORT byte-identical/PASS、rc 0。
+  analyzer 日志中的 JSON、REPORT、CHECKSUMS SHA 与当前提交相等，CHECKSUMS 又绑定当前
+  analyzer/tests；pytest 日志只有进度及 summary，未内嵌 commit/source manifest，故其与最终
+  文件的运行对应仍部分依赖执行记录，不能称作独立重跑或完整历史过程证明。
+- 科学 aggregate（3/31、37 classes、collision 42、A/B 0/16 等）、194/2、93/12/3 和未漂移
+  结论沿用执行日志及既有回执；本窗未独立运行重建，不升级为本次实测。
+  **本次 analyzer、validator、完整 pytest 均未启动：** 源码阶段已确认足以阻断接受的合同缺口，
+  按 owner 的“发现确定阻断及时停止”结束目标验证；这不是 owner 豁免，也不是命令失败。
+  不运行 subset/probe/profile，不联网、不改交付、不创建 worktree 或提交。
+
+`Redo`
+
+GR16R1 不进入 accepted chain；accepted head 保持 GR15R8。原执行任务书写入本裁决并归档，README
+同步；本窗不重新开发、不创建验收/纠正任务书或 GR17。完成文档维护后停止，等待 owner decision。
+
+### 4.30 GR16R2 开工授权（2026-10-07）
+
+owner 在 GR16R1 Redo 后明确“开始重做”，并选择“改由本窗口直接开发并完整验证”。本窗因此
+直接执行 GR16R2，而非仅下发任务；仅此轮覆盖 §1(7) 的默认角色分工。保持 accepted GR15R8
+为唯一 parent、GR9 baseline、原六路径与科学结果；不扩修 captured 相邻问题。
+
+开工前只读核实：新精确 local/origin ref、工作树注册/目录与任务书均不存在，accepted parent
+中无本轮六对象/目标 posthoc；GR16R1 六 full objects 的 SHA 与 §4.28 完全一致。
+没有联网、读取 sibling worktree、运行旧命令或改旧交付。后续进展与最终回执在此更新。
+
+2026-10-08 执行进展：已从 accepted parent 创建唯一 GR16R2 隔离 branch/worktree，按 full object
+核 SHA 后迁移 GR16R1 六件。两套新增默认参数携带受保护来源的保守拒绝，并修正 lambda defaults
+外层作用域求值；保留原测试并新增 46 cases。纯 AST 对比：两套科学函数未改、无旧函数/测试删除，
+只改读取闭包、身份、rejected provenance 与必要 pins。`--generate` rc 0/PASS，科学 aggregates
+保持 3/31、37 classes、collision 42、A/B 0/16。仅删除自己复制的三件旧产品再生成，无旧交付修改。
+
+完整三命令已于 2026-10-08 17:47:34 UTC 启动，顺序 analyzer `--check-existing` → validator →
+完整 pytest。受管理会话 `91624`；仓外 `/tmp/gr16r2-construction/` 的点名
+`analyzer-full-1`、`validator-full-1`、`pytest-full-1` 各有 `.log` / 完成后 `.rc` / `.metadata.json`，
+metadata 记录命令、Python、cwd、时间和运行前后六 SHA。当前尚未声明整套完成、提交或正式接受。
+不要遍历该目录；续窗只检查这些点名文件与当前受管理会话，不重复启动正在运行的测试。
+
+
+### 4.31 GR16R2 执行交付（2026-10-09；不是独立验收 verdict）
+
+- 最终 commit：`b886b4a491bce6ebf34d3382d932874897d15c93`；唯一 parent
+  `7f3826f42a7ecdb0d4e1099b805cb0d271ce5959`，其 parent 仍为 GR14。独立于 rejected
+  GR16 / GR16R1，从 accepted GR15R8 新建隔离 branch/worktree，恰一笔提交、六 A / 零 M。
+  message 精确为 `posthoc(stage0a): close callable default capture reads (GR16R2)`，无正文/trailer。
+- branch：`stage0a-wave2-trace-failure-paths-fired-callable-default-capture-closure-correction-gr16r2`。
+  worktree：`/Users/hzjin/Desktop/spool-research/worktrees/spool-research-wave2-trace-failure-paths-fired-callable-default-capture-closure-correction-gr16r2`。
+- 两套 `pre_primitive_read_closure` 对 callable 默认值捕获的受保护来源保守拒绝；lambda defaults
+  按外层作用域求值，覆盖 posonly/普通/kwonly 参数，避免同名形参遮蔽来源。未改科学函数，未改
+  scorer、P4 accessor、GR9 15 槽/drop-last 或 captured 相邻 completion；五面身份迁移为 GR16R2。
+- 原 1357 cases 保留，新增 46：16 条 predicate 原样/等价捕获负测、6 条安全默认值正常对照、
+  16 条带只读 spy 的 capture 黑盒、8 条新 gate/default-scope 自保护黑盒。八种捕获覆盖原样 lambda、
+  lambda alias、keyword-only、同名默认值、positional-only、局部 def、def alias、def kwonly。
+  16 条捕获 mutation 的 pre-proof pin 不变，predicate 真实消费来源；control rc 0，mutation
+  在 boundary stage rc 2，零 proof、零 product/rebuild-input reads、零 release/admitted rebuild。
+  新 gate 变异在 module pin 层拒绝。既有 R1 原样反例、R4–R8 等价覆盖随完整套件通过。
+- 正常生成及最终三条完整命令均使用 `/opt/anaconda3/bin/python3` 3.12.2、禁 pyc。
+  analyzer `--check-existing`：三产品 byte-identical、PASS、rc 0；validator：canonical JSON/REPORT
+  byte-identical、93 objects / 12 generations / 3 siblings、PASS、rc 0；完整 pytest：
+  **`1403 passed in 42111.91s (11:41:51)`，rc 0**。pytest 于 2026-10-08 17:48:26 UTC 启动，
+  外部管理器于 2026-10-09 05:40:59 UTC 收到结束；上述耗时保留 pytest 原 summary，不用 wall time 替换。
+  本轮完整三命令一次通过，没有 subset/probe/profile、失败中止或补跑旧交付。
+- 正常重建科学读数：split/unsplit 3/31，classes 37、support 1…27、singleton 13；collision 42、
+  reduction 0、final 82…88；Layer A/B 0/16，G1/G2/G3/G4 通过数 16/0/0/16；containment
+  16/16、identical-to-GR9 0/16；k=2 arm blocks 16 发布/0 抑制。194/2、raw integer/scalar
+  sentinel 与唯一 conclusion 保持。GR16 / GR16R1 raw-byte provenance 分列，不计入 93 accepted objects。
+- 18 项排除（R1 原 17 项 + rejected GR16R1）均不在交付 ancestry。posthoc 恰五项、CHECKSUMS
+  恰四项且不自列；tracked status 与授权精确路径 status 均为空、tag 0、两个指定 cache 不存在。
+  六文件运行前后 SHA、最终 `HEAD:path` 与工作树 bytes 全部相等，提交没有改动已测试源码。
+- 外部原始证据仅按点名文件读取：`/tmp/gr16r2-construction/` 中的 `generate-1.log`；
+  `analyzer-full-1` / `validator-full-1` / `pytest-full-1` 各自 `.log`、`.rc`、`.metadata.json`。
+  metadata 含命令、cwd、Python、起止时间、运行前后六 SHA，并已补 final commit 的 object 匹配。
+  不新增仓内第七件产物、不遍历临时目录；此为本窗口**开发执行证据**，不改写为后续独立验收结果。
+- 过程记录：先复制并核对 GR16R1 六对象，再只删除自建工作树里三件未改动的旧产品以便正常
+  `--generate`；pins 仅用仓外静态 AST 构造脚本重算，无独立 import/probe。`EXECUTION_POLICY`
+  SHA 未变；保留 Knote 原有及并行产品文档变更。没有联网、模型/API、新费用、旧交付修改或远端操作。
+
+六件最终 SHA-256（相同既有六路径；V=validator，A=analyzer，T=tests，J=JSON，R=REPORT，C=CHECKSUMS）：
+
+```text
+V 1de0b0697bce0596e1ab561d5c99f99a91b6dfd6ad58d0e77bf25ccb9497aeeb
+A b5497acbab1c4d7f66ce2fb0fc3cf72cc91669bbaad20abc66d0f734e420c311
+T bc98039eae74bc99b177992db1875c89b032fa57f329b0cbfc41a7920dd17f24
+J e28a66b14d895f40924ee575cdb7de052ad87d57f9cf2690d50b68a7bbbcbeee
+R 46e54ea162362e2035f808d2443c323d99ee02a18e7ab5481650f081ccb99cb3
+C 00bedad409c3e24ce19e20933dbf9c3a2ada9c87845033b46cf141c9dca48228
+```
+
+### 4.32 GR16R2 正式验收 findings 与 verdict（2026-10-10）
+
+**Blocking finding（P1）：默认值经立即调用 lambda 返回 trace 时，捕获来源仍被丢弃。**
+
+- analyzer `pre_primitive_read_closure()` 第 5783–5786 行、validator 第 5950–5953 行只在
+  `expression(default, env)` 返回非空来源时拒绝 capture。新 gate 正确处理直接默认值
+  `verdict["trace"]`，但没有闭合默认值经 callable 返回的等价来源。
+- analyzer 第 5683–5688 / 5730 / 5776–5778 行与 validator 第 5850–5855 / 5897 /
+  5943–5945 行：当 Call.func 是 lambda 时，既不解析其返回来源，也不进入顶层 named
+  callable 的 results 传播；无显式 args/kwargs/Attribute receiver 的调用落到空集合。
+  analyzer 第 5562 行 / validator 第 5729 行把所有 Call.func（不仅 Attribute）纳入
+  `called_attributes`；第 5797 / 5964 行又跳过这些节点的普通 expression 检查。
+  因此独立遍历内层 lambda 的 body 只能看到安全的 `verdict["trace"]` 取容器，
+  不能把来源交回外层 default；外层形参的 lexical table 仍为空。
+- 在 analyzer `baseline_signature_index()` 第 8324 行 / validator
+  `_baseline_signature_index()` 第 8166 行的 `direct = ...` 前加入：
+
+  ```python
+  if verdict["trace"] is not None:
+      (lambda _r2_t=(lambda: verdict["trace"])():
+          _r2_t["".join(("failure_", "paths_fired"))])()
+  ```
+
+  Python 会先求值内层立即调用，取回 trace 并绑定外层默认形参，随后在 P3 读取本轮字段。
+  新 gate 的空来源无法触发拒绝，computed key 仍不进入旧 whole-module 确定读点计数；
+  P3 也不在旧 P1 闭包。该读不经 canonical accessor，不改变其 194 次 ledger。
+  这是原合同 §2、§4(1–2) 的 callable/default 与未知读取 fail-closed 范围内缺口，
+  不是 captured proof→release 相邻修复。
+- **独立纯 AST 核对：** 只在内存改这一处 baseline，analyzer 其余 771 个、validator 其余
+  758 个顶层节点全部不变。独立静态重算正常与变异树，pre-proof digest 均等于原 pin：
+  analyzer `c4ad0ca93f7d1f6013b688e5cd57ee6ca1c98dbb0d8569a01b83f265bef1dd73`；
+  validator `47fd41dc14e86cdd4730c47b287b6a9f5817879ec6792ac593fc6cbe831853ba`。
+  baseline 不在 pin 选中集合，两层 lambda 都位于 Call.func。未写变异文件、
+  未 import/执行交付或变异实现、未调用交付 predicate 作独立 probe；
+  不声称实测 mutation rc 0、实测早读/放行或正常版科学污染。
+- tests 第 217–247 行的八种 capture 都直接以 `verdict["trace"]` 为默认值，
+  没有默认值经 callable 返回来源的覆盖；第 255–304 行虽有 predicate、pin 不变、
+  正常对照及黑盒拒绝要求，完整通过不能关闭这个未覆盖分支。
+- **最小纠正：** 在相同读取合同内，保留 callable 返回到默认值的受保护来源，
+  或对无法证明安全的此类调用保守拒绝；加入上述原样例及等价局部 callable/alias、
+  安全返回值对照、pin 不变的 predicate 覆盖和 control→mutation 零读取/零 release/
+  零 admitted rebuild 证据。保留六路径、GR15R8 parent、科学结果及 R4–R8；
+  不要求通用 Python 沙箱、全阶段 pin、另一 primitive 或相邻 repair。
+
+**其它核查与证据归属：**
+
+- 独立核实 HEAD、精确 branch、唯一 parent GR15R8、其 parent GR14、固定单行 message、
+  六 A / 零 M；18 个明确排除项全部不在 ancestry。六 SHA 与 §4.31、HEAD:path、
+  工作树 bytes 一致；posthoc 恰五项、CHECKSUMS 恰四条且逐项匹配、不自列。
+  tracked status 和授权精确路径 status 均为空，tag 0，两个指定 cache 不存在。
+- 只读核对 §4.31 点名三组日志/rc/metadata；pytest 确为
+  `1403 passed in 42111.91s (11:41:51)`、rc 0；analyzer 三产品 byte-identical/PASS、
+  validator 93/12/3 及 canonical JSON/REPORT byte-identical/PASS，均 rc 0。
+  三份 metadata 的运行前后六 SHA 均与最终六对象一致，final commit 均为本次交付。
+  这些仍是已有开发执行证据，不是本次独立运行，也不能倒推完整历史过程零越界。
+- 科学 aggregate 与 194/2 等声明保留为执行证据，本次未独立重建，不升级为本次实测。
+  **本次 analyzer、validator、完整 pytest 均未启动**：源码阶段已有确定阻断，按 §6
+  停止目标验证；不是 owner 豁免或命令失败。未运行 subset/probe/profile、未联网、
+  未使用 subagent、未改交付或创建实验 worktree/提交。
+- 本窗初始在 Knote 仓误查交付 object，得到 `bad object` 后按 handoff 切换到点名交付
+  worktree；未修改任何实验文件。独立 AST 摘要脚本首次因两套 guard 方法名不同而停止，
+  修正审查脚本后两 pin 均复现；这不是交付命令失败或 mutation 执行。
+
+`Redo`
+
+GR16R2 不进入 accepted chain，accepted head 保持 GR15R8。原任务书已写入裁决并归档，
+README 同步；无 ACTIVE 任务，等待 owner decision。不重新开发、不另建验收/纠正任务书或 GR17。
+
+### 4.33 GR16R3 开工授权（2026-10-10）
+
+owner 在 GR16R2 Redo 后明确“直接在本窗口进行redo，做完等我验收”。
+本窗直接执行新隔离工作树的最小纠正、完整三命令与唯一提交，仅此轮覆盖 §1(7)。
+新 local/origin ref、worktree 注册/目录、任务书和 parent 六路径已精确确认不存在；
+GR16R2 六 full objects 的 SHA 与 §4.31 一致；accepted chain 未改变。
+
+本轮进展：已从 accepted GR15R8 创建新隔离工作树，按 full objects 核 SHA 后复制六件，
+只删除自建工作树里三份未改的旧产品供 --generate 正常重建。两套 callable 返回来源改为保守拒绝，
+新增 68 cases（24 predicate、12 安全对照、24 capture 黑盒、8 新 gate 自保护）；原 1403 cases 保留。
+静态 AST 对照无旧函数删除，科学函数未改；只改闭包、身份、19 排除/provenance 与 pins。
+正常 --generate PASS/rc 0，科学 aggregates 保持 3/31、37 classes、collision 42、A/B 0/16。
+
+完整三命令于 2026-10-09 23:28:27 UTC 开始，受管理会话 `9592`；
+顺序 analyzer --check-existing → validator → 完整 pytest。
+仓外 `/tmp/gr16r3-construction/` 点名 `analyzer-full-1`、`validator-full-1`、
+`pytest-full-1` 的 .log/.rc/.metadata.json 记录运行前后六 SHA；续窗先查此会话及点名文件，
+不重复启动。上述为开工时记录；三命令现已结束，最终交付见 §4.34，未作正式接受裁决。
+
+构建过程记录：首次新增测试的仓外构造字符串转义错误，内存 compile 拒绝，未写入源码；
+改用补丁后语法检查通过。pins 由仓外静态 AST 构造脚本计算，未 import 交付作独立 probe。
+
+### 4.34 GR16R3 执行完成回执（2026-10-10；待 owner 验收）
+
+- 交付 `0a0d71327d05dde87fa67f0bd9abf87f4457fb6e`，唯一 parent 为 accepted GR15R8
+  `7f3826f42a7ecdb0d4e1099b805cb0d271ce5959`，其 parent 仍为 GR14。
+  相对 parent 恰一笔、六 A / 零 M，message 恰一行
+  `posthoc(stage0a): close callable return capture reads (GR16R3)`，无正文/trailer。
+- branch：`stage0a-wave2-trace-failure-paths-fired-callable-return-capture-closure-correction-gr16r3`。
+  worktree：`/Users/hzjin/Desktop/spool-research/worktrees/spool-research-wave2-trace-failure-paths-fired-callable-return-capture-closure-correction-gr16r3`。
+- 两套读取闭包对 lambda body 与局部 def/async def 的受保护 return 来源保守拒绝；
+  检查独立于 Call.func 的普通 expression 跳过规则。保留直接 default capture、外层作用域、
+  原 R1 未知键闭包及 R4–R8；不改科学函数、P4 accessor、GR9 15 槽/drop-last 或相邻 completion。
+  五面身份为 GR16R3 correction，科学问题仍为 GR16；GR16R2 六 raw-byte provenance 分列。
+- 原 1403 cases 保留，新增 68，完整 **1471 passed**。新增 24 条 predicate 及 24 条 capture
+  黑盒覆盖原样立即调用、provider/def alias、nested lambda/def、keyword/same-name default、
+  mapping/sequence 返回、直接返回后读取与 helper keyword default；这些 baseline-only 变异
+  的 pre-proof pin 不变。黑盒每条均先同一只读 spy control rc 0，再 mutation 在 boundary
+  stage rc 2，零 proof、零 product/rebuild-input reads、零 release/admitted rebuild。
+  12 条安全返回值对照通过；8 条新 gate 条件恒假/跳过变异在 module pin 层拒绝。
+- 固定 `/opt/anaconda3/bin/python3` 3.12.2，禁 pyc。最终完整三命令一次通过：
+  analyzer --check-existing PASS/rc 0，三产品 byte-identical；
+  validator PASS/rc 0，93 objects / 12 generations / 3 siblings，
+  canonical JSON/REPORT byte-identical；
+  pytest **`1471 passed in 32827.07s (9:07:07)`，rc 0**。
+  pytest 于 2026-10-09 23:29:20 UTC 启动，管理器于 2026-10-10 08:44:14 UTC 收到结束；
+  耗时使用 pytest 原 summary，不以外部 wall time 替换。没有子集/probe/profile 或中止/失败重跑。
+- 正常重建结果保持 split/unsplit 3/31、classes 37、support 1…27、singleton 13、collision 42、
+  reduction 0、final 82…88、Layer A/B 0/16，G1/G2/G3/G4 通过 16/0/0/16；
+  containment 16/16、identical-to-GR9 0/16，k=2 arm blocks 发布/抑制 16/0，194/2、
+  raw integer/scalar sentinel 及唯一 conclusion 保持。它们是本窗执行重建结果，不是后续独立验收。
+- 19 个明确排除项均不在 ancestry；posthoc 恰五项，CHECKSUMS 恰四条、逐项匹配且不自列。
+  三命令前后六 SHA、最终 HEAD:path 与工作树 bytes 全部相等；提交没有改变已测试源码。
+  tracked status 与授权精确路径 status 均为空，tag 0，两个指定 cache 不存在。
+- 仓外证据：`/tmp/gr16r3-construction/generate-1.log` / .rc；
+  `analyzer-full-1`、`validator-full-1`、`pytest-full-1` 各自 .log/.rc/.metadata.json。
+  metadata 含命令、cwd、Python、起止时间、运行前后六 SHA，已补
+  `verified_final_commit` 及 object bytes 匹配；不遍历临时目录、不新增仓内第七件产物。
+- 本窗构建偏差见 §4.33：一次仓外字符串转义导致内存 compile 拒绝，未写入交付；
+  后用补丁完成。未联网、使用 subagent、模型/API、新费用、修改旧交付或远端操作。
+  Knote 既有未提交改动保留；原 GR16R2 归档首屏只同步当前路由。
+
+六件最终 SHA-256（V=validator，A=analyzer，T=tests，J=JSON，R=REPORT，C=CHECKSUMS）：
+
+```text
+V da64c2d923d2515558c1b2746d936edfcf6edaeee141c010fce2cbdf8270ccd0
+A 622b631ed7744b21150e79ffa660ada7d5956e396bbe617d0bac94fee2f99fa2
+T 2e6f17a3b494da2b5f607679ba0efced87cb33445d44f594c65cb9360ee49a13
+J b3ca5fba88fae7a9fd887293e28008728ad8daef8756d2ad6d9d3486f6f565ce
+R 7965daf01fa125d6b62bece8bb8bdac67575f7506690546fed9ad3d4149384c8
+C f4d54fdf13c7afc0cf9e681cfc37d9cd62222e3fd42076996fcf0ba092e0ed3f
+```
+
+### 4.35 GR16R3 正式验收 findings 与 verdict（2026-10-10）
+
+**Blocking finding（P1 优先级）：局部 def 遮蔽安全内建名称，使 callable 返回/default 来源再次丢失。**
+
+- analyzer `pre_primitive_read_closure()` 第 5592–5594 行、validator 第 5759–5761 行的
+  `local_bindings` 只纳入当前函数参数及 `ast.Name(Store/Del)`，漏掉局部 `FunctionDef.name`。
+  顶层 definitions / callable aliases 也不登记这个局部 def。因此局部 `def id(...)` 的调用
+  不进入 analyzer 5752–5755 / validator 5919–5922 的不透明局部 callable 拒绝分支，
+  而落到 analyzer 5767–5768 / validator 5934–5935 的安全内建分支并返回空来源。
+- 新增 local-return gate（analyzer 5794–5797；validator 5961–5964）只检查 return 表达式
+  当前来源；局部 helper 的实参没有绑定到其形参时，`return _r3_value` 仍是空来源。
+  默认值 gate（analyzer 5785–5788；validator 5952–5955）也因此看不到 trace。
+- 在 analyzer `baseline_signature_index()` 第 8339 行 / validator `_baseline_signature_index()`
+  第 8181 行的 `direct = ...` 前插入以下反例：
+
+  ```python
+  if verdict["trace"] is not None:
+      def id(_r3_value):
+          return _r3_value
+      (lambda _r3_t=id(verdict["trace"]):
+          _r3_t["".join(("failure_", "paths_fired"))])()
+  ```
+
+  按 Python 名称绑定语义，这里调用的是局部 identity helper，返回 trace 后绑定默认参数，
+  随后在 P3 读取本轮字段；不是内建 `id()` 的整数结果。未知 key 仍不会增加旧 whole-module
+  确定读点计数，baseline 仍在旧 P1 闭包之外，读取也不经过 canonical P4 accessor。
+  这是 GR16R3 §2 继承的局部 callable 返回/default 与 GR16R2 §4(1–2) fail-closed 缺口，
+  不属于 captured proof→release 相邻状态修复。
+- **独立纯 AST 对照：** 只在内存改上述 baseline，analyzer 其余 773 个、validator 其余
+  760 个顶层节点完全不变。独立静态重算正常与变异树的 pre-proof digest，均匹配原 pin：
+  analyzer `b0aaa71d455d9e312fde2fec3b25a384b393bafcab384e8845b29aaf8e065518`；
+  validator `a9f793ae77c9bfa85e390d7c63993df0052947e8271e59d7217646ad9a1ca800`。
+  两个 baseline 均不在 pin 选中集合；AST 亦确认 `id` 未进入上述 local_bindings，且无顶层
+  `id` 定义。没有写变异文件、import/执行交付或变异实现、调用交付 predicate 作额外 probe；
+  不声称 mutation 实测 rc 0、实测读取/放行或正常版科学污染。
+- tests 221–254 的 12 类新增返回变体均直接或嵌套捕获外层 trace，没有覆盖局部 def 遮蔽
+  安全内建、经显式实参返回的路径。原 R1 `shadowed_builtin` 是顶层 helper 形参遮蔽，
+  不覆盖 `FunctionDef.name` 绑定缺口。1471 tests 全绿不能证明这一分支已关闭。
+- **最小纠正：** 安全内建分支须以名称确实解析到内建为前提；对局部 callable 的绑定及
+  参数→返回→默认值保留来源，或在不能证明安全时保守拒绝。补上述原样及等价名称/作用域
+  变体、真实内建/安全返回值对照、pin 不变 predicate 覆盖和 control→mutation 的零 proof、
+  零 product/rebuild-input reads、零 release/admitted rebuild 证据，以及新规则的自保护。
+  保留 GR15R8 parent、六路径、全部旧覆盖、科学结果及 R4–R8；不要求通用 Python 沙箱、
+  全阶段 pin、其它 primitive 或相邻 repair。本次只登记最小纠正范围，不创建新执行任务。
+
+**其它核查与证据归属：**
+
+- 独立核实 HEAD、精确 branch/worktree、唯一 parent GR15R8、其 parent GR14、固定单行 message、
+  相对 parent 恰一笔六 A / 零 M；19 个明确排除项全部不在 ancestry。
+  六 SHA 与 §4.34、HEAD:path、工作树 bytes 一致；posthoc 恰五项、CHECKSUMS 恰四条逐项
+  匹配且不自列；tracked status 与六路径 status 为空，tag 0，两个点名 cache 不存在。
+- 只读核对点名三组日志/rc/metadata：pytest 原 summary 确为
+  `1471 passed in 32827.07s (9:07:07)`、rc 0；analyzer 三产品 byte-identical/PASS、
+  validator 93/12/3 及 canonical JSON/REPORT byte-identical/PASS，均 rc 0。
+  三组运行前后六 SHA 均独立与最终 objects 对齐。它们是已有执行证据，不是本次独立运行，
+  也不构成完整历史过程零越界的证明。科学 aggregate 保留为日志证据，本次未独立重建。
+- **本次 analyzer、validator、完整 pytest 均未启动：** 源码阶段已确认阻断，按 §6 停止
+  目标验证；不是命令失败或 owner 豁免。未运行 subset/probe/profile、未联网、未使用 subagent、
+  未改交付或创建实验 worktree/提交。一次源码读取误用 Knote cwd 返回 No such file，随后
+  在点名交付 worktree 正确读取；未修改文件，不是交付命令失败。
+
+`Redo`
+
+GR16R3 不进入 accepted chain，accepted head 保持 GR15R8。原执行合同写入裁决并归档，
+README 同步；无 ACTIVE 实验任务，等待 owner decision，不自动创建纠正任务书或 GR17。
+
+### 4.36 GR16R4 开工授权（2026-10-10）
+
+owner 在 GR16R3 Redo 后明确“直接在本窗口进行redo，开始”。本窗直接执行最小纠正、完整
+三命令和唯一提交，仅本轮覆盖 §1(7)。新点名 refs/worktree/任务书/parent 六路径已确认不存在；
+GR16R3 六 full objects SHA 与 §4.34 一致。accepted head 保持 GR15R8。
+
+构建进展（2026-10-12 Europe/London）：两套闭包保守登记局部 def/class、参数、import、
+exception/pattern captures；安全内建分支前拒绝无法证明安全的受遮蔽调用。新增 76 cases
+（24 predicate、16 安全对照、24 capture 黑盒、12 gate 自保护），保留原 1471 等价覆盖。
+科学函数/P4 accessor/GR9 projection 的 AST 未改；只改闭包、身份/provenance、pins 与测试。
+首次 generate 因轮次校验仍用 R3 后缀而 rc 2，修正到 R4 后 generate-2 PASS。
+续窗补静态发现的排除项测试计数 19→20，仅删除新工作树自建三产品后 generate-3 PASS；
+科学 aggregates 仍为 3/31、37 classes、collision 42、A/B 0/16。未运行 subset/probe/profile。
+
+完整三命令于 2026-10-11 23:42:59 UTC 开始，管理会话 `95410`，
+顺序 analyzer --check-existing → validator → 完整 pytest。仓外 `/tmp/gr16r4-construction/`
+点名 `analyzer-full-1`、`validator-full-1`、`pytest-full-1` 的 .log/.rc/.metadata.json 保存
+运行前后六 SHA、命令、Python、时间及 pid；续窗先查已有运行，不重复启动。
+当时尚未完成完整验证、尚未提交、尚未正式验收；最终交付见 §4.37。
+
+第一轮完整命令：analyzer-full-1 PASS/rc 0；validator-full-1 在 product-boundary rc 2，
+因新增检查误用 analyzer 的 facts['bindings']，而 validator 对应键是 counts；pytest 未启动。
+已改为各自读取正确审计键的 module_bindings，再重算 pins、重生成并从完整三命令重新验证。
+原失败日志保留，不作为 mutation 拒绝证据。
+第二轮完整三命令于 2026-10-11 23:44:30 UTC 启动，管理会话 `71709`；
+当时点名日志为 analyzer-full-2 / validator-full-2 / pytest-full-2。
+
+2026-10-12 再次续窗核查：第二轮 analyzer/validator 均 PASS/rc 0；pytest 日志停在
+1424/1547 个通过标记，无最终摘要、无 .rc，metadata 无 ended_utc/returncode；
+原 manager 1334、pytest 2771 均已不存在，会话 71709 已失效。终止原因未确定，
+该 pytest 只记未完成，不记 PASS。六交付 SHA 仍与该轮运行前一致，HEAD 仍为 GR15R8。
+已保留全部第二轮证据，不补跑子集；第三轮完整三命令由独立进程 manager 83302 启动，
+点名 analyzer-full-3 / validator-full-3 / pytest-full-3 的 .log/.rc/.metadata.json 为该轮证据。
+没有修改源码或产品。第三轮现已完整通过并提交，最终状态与停止点见 §4.37。
+
+
+### 4.37 GR16R4 完整执行回执（2026-10-12 Europe/London，待 owner 验收）
+
+**COMPLETE（执行交付），不是 Accept。** 本窗口按 owner 直接 redo 授权完成纠正、完整验证及
+唯一提交；accepted chain 仍停在 GR15R8，最近正式 verdict 仍为 §4.35 的 GR16R3 Redo。
+GR16R4 合同保留在根目录作为唯一待验收合同，未创建 GR17，停止实验执行。
+
+- 提交：`f00a720820f6379277a4c61aa2c4d9a56034dc73`。
+- 唯一 parent：GR15R8 `7f3826f42a7ecdb0d4e1099b805cb0d271ce5959`；其 parent 为 GR14
+  `0120c5e1e3d6c20a7b8e997cd8d47c9fc557df17`。相对 GR15R8 恰一笔提交，六 A／零 M。
+- branch：`stage0a-wave2-trace-failure-paths-fired-local-callable-binding-closure-correction-gr16r4`。
+- worktree：`/Users/hzjin/Desktop/spool-research/worktrees/spool-research-wave2-trace-failure-paths-fired-local-callable-binding-closure-correction-gr16r4`。
+- 单行 message：`posthoc(stage0a): close local callable binding reads (GR16R4)`；无正文/trailer。
+- 20 个明确排除项全部非 ancestor；GR16/R1/R2/R3 均未进入 accepted ancestry。
+- 提交后 tracked status 与六路径 status 均干净，HEAD tags 为零；posthoc 恰五项、CHECKSUMS
+  恰四条且校验一致；两个精确 cache 目录均不存在。没有 merge/tag/fetch/pull/push。
+
+**最终完整三命令（第三轮，固定 Python 3.12.2，PYTHONDONTWRITEBYTECODE=1）：**
+
+| 命令 | 实际结果 | 起止 UTC |
+|---|---|---|
+| analyzer --check-existing | PASS / rc 0 | 2026-10-12T11:54:12.068595+00:00 → 2026-10-12T11:54:37.207745+00:00 |
+| validator | PASS / rc 0 | 2026-10-12T11:54:37.209277+00:00 → 2026-10-12T11:55:03.679612+00:00 |
+| 完整 pytest | 1547 passed / rc 0 | 2026-10-12T11:55:03.680970+00:00 → 2026-10-12T22:13:55.080597+00:00 |
+
+pytest 使用任务书 §6 原完整文件命令 `-q -p no:cacheprovider`；未使用 subset/probe/profile。
+其摘要耗时是 **36671.99s（10:11:11）**，进程退出收尾后 rc 0 于 22:13:55 UTC 落盘；
+起止 wall time 包含退出收尾，不能把摘要时间误写为整个进程 wall time。
+analyzer 三产品 byte-identical，validator canonical JSON/REPORT byte-identical，均 PASS。
+完整测试为 **1547 passed = 原 1471 等价覆盖 + 新增 76**。
+
+本次 correction 在两套闭包中登记局部 def/class、参数、import、exception/pattern captures，
+并将本地/模块遮蔽调用的保守拒绝置于安全内建分支之前。新增覆盖为 24 predicate、16 安全对照、
+24 capture 黑盒与 12 gate 自保护：包括原样 local-def id、等价内建名、参数形式、alias、nested、
+class/import 和 direct return。完整测试覆盖 baseline-only 变体 pre-proof pin 不变、真实拒绝、
+同一只读 spy 正常对照及拒绝前零 proof/product-read/release/admitted rebuild；这些是执行证据，
+不代替下一窗对名称解析与实现边界的独立验收。
+
+**科学结果保持不变：** 194 available / 2 malformed；raw integer/scalar sentinel；split/unsplit
+3/31，37 classes、support 1…27、singleton 13；collision 42、reduction 0、final 82…88；
+Layer A/B 0/16，G1/G2/G3/G4 16/0/0/16；containment 16/16、identical-to-GR9 0/16；
+k=2 published/suppressed 16/0；93 objects / 12 generations / 3 siblings。科学函数/P4 accessor/
+GR9 15 槽/drop-last 未改。唯一 conclusion 仍为：
+
+> the preregistered len(trace.failure_paths_fired) exact-count refinement increases development separability but cannot realize any GR7 oracle-all-green cell under the frozen gates
+
+**六 SHA（最终三命令运行前 = 运行后 = 工作树 = f00a720820f6379277a4c61aa2c4d9a56034dc73:path）：**
+
+```text
+0b71bc2f9beadb61e2aa986fa17d5bfa5ed11a3bf8f844190417c947aeb49622  harness/verify_trace_failure_paths_fired_exact_count_separability_envelope_wave2.py
+7d1c4f342a519e6d6b99caa6b33a5608b862c9bac0ab7d2d8b655de3bc7c5e8a  posthoc/stage0a-development-wave2-trace-failure-paths-fired-exact-count-separability-envelope/analyze_trace_failure_paths_fired_exact_count_separability_envelope_wave2.py
+2ef92e8a7c9aff3049c273357017678863268a5dadf391a4ac2759f30cd720b0  posthoc/stage0a-development-wave2-trace-failure-paths-fired-exact-count-separability-envelope/test_trace_failure_paths_fired_exact_count_separability_envelope_wave2.py
+f7f123290c2bfaade9bc36927a404b4acf7eebfe3a52c7742a5a70bf30b89e51  posthoc/stage0a-development-wave2-trace-failure-paths-fired-exact-count-separability-envelope/TRACE-FAILURE-PATHS-FIRED-EXACT-COUNT-SEPARABILITY-ENVELOPE-stage0a-development-wave2.json
+2d6074aede62439269adec5790d0b5ebf8816247209eed560279e8d74dec0a74  posthoc/stage0a-development-wave2-trace-failure-paths-fired-exact-count-separability-envelope/TRACE-FAILURE-PATHS-FIRED-EXACT-COUNT-SEPARABILITY-ENVELOPE-REPORT-stage0a-development-wave2.md
+4b1875f825f782ed0b371e6850abbf26c0dd300075ae161abd5a36175b6a90f1  posthoc/stage0a-development-wave2-trace-failure-paths-fired-exact-count-separability-envelope/CHECKSUMS-TRACE-FAILURE-PATHS-FIRED-EXACT-COUNT-SEPARABILITY-ENVELOPE-stage0a-development-wave2.sha256
+```
+
+仓外证据：`/tmp/gr16r4-construction/` 下 `analyzer-full-3`、`validator-full-3`、`pytest-full-3`
+各自的 `.log/.rc/.metadata.json`。metadata 记录完整 argv、cwd、Python、UTC、manager/child PID、
+前后六 SHA，并补 `verified_final_commit=f00a720820f6379277a4c61aa2c4d9a56034dc73` 与
+`commit_object_sha256_matches_run_bytes=true`。科学产物未加入运行元数据。
+
+历史过程如 §4.36：generate-1 轮次后缀校验失败、第一轮 validator 审计键错误均已纠正；
+第二轮 pytest 在 1424 个通过标记后无进程、无最终摘要/rc，原因未确定，只记未完成。
+第三轮从原完整三命令重跑，未复用部分通过为最终成功，也未改源码来缩短验证。
+未接触 hidden、未人工读取 rows/trace/answer 或字段元素，未联网、安装、subagent、模型/API、
+新费用、promotion/freeze；不扩到相邻 repair、primitive 组合或新实验。
+
+### 4.38 GR16R4 正式验收 findings 与 verdict（2026-10-12）
+
+**Blocking finding（P1 优先级）：局部 callable 的属性调用按 method 名特判，仍丢弃受保护实参的返回/default 来源。**
+
+- analyzer `pre_primitive_read_closure()` 第 5737–5749 行、validator 第 5904–5916 行，
+  仅凭 `Call.func` 为 Attribute 且属性名属于 `values/items/keys/copy` 就进入 method 特例。
+  `.copy` 分支直接返回 receiver 来源；整段不消费已求出的 args/kwargs 来源，也未证明 receiver
+  是真实字典方法。新局部/模块遮蔽防线（analyzer 5770–5773；validator 5937–5940）只处理
+  `ast.Name`，在这个 Attribute 分支之后，不能保护局部 class 的同名 staticmethod。
+- 在 analyzer `baseline_signature_index()` 第 8363 行 / validator `_baseline_signature_index()`
+  第 8205 行的 `direct = ...` 前插入以下反例：
+
+  ```python
+  if verdict["trace"] is not None:
+      class _r4_provider:
+          @staticmethod
+          def copy(_r4_value):
+              return _r4_value
+      (lambda _r4_t=_r4_provider.copy(verdict["trace"]):
+          _r4_t["".join(("failure_", "paths_fired"))])()
+  ```
+
+  按 Python 语义，局部 staticmethod 原样返回 trace，随后在 P3 的 lambda body 读取本轮字段。
+  分析时 class receiver 是空来源，`.copy` 特例忽略非空 trace 实参并返回空来源；局部 def 的形参
+  没有绑定该实参，return 检查（analyzer 5812–5815；validator 5979–5982）也看不到来源。
+  default 检查因此不拒绝，lambda 形参的 lexical table 仍为空。未知 `str.join` key 不增加旧
+  whole-module 确定读点计数，P3 baseline 不在旧 P1 闭包；读取也不经 P4 accessor/ledger。
+  这属于继承的 GR16R2 §4(1–2) method/helper/alias fail-closed 与 GR16R4 §2 局部 callable
+  来源合同，不是 captured proof→release 相邻修复。
+- **独立纯 AST 对照：** 只在内存修改这一处 baseline，analyzer 其余 775 个、validator 其余
+  762 个顶层节点全部不变，内存 compile 通过。用独立静态算法重算正常/变异树的 pre-proof
+  digest，均等于原 pin：analyzer
+  `e3e04227b006eaabd24229eeff1eaa3d91bdddf1dc89a2b8f1e425ba40ee041f`；validator
+  `a0baa647457a64134faadd2be595061be14923eb6c1779d9e291c95dd3498e82`。
+  两个 baseline 均不在 pin 选中集合，不能依靠 pin mismatch 提前拒绝此例。
+  未写变异文件、import/执行交付或变异实现、调用交付 predicate 作独立 probe；不声称 mutation
+  实测 rc 0、实测早读/放行或正常版科学污染。
+- tests 第 221–245 行的十二类新增 binding 变体均以 Name 调用 provider；`class_name` 只调用
+  class 本身，`import_alias` 也改为 Name。没有覆盖局部 class 属性上与 method 特例同名的
+  callable。第 266–322 行的 predicate/pin/黑盒/自保护要求是有效覆盖，但 1547 tests 全绿
+  不能关闭上述未覆盖分支。
+- **最小纠正：** method 特例必须有真实 receiver/callable 与参数形态的静态依据；不能把未知
+  Attribute callable 按属性名当成容器内建并丢弃 args/kwargs。保留受保护参数→返回→default
+  来源，或对不能证明安全的路径保守拒绝。补原样及等价 method 名、alias/keyword 变体、真实
+  容器方法和安全返回值对照、pin 不变的 predicate 覆盖及 control→mutation 零 proof、
+  零 product/rebuild-input reads、零 release/admitted rebuild 证据，并保护新检查自身。
+  保留 GR15R8 parent、六路径、全部旧覆盖和科学结果；不要求通用 Python 沙箱、全阶段 pin、
+  另一 primitive 或相邻 repair。本次只登记最小纠正范围，不创建执行任务。
+
+**其它核查与证据归属：**
+
+- 独立核实交付 HEAD `f00a720820f6379277a4c61aa2c4d9a56034dc73`、点名 branch/worktree、
+  唯一 parent GR15R8、其 parent GR14、固定单行 message、相对 parent 恰一笔六 A / 零 M。
+  两套源码的 20 个明确排除项全部不在 ancestry；tracked status 与六路径 status 均为空，
+  HEAD tags 为零，两个精确 cache 不存在。未修改实验交付、创建实验 worktree 或提交。
+- 六件工作树 bytes 与最终 `commit:path` 相同，六 SHA 逐项等于 §4.37；posthoc 恰五项、
+  CHECKSUMS 恰四条且逐项匹配、不自列。第三轮三份 metadata 的运行前/后六 SHA 均独立
+  与最终 objects 对齐，argv/cwd/Python/起止/rc 和 final-commit 绑定一致。
+- 点名第三轮日志/rc 证实 pytest 原摘要为 `1547 passed in 36671.99s (10:11:11)`、rc 0；
+  analyzer 三产品 byte-identical/PASS、validator 93/12/3 及 canonical JSON/REPORT
+  byte-identical/PASS，均 rc 0。它们是已有执行证据，不是本次独立运行，也不能证明完整历史
+  过程零越界。摘要耗时与进程起止 wall time 继续分列。
+- 独立 AST 比较 R3/R4：科学函数、P4 accessor、GR9 15 槽/drop-last 均未变；两套旧顶层
+  definitions 无删除。科学 aggregate 保留为第三轮日志证据，本次未独立重建。
+  **本次 analyzer、validator、完整 pytest 均未启动：** 源码已有确定阻断，按 §6 停止目标
+  验证；不是命令失败或 owner 豁免。未运行 subset/probe/profile、未联网、未使用 subagent。
+- **本窗复核过程偏差（不归责于执行者）：** 初始查约束误用
+  `find .. -name AGENTS.md -print`，从 Knote 父目录递归查找，超出精确路径限制；未返回匹配项，
+  最终 exit 0。无正文输出，但不能据此证明未遍历哪些目录，不声称本窗全程零目录接触。
+  后续只作点名文件/objects/路径检查，不清理 hidden/raw/旧临时目录。一次混用 Knote cwd
+  读取交付源码报 No such file，随后切回点名工作树；两个静态核查脚本版本先后因误判排除表
+  结构、未处理 tuple 拼接而停止，修正后两套 pin/20 排除项均核实。这些不是交付命令失败
+  或 mutation 执行。
+
+`Redo`
+
+GR16R4 不进入 accepted chain，accepted head 保持 GR15R8。原执行合同写入裁决并归档，
+README 同步；无 ACTIVE 实验任务，等待 owner decision，不自动创建新纠正任务书或 GR17。
+
+### 4.39 GR16R5 开工授权（2026-10-13）
+
+owner 在 GR16R4 Redo 后明确“在本窗口开始redo”。本窗直接执行 §4.38 最小纠正、完整三命令
+及唯一提交，仅本轮覆盖 §1(7)。accepted head 保持 GR15R8。
+精确 local/origin ref、worktree 注册/目录、新任务书和 parent 六路径已确认不存在；GR16R4 六
+full objects SHA 逐项匹配 §4.37 后复制，从 GR15R8 新建 GR16R5 隔离工作树。
+唯一 ACTIVE 合同：`docs/TASKBOOK-STAGE0A-GR16R5-DEVELOPMENT-TRACE-FAILURE-PATHS-FIRED-METHOD-CALLABLE-ORIGIN-CLOSURE-CORRECTION-2026-10-13.md`。
+本轮只修 method/callable 来源与参数形态，保留科学问题、六路径及全部原覆盖；不创建 GR17。
+初始一次混用 Knote cwd 读交付源码报 No such file，随后限定点名 GR16R5 工作树；一次文档
+构造脚本在内存替换时锚点未命中，未写 handoff，随后改用精确补丁。未递归遍历目录或 import 前序实现作 probe。
+
+执行进度（2026-10-13）：两套闭包已加入 receiver 来源、调用形态、bound/unbound default 与
+setdefault 存储传播；新增 122 cases，预期总数 1669（保留原 1547）。首次 generate-1 rc 2
+因真实容器解包绑定未被识别，补齐后 generate-2 / generate-3 均 PASS；后者含最终测试 SHA。
+只保存静态源码与聚合诊断，未增加独立 import/probe。三命令 manager PID `62026`，
+仓外证据前缀 `/tmp/gr16r5-construction/{analyzer,validator,pytest}-full-1`；当前尚未取得完整
+三命令终态、未提交。续窗先查这些精确 metadata/log/rc 与 PID，禁止重复启动。
+analyzer（23:33:33–23:33:59 UTC）与 validator（23:33:59–23:34:26 UTC）均 rc 0 / PASS，
+各自命令前后六 SHA 与当前文件相同，JSON/REPORT byte-identical。完整 pytest 于
+2026-10-12 23:34:26 UTC 启动（PID `63373`），使用同组六 SHA；最终 summary/rc 与提交仍待。
+完整 pytest 进入原覆盖前，本轮新增 122 cases 已全部显示通过（含原样反例、真实容器对照、
+零 proof/read/release 黑盒及新检查自保护）；这仅是在途标记，不能替代全量最终 summary/rc。
+在途累计 708 项未出现失败标记后，因多次墙钟跳跃伴随日志推进很少（未确认原因），于
+2026-10-13 05:22:41 UTC 加临时 `caffeinate -i -w 63373`（PID `76584`）防空闲休眠；
+随 pytest 退出，无电源配置/测试 argv/env/交付文件改动，证据为同目录 `pytest-full-1-awake.metadata.json`。
+full-1 于标题身份正测首次失败后中断：`1 failed, 1100 passed in 29255.70s (8:07:35)`，
+pytest rc 2，终态 2026-10-13 07:42:26 UTC，六文件命令前后 SHA 相同；旧 manager/pytest/awake
+均已退出，未提交。失败是执行者漏更新的旧测试标题白名单仍允许 `# GR16R4 `，正确 R5 标题
+被拒绝；已改为仅允许 `# ` + 当前 `DELIVERY_ROUND` + 空格，保留其余轮次拒绝语义。
+原样/等价 method 防护和本轮新增 122 cases 已在失败前通过；不把这次部分运行当全量通过。
+目前正以 generate-4 重生成，随后从 analyzer 起完整重跑 full-2 三命令，不运行子集。
+generate-4 已 PASS / rc 0；full-2 于 2026-10-13 07:45:04 UTC 启动，manager PID `70577`，
+对应临时 awake PID `70578`（观察 manager，退出即结束），证据 `full-2-awake.metadata.json`。
+当前续窗入口改为 `/tmp/gr16r5-construction/{analyzer,validator,pytest}-full-2`，先查精确
+metadata/log/rc 与 PIDs；full-1 已终止，不得恢复或重复启动 full-2。
+full-2 analyzer / validator 均 PASS / rc 0，六 SHA 各自前后及相互一致；重建 JSON/REPORT
+byte-identical。完整 pytest 已启动（PID `71968`），同组六 SHA；最终 summary/rc 及唯一提交仍待。
+
+### 4.40 Owner 暂停（2026-10-13）
+
+owner 明确“先暂停，等我指令再继续”。于 2026-10-13 10:58:09 UTC 对原 full-2
+process group `70577` 及已知 descendants 发 SIGSTOP；manager `70577`、pytest `71968`、
+当前 child `28157` 均核实为 T 状态。临时 awake `70578` 与 monitor `70580` 已结束。
+第二轮在途通过标记 581 项、无失败标记，最终 summary/rc 尚无；analyzer/validator 已 PASS。
+六 SHA 与 full-2 开始时相同，记录在 `/tmp/gr16r5-construction/pause-full-2.metadata.json`。
+未提交、未 Accept；accepted head 仍为 GR15R8，未创建 GR17。
+只有 owner 明确恢复后才核对原 PID/PGID、暂停快照六 SHA 与当前状态，再以 SIGCONT 恢复
+原 group/记录的进程。禁止自行启动另一组完整测试；若进程已丢失，先报告事实并等新指令。
+
+### 4.41 Owner 恢复（2026-10-13）
+
+owner 明确“continue”。2026-10-13 18:20:54 UTC 核对暂停记录、原 PIDs/PGID/亲子关系
+及 T 状态；六 SHA 同时匹配暂停快照与 full-2 起点，日志仍为 581 个通过标记、无失败标记。
+已 SIGCONT 原 group `70577`（manager 70577 / pytest 71968 / child 28157），不启动新一轮。
+本次暂停 26565.135864 秒；现场为 `/tmp/gr16r5-construction/resume-full-2.metadata.json`。
+临时 awake PID `49957` 观察原 manager，退出即结束，不改电源配置或测试 argv/env。
+只恢复既有 method/callable 最小纠正、完整三命令、唯一提交及停止点；accepted head GR15R8。
+
+收尾阶段日志先给出 `1669 passed in 75475.68s (20:57:55)`；当时尚待自然退出与提交。
+此为历史进度；最终 rc 0、六 SHA/HEAD 绑定与唯一提交见 §4.42。
+
+### 4.42 GR16R5 完整执行交付回执（2026-10-14；待 owner 验收）
+
+**COMPLETE（执行交付），尚未 Accept。** owner 的同窗 redo 授权已完成，全部验证进程自然退出；
+仅维护本回执、任务书和 README 后停止。accepted chain 保持 GR15R8，未创建 GR17。
+
+- commit：`c92e00f6fa20f42315ee4d76bb0567349db63c72`。
+- 唯一 parent：GR15R8 `7f3826f42a7ecdb0d4e1099b805cb0d271ce5959`；其 parent 为 GR14 `0120c5e1e3d6c20a7b8e997cd8d47c9fc557df17`。
+- branch：`stage0a-wave2-trace-failure-paths-fired-method-callable-origin-closure-correction-gr16r5`。
+- worktree：`/Users/hzjin/Desktop/spool-research/worktrees/spool-research-wave2-trace-failure-paths-fired-method-callable-origin-closure-correction-gr16r5`。
+- 唯一单行 message：`posthoc(stage0a): close method callable origin reads (GR16R5)`。
+- 相对 parent 恰一笔提交、六 A / 零 M；21 个明确排除项均非 ancestor（含 rejected GR16/R1/R2/R3/R4），HEAD tags 为 0。
+- 已核实 tracked 与六路径状态 clean；posthoc 恰五项、CHECKSUMS 恰四条且不自列。
+  `harness/__pycache__` 与本 posthoc 的 `__pycache__` 均不存在；未递归扫描目录。
+
+两套独立闭包现先证明 receiver/callable 来源及参数形态，再应用容器方法语义；属性名本身
+不能授权丢弃 protected args/kwargs 或返回来源。保留真实容器/未遮蔽 builtin 的建模，
+补齐 bound/unbound default、setdefault 存储和 tuple/list 解包来源传播；不能证明的 protected
+调用保守拒绝。科学函数、P4 accessor、GR9 15 槽/drop-last 不变。
+新增 122 cases：21 类反例的双实现 predicate 与黑盒（共 84）、11 类安全/真实容器双对照
+（22）、8 类新检查双自保护（16）。原 1547 等价覆盖保留，总数 1669。
+
+最终完整三命令为任务书 §5 原样命令；Python 3.12.2，`PYTHONDONTWRITEBYTECODE=1`，
+pytest 带 `-q -p no:cacheprovider`，cwd 为上述精确工作树。下表均为 UTC：
+
+| 命令 | PID | 开始 | 自然退出 | rc |
+|---|---|---|---|---|
+| analyzer | 70579 | 2026-10-13T07:45:04.521946+00:00 | 2026-10-13T07:45:29.305768+00:00 | 0 |
+| validator | 71233 | 2026-10-13T07:45:29.307237+00:00 | 2026-10-13T07:45:55.668021+00:00 | 0 |
+| pytest | 71968 | 2026-10-13T07:45:55.669499+00:00 | 2026-10-14T04:53:46.299673+00:00 | 0 |
+
+analyzer `--check-existing` 与 validator 均 PASS，既有 JSON/REPORT/CHECKSUMS 校验及重建
+产物 byte-identical。pytest 原始终态：**`1669 passed in 75475.68s (20:57:55)`，rc 0**。
+该原始耗时包含 owner 暂停 `26565.135864` 秒（7:22:45）；扣除明确暂停为
+`48910.544136` 秒，约 13:35:10。没有替换原始 summary。
+summary 后继续等解释器自然收尾，直到上表最终 rc 0 才提交；未强制结束成功进程。
+暂停/恢复沿用同一个 full-2 group/pytest，未重启验证。
+
+完整证据位于 `/tmp/gr16r5-construction/`：
+`analyzer-full-2`、`validator-full-2`、`pytest-full-2` 各自的 `.log/.rc/.metadata.json`，
+以及 `pause-full-2.metadata.json`、`resume-full-2.metadata.json`、`full-2-awake.metadata.json`
+和 `final-receipt.json`。三份最终 metadata 均记录
+`verified_final_commit=c92e00f6fa20f42315ee4d76bb0567349db63c72`、`final_commit_objects_match=true`。
+六文件在三命令各自开始/结束、相互之间、最终 live bytes 及 `HEAD:path` objects 完全一致。
+提交前 staged `git diff --check` 通过，最终提交核实于 `2026-10-14T04:56:18.056739+00:00`。
+
+最终六 SHA-256（相对上述工作树）：
+
+```text
+4cb58bfcb3e4cd91863cf341b211e309bc020929a70ccc6cc05be3de00341b36  harness/verify_trace_failure_paths_fired_exact_count_separability_envelope_wave2.py
+ff858b12446740123aabb22e30c7138892325c3a92bb6b916e92577c4a035c13  posthoc/stage0a-development-wave2-trace-failure-paths-fired-exact-count-separability-envelope/analyze_trace_failure_paths_fired_exact_count_separability_envelope_wave2.py
+869753769edec062a0b732032093cadba2639239bd29730ae492633d9754b73a  posthoc/stage0a-development-wave2-trace-failure-paths-fired-exact-count-separability-envelope/test_trace_failure_paths_fired_exact_count_separability_envelope_wave2.py
+3044324daa76ac425ee0025ef46b83dd395e0ecf11710c8b543936c8f60b596b  posthoc/stage0a-development-wave2-trace-failure-paths-fired-exact-count-separability-envelope/TRACE-FAILURE-PATHS-FIRED-EXACT-COUNT-SEPARABILITY-ENVELOPE-stage0a-development-wave2.json
+d7fbe83feccf30abca3a669cf6a279338ec1fc9c933822ea2fea99941568c4de  posthoc/stage0a-development-wave2-trace-failure-paths-fired-exact-count-separability-envelope/TRACE-FAILURE-PATHS-FIRED-EXACT-COUNT-SEPARABILITY-ENVELOPE-REPORT-stage0a-development-wave2.md
+66de0825542f24d2c36c683a32ecdfb2fe6fb00c90600031cb2426e6e5ab3f17  posthoc/stage0a-development-wave2-trace-failure-paths-fired-exact-count-separability-envelope/CHECKSUMS-TRACE-FAILURE-PATHS-FIRED-EXACT-COUNT-SEPARABILITY-ENVELOPE-stage0a-development-wave2.sha256
+```
+
+保留全部失败与中间回执：generate-1 因未建模真实 tuple 解包 rc 2，静态补齐后
+下一次 generate PASS；full-1 因执行者漏更新旧 R4 标题白名单被中断，
+`1 failed, 1100 passed in 29255.70s (8:07:35)`、rc 2、前后六 SHA 未变。
+该断言改为严格绑定当前 `DELIVERY_ROUND` 后 generate-4 PASS，再从 analyzer 起完整
+重跑 full-2 三命令。未删减测试、未运行子集或额外 import/probe；历史细节见 §4.39–4.41。
+最终文档整理脚本一次 f-string 字面花括号导致 NameError，在任何文件写入前停止；
+修正后仅写点名三份路由文档，没有改交付文件或重跑实验。
+
+科学结果保持：194 available / 2 malformed，raw integer/scalar sentinel，split/unsplit 3/31；
+classes 37（GR9 34），support 1…27，singleton 13，collision 42，reduction 0，final 82…88；
+Layer A/B 均 0/16，G1/G2/G3/G4 为 16/0/0/16，containment 16/16，identical-to-GR9 0/16，
+k=2 published/suppressed 16/0。17 inputs、93 objects / 12 generations / 3 siblings 不变；
+P0–P8 runtime events、violation 0、hardcoded false。唯一 conclusion 不变：
+
+> the preregistered len(trace.failure_paths_fired) exact-count refinement increases development separability but cannot realize any GR7 oracle-all-green cell under the frozen gates
+
+未新增 primitive/组合/实验/模型/API/费用/hidden/样本外/promotion/freeze；未改 accepted/main
+或旧交付、未 merge/tag/push。Knote 三份路由文档单独维护，不属于交付六文件，也未纳入提交。
+本节是执行回执，不能替代 owner 的独立验收 verdict；现已停止等待验收。
+
+### 4.43 GR16R5 正式验收 findings 与 verdict（2026-10-14）
+
+**Blocking finding（P1 优先级）：setdefault 存储传播未闭合容器别名，P3 经原名取回的 trace 来源消失。**
+
+- analyzer `pre_primitive_read_closure()` 第 5823–5826 行、validator 第 5990–5993 行，
+  对真实容器的 `setdefault(key, protected_default)` 仅向调用处的 `receiver_node` 写入来源。
+  analyzer 第 5685–5689 行 / validator 第 5852–5856 行的 Name assignment 只向该名字的
+  来源集合做 union，没有共享容器身份或向其它可能别名回传写入的机制。
+  `literal_origins` 能证明两个名字都是 map，不能证明两个来源集合随同一对象的写入一起更新。
+- 在 analyzer `baseline_signature_index()` 第 8467 行 / validator `_baseline_signature_index()`
+  第 8309 行的 `direct = ...` 前插入以下反例（仅内存构造，未执行）：
+
+  ```python
+  if verdict["trace"] is not None:
+      _r5_box = {}
+      _r5_alias = _r5_box
+      _r5_alias.setdefault("payload", verdict["trace"])
+      (lambda _r5_t=_r5_box["payload"]:
+          _r5_t["".join(("failure_", "paths_fired"))])()
+  ```
+
+  按 Python 语义，两个名字指向同一字典，`setdefault` 将 trace 存入该对象，随后 lambda
+  在 P3 读取本轮字段。按源码的数据流，空字典赋值与别名赋值均给出空 protected 来源；
+  receiver origin 为 map、两个实参符合 shape，因此 method guard 不拒绝。存储只给
+  `_r5_alias` 增加 `('map', 'payload')` 来源；`_r5_box` 仍为空。后续原名 subscript、lambda
+  default 与 lambda body 都看不到来源。固定点重走也只从 box 向 alias 传播，不能反向补齐。
+  未知 `str.join` key 不增加旧 whole-module 确定读点计数，baseline 不在旧 P1 闭包，也不调用
+  P4 accessor/ledger。这是本合同 §2 已建模 method 的 alias/default/storage 来源闭包缺口，
+  不涉及 captured proof→release 状态问题或另一 primitive。
+- **独立纯 AST 对照：** 只改上述 baseline 顶层函数，analyzer 其余 777 个、validator
+  其余 764 个顶层节点全部不变，内存 compile 通过。独立静态算法重算正常/变异树的 pre-proof
+  digest，两者分别仍等于原 pin：analyzer
+  `20399cae0ca7b84189b61f075346105c176c15739a3967176d3b0eb54cee11a7`；validator
+  `c38c9bf5ca2540407b62ba90bc22f2f9fe422ed94c0c09d7f8adee6e66705696`。
+  两个 baseline 都不在 pin 选中集合，不能依赖 pin mismatch 拒绝此例。未写变异文件、
+  import/执行交付或变异实现、调用交付 predicate 作独立 probe；不声称 mutation 实测 rc 0、
+  实测早读/放行或正常版科学污染。
+- tests 第 266–269 行的 `stored_default` 只覆盖同一个变量名写后读；`receiver_alias` 是
+  provider class 的别名，安全 `copy_alias` 是有初始来源的 copy，均未覆盖空容器经别名写后
+  从原名读取。现有原样 method 反例覆盖及 1669 个通过回执不能证明这一分支闭合。
+- **最小纠正：** 对已建模容器方法的 protected 存储保留共享对象到所有可能别名的来源，
+  或在不能证明后续取回闭合时保守拒绝。补原名→别名与别名→原名、alias chain、等价 bound/
+  unbound `setdefault` 存储/default 路径的双实现 predicate 与不变 pin 对照；每条黑盒仍先
+  同一只读 spy control rc 0，再 mutation rc 2、单行净化、零 proof/product/rebuild-input
+  reads/release/admitted rebuild，并补合法容器与安全字段对照及新检查自保护。检查其它已建模
+  mutating method 的同一别名机制，不扩成通用 Python 沙箱。保留 GR15R8 parent、六路径、
+  原覆盖和科学结果；本次仅登记最小纠正范围，不创建新任务书或执行修复。
+
+**其它核查与证据归属：**
+
+- 独立核实 HEAD `c92e00f6fa20f42315ee4d76bb0567349db63c72`、点名 branch/worktree、
+  唯一 parent GR15R8、其 parent GR14、固定单行 message、相对 parent 恰一笔六 A / 零 M。
+  两套源码的 21 个明确排除项均非 ancestor；tracked 与六路径 status 为空，HEAD tags 为零，
+  posthoc 恰五项，CHECKSUMS 四条逐项匹配且不自列，两个精确 cache 不存在。
+- 六件 live bytes 与 `commit:path` 相同，六 SHA 逐项等于 §4.42。full-2 三份 metadata 的
+  argv/cwd/Python 3.12.2/env/UTC/PID/rc、开始/结束六 SHA 与 final-commit 绑定均独立核实。
+  点名 log/rc 证实 analyzer / validator PASS、byte-identical，pytest 原摘要
+  `1669 passed in 75475.68s (20:57:55)`、rc 0。这些是已有执行证据，不是本次独立运行。
+  pause/resume metadata 的同一 pytest PID 71968 / group 70577、六 SHA 与
+  `26565.135864` 秒暂停均匹配；不据此声称完整历史过程零越界。
+- 独立 AST 比较 R4/R5：科学函数、P4 accessor、GR9 15 槽/drop-last 不变；两套旧顶层
+  definitions 无删除。科学聚合只保留执行日志证据，本次未独立重建。
+  **本次 analyzer、validator、完整 pytest 均未启动：** 已有确定源码阻断，停止目标验证；
+  不是命令失败或 owner 豁免。未运行 subset/probe/profile、未联网、未使用 subagent，
+  未修改实验工作树或创建实验提交。
+- **本窗复核过程偏差（不归责于执行者）：** 初始误用
+  `find .. -name AGENTS.md -print` 从 Knote 父目录递归查约束，违反精确路径限制；未返回正文，
+  exit 0，不能据此声称未遍历哪些目录。此后仅检查明确祖先文件和点名路径。初始两次 git
+  object 核查在 Knote cwd 报 bad object，随后改用点名实验工作树；一次 memory 查找用了错误
+  文件名 glob、无匹配，随后按 registry 精确文件读取。一次只读核查脚本误把 CHECKSUMS 的
+  相对 basename 当成仓库相对路径而停止，改按 posthoc 相对路径后全部核实。这些不是交付
+  命令失败，未运行变异实现或读取 hidden/raw 正文。
+
+`Redo`
+
+GR16R5 不进入 accepted chain，accepted head 保持 GR15R8。原执行合同写入 verdict 并归档，
+README 同步；无 ACTIVE 实验任务，等待 owner decision，不自动创建下一轮纠正任务或 GR17。
+
+## 5. 当前状态 —— GR16R5 正式 Redo；等待 owner decision
+
+GR16R5 执行回执保留在 §4.42，独立验收 findings、唯一 verdict 与最小纠正范围见 §4.43。
+原执行合同已归档；accepted head 保持 GR15R8，无 ACTIVE 实验任务，不创建 GR17。
+
+## 6. 下一窗方法与停止点
+
+先读 §4.43。没有新执行授权；不得恢复 GR16R5 进程、重跑目标命令或将回执当 Accept。
+只等待 owner 对最小纠正范围的决定；明确授权后才建立新的单一执行合同，从 GR15R8 起点
+执行，拒绝交付不作为 parent。不得自动扩到相邻 repair、另一 primitive 或 GR17。
 
 ## 7. 当前权限与绝对禁止
 
-当前 ACTIVE 授权只覆盖 GR15R4 任务书：从 accepted GR14 创建精确 branch/worktree，读取钉死 git
-objects 与既有 aggregate schema，新增恰六个路径，运行 §9 三条目标验证命令及其明确允许的产品生成 /
-语法检查，创建一笔固定 message commit。GR15R3 三份 Python object 只作机械 scaffold；其产品只作
-raw-byte closure / finding 文字对照。GR15R2 / GR15R1 / GR15 只作 older raw-byte closure；四者都不进
-ancestry，不作 expected science。accepted commits、原器材与所有冻结件仍不得修改。
+owner 的 continue 已完成 GR16R5 同窗 redo 授权；原进程自然退出、唯一提交完成后，本窗
+正式验收为 Redo。该执行授权已履行，现等待 owner decision，不继续实验或恢复旧授权。
+旧交付、accepted/main、冻结件不改，不 merge/tag/push。
 
 当前一律禁止：
 
-- 接触 hidden；不得 open、stat、hash、glob、预处理或引用其内容；
-- 人工读取或披露 rows/trace/answer、episode/gold/M1 正文；读取任务书闭包外的 `raw_outputs/`、其它 raw
-  run、未登记 trace、sibling worktree、被退回 GR2B 七文件或任何逐行身份；
-- 联网、安装依赖、模型调用、费用、新预算或 approval；
-- 修改实验主 worktree、accepted commits、原 `harness/verify_stage0a_v120.py`、freeze、protocol、gold、
-  rubric、任一 accepted candidate、任一 routing/component/matcher/suppression/blocks-pass/threshold、
-  既有词表或 runner；
-- merge、tag、fetch、pull、push；2026-09-11 已完成的 21 条 accepted refs 私有远端备份是 owner 单独
-  明确批准并已收口的历史动作，不构成继续操作远端的授权；
-- 运行 GR15R4 任务书 §9 以外的实验命令，包括 rejected GR15R3 / GR15R2 / GR15R1 / GR15、已完成的 GR14、GR13R2、rejected GR13R1 / GR13、GR12R3、
-  rejected GR12 / GR12R1 / GR12R2、GR11 或任何更早任务的目标命令、`pytest harness/` 整目录、旧
-  rescore/sweep/semantic probe、模型 runner 或重算 κ；
-- 读取/保存/比较 taskbook 允许的 aggregate 之外的 verdict actual values、list elements、result、frequency、
-  support、identity 或正文；重算或保存 `trace.wrong_param_calls` / `trace.missing` exact value、frequency、
-  signature、member 或 identity；
-- 读取或检验 GR10 registry 中本轮 `trace.calls_made` 以外的六项 runtime value；读取原始 call list 的
-  元素/tool/args；重读或重算 missing / wrong-param-calls / satisfied / invalid-tool-calls 的逐行值；把多项做 sweep、排名、
-  选择、组合或推荐；搜索 bucket/cap/threshold，
-  创建 candidate verifier、新 routing signal、selector hypothesis、第二 matcher，改写 k7/扩展 target、调参、
-  阈值变更、promotion、M1 改写、D1 重闭包、新 freeze、G0、hidden、正式运行或自动派发 GR16；
-- 调用 subagent。
+- 接触 hidden（open/stat/hash/glob/预处理/内容引用）；人工打开或披露 rows/trace/answer、
+  episode/gold/M1 正文；未登记 raw、sibling worktree、逐行身份或本字段列表元素；
+- 以“诊断解释”为由读取 trigger、工具/参数、标签 ID 或重新归因；本轮只读已发布 list 的长度；
+- 联网、安装依赖、subagent、模型/API、新费用/预算/approval、正式运行、G0、样本外、promotion/freeze；
+- 修改 matcher/routing/component/suppression/blocks-pass/threshold、k7、词表、runner、protocol/gold/rubric；
+- merge/tag/fetch/pull/push；旧远端备份授权不自动续期；
+- 所有实验命令；归档 GR16R5 及更早合同不作为恢复执行依据。包括所有历史目标命令（含 GR15R8 与被退回 GR16 完整 pytest）、pytest 子集/整目录、
+  单独计时/profile/spy probe、rescore/sweep/runner、重算 κ；
+- 重算或保存前五项 primitive 的逐行值、frequency、signature 或 membership；读取/检验尚未授权的
+  `len(suppressed_wrong_actions)`；把本轮与任一项组合、排名、选择或推荐；
+- 搜索 bucket/cap/threshold、创建 selector/candidate/k8/新 matcher/新配置或改 target family；
+- 把 §4.26 三条非阻断说明自动转为 repair，把当前授权扩到 GR17。
 
-此外，本轮路径与残留检查只能定向到任务书点名的 branch/worktree、六个 changed paths 与 posthoc 五项；
-禁止 `find .`、全 worktree `find`、全树 glob/scandir/walk，禁止进入或清理 hidden/raw/旧系统临时目录。
-
-证据不足时必须写 `underdetermined`，不得为了得到根因自行扩权。
+路径和残留检查仅限任务书点名的 ref/worktree、六路径、posthoc 五项与两个精确 cache 目录；查约束
+仅用明确祖先文件。禁止递归 find/glob/scandir/walk worktree 或父目录，不进入/清理 hidden/raw/旧系统
+临时目录。证据不足写 `underdetermined`，不得为解释结果自行扩权。
 
 ## 8. 不得恢复的旧光标
 
@@ -1080,21 +2171,21 @@ ancestry，不作 expected science。accepted commits、原器材与所有冻结
 - D2R4 `6b67451…`、GR1R2 `076a486…`、GR2A `da0bd25…`、GR2BR1 `fae90ec…`、GR2CR1
   `eb19084…`、GR2D `073c109…`、GR3R1 `372703c…`、GR4 `624055f…`、GR5 `f948983…`、GR6R1
   `847fbf83…`、GR7 `9b8a57e…`、GR8 `a4320c84…`、GR9 `48b9f720…`、GR10 `2231eb66…`、
-  GR11 `04ffebe8…`、GR12R3 `0ecd8d15…`、GR13R2 `9b8b1e2…` 与 GR14 `0120c5e1…` 均已接受；不得重复执行。GR2A / GR2BR1 /
+  GR11 `04ffebe8…`、GR12R3 `0ecd8d15…`、GR13R2 `9b8b1e2…`、GR14 `0120c5e1…` 与 GR15R8
+  `7f3826f4…` 均已接受；不得重复执行。GR2A / GR2BR1 /
   GR2CR1 只是后续任务的钉死输入或锚，不是其 parent。GR6 `a76a2c6…` 同样未接受，只能按 GR6R1
   归档任务书解释其历史地位，不得作为 parent。GR12 `5e97492…` 也已验收为 `Redo`，不得作为 parent、
   accepted baseline 或可恢复执行光标。GR12R1 `a0bdb775…` 与 GR12R2 `e11a589…` 也已验收为 `Redo`，
   同样不得作为 parent 或 accepted evidence；GR12R3 已完成对它们的限定纠正，不得重开。
   GR13 `f206463d…` 与 GR13R1 `0bedadfa…` 也已验收为 `Redo`，不得作为 parent 或 accepted evidence；
   GR13R2 已完成对它们的限定纠正。不得恢复被退回的 GR2B / GR2C / GR3 / GR6 / GR12 / GR12R1 /
-  GR12R2 / GR13 / GR13R1 / GR15 / GR15R1 / GR15R2 / GR15R3 或任何已完成执行光标；当前唯一光标是 ACTIVE GR15R4 任务书。
+  GR12R2 / GR13 / GR13R1 / GR15 / GR15R1 / GR15R2 / GR15R3 / GR15R4 / GR15R5 / GR15R6 / GR15R7 或任何已完成执行光标；当前光标为 GR16R5 正式 Redo、等待 owner decision；GR16R2 / GR16R3 / GR16R4 / GR16R5 同样不得作为 parent。GR16R1 `0b3d497c…` 与 GR16 `9ba469ca…` 均已 Redo，不得作为 parent。
   GR9 的 exact-count closure、GR10 的 registry、GR11 的
   `trace.missing`、GR12R3 的 `trace.wrong_param_calls`、GR13R2 的 `trace.satisfied` 与 GR14 的
-  `trace.invalid_tool_calls` 单 primitive 结论都不得扩成真实 selector、
-  candidate、cohort execution、primitive 组合、promotion、freeze、G0、hidden 或其它 repair。GR15R4 只允许
-  纠正 `trace.calls_made` 同一单 primitive 交付的实际 product read / rebuild 顺序自保护，
-  不得借此恢复或组合前四项。GR15 `08b70f5…`、GR15R1 `160db5f…`、GR15R2 `c42faaef…` 与
-  GR15R3 `4d6a419…` 均已 `Redo`，不得作为 parent 或 accepted evidence。
+  `trace.invalid_tool_calls`、GR15R8 的 `trace.calls_made` 单 primitive 结论都不得扩成真实 selector、
+  candidate、cohort execution、primitive 组合、promotion、freeze、G0、hidden 或其它 repair。GR16R1
+  对既有 `len(trace.failure_paths_fired)` 的 pre-primitive 读取防线纠正已裁决为 Redo，不得借此恢复或组合前五项。GR15 `08b70f5…`、GR15R1 `160db5f…`、GR15R2 `c42faaef…` 与
+  GR15R3 `4d6a419…`、GR15R4 `a7413a4…`、GR15R5 `87be12f…`、GR15R6 `64f173b…`、GR15R7 `fc281526…` 均已 `Redo`，不得作为 parent 或 accepted evidence。
 
 ## 9. 下一次更新本文件时必须保留
 
@@ -1140,14 +2231,23 @@ ancestry，不作 expected science。accepted commits、原器材与所有冻结
 
 ### 10.3 `docs/` 现存文件与各自的作用
 
-**入口（当前 4 份，只有这 4 份能决定「现在做什么」）**
+**当前入口（3 份；GR16R5 正式 Redo，等待 owner decision，无 ACTIVE 实验任务）**
 
 | 文件 | 作用 | 谁能改 |
 |---|---|---|
 | `EXECUTION_POLICY.md` | 长期顺序唯一权威，LOCKED | ⛔⛔ 只有 owner 明确同意才能改，Codex 与 Claude 一律禁止 |
-| `CODEX-HANDOFF-STAGE0A-D2-REVIEW-2026-09-03.md` | 本文件：实验线唯一滚动入口；当前光标为 ACTIVE GR15R4 | Codex |
-| `TASKBOOK-STAGE0A-GR15R4-DEVELOPMENT-TRACE-CALLS-MADE-PRE-PRODUCT-READ-CLOSURE-CORRECTION-2026-09-24.md` | 当前唯一 ACTIVE 实验任务书；只纠正实际 product read / rebuild 顺序自保护，完成即归档 | Codex 下发；Claude Code 执行 |
+| `CODEX-HANDOFF-STAGE0A-D2-REVIEW-2026-09-03.md` | 本文件：实验线唯一滚动入口；GR16R5 正式 Redo（§4.43），accepted head GR15R8，等待 owner decision | Codex |
 | `HANDOFF-2026-09-04.md` | Knote 侧仍然生效的约束 + 还没做完的事。⛔ 已精简，⛔ 不含执行光标 | 每窗结束时补未完成项 |
+
+GR16R5 原执行合同已裁决为 Redo，归档至 `archive/stage0a-taskbooks/TASKBOOK-STAGE0A-GR16R5-DEVELOPMENT-TRACE-FAILURE-PATHS-FIRED-METHOD-CALLABLE-ORIGIN-CLOSURE-CORRECTION-2026-10-13.md`；仅供历史审计，不恢复执行。
+
+GR16R4 原执行合同已裁决为 Redo，归档至 `archive/stage0a-taskbooks/TASKBOOK-STAGE0A-GR16R4-DEVELOPMENT-TRACE-FAILURE-PATHS-FIRED-LOCAL-CALLABLE-BINDING-CLOSURE-CORRECTION-2026-10-10.md`；仅供历史审计。
+
+GR16R3 原执行合同已裁决为 Redo，归档至 `archive/stage0a-taskbooks/TASKBOOK-STAGE0A-GR16R3-DEVELOPMENT-TRACE-FAILURE-PATHS-FIRED-CALLABLE-RETURN-CAPTURE-CLOSURE-CORRECTION-2026-10-10.md`；仅供历史审计。
+
+GR16R2 原执行合同已裁决为 Redo，归档至 `archive/stage0a-taskbooks/TASKBOOK-STAGE0A-GR16R2-DEVELOPMENT-TRACE-FAILURE-PATHS-FIRED-CALLABLE-DEFAULT-CAPTURE-CLOSURE-CORRECTION-2026-10-07.md`；仅供历史审计。
+
+重复验收任务书已撤销并归档至 `archive/stage0a-taskbooks/TASKBOOK-STAGE0A-GR16R1-INDEPENDENT-ACCEPTANCE-2026-10-07.md`；仅留历史，不是开工入口。
 
 **任务库与研究线**
 
@@ -1180,6 +2280,10 @@ ancestry，不作 expected science。accepted commits、原器材与所有冻结
 `RELEASE.md` · `RELEASE_NOTES_v0.5.0/0.6.0/0.6.1/0.6.2.md` · `DB_BACKUP_AND_RECOVERY.md` ·
 `PRIVACY.md`（改它必须同时改 `site/privacy.html` 与 `scripts/site-zh-privacy.html` 并重跑
 `node scripts/build-site-zh.mjs`）· `README.md`（docs 目录索引，改动文件时同步更新）。
+
+**视频制作方案（设计交付件，不是产品 / 实验任务入口）**
+
+`promo/video-2026-10-29/README.md`：ChatGPT 署名的 promo / tutorial 设计包入口；分镜、旁白、演示录屏说明、竞品来源与素材 CSV 均在同目录。状态以入口首屏为准，不选择或改变本文件的实验光标。
 
 ### 10.4 2026-09-05 的一次性整理回执（Claude Code 执行，⛔ 未提交）
 

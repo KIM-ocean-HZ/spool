@@ -9,16 +9,19 @@
 
 ---
 
-## 一、入口（只有这几份，2026-09-24 现状）
+## 一、入口（只有这几份，2026-10-14 现状）
 
 | 文件 | 干什么用 | 谁在改 |
 |---|---|---|
 | `EXECUTION_POLICY.md` | **长期顺序的唯一权威**，LOCKED。产品 / 记忆研究 / 营销的主次、交替节奏、任务准入 | 只有 Ocean 明确同意才能改，其他一律禁止 |
 | `STRATEGY-2026-11-13.md` | **方向和一年计划**（Ocean 2026-11-13 定）：「想清楚了，再问 AI」、三样长处、一年四季和三个检查点、这一年不做的、还没查清的事。它不决定今天做哪一件：顺序看上一行，光标看下一行 | 方向变了才改，要 Ocean 明说 |
 | `HANDOFF-2026-11-09.md` | **唯一 active HANDOFF**：产品线的现状和唯一下一步（2026-11-14 起是 P21 重构问卷和报名表筛选；这一年的顺序在 §5.0）、全部待办、一直生效的规矩；实验线在 Knote 这边的约束在它的附录 A（实验线的光标仍只看 Codex handoff）。2026-11-09 取代 `archive/HANDOFF-2026-09-04.md` | 每窗结束时更新 |
-| `CODEX-HANDOFF-STAGE0A-D2-REVIEW-2026-09-03.md` | **实验线（Stage 0-a）的唯一滚动入口**；GR15R3 已 `Redo`，当前光标为 ACTIVE GR15R4。文件名里的日期和 D2 只是历史，内容是最新的 | Codex |
-| `TASKBOOK-STAGE0A-GR15R4-DEVELOPMENT-TRACE-CALLS-MADE-PRE-PRODUCT-READ-CLOSURE-CORRECTION-2026-09-24.md` | **当前唯一 ACTIVE 实验任务书**；只纠正实际 product read / rebuild 顺序自保护，保留既有语义绑定与科学结果，完成即归档 | Codex 下发；Claude Code 执行 |
+| `CODEX-HANDOFF-STAGE0A-D2-REVIEW-2026-09-03.md` | **实验线（Stage 0-a）的唯一滚动入口**；GR16R5 正式 Redo（§4.43），执行回执保留在 §4.42；accepted head 仍为 GR15R8，等待 owner decision，无 ACTIVE 实验任务。文件名里的日期和 D2 只是历史，内容是最新的 | Codex |
 | `TASKBOOK-P<n>-*.md` | **当前 ACTIVE 的产品任务书是 `TASKBOOK-P21-SURVEY-REBUILD-2026-11-14.md`**（重构问卷和报名表筛选，11-14 下发）；还没下发的 P22 – P31 是草稿，在 `taskbook-drafts/`（首屏 `DRAFT — 未下发`，不授权施工；下发规矩在 HANDOFF 附录 H 第 6 条）。P1 – P20 的任务书和回执都在 `archive/product-taskbooks/`（P20 修 P19 拍摄时发现的问题、v0.8.2 已发，11-12；11-15 验收通过）；这一窗做什么、按什么顺序、怎么验。做完移进 `archive/product-taskbooks/`。产品线的任务库与红线在 `HANDOFF-2026-11-09.md` §5 和附录 B – G | 下发窗写；执行窗执行 |
+
+GR16R5 原执行合同已裁决为 Redo 并归档至 `archive/stage0a-taskbooks/TASKBOOK-STAGE0A-GR16R5-DEVELOPMENT-TRACE-FAILURE-PATHS-FIRED-METHOD-CALLABLE-ORIGIN-CLOSURE-CORRECTION-2026-10-13.md`，仅供历史审计；GR16R4 及更早合同同样已归档。当前等待 owner decision；accepted chain 仍 GR15R8，无 ACTIVE 实验任务，未创建下一轮纠正任务或 GR17。
+
+重复验收任务书 `archive/stage0a-taskbooks/TASKBOOK-STAGE0A-GR16R1-INDEPENDENT-ACCEPTANCE-2026-10-07.md` 已撤销归档，未执行，不作为开工或强制重跑依据。
 
 两份 handoff 的分工，别搞混：**实验线的执行光标只在 Codex 那一份**（它的 §8 列了所有不许恢复的旧光标）；
 **产品线的光标和唯一下一步只在 `HANDOFF-2026-11-09.md` §2**（2026-09-30 起产品线就在 HANDOFF 里），那里不写实验线的「下一步」。
@@ -62,6 +65,18 @@
 
 ---
 
+### 已确认的宣传备用图
+
+`promo/2026-10-17/README.md`：用户确认的两张 Spool 概念宣传图（每日积累 / AI 工作流程），原始 PNG、来源说明与 SHA-256。仅作宣发备用，非界面截图或发布凭据；portfolio 已有对应原图与网页用版本。
+
+### 视频制作方案 · ChatGPT 版
+
+[promo/video-2026-10-29/README.md](promo/video-2026-10-29/README.md)：**COMPLETE · 方案署名 ChatGPT，2026-10-29 v1.0**。包含 150 秒宣传片分镜与英文旁白、17 分钟真人教程脚本、v0.7.4 演示环境与拍摄说明、竞品反馈来源和 CSV 素材清单。仅文档设计已交付，尚未拍摄或制作成片；按用户本轮授权准备，不改变产品 / 研究光标或长期方针。
+
+### 视频制作方案 · 第二份「一张捕捉卡」
+
+[promo/video-2026-10-29-capture-card/README.md](promo/video-2026-10-29-capture-card/README.md)：同一需求的第二份方案（2026-10-29），和上面那份并列、互不改动；同日按用户反馈定稿、覆盖了初稿；10-31 按用户的新开头构想改成第三版。宣传片 2:00（求职故事；开头是凌乱桌面、满屏「如果」、双击，窗口绕着 Spool 图标转、一扇扇被拽进去，接标准版标志动画（11-01 改）；之后每段实录把一句「如果」翻成答案；超级 agent 点名；结尾所有「如果」翻面、卷成数据卷轴、收回图标；渲染用代码做的 3D 动效；MCP 为主；换 AI 接力；英文 AI 配音），教程约 26 分钟、13 章、中英两版，另附调研与口径核对、制作流程（自动录屏、代码渲染、用户精剪）、镜头清单和分阶段提示词。设计稿：P0–P1c 已做完，11-01 验收后开头由 Claude Code、Codex 各做一版再挑，尚未拍摄正片；按用户本轮授权准备，不改变产品 / 研究光标或长期方针。
+
 ## 五、手册（需要时查，不常改）
 
 | 文件 | 干什么用 |
@@ -84,7 +99,7 @@
 - 已经全做完的那几摊：`TEN-ITEMS-2026-08-27.md`、`FIND-UX-2026-08-27.md`、`COMPRESS-UX-2026-08-22.md`、`CHECK-DISPLAY-2026-08-21.md`、`FIX_TAILWIND_ALPHA-2026-08-19.md`
 - 已落地的设计稿：`DESIGN_CAPTURE_FOCUS.md`、`DESIGN_FIRST_DAY_VALUE.md`、`DESIGN_LIBRARY_TRANSFER.md`、`DESIGN_VALENTINE_EDITION.md`；2026-10-13 又移进 10 份（P9A 核过早已全部落地，Ocean 10-11 第 84 条）：`DESIGN_AI_ENGINE.md`、`DESIGN_CONTEXT_HYGIENE.md`、`DESIGN_FOLLOW_UP.md`、`DESIGN_MCP_INTENT_ROUTING.md`、`DESIGN_MCP_WRITE_ROLE.md`、`DESIGN_PROJECT_FILES.md`、`DESIGN_WORKBENCH.md`、`DESIGN_WORKSPACE_PACK.md`、`COMPRESS-UX-R2-2026-08-22.md`、`FEEDBACK-FORM-2026-08-22.md`
 - 留档不开工的：`PROMO-VERDICT-2026-08-20.md`、`DEMO_SCRIPT.md`、`REVIEW_MEMTRAPBENCH-2026-08-21.md`、`MCP_LAB_PROMPT.md`、`MCP_SCREENSHOT_GUIDE.md`
-- `archive/stage0a-taskbooks/` —— Stage 0-a 已验收 / 已被纠正的 36 份任务书（D2 到 GR15R3）；根目录当前另有 1 份 ACTIVE GR15R4 任务书
+- `archive/stage0a-taskbooks/` —— Stage 0-a 已裁决的历史任务书（至 GR16R5，最近正式 verdict 为 Redo；原执行合同已归档）；另收录已撤销、未执行的 GR16R1 重复验收任务书；当前等待 owner decision，无 ACTIVE 实验任务
 - `archive/HANDOFF-2026-09-04-FULL-PROCESS-LOG.md` —— 精简前的 2455 行完整过程流水（逐窗记录、已消耗的预算与提示词），一个字没删
 
 原有的子目录：`archive/mcp-reviews/`（三轮 MCP 评审原始记录）、`archive/site/`（官网改版评审）、`archive/promo-2026-08-20-discarded/`（被否掉的第一批物料）。

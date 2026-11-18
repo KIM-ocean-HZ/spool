@@ -1,6 +1,9 @@
 # Claude Code 任务书 —— Stage 0-a development wave2 · GR15R4 pre-product read closure correction
 
-> **状态：ACTIVE — 本文件是当前唯一可执行实验任务书。**
+> **状态：COMPLETE — 2026-09-25 已验收，verdict：`Redo`。留档不开工。**
+>
+> 后续唯一任务书：`docs/archive/stage0a-taskbooks/TASKBOOK-STAGE0A-GR15R5-DEVELOPMENT-TRACE-CALLS-MADE-SEMANTIC-COMPLETION-CLOSURE-CORRECTION-2026-09-25.md`。
+> 验收证据与执行过程说明见 canonical handoff §4.22；本轮不进入 accepted chain。
 >
 > **唯一交付：** 从 accepted GR14 独立重建 GR15 同一单 primitive 交付，只纠正 GR15R3 的
 > pre-product ordering self-provenance 缺口。当前正常执行顺序和科学结果没有被推翻；本轮不重开实验。
