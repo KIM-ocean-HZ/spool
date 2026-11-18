@@ -10,28 +10,22 @@
    retire/correction 作废/更正; Input Monitoring 输入监控;
    Accessibility 辅助功能; Automation 浏览器自动化. */
 
-/* 问卷星 (wjx.cn) — the hosted feedback form on the CHINESE page
-   (WORKPLAN-2026-08-20 §6.4.2, Ocean 拍板: 大陆可用 · 免费 · 使用量最多).
-   ⚠️ The English page has its OWN form, on SurveyMars (问卷星's international arm),
-   hard-coded in site/index.html. Two forms rather than one shared link, because 问卷星
-   is a Chinese-language site on mainland servers: a reader arriving from HN gets a slow
-   page they cannot read.
-   ⭐ The questions, and the reasoning behind every one of them (including the ones
-   deliberately left out): docs/FEEDBACK-FORM-2026-08-22.md.
+/* 问卷星 — the beta sign-up on the CHINESE page (2026-11-05). The English page has its OWN form,
+   on SurveyMars (问卷星's international arm), hard-coded in site/index.html: 问卷星 is a
+   Chinese-language site on mainland servers, so a reader arriving from HN gets a slow page they
+   cannot read. The questions: ~/Movies/Spool-video/review/survey-2026-11/01-signup-v3.md.
 
-   ⛔ **A LINK, deliberately, not an embedded iframe.** An embed would load the form
-   service's scripts for every visitor who merely scrolls past — contacting a third party
-   from a page whose whole claim is that it contacts nobody. A link moves that moment to
-   the click, where the visitor can be told what it means first. That is the difference
-   between the note below being true and being spin.
+   ⛔ **A LINK, deliberately, not an embedded iframe.** An embed would load the form service's
+   scripts for every visitor who merely scrolls past — contacting a third party from a page whose
+   whole claim is that it contacts nobody. A link moves that moment to the click, where the
+   visitor can be told what it means first (beta-note).
 
-   ⛔ **The link and the honest note ship together or not at all.** 「什么都不收集」 stops
-   being true the second a hosted form sits beside it, and the two live in different files,
-   so build-site-zh.test.mjs asserts the pairing instead of trusting whoever edits next. */
-const ZH_FORM_URL = 'https://v.wjx.cn/vm/hy3KvuB.aspx';
-/* 问卷星 — the beta sign-up on the CHINESE page (2026-11-05, Ocean: two forms like the feedback
-   survey — this one on 问卷星, the English page's on SurveyMars, hard-coded in site/index.html).
-   The questions: ~/Movies/Spool-video/review/promo-v4/23-beta-signup-form.md. */
+   ⛔ **The link and the note saying where the answers go ship together or not at all** — they
+   live in different files, so build-site-zh.test.mjs asserts the pairing.
+
+   The feedback section used to link an eight-question survey too (2026-08-22,
+   docs/FEEDBACK-FORM-2026-08-22.md). 2026-11-18, Ocean: both copies deleted, feedback is email
+   only — so that section must not link a hosted form again. */
 const ZH_BETA_FORM_URL = 'https://v.wjx.cn/vm/r7aA0kE.aspx';
 
 /* <head> per page: the English HTML's title/description/OG text has no
@@ -90,7 +84,7 @@ export const ZH = {
   'beta-banner': 'Spool 正在招募第一批内测用户。<a href="./#beta">报名 →</a>',
   'beta-k': '招募内测',
   'beta-h': '来帮我试用 Spool',
-  'beta-p': '我在找第一批内测用户：把 Spool 用在一件真事上——一门课、一份申请、一个项目——至少用两次、中间隔一天以上，然后告诉我哪里好用、哪里不好用。内测还没开始，现在报名，开始时我会联系你。',
+  'beta-p': '我在找第一批内测用户：手上正好有一件已经开始、还要两周以上才能做完的事——一份申请、一篇论文、一个要反复掂量的决定——并且愿意在 Spool 上做这件事满两周，最后填一份 10 分钟左右的反馈问卷。被选入内测的每个人，都能免费得到 Spool 的永久使用权。内测还没开始，现在报名，开始时我会联系你。',
   'beta-cta': `<a class="btn btn-primary" href="${ZH_BETA_FORM_URL}" rel="noopener noreferrer" target="_blank">报名内测</a>`,
   'beta-note': '报名表托管在问卷星，你填的内容存在他们的服务器上。有问题发邮件到 <a href="mailto:jinhz0531@gmail.com?subject=Spool%20%E5%86%85%E6%B5%8B">jinhz0531@gmail.com</a>。',
 
@@ -247,12 +241,6 @@ export const ZH = {
   'fb-k': '用过一阵之后',
   'fb-h': '告诉我用得怎么样。',
   'fb-p': 'Spool 不需要账号，也没有任何遥测——你怎么用它，没有一个字会传到我这里，这也意味着它没法替你告诉我任何事。好用也好，坏了也好，你不说我就不知道。',
-  'fb-q-cta': `<a class="btn btn-primary" href="${ZH_FORM_URL}" rel="noopener noreferrer" target="_blank">回答八个问题</a>`,
-  'fb-q-note':
-    '两分钟。只有第一题必答，其余都可以跳过。' +
-    '这个页面本身没有服务器，也不收集任何东西；但问卷不是这个页面——那是问卷星的页面，' +
-    '你在那儿写的内容存在他们的服务器上，不经过这里。想让内容只在你和我之间，就用下面的邮件。',
-  'fb-or': '或者，给我写封信',
   'fb-l-what': '发生了什么，或者你希望它能做什么',
   'fb-l-where': '版本和系统——可不填',
   'fb-l-reply': '你的邮箱，想要回复的话——可不填',
@@ -260,7 +248,7 @@ export const ZH = {
   'fb-note':
     '按钮只是打开你自己的邮件应用，信已经写好了，发不发由你决定——' +
     '不会有任何东西自己从这个页面发出去。',
-  'fb-alt': `两条都不想走也行：<a href="mailto:jinhz0531@gmail.com?subject=Spool">直接给我发邮件</a> · <a href="https://github.com/KIM-ocean-HZ/spool/issues/new/choose">在 GitHub 提一个 issue</a> · 想知道有没有新版本，<a href="https://github.com/KIM-ocean-HZ/spool/releases">盯着发布页</a>就行。`,
+  'fb-alt': `也可以：<a href="mailto:jinhz0531@gmail.com?subject=Spool">直接给我发邮件</a> · <a href="https://github.com/KIM-ocean-HZ/spool/issues/new/choose">在 GitHub 提一个 issue</a> · 想知道有没有新版本，<a href="https://github.com/KIM-ocean-HZ/spool/releases">盯着发布页</a>就行。`,
 
   'foot-copy': 'Spool 思簿 · © 2026 · 保留所有权利',
   'foot-home': '首页',

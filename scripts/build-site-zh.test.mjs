@@ -36,7 +36,9 @@ describe('site/zh is in sync with the English pages', () => {
      reason to trust it is that it does not. It cannot be caught by reading a diff either,
      because the link and the claim live in different files and only one of them looks
      urgent. Both languages, because the two pages are edited through different paths: the
-     English one by hand, the Chinese one through site-zh-strings.mjs. */
+     English one by hand, the Chinese one through site-zh-strings.mjs.
+     2026-11-18: the feedback section's eight-question survey is gone (Ocean: feedback is email
+     only); the one hosted form left is the beta sign-up, whose note says where answers go. */
   it('never offers a hosted form beside a claim that nothing is collected', () => {
     /* ⚠️ Whitespace-collapsed before matching. The English page is hand-wrapped at ~100
        columns, so any sentence long enough to be worth asserting on is split across lines —
@@ -45,21 +47,26 @@ describe('site/zh is in sync with the English pages', () => {
     const flat = (h) => h.replace(/\s+/g, ' ');
     const english = flat(readFileSync(new URL('../site/index.html', import.meta.url), 'utf8'));
     const pairs = [
-      ['site/index.html', english, 'surveymars.com', 'collects nothing itself', 'stored on their servers'],
-      ['site/zh/index.html', flat(pages['index.html']), 'v.wjx.cn', '这个页面本身没有服务器，也不收集任何东西', '存在他们的服务器上'],
+      ['site/index.html', english, 'surveymars.com', 'stored on their servers'],
+      ['site/zh/index.html', flat(pages['index.html']), 'v.wjx.cn', '存在他们的服务器上'],
     ];
-    for (const [name, html, host, hedged, whereItGoes] of pairs) {
+    for (const [name, html, host, whereItGoes] of pairs) {
       expect(html, `${name} lost its form link`).toContain(host);
-      // The unqualified claim is gone…
+      // The unqualified claim stays gone…
       expect(html, `${name} still makes the bare no-collection claim`).not.toContain(
         'This page has no server and collects nothing. The',
       );
       expect(html, `${name} still makes the bare no-collection claim`).not.toContain(
         '这个页面没有服务器，什么都不收集。',
       );
-      // …replaced by one that says what the page does and what the form does.
-      expect(html, `${name} lost the hedged claim`).toContain(hedged);
+      // …and the form that remains says where the answers go.
       expect(html, `${name} does not say where the answers go`).toContain(whereItGoes);
+      // The feedback section links no hosted form at all (2026-11-18).
+      const feedback = /id="feedback"[\s\S]*?<\/section>/.exec(html)?.[0] ?? '';
+      expect(feedback, `${name} lost its feedback section`).toContain('mailto:jinhz0531@gmail.com');
+      expect(feedback, `${name} links a hosted form from the feedback section`).not.toMatch(
+        /surveymars\.com|wjx\.(cn|top)/,
+      );
     }
     // ⭐ And the route that needs no third party at all stays, on both pages — §6.4.2 落地
     // 第 3 件. A form service being down, blocked or unreadable must not cost the only way
@@ -87,7 +94,7 @@ describe('site/zh is in sync with the English pages', () => {
     expect(html).toContain(` aria-label="${escapeAttribute(ZH['aria-promo'])}"`);
   });
 
-  /* The beta sign-up (2026-11-05) is two hosted forms like the feedback survey: SurveyMars from the
+  /* The beta sign-up (2026-11-05) is two hosted forms: SurveyMars from the
      English page, 问卷星 from the Chinese one. Each sits beside a note saying where the answers go,
      and email stays as the route with no third party. Also the guard against shipping the
      placeholder hrefs the block was built with before the forms existed. */
