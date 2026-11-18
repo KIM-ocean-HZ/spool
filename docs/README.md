@@ -15,9 +15,9 @@
 |---|---|---|
 | `EXECUTION_POLICY.md` | **长期顺序的唯一权威**，LOCKED。产品 / 记忆研究 / 营销的主次、交替节奏、任务准入 | 只有 Ocean 明确同意才能改，其他一律禁止 |
 | `STRATEGY-2026-11-13.md` | **方向和一年计划**（Ocean 2026-11-13 定）：「想清楚了，再问 AI」、三样长处、一年四季和三个检查点、这一年不做的、还没查清的事。它不决定今天做哪一件：顺序看上一行，光标看下一行 | 方向变了才改，要 Ocean 明说 |
-| `HANDOFF-2026-11-09.md` | **唯一 active HANDOFF**：产品线的现状和唯一下一步（2026-11-14 起是 P21 重构问卷和报名表筛选；这一年的顺序在 §5.0）、全部待办、一直生效的规矩；实验线在 Knote 这边的约束在它的附录 A（实验线的光标仍只看 Codex handoff）。2026-11-09 取代 `archive/HANDOFF-2026-09-04.md` | 每窗结束时更新 |
+| `HANDOFF-2026-11-09.md` | **唯一 active HANDOFF**：产品线的现状和唯一下一步（2026-11-18 起是下发 P22 换讲法；P21 已做完、待验收；这一年的顺序在 §5.0）、全部待办、一直生效的规矩；实验线在 Knote 这边的约束在它的附录 A（实验线的光标仍只看 Codex handoff）。2026-11-09 取代 `archive/HANDOFF-2026-09-04.md` | 每窗结束时更新 |
 | `CODEX-HANDOFF-STAGE0A-D2-REVIEW-2026-09-03.md` | **实验线（Stage 0-a）的唯一滚动入口**；GR16R5 正式 Redo（§4.43），执行回执保留在 §4.42；accepted head 仍为 GR15R8，等待 owner decision，无 ACTIVE 实验任务。文件名里的日期和 D2 只是历史，内容是最新的 | Codex |
-| `TASKBOOK-P<n>-*.md` | **当前 ACTIVE 的产品任务书是 `TASKBOOK-P21-SURVEY-REBUILD-2026-11-14.md`**（重构问卷和报名表筛选，11-14 下发）；还没下发的 P22 – P31 是草稿，在 `taskbook-drafts/`（首屏 `DRAFT — 未下发`，不授权施工；下发规矩在 HANDOFF 附录 H 第 6 条）。P1 – P20 的任务书和回执都在 `archive/product-taskbooks/`（P20 修 P19 拍摄时发现的问题、v0.8.2 已发，11-12；11-15 验收通过）；这一窗做什么、按什么顺序、怎么验。做完移进 `archive/product-taskbooks/`。产品线的任务库与红线在 `HANDOFF-2026-11-09.md` §5 和附录 B – G | 下发窗写；执行窗执行 |
+| `TASKBOOK-P<n>-*.md` | **现在根目录没有 ACTIVE 的产品任务书**：P21（重构问卷和报名表筛选）11-18 做完、待 Ocean 验收，已移进 `archive/product-taskbooks/`；下一件 P22 在下一窗下发。还没下发的 P22 – P31 是草稿，在 `taskbook-drafts/`（首屏 `DRAFT — 未下发`，不授权施工；下发规矩在 HANDOFF 附录 H 第 6 条）。P1 – P21 的任务书和回执都在 `archive/product-taskbooks/`（P20 修 P19 拍摄时发现的问题、v0.8.2 已发，11-12；11-15 验收通过。P21 问卷和报名表，11-18 做完、待验收）；这一窗做什么、按什么顺序、怎么验。做完移进 `archive/product-taskbooks/`。产品线的任务库与红线在 `HANDOFF-2026-11-09.md` §5 和附录 B – G | 下发窗写；执行窗执行 |
 
 GR16R5 原执行合同已裁决为 Redo 并归档至 `archive/stage0a-taskbooks/TASKBOOK-STAGE0A-GR16R5-DEVELOPMENT-TRACE-FAILURE-PATHS-FIRED-METHOD-CALLABLE-ORIGIN-CLOSURE-CORRECTION-2026-10-13.md`，仅供历史审计；GR16R4 及更早合同同样已归档。当前等待 owner decision；accepted chain 仍 GR15R8，无 ACTIVE 实验任务，未创建下一轮纠正任务或 GR17。
 
