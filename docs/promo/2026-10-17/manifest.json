@@ -1,0 +1,91 @@
+{
+  "date": "2026-10-17",
+  "project": "Spool",
+  "status": "user-accepted-concept-reserve-assets",
+  "authorization": "Store the accepted workflow concept and the previously selected daily-progress concept in Knote and portfolio as reserve concept images.",
+  "classification": "AI-generated promotional concept artwork; not application screenshots or release evidence.",
+  "page_integration": "Prepared assets and figure metadata only. The existing Spool page is unchanged.",
+  "masters_preserved_byte_for_byte": true,
+  "images": [
+    {
+      "id": "daily-progress",
+      "title": "Every day, a little further.",
+      "file": "spool-concept-daily-progress.png",
+      "src": "/Users/hzjin/Desktop/Knote/artifacts/spool-promo-2026-10-16/round-2-english/spool-v2-03-daily-progress.png",
+      "created": "2026-10-16",
+      "width": 1672,
+      "height": 941,
+      "bytes": 2202065,
+      "sha256": "81924557be72c62bd2993fc685ff4a85ca74a8c919452cb976967f0da16b2797",
+      "web": [
+        {
+          "file": "concept-daily-progress-2026-10-17-640.webp",
+          "url": "/img/spool/concept-daily-progress-2026-10-17-640.webp",
+          "width": 640,
+          "height": 360,
+          "quality": 86,
+          "bytes": 34988,
+          "sha256": "e361241789023c5218df9046b440437b9385d644f7ee3c23ba909a1c8f17b94e"
+        },
+        {
+          "file": "concept-daily-progress-2026-10-17-960.webp",
+          "url": "/img/spool/concept-daily-progress-2026-10-17-960.webp",
+          "width": 960,
+          "height": 540,
+          "quality": 86,
+          "bytes": 66960,
+          "sha256": "ebf9c7926b49668cc8065c5861245c15947a858d346141f1913b93ccf66aaf21"
+        },
+        {
+          "file": "concept-daily-progress-2026-10-17-1440.webp",
+          "url": "/img/spool/concept-daily-progress-2026-10-17-1440.webp",
+          "width": 1440,
+          "height": 810,
+          "quality": 86,
+          "bytes": 123590,
+          "sha256": "65a087e980bb6a937c900ef24c5c553443e8bf96b698ce3e3280726148b203b6"
+        }
+      ]
+    },
+    {
+      "id": "ai-workflow",
+      "title": "Think with AI. Keep the thread.",
+      "file": "spool-concept-ai-workflow.png",
+      "src": "/Users/hzjin/Desktop/Knote/artifacts/spool-functional-2026-10-17/approved-detail-restoration/spool-typewriter-03-restored-official-logo.png",
+      "created": "2026-10-17",
+      "width": 1672,
+      "height": 941,
+      "bytes": 3249367,
+      "sha256": "5cf4a18105ef7943f291fd4d67d82b41eb8e611bd9dd831add3725229e0aeb45",
+      "web": [
+        {
+          "file": "concept-ai-workflow-2026-10-17-640.webp",
+          "url": "/img/spool/concept-ai-workflow-2026-10-17-640.webp",
+          "width": 640,
+          "height": 360,
+          "quality": 86,
+          "bytes": 48338,
+          "sha256": "feab8bb7651751b36bd6c1c37a5b3a65dcac2c35c32cb94b29d0e2815d0cdb4b"
+        },
+        {
+          "file": "concept-ai-workflow-2026-10-17-960.webp",
+          "url": "/img/spool/concept-ai-workflow-2026-10-17-960.webp",
+          "width": 960,
+          "height": 540,
+          "quality": 86,
+          "bytes": 87088,
+          "sha256": "563a2a8c52d10ebe8927221d06b5ab8f01c3bba15f189c225d66981009312f5b"
+        },
+        {
+          "file": "concept-ai-workflow-2026-10-17-1440.webp",
+          "url": "/img/spool/concept-ai-workflow-2026-10-17-1440.webp",
+          "width": 1440,
+          "height": 810,
+          "quality": 86,
+          "bytes": 153466,
+          "sha256": "1b79f8cf3b2fde4d62a6ebcba18e5a8f5f34e3fa34fb31c654e0c1c9e26df021"
+        }
+      ]
+    }
+  ]
+}

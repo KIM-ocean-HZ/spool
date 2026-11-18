@@ -1,0 +1,37 @@
+{
+  "date": "2026-10-17",
+  "status": "concept-render-deliverables-awaiting-user-selection",
+  "tool": "image_gen.imagegen",
+  "mode": "image-edit",
+  "transparent_background": false,
+  "reference": "/Users/hzjin/.codex/generated_images/01a146d2-5548-7aa0-8556-eb83d19a9e94/exec-fc4a9f83-5a21-4772-b79b-81d0f8eae3bd.png",
+  "images": [
+    {
+      "title": "Shared typewriter",
+      "file": "spool-retro-01-typewriter.png",
+      "source": "/Users/hzjin/.codex/generated_images/01a146d2-5548-7aa0-8556-eb83d19a9e94/exec-b50d6668-de80-414b-a2e6-3c8a9007a43e.png",
+      "width": 1672,
+      "height": 941,
+      "bytes": 1974084,
+      "sha256": "9ebe9c9df4bd253338b0748c9ed94b8e7aea283f298580f26fccd0fdbece1d0c"
+    },
+    {
+      "title": "Shared editorial desk",
+      "file": "spool-retro-02-editorial-desk.png",
+      "source": "/Users/hzjin/.codex/generated_images/01a146d2-5548-7aa0-8556-eb83d19a9e94/exec-75571ddf-9187-411a-97fc-c94185ab6dcf.png",
+      "width": 1672,
+      "height": 941,
+      "bytes": 2112738,
+      "sha256": "2d64c6e7f6c13a8595ce29357f68d73349e46f50dadc629d5da330f20d896cb9"
+    },
+    {
+      "title": "Shared proof press",
+      "file": "spool-retro-03-proof-press.png",
+      "source": "/Users/hzjin/.codex/generated_images/01a146d2-5548-7aa0-8556-eb83d19a9e94/exec-01059d18-433a-4620-a368-be044000f65d.png",
+      "width": 1672,
+      "height": 941,
+      "bytes": 1986666,
+      "sha256": "18f2ff493b7fa838fff5d44a2a1873401cd3dcc39a190e1281613cbfb45f3f5a"
+    }
+  ]
+}

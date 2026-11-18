@@ -1,0 +1,29 @@
+{
+  "date": "2026-10-17",
+  "status": "approved-design-detail-restored-with-official-logo",
+  "user_authorization": "Directly composite official logo material; preserve other artwork pixels.",
+  "final": "spool-typewriter-03-restored-official-logo.png",
+  "width": 1672,
+  "height": 941,
+  "restoration_tool": "built-in image_gen image edit",
+  "logo_method": "Deterministic composition of official SVG rasterized with Sharp; no logo redraw.",
+  "restoration_source": "/Users/hzjin/.codex/generated_images/01a146d2-5548-7aa0-8556-eb83d19a9e94/exec-60d3ba4c-624e-4ca7-b8cd-9d4c5cc2423c.png",
+  "official_logo_source": "/Users/hzjin/Desktop/Knote/site/assets/spool-logo-full.svg",
+  "official_logo_sha256": "c73f6f57cc6ee0aae641b3f74ad1b64a1fde065c5853c8b9be9964fd662cc98a",
+  "replacement_region": {
+    "left": 64,
+    "top": 68,
+    "width": 64,
+    "height": 64
+  },
+  "official_icon_placement": {
+    "left": 66,
+    "top": 70,
+    "width": 60,
+    "height": 60
+  },
+  "changed_pixels_outside_logo_region": 0,
+  "changed_pixels_inside_logo_region": 4086,
+  "logo_patch_readback_exact": true,
+  "final_sha256": "5cf4a18105ef7943f291fd4d67d82b41eb8e611bd9dd831add3725229e0aeb45"
+}

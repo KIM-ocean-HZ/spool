@@ -1,0 +1,40 @@
+asset_id,author,version,status,type,scene,description,existing_path,recording_requirement
+A01,ChatGPT,2026-10-29-v1.0,needs_recording,screen_recording,P01 T01,Welcome greeting through real capture overlay,,Fresh clipboard and Production slate target
+A02,ChatGPT,2026-10-29-v1.0,needs_compositing,motion_graphics,P02 P03,Scattered context and two paraphrased feedback cards,,Use F1 F2 source labels and links in description
+A03,ChatGPT,2026-10-29-v1.0,needs_recording,screen_recording,P05 T02,Create Portfolio site and set capture target,,Use S0 shooting copy
+A04,ChatGPT,2026-10-29-v1.0,needs_recording,screen_recording,P05 T03,Four-step workspace folder link and project attachments,,Use demo folder and preserve real configuration
+A05,ChatGPT,2026-10-29-v1.0,needs_recording,screen_recording,P06 T04,Continuous text capture on macOS,,Copy double-tap overlay and unchanged page position
+A06,ChatGPT,2026-10-29-v1.0,needs_recording,screen_recording,P07 T05,Clipboard screenshot capture with personal annotation,,Show same image in timeline
+A07,ChatGPT,2026-10-29-v1.0,exists_reference_only,screenshot,P08,Real timeline and image block,../../screenshots/portfolio/v0.7.4-01-desktop-timeline.png,Machine learning course reference; record Portfolio site for main story
+A08,ChatGPT,2026-10-29-v1.0,needs_recording,screen_recording,P09 T06,Pack copy paste and useful AI response,,Keep task visible and use actual answer
+A09,ChatGPT,2026-10-29-v1.0,exists,screenshot,T07,MCP read and write switches,../../screenshots/portfolio/v0.7.4-10-settings-mcp-switches.png,Static insert only
+A10,ChatGPT,2026-10-29-v1.0,needs_recording,screen_recording,P10 T07,AI A actually reads the project,,Verify client uses shooting data directory
+A11,ChatGPT,2026-10-29-v1.0,needs_recording,screen_recording,P11 T08,AI A saves new decision and suggests follow-up,,Real client source label and user accepts suggestion
+A12,ChatGPT,2026-10-29-v1.0,exists_reference_only,screenshot,T08,Real MCP write with enforced source,../../screenshots/portfolio/v0.7.4-02-mcp-write-in-timeline.png,Terminal probe source must not be relabeled
+A13,ChatGPT,2026-10-29-v1.0,needs_recording,screen_recording,P12 T09,AI B reads the decision saved by AI A,,Fresh conversation without pasting the decision again
+A14,ChatGPT,2026-10-29-v1.0,exists_reference_only,screenshot,P13 T13,Replacement proposal with quotes and user choices,../../screenshots/portfolio/v0.7.4-03b-ai-proposal-card.png,Job search reference; record Portfolio site replacement
+A15,ChatGPT,2026-10-29-v1.0,exists,concept_image,P13 P18,Warm cream amber archive visual direction,../2026-10-17/spool-concept-ai-workflow.png,Concept art only; never replace real UI text
+A16,ChatGPT,2026-10-29-v1.0,exists,concept_image,P18,Daily accumulation visual direction,../2026-10-17/spool-concept-daily-progress.png,Concept art only
+A17,ChatGPT,2026-10-29-v1.0,exists_reference_only,screenshot,P14 T10,Follow-up editor and optional weekly schedule,../../screenshots/portfolio/v0.7.4-09b-follow-up-editor-dialog.png,Existing switch is off; record actual run separately
+A18,ChatGPT,2026-10-29-v1.0,needs_recording,screen_recording,P14 T10,CLI follow-up result and review or no new information,,Use real official source and label shortened waiting
+A19,ChatGPT,2026-10-29-v1.0,exists,screenshot,T11,Local CLI and API setup routes,../../screenshots/portfolio/v0.7.4-04b-ai-engine-two-routes-dialog.png,Never reveal API key
+A20,ChatGPT,2026-10-29-v1.0,needs_recording,screen_recording,T11 T15,API route selection and actual weekly review,,Log actual provider and account usage
+A21,ChatGPT,2026-10-29-v1.0,exists_reference_only,screenshot,T12,Compression preflight and route,../../screenshots/portfolio/v0.7.4-05-compress-before-run.png,Pre-run screenshot proves no compression result
+A22,ChatGPT,2026-10-29-v1.0,needs_recording,screen_recording,P15 T12,Compression compare save and nightly queue,,Long demo project; actual measured result only
+A23,ChatGPT,2026-10-29-v1.0,needs_recording,screen_recording,T13,Stale check old six-project plan versus new three-project decision,,Show actual scan result or label fallback as MCP proposal
+A24,ChatGPT,2026-10-29-v1.0,exists,screenshot,P15 T14,Workspace linked folder changed status,../../screenshots/portfolio/v0.7.4-06-workspace-linked-folder.png,Use as reference; record before and after sync
+A25,ChatGPT,2026-10-29-v1.0,needs_recording,screen_recording,T14,SPOOL.md current PLAN writeback and sync,,Demo repository only; folder current state first
+A26,ChatGPT,2026-10-29-v1.0,needs_recording,screen_recording,P16 T15,Real CLI weekly review with evidence,,Record useful result and remove wait honestly
+A27,ChatGPT,2026-10-29-v1.0,needs_recording,screen_recording,T16,Accept weekly suggestion manually or with P10 actions,,Choose actual build variant; never paint fake Accept button
+A28,ChatGPT,2026-10-29-v1.0,needs_recording,screen_recording,P17 T17,Completed portfolio local preview,,Three real demo case studies and visible music entry
+A29,ChatGPT,2026-10-29-v1.0,needs_recording,screen_recording,P17 T17,Complete project and find in completed list,,User checks result first
+A30,ChatGPT,2026-10-29-v1.0,needs_recording,screen_recording,P18,Learning job search and life project inserts,,Use demo library only
+A31,ChatGPT,2026-10-29-v1.0,exists,raster_logo,P19,Official Spool app icon (2026-10-30 liquid glass; sRGB),../../logo/exports/spool-artwork-srgb-1024.png,Do not regenerate lettering
+A32,ChatGPT,2026-10-29-v1.0,exists,video_logo,P19,Logo assembly animation (clean assembly v1; adopted 2026-10-31),../../logo/spool-logo-assembly.mp4,Reuse short extract as needed
+A33,ChatGPT,2026-10-29-v1.0,needs_recording,screen_recording,P20 T18,Byebye greeting through real capture overlay,,Production slate target and fresh clipboard
+A34,ChatGPT,2026-10-29-v1.0,needs_recording,screen_recording,T04 T05,Windows text image and Pack key differences,,Ctrl double-tap and Win+Shift+S actual behavior
+A35,ChatGPT,2026-10-29-v1.0,needs_recording,camera,T01 T18,Host opening and closing,,Eye-level camera and clean background
+A36,ChatGPT,2026-10-29-v1.0,needs_recording,audio,P02-P19,English promo voice-over,,Read clean script and leave pauses
+A37,ChatGPT,2026-10-29-v1.0,needs_recording,audio,T01-T18,Chinese tutorial narration,,Read chapter script with real operation pauses
+A38,ChatGPT,2026-10-29-v1.0,needs_selection,audio,all,Licensed music and gentle double-tap cue,,Clear voice and keep license record
+A39,ChatGPT,2026-10-29-v1.0,needs_production,subtitles,all,English and Chinese subtitle tracks,,Create after picture lock

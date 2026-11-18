@@ -1,0 +1,30 @@
+{
+  "date": "2026-10-17",
+  "generation": "built-in imagegen",
+  "artifacts": [
+    {
+      "file": "spool-functional-01-connected-journey.png",
+      "width": 1672,
+      "height": 941,
+      "bytes": 2094118,
+      "sha256": "859c4322ee00387617636b6a9bbc5f538602a5832d01ed00d4a16cc08f73ef0f",
+      "generated_source": "/Users/hzjin/.codex/generated_images/01a146d2-5548-7aa0-8556-eb83d19a9e94/exec-14d22c83-edb4-42fe-98d7-e82e0e54631c.png"
+    },
+    {
+      "file": "spool-functional-02-working-loop.png",
+      "width": 1672,
+      "height": 941,
+      "bytes": 2111397,
+      "sha256": "63fa2d6f291cf37efe7471d223a8f0692318c591288d44e33bbbd8ef00bd8fa8",
+      "generated_source": "/Users/hzjin/.codex/generated_images/01a146d2-5548-7aa0-8556-eb83d19a9e94/exec-17d6f191-3000-4bfe-9df9-9e6212c6f1de.png"
+    },
+    {
+      "file": "spool-functional-03-days-to-done.png",
+      "width": 1672,
+      "height": 941,
+      "bytes": 1970600,
+      "sha256": "7039e5a2d26464a9530ac6d0050a4553439951a226a8132378954b050ab49aaa",
+      "generated_source": "/Users/hzjin/.codex/generated_images/01a146d2-5548-7aa0-8556-eb83d19a9e94/exec-d56a445d-ae94-4f7f-a355-520af5ca994f.png"
+    }
+  ]
+}

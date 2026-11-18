@@ -1,0 +1,30 @@
+{
+  "date": "2026-10-17",
+  "generation": "built-in imagegen",
+  "artifacts": [
+    {
+      "file": "spool-elegant-01-gallery.png",
+      "width": 1672,
+      "height": 941,
+      "bytes": 2255179,
+      "sha256": "17631ad3658f0f9e37c6a05e15f510db37c7d857d5fea6b09e3f99b057595bba",
+      "generated_source": "/Users/hzjin/.codex/generated_images/01a146d2-5548-7aa0-8556-eb83d19a9e94/exec-52452de7-d8ef-437a-aa19-03d208210237.png"
+    },
+    {
+      "file": "spool-elegant-02-continuity.png",
+      "width": 1672,
+      "height": 941,
+      "bytes": 2200818,
+      "sha256": "2f03f65797e864b7037f57a39df2639a5496217fe5a6f2f94f392cd2ed95a71f",
+      "generated_source": "/Users/hzjin/.codex/generated_images/01a146d2-5548-7aa0-8556-eb83d19a9e94/exec-9b79fef6-67c3-466d-aec3-db7a94959ac5.png"
+    },
+    {
+      "file": "spool-elegant-03-light-layers.png",
+      "width": 1672,
+      "height": 941,
+      "bytes": 2189764,
+      "sha256": "63f4f64b9e046b23f8fbc03de1a060b330f73957b5183ec26edad3fd6bc36258",
+      "generated_source": "/Users/hzjin/.codex/generated_images/01a146d2-5548-7aa0-8556-eb83d19a9e94/exec-13b179c8-a583-41cf-9c71-f13ced858292.png"
+    }
+  ]
+}

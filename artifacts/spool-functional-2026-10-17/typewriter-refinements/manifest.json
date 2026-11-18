@@ -1,0 +1,36 @@
+{
+  "date": "2026-10-17",
+  "tool": "image_gen.imagegen",
+  "mode": "built-in-image-edit",
+  "status": "delivered-for-user-selection",
+  "source": "../retro-file-workflow/spool-retro-01-typewriter.png",
+  "images": [
+    {
+      "version": "01",
+      "title": "Cream and amber",
+      "file": "spool-typewriter-01-cream-amber.png",
+      "source": "/Users/hzjin/.codex/generated_images/01a146d2-5548-7aa0-8556-eb83d19a9e94/exec-80b3e683-86b3-4bd4-b9b5-fac58ae07a75.png",
+      "width": 1672,
+      "height": 941,
+      "sha256": "a21e4a7e6edf237b369882606322b700efbb0f971f1ac4202354f2e90024c01a"
+    },
+    {
+      "version": "02",
+      "title": "Amber side panels",
+      "file": "spool-typewriter-02-amber-sides.png",
+      "source": "/Users/hzjin/.codex/generated_images/01a146d2-5548-7aa0-8556-eb83d19a9e94/exec-aea53b48-28ae-4559-8e8d-78e9ce1d92c9.png",
+      "width": 1672,
+      "height": 941,
+      "sha256": "050d9399d60636ec6fe0e58777276e6158c04d430b4b1e63339ffc68beefd837"
+    },
+    {
+      "version": "03",
+      "title": "Compact portable",
+      "file": "spool-typewriter-03-compact-portable.png",
+      "source": "/Users/hzjin/.codex/generated_images/01a146d2-5548-7aa0-8556-eb83d19a9e94/exec-7586dde5-d3a5-499b-aa10-ebcfbb7961e6.png",
+      "width": 1672,
+      "height": 941,
+      "sha256": "3d37ef6eba7a3d8e6408db377e739f5487c075784d0d964e31381a075e2c7415"
+    }
+  ]
+}
